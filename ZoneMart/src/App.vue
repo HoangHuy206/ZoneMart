@@ -1,9 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import { useRoute } from "vue-router";
-
-const route = useRoute();
-const isHome = computed(() => route.path === "/");
+import { ref } from "vue";
 
 const isMobileMenuOpen = ref(false);
 
@@ -14,8 +10,8 @@ const toggleMobileMenu = () => {
 
 <template>
   <div class="app-wrapper">
-    <!-- Navbar ZoneMart (chỉ hiển thị ở các trang con, trang chủ dùng header riêng theo thiết kế) -->
-    <header class="navbar" v-if="!isHome">
+    <!-- Navbar ZoneMart đồng bộ toàn hệ thống -->
+    <header class="navbar">
       <div class="nav-container">
         <!-- Logo -->
         <router-link to="/" class="brand-logo">
@@ -29,6 +25,11 @@ const toggleMobileMenu = () => {
 
         <!-- Navigation Links cho cả 3 thành viên -->
         <nav class="nav-links" :class="{ 'open': isMobileMenuOpen }">
+          <!-- Trang Chủ -->
+          <router-link to="/" class="nav-item" active-class="active" exact-active-class="active">
+            🏠 Trang Chủ
+          </router-link>
+
           <!-- Huy -->
           <router-link to="/products" class="nav-item" active-class="active">
             🛍️ Sản Phẩm
@@ -121,15 +122,15 @@ body {
 /* Header & Navbar */
 .navbar {
   background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid #f1f5f9;
   position: sticky;
   top: 0;
   z-index: 100;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.03);
 }
 
 .nav-container {
-  max-width: 1250px;
+  max-width: 1320px;
   margin: 0 auto;
   padding: 0 20px;
   height: 68px;
@@ -253,7 +254,7 @@ body {
   margin-top: 50px;
 }
 .footer-container {
-  max-width: 1250px;
+  max-width: 1320px;
   margin: 0 auto;
   display: flex;
   justify-content: space-between;
