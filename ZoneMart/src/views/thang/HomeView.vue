@@ -229,16 +229,17 @@ const handleSearch = () => {
    ========================================================================== */
 .market-top-header {
   background-color: #fcf8f3;
-  padding: 16px 24px;
+  padding: 16px clamp(20px, 3.5vw, 60px);
+  width: 100%;
+  border-bottom: 1px solid #ebdcd1;
 }
 
 .top-header-inner {
-  max-width: 980px;
-  margin: 0 auto;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 24px;
 }
 
 .brand-title-link {
@@ -246,7 +247,7 @@ const handleSearch = () => {
 }
 
 .brand-name-text {
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 800;
   color: #ba441b;
   letter-spacing: 0.5px;
@@ -255,7 +256,7 @@ const handleSearch = () => {
 /* Search Pill */
 .search-pill-container {
   flex: 1;
-  max-width: 480px;
+  max-width: 650px;
   position: relative;
   display: flex;
   align-items: center;
@@ -263,18 +264,18 @@ const handleSearch = () => {
 
 .search-icon-lens {
   position: absolute;
-  left: 14px;
-  font-size: 13px;
+  left: 16px;
+  font-size: 14px;
   color: #9c8e84;
   pointer-events: none;
 }
 
 .search-pill-input {
   width: 100%;
-  padding: 9px 16px 9px 36px;
+  padding: 11px 20px 11px 42px;
   background-color: #f6efe8;
   border: 1px solid #ebdcd1;
-  border-radius: 20px;
+  border-radius: 24px;
   font-size: 14px;
   color: #3b2c23;
   outline: none;
@@ -295,7 +296,7 @@ const handleSearch = () => {
 .header-user-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
 }
 
 .header-icon-btn {
@@ -308,7 +309,7 @@ const handleSearch = () => {
 }
 
 .btn-icon {
-  font-size: 20px;
+  font-size: 22px;
   color: #3b2c23;
   transition: transform 0.15s;
 }
@@ -325,8 +326,8 @@ const handleSearch = () => {
   color: #ffffff;
   font-size: 10px;
   font-weight: 800;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -334,12 +335,12 @@ const handleSearch = () => {
 }
 
 /* ==========================================================================
-   HERO BANNER SECTION
+   HERO BANNER SECTION (FULL WIDTH)
    ========================================================================== */
 .market-hero-section {
-  max-width: 980px;
-  margin: 12px auto 24px auto;
-  padding: 0 16px;
+  width: 100%;
+  margin: 18px 0 28px 0;
+  padding: 0 clamp(20px, 3.5vw, 60px);
 }
 
 .hero-banner-card {
@@ -349,7 +350,8 @@ const handleSearch = () => {
   background-image: url("https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1600&q=80");
   background-size: cover;
   background-position: center 30%;
-  min-height: 420px;
+  min-height: 480px;
+  width: 100%;
   display: flex;
   align-items: center;
   box-shadow: 0 10px 30px rgba(78, 42, 23, 0.1);
@@ -363,9 +365,9 @@ const handleSearch = () => {
   height: 100%;
   background: linear-gradient(
     90deg,
-    rgba(25, 18, 14, 0.82) 0%,
-    rgba(40, 25, 18, 0.65) 50%,
-    rgba(35, 22, 16, 0.4) 100%
+    rgba(25, 18, 14, 0.85) 0%,
+    rgba(40, 25, 18, 0.68) 50%,
+    rgba(35, 22, 16, 0.42) 100%
   );
 }
 
@@ -373,30 +375,30 @@ const handleSearch = () => {
   position: relative;
   z-index: 2;
   width: 100%;
-  padding: 48px 44px;
+  padding: 56px clamp(24px, 4vw, 60px);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .hero-text-block {
-  max-width: 500px;
+  max-width: 620px;
 }
 
 .hero-heading-title {
-  font-size: 42px;
+  font-size: clamp(36px, 4vw, 54px);
   line-height: 1.15;
   font-weight: 800;
   color: #ffffff;
-  margin: 0 0 16px 0;
+  margin: 0 0 18px 0;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
 .hero-description-text {
-  font-size: 15px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.9);
-  margin: 0 0 26px 0;
+  font-size: clamp(15px, 1.3vw, 18px);
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.92);
+  margin: 0 0 28px 0;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
 }
 
@@ -404,9 +406,9 @@ const handleSearch = () => {
   background-color: #ba441b;
   color: #ffffff;
   border: none;
-  padding: 12px 28px;
-  border-radius: 24px;
-  font-size: 14px;
+  padding: 14px 32px;
+  border-radius: 28px;
+  font-size: 15px;
   font-weight: 800;
   letter-spacing: 0.8px;
   cursor: pointer;
@@ -421,8 +423,8 @@ const handleSearch = () => {
 }
 
 .hero-lineart-block {
-  width: 180px;
-  height: 180px;
+  width: 220px;
+  height: 220px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -434,25 +436,26 @@ const handleSearch = () => {
 }
 
 /* ==========================================================================
-   3 REGISTRATION CARDS
+   3 REGISTRATION CARDS (FULL WIDTH)
    ========================================================================== */
 .registration-cards-section {
-  max-width: 980px;
-  margin: 20px auto 44px auto;
-  padding: 0 16px;
+  width: 100%;
+  margin: 16px 0 44px 0;
+  padding: 0 clamp(20px, 3.5vw, 60px);
 }
 
 .cards-layout-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+  gap: 24px;
+  width: 100%;
 }
 
 .reg-action-card {
   background-color: #fdfaf5;
   border: 1.5px solid #cb774c;
-  border-radius: 18px;
-  padding: 26px 20px;
+  border-radius: 20px;
+  padding: 28px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -463,40 +466,40 @@ const handleSearch = () => {
 
 .reg-action-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 10px 24px rgba(92, 45, 23, 0.12);
+  box-shadow: 0 12px 28px rgba(92, 45, 23, 0.12);
 }
 
 .reg-icon-square {
-  width: 58px;
-  height: 58px;
+  width: 62px;
+  height: 62px;
   background-color: #ea580c;
-  border-radius: 16px;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 18px;
-  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.3);
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3);
 }
 
 .reg-svg-icon {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   color: #ffffff;
 }
 
 .reg-card-title {
   margin: 0 0 10px 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
   color: #2b231d;
   letter-spacing: 0.5px;
 }
 
 .reg-card-desc {
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: 14px;
+  line-height: 1.5;
   color: #6a5e55;
-  margin: 0 0 20px 0;
+  margin: 0 0 22px 0;
   min-height: 48px;
 }
 
@@ -505,9 +508,9 @@ const handleSearch = () => {
   background-color: #ba441b;
   color: #ffffff;
   border: none;
-  padding: 11px 18px;
-  border-radius: 20px;
-  font-size: 13px;
+  padding: 12px 20px;
+  border-radius: 24px;
+  font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.6px;
   cursor: pointer;
@@ -519,24 +522,24 @@ const handleSearch = () => {
 }
 
 /* ==========================================================================
-   FEATURED CATEGORY SECTION
+   FEATURED CATEGORY SECTION (FULL WIDTH)
    ========================================================================== */
 .featured-category-section {
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 0 16px;
+  width: 100%;
+  margin: 0 0 20px 0;
+  padding: 0 clamp(20px, 3.5vw, 60px);
 }
 
 .featured-header-row {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .featured-heading-text {
   margin: 0;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 800;
   color: #2b231d;
 }
@@ -545,7 +548,7 @@ const handleSearch = () => {
   background: transparent;
   border: none;
   color: #6a5e55;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   padding: 4px;
@@ -560,12 +563,13 @@ const handleSearch = () => {
 .category-cards-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  gap: 20px;
+  width: 100%;
 }
 
 .cat-feature-card {
   background-color: #ea580c;
-  border-radius: 16px;
+  border-radius: 18px;
   overflow: hidden;
   cursor: pointer;
   display: flex;
@@ -580,13 +584,13 @@ const handleSearch = () => {
 }
 
 .cat-card-header {
-  padding: 16px 14px 12px 14px;
+  padding: 18px 16px 14px 16px;
   color: #ffffff;
 }
 
 .cat-card-header h4 {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
   letter-spacing: 0.5px;
   line-height: 1.25;
@@ -594,7 +598,7 @@ const handleSearch = () => {
 
 .cat-card-visual {
   width: 100%;
-  height: 120px;
+  height: 150px;
   overflow: hidden;
   position: relative;
   display: flex;
