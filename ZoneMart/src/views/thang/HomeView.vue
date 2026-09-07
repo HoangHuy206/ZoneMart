@@ -12,15 +12,15 @@ const wishlistCount = ref(0);
 const activeProductTab = ref("All");
 const wishlistedIds = ref<number[]>([]);
 
-// Category navigation
+// 7 Categories in 1 clean row (full-width)
 const categories = [
   { name: "Vegetables", count: 6, icon: "🥗", bg: "#fef3ee" },
-  { name: "Fresh Fruits", count: 8, icon: "🍊", bg: "#fef3ee" },
-  { name: "Desserts", count: 9, icon: "🧁", bg: "#fef3ee" },
-  { name: "Drinks & Juice", count: 6, icon: "🧃", bg: "#fef3ee" },
-  { name: "Fish & Meats", count: 6, icon: "🐟", bg: "#fef3ee" },
-  { name: "Pets & Animals", count: 4, icon: "🐶", bg: "#fef3ee" },
-  { name: "Beverage", count: 8, icon: "☕", bg: "#fef3ee" }
+  { name: "Fresh Fruits", count: 8, icon: "🍊", bg: "#fff7ed" },
+  { name: "Desserts", count: 9, icon: "🧁", bg: "#fdf2f8" },
+  { name: "Drinks & Juice", count: 6, icon: "🧃", bg: "#f0fdf4" },
+  { name: "Fish & Meats", count: 6, icon: "🐟", bg: "#eff6ff" },
+  { name: "Pets & Animals", count: 4, icon: "🐶", bg: "#fffbeb" },
+  { name: "Beverage", count: 8, icon: "☕", bg: "#faf5ff" }
 ];
 
 // Featured Products
@@ -233,6 +233,10 @@ const handleSearch = () => {
   }
 };
 
+const scrollToTop = () => {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
 onMounted(() => {
   startCountdown();
 });
@@ -244,9 +248,18 @@ onUnmounted(() => {
 
 <template>
   <div class="zilly-style-home">
-    <!-- 1. TOP ANNOUNCEMENT / INFO BAR -->
+    <!-- FLOATING CART WIDGET ON RIGHT EDGE (MATCHING TARGET DEMO) -->
+    <div class="floating-cart-badge" @click="router.push('/cart')" title="Xem giỏ hàng">
+      <div class="floating-cart-icon">🛍️</div>
+      <div class="floating-cart-info">
+        <span class="floating-count">{{ cartCount }} Item</span>
+        <span class="floating-price">$0.00</span>
+      </div>
+    </div>
+
+    <!-- 1. TOP ANNOUNCEMENT / INFO BAR (FULL-WIDTH) -->
     <div class="top-info-bar">
-      <div class="site-container info-bar-content">
+      <div class="fluid-container info-bar-content">
         <div class="info-left">
           <span class="info-item">
             <span class="info-icon">📍</span> 23/A Mark Street Road, Da Nang City
@@ -264,9 +277,9 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 2. MAIN HEADER (BRAND + SEARCH + ICONS) -->
+    <!-- 2. MAIN HEADER (FULL-WIDTH) -->
     <header class="main-header">
-      <div class="site-container header-inner">
+      <div class="fluid-container header-inner">
         <!-- Logo -->
         <router-link to="/" class="brand-logo">
           <div class="brand-icon-wrap">
@@ -318,13 +331,17 @@ onUnmounted(() => {
           <button class="header-action-btn hamburger-btn" title="Menu">
             <span class="action-icon">☰</span>
           </button>
+
+          <button class="header-action-btn scroll-top-btn" @click="scrollToTop" title="Lên đầu trang">
+            <span class="action-icon">▲</span>
+          </button>
         </div>
       </div>
     </header>
 
-    <!-- 3. SUB-NAV MENU & HOTLINE -->
+    <!-- 3. SUB-NAV MENU & HOTLINE (FULL-WIDTH) -->
     <nav class="sub-nav-bar">
-      <div class="site-container sub-nav-inner">
+      <div class="fluid-container sub-nav-inner">
         <ul class="nav-menu-list">
           <li class="nav-menu-item active">
             <router-link to="/">Home ▾</router-link>
@@ -365,9 +382,9 @@ onUnmounted(() => {
       </div>
     </nav>
 
-    <!-- 4. CATEGORIES ROW -->
+    <!-- 4. CATEGORIES ROW (7 ITEMS IN 1 SINGLE ROW - FULL WIDTH) -->
     <section class="categories-section">
-      <div class="site-container">
+      <div class="fluid-container">
         <div class="categories-row">
           <div
             v-for="(cat, idx) in categories"
@@ -388,10 +405,10 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- 5. HERO BANNERS GRID -->
+    <!-- 5. HERO BANNERS GRID (EXPANDED FULL-WIDTH) -->
     <section class="hero-banners-section">
-      <div class="site-container hero-grid">
-        <!-- Main Large Banner (Left) -->
+      <div class="fluid-container hero-grid">
+        <!-- Main Large Banner (Left - 63%) -->
         <div class="hero-main-card">
           <div class="hero-main-content">
             <span class="farm-fresh-badge">100% Farm Fresh Food</span>
@@ -406,14 +423,14 @@ onUnmounted(() => {
           </div>
           <div class="hero-main-visual">
             <img
-              src="https://images.unsplash.com/photo-1540420773420-3366772f4999?w=900&auto=format&fit=crop&q=80"
+              src="https://images.unsplash.com/photo-1540420773420-3366772f4999?w=1100&auto=format&fit=crop&q=80"
               alt="Fresh Organic Food Platter"
               class="hero-food-img"
             />
           </div>
         </div>
 
-        <!-- Right Banner Column -->
+        <!-- Right Banner Column (37%) -->
         <div class="hero-side-column">
           <!-- Top Side Banner (Honeynuts) -->
           <div class="side-banner-card top-nuts-card">
@@ -427,7 +444,7 @@ onUnmounted(() => {
             </div>
             <div class="side-card-media">
               <img
-                src="https://images.unsplash.com/photo-1509440159596-0249088772ff?w=500&auto=format&fit=crop&q=80"
+                src="https://images.unsplash.com/photo-1536599018102-9f803c140fc1?w=500&auto=format&fit=crop&q=80"
                 alt="Organic Nuts"
                 class="side-media-img"
               />
@@ -480,9 +497,9 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- 6. FEATURED PRODUCTS SECTION -->
+    <!-- 6. FEATURED PRODUCTS SECTION (FULL-WIDTH 6 COLS) -->
     <section class="featured-products-section">
-      <div class="site-container">
+      <div class="fluid-container">
         <!-- Section Header with Filter Tabs -->
         <div class="section-head-bar">
           <h2 class="section-heading">Featured Products</h2>
@@ -583,7 +600,7 @@ onUnmounted(() => {
 
     <!-- 7. WIDE PROMO BANNER (SHEA LOTION) -->
     <section class="wide-promo-section">
-      <div class="site-container">
+      <div class="fluid-container">
         <div class="wide-promo-card">
           <div class="wide-promo-left">
             <span class="promo-overline">The brand New Collection Shea</span>
@@ -598,7 +615,7 @@ onUnmounted(() => {
           </div>
           <div class="wide-promo-right">
             <img
-              src="https://images.unsplash.com/photo-1608248597359-57e3f890cf28?w=600&auto=format&fit=crop&q=80"
+              src="https://images.unsplash.com/photo-1608248597359-57e3f890cf28?w=700&auto=format&fit=crop&q=80"
               alt="Women Body Lotions Collection"
               class="lotion-bottles-img"
             />
@@ -609,7 +626,7 @@ onUnmounted(() => {
 
     <!-- 8. TOP SELLER USERS SECTION -->
     <section class="top-sellers-section">
-      <div class="site-container">
+      <div class="fluid-container">
         <div class="sellers-head-row">
           <div class="sellers-title-wrap">
             <h2 class="sellers-heading">Top Seller Users</h2>
@@ -641,7 +658,7 @@ onUnmounted(() => {
 
     <!-- 9. DEAL OF THE WEEK SECTION -->
     <section class="deal-week-section">
-      <div class="site-container">
+      <div class="fluid-container">
         <div class="deal-week-card">
           <!-- Deal Header with Live Countdown -->
           <div class="deal-head-bar">
@@ -671,7 +688,7 @@ onUnmounted(() => {
             <!-- Left Feature Item Banner -->
             <div class="deal-feature-spotlight">
               <img
-                src="https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop&q=80"
+                src="https://images.unsplash.com/photo-1540420773420-3366772f4999?w=700&auto=format&fit=crop&q=80"
                 alt="Deal spotlight"
                 class="spotlight-img"
               />
@@ -727,36 +744,82 @@ onUnmounted(() => {
    THEME PALETTE (Terracotta / Burnt Orange Brand Theme)
    Primary: #ba441b / #c2410c / #ea580c
    Dark: #1e293b / #0f172a
-   Light BGs: #fdfaf6 / #f8fafc / #ffffff
-   Accents: #f97316 / #ea580c / #ffedd5
+   Light BGs: #ffffff / #f8fafc / #fdfaf6
    ========================================================== */
 
 .zilly-style-home {
   width: 100%;
   min-height: 100vh;
-  background-color: #fbf9f6;
+  background-color: #ffffff;
   color: #1e293b;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
   overflow-x: hidden;
+  position: relative;
 }
 
-/* Base Responsive Container */
-.site-container {
+/* FLUID CONTAINER: NO MAX-WIDTH LIMIT, SPREADS ACROSS THE WHOLE SCREEN */
+.fluid-container {
   width: 100%;
-  max-width: 1380px;
-  margin: 0 auto;
-  padding: 0 clamp(16px, 2.5vw, 40px);
+  max-width: 100%;
+  padding: 0 clamp(20px, 2.8vw, 56px);
+  box-sizing: border-box;
 }
 
 /* ==========================================================
-   1. TOP INFO BAR
+   FLOATING CART WIDGET ON RIGHT EDGE (MATCHING TARGET DEMO)
+   ========================================================== */
+.floating-cart-badge {
+  position: fixed;
+  right: 0;
+  top: 55%;
+  transform: translateY(-50%);
+  background: #ba441b;
+  color: #ffffff;
+  z-index: 999;
+  border-radius: 12px 0 0 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  box-shadow: -4px 6px 18px rgba(186, 68, 27, 0.35);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.floating-cart-badge:hover {
+  background: #9a3412;
+  transform: translateY(-50%) translateX(-4px);
+}
+
+.floating-cart-icon {
+  font-size: 1.4rem;
+}
+
+.floating-cart-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.floating-price {
+  color: #ffedd5;
+  font-size: 0.8rem;
+}
+
+/* ==========================================================
+   1. TOP INFO BAR (FULL-WIDTH)
    ========================================================== */
 .top-info-bar {
+  width: 100%;
   background-color: #ba441b;
   color: #ffffff;
-  font-size: 0.82rem;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.84rem;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .info-bar-content {
@@ -770,13 +833,13 @@ onUnmounted(() => {
 .info-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .info-item {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   opacity: 0.95;
 }
 
@@ -810,9 +873,10 @@ onUnmounted(() => {
 }
 
 /* ==========================================================
-   2. MAIN HEADER (BRAND + SEARCH + ICONS)
+   2. MAIN HEADER (FULL-WIDTH)
    ========================================================== */
 .main-header {
+  width: 100%;
   background: #ffffff;
   border-bottom: 1px solid #f1f5f9;
   padding: 16px 0;
@@ -822,7 +886,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 28px;
 }
 
 .brand-logo {
@@ -830,11 +894,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   text-decoration: none;
+  flex-shrink: 0;
 }
 
 .brand-icon-wrap {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border-radius: 12px;
   background-color: #ffedd5;
   display: flex;
@@ -844,12 +909,12 @@ onUnmounted(() => {
 }
 
 .bag-svg {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
 }
 
 .brand-title {
-  font-size: 1.65rem;
+  font-size: 1.8rem;
   font-weight: 800;
   color: #1e293b;
   letter-spacing: -0.5px;
@@ -864,11 +929,11 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   flex: 1;
-  max-width: 620px;
+  max-width: 680px;
   border: 1.5px solid #e2e8f0;
   border-radius: 999px;
   background: #ffffff;
-  padding: 4px 6px 4px 18px;
+  padding: 4px 6px 4px 20px;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
@@ -881,7 +946,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   font-weight: 600;
   color: #475569;
   cursor: pointer;
@@ -895,16 +960,16 @@ onUnmounted(() => {
 
 .cluster-divider {
   width: 1px;
-  height: 24px;
+  height: 26px;
   background: #e2e8f0;
-  margin: 0 14px;
+  margin: 0 16px;
 }
 
 .search-text-input {
   flex: 1;
   border: none;
   outline: none;
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   color: #1e293b;
   background: transparent;
 }
@@ -921,8 +986,8 @@ onUnmounted(() => {
   color: #ffffff;
   border: none;
   border-radius: 999px;
-  padding: 8px 20px;
-  font-size: 0.88rem;
+  padding: 10px 24px;
+  font-size: 0.9rem;
   font-weight: 700;
   cursor: pointer;
   transition: background 0.2s, transform 0.1s;
@@ -940,7 +1005,8 @@ onUnmounted(() => {
 .header-action-group {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
+  flex-shrink: 0;
 }
 
 .header-action-btn {
@@ -948,15 +1014,15 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   background: #f8fafc;
   color: #334155;
   text-decoration: none;
   border: 1px solid #e2e8f0;
   cursor: pointer;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   transition: all 0.2s;
 }
 
@@ -984,24 +1050,31 @@ onUnmounted(() => {
   border: 2px solid #ffffff;
 }
 
-.hamburger-btn {
+.hamburger-btn,
+.scroll-top-btn {
   background: #ffffff;
 }
 
+.scroll-top-btn {
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
 /* ==========================================================
-   3. SUB-NAV MENU & HOTLINE
+   3. SUB-NAV MENU & HOTLINE (FULL-WIDTH)
    ========================================================== */
 .sub-nav-bar {
+  width: 100%;
   background: #ffffff;
   border-bottom: 1px solid #f1f5f9;
-  padding: 6px 0;
+  padding: 8px 0;
 }
 
 .sub-nav-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
 }
 
 .nav-menu-list {
@@ -1010,15 +1083,15 @@ onUnmounted(() => {
   list-style: none;
   margin: 0;
   padding: 0;
-  gap: 28px;
+  gap: 32px;
 }
 
 .nav-menu-item a {
   text-decoration: none;
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: #334155;
-  padding: 10px 0;
+  padding: 8px 0;
   display: inline-block;
   transition: color 0.2s;
 }
@@ -1031,16 +1104,17 @@ onUnmounted(() => {
 .sub-nav-right {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 24px;
 }
 
 .weekly-discount-tag {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   font-weight: 700;
   color: #ba441b;
+  white-space: nowrap;
 }
 
 .hotline-pill {
@@ -1049,13 +1123,14 @@ onUnmounted(() => {
   gap: 10px;
   background: #ba441b;
   color: #ffffff;
-  padding: 8px 18px;
+  padding: 8px 20px;
   border-radius: 999px;
-  box-shadow: 0 4px 12px rgba(186, 68, 27, 0.25);
+  box-shadow: 0 4px 14px rgba(186, 68, 27, 0.25);
+  white-space: nowrap;
 }
 
 .hotline-icon {
-  font-size: 1.1rem;
+  font-size: 1.15rem;
 }
 
 .hotline-text {
@@ -1064,47 +1139,62 @@ onUnmounted(() => {
 }
 
 .hotline-label {
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   opacity: 0.9;
 }
 
 .hotline-num {
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   font-weight: 800;
   letter-spacing: 0.2px;
 }
 
 /* ==========================================================
-   4. CATEGORIES ROW
+   4. CATEGORIES ROW (7 ITEMS IN 1 SINGLE ROW - FULL WIDTH)
    ========================================================== */
 .categories-section {
+  width: 100%;
   padding: 24px 0 16px 0;
 }
 
 .categories-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(7, 1fr);
   gap: 14px;
+  width: 100%;
+}
+
+@media (max-width: 1200px) {
+  .categories-row {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .categories-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .category-pill-card {
   background: #ffffff;
-  border: 1px solid #f1f5f9;
-  border-radius: 14px;
+  border: 1px solid #eef2f6;
+  border-radius: 12px;
   padding: 10px 14px;
   display: flex;
   align-items: center;
   gap: 12px;
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  min-width: 0;
 }
 
 .category-pill-card:hover {
   transform: translateY(-2px);
   border-color: #fed7aa;
-  box-shadow: 0 6px 16px rgba(186, 68, 27, 0.08);
+  box-shadow: 0 6px 18px rgba(186, 68, 27, 0.1);
 }
 
 .cat-circle-avatar {
@@ -1135,26 +1225,30 @@ onUnmounted(() => {
 
 .cat-count {
   margin: 2px 0 0 0;
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   color: #94a3b8;
+  white-space: nowrap;
 }
 
 .cat-dot-menu {
   color: #cbd5e1;
   font-size: 1.1rem;
+  flex-shrink: 0;
 }
 
 /* ==========================================================
-   5. HERO BANNERS GRID
+   5. HERO BANNERS GRID (EXPANDED FULL-WIDTH)
    ========================================================== */
 .hero-banners-section {
+  width: 100%;
   padding: 16px 0 32px 0;
 }
 
 .hero-grid {
   display: grid;
-  grid-template-columns: 1.35fr 1fr;
-  gap: 20px;
+  grid-template-columns: 1.65fr 1fr;
+  gap: 24px;
+  width: 100%;
 }
 
 /* Main Left Card */
@@ -1163,37 +1257,37 @@ onUnmounted(() => {
   border-radius: 20px;
   overflow: hidden;
   position: relative;
-  min-height: 420px;
+  min-height: 460px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: clamp(24px, 4vw, 48px);
+  padding: clamp(28px, 4vw, 56px);
   border: 1px solid #fed7aa;
 }
 
 .hero-main-content {
   z-index: 2;
-  max-width: 320px;
+  max-width: 360px;
 }
 
 .farm-fresh-badge {
   display: inline-block;
   background: #ba441b;
   color: #ffffff;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 800;
-  padding: 4px 12px;
+  padding: 5px 14px;
   border-radius: 999px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
   letter-spacing: 0.3px;
 }
 
 .hero-fresh-title {
-  font-size: clamp(2rem, 3.2vw, 3rem);
+  font-size: clamp(2.2rem, 3.5vw, 3.4rem);
   font-weight: 900;
   line-height: 1.1;
   color: #0f172a;
-  margin: 0 0 16px 0;
+  margin: 0 0 18px 0;
 }
 
 .script-subtitle {
@@ -1204,23 +1298,23 @@ onUnmounted(() => {
 }
 
 .hero-price-tag {
-  font-size: 2rem;
+  font-size: 2.2rem;
   font-weight: 800;
   color: #ba441b;
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 
 .btn-shop-now {
   background: #ba441b;
   color: #ffffff;
   border: none;
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 700;
-  padding: 12px 28px;
+  padding: 14px 32px;
   border-radius: 999px;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 4px 14px rgba(186, 68, 27, 0.3);
+  box-shadow: 0 4px 16px rgba(186, 68, 27, 0.32);
 }
 
 .btn-shop-now:hover {
@@ -1241,28 +1335,28 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  mask-image: linear-gradient(to right, transparent, black 30%);
-  -webkit-mask-image: linear-gradient(to right, transparent, black 30%);
+  mask-image: linear-gradient(to right, transparent, black 25%);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 25%);
 }
 
 /* Right Banner Column */
 .hero-side-column {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .side-banner-card {
   background: #f8fafc;
   border-radius: 18px;
   overflow: hidden;
-  padding: 24px;
+  padding: 24px 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   border: 1px solid #e2e8f0;
   position: relative;
-  min-height: 200px;
+  min-height: 215px;
 }
 
 .top-nuts-card {
@@ -1277,31 +1371,31 @@ onUnmounted(() => {
 
 .side-card-title {
   margin: 0;
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 800;
   color: #0f172a;
 }
 
 .side-card-sub {
   margin: 6px 0 10px 0;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   color: #64748b;
 }
 
 .side-card-price {
-  font-size: 1.4rem;
+  font-size: 1.5rem;
   font-weight: 800;
   color: #ba441b;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .btn-side-shop {
   background: #ffffff;
   color: #1e293b;
   border: 1px solid #cbd5e1;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   font-weight: 700;
-  padding: 8px 18px;
+  padding: 8px 20px;
   border-radius: 999px;
   cursor: pointer;
   transition: all 0.2s;
@@ -1315,7 +1409,7 @@ onUnmounted(() => {
 
 .side-card-media {
   width: 42%;
-  height: 140px;
+  height: 155px;
   border-radius: 12px;
   overflow: hidden;
 }
@@ -1330,17 +1424,17 @@ onUnmounted(() => {
 .side-banner-split-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 20px;
 }
 
 .mini-promo-card {
   border-radius: 18px;
-  padding: 16px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   position: relative;
-  min-height: 190px;
+  min-height: 215px;
   overflow: hidden;
 }
 
@@ -1356,25 +1450,25 @@ onUnmounted(() => {
 
 .mini-title {
   margin: 0;
-  font-size: 0.98rem;
+  font-size: 1.05rem;
   font-weight: 800;
   color: #0f172a;
 }
 
 .mini-tag {
   display: block;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   color: #64748b;
-  margin: 4px 0 10px 0;
+  margin: 4px 0 12px 0;
 }
 
 .btn-mini-shop {
   background: #ffffff;
   color: #1e293b;
   border: 1px solid #cbd5e1;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   font-weight: 700;
-  padding: 6px 14px;
+  padding: 6px 16px;
   border-radius: 999px;
   cursor: pointer;
   align-self: flex-start;
@@ -1389,8 +1483,8 @@ onUnmounted(() => {
 
 .mini-img-wrap {
   width: 100%;
-  height: 80px;
-  border-radius: 8px;
+  height: 95px;
+  border-radius: 10px;
   overflow: hidden;
   margin-top: 10px;
 }
@@ -1403,10 +1497,10 @@ onUnmounted(() => {
 
 .discount-circle-pill {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 44px;
-  height: 44px;
+  top: 14px;
+  right: 14px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: #ba441b;
   color: #ffffff;
@@ -1414,20 +1508,21 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 900;
   line-height: 1;
 }
 
 .off-text {
-  font-size: 0.55rem;
+  font-size: 0.58rem;
   font-weight: 700;
 }
 
 /* ==========================================================
-   6. FEATURED PRODUCTS SECTION
+   6. FEATURED PRODUCTS SECTION (FULL-WIDTH 6 COLS)
    ========================================================== */
 .featured-products-section {
+  width: 100%;
   padding: 24px 0 40px 0;
 }
 
@@ -1441,7 +1536,7 @@ onUnmounted(() => {
 }
 
 .section-heading {
-  font-size: 1.55rem;
+  font-size: 1.65rem;
   font-weight: 800;
   color: #0f172a;
   margin: 0;
@@ -1450,19 +1545,19 @@ onUnmounted(() => {
 .section-controls {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 24px;
 }
 
 .filter-tab-buttons {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
 }
 
 .filter-btn {
   background: none;
   border: none;
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: #64748b;
   cursor: pointer;
@@ -1481,9 +1576,9 @@ onUnmounted(() => {
   content: "";
   position: absolute;
   left: 0;
-  bottom: -2px;
+  bottom: -3px;
   width: 100%;
-  height: 2px;
+  height: 2.5px;
   background: #ba441b;
   border-radius: 2px;
 }
@@ -1491,17 +1586,17 @@ onUnmounted(() => {
 .arrow-nav-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .nav-arrow-btn {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   background: #ffffff;
   border: 1px solid #e2e8f0;
   color: #475569;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1515,20 +1610,21 @@ onUnmounted(() => {
   color: #ba441b;
 }
 
-/* Products Grid */
+/* Products Grid: 6 in 1 row across full screen width */
 .products-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 16px;
+  width: 100%;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1300px) {
   .products-grid {
     grid-template-columns: repeat(3, 1fr);
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 680px) {
   .products-grid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1536,7 +1632,7 @@ onUnmounted(() => {
 
 .product-card {
   background: #ffffff;
-  border: 1px solid #f1f5f9;
+  border: 1px solid #eef2f6;
   border-radius: 16px;
   padding: 14px;
   display: flex;
@@ -1558,7 +1654,7 @@ onUnmounted(() => {
 }
 
 .product-cat-tag {
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-weight: 600;
   color: #94a3b8;
 }
@@ -1578,7 +1674,7 @@ onUnmounted(() => {
 
 .product-media-wrap {
   width: 100%;
-  height: 130px;
+  height: 140px;
   margin: 10px 0;
   display: flex;
   align-items: center;
@@ -1609,9 +1705,9 @@ onUnmounted(() => {
   background: #f8fafc;
   color: #64748b;
   border: 1px solid #e2e8f0;
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   font-weight: 600;
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 4px;
 }
 
@@ -1624,13 +1720,13 @@ onUnmounted(() => {
 }
 
 .price-current {
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   font-weight: 800;
   color: #ba441b;
 }
 
 .price-old {
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   color: #94a3b8;
   text-decoration: line-through;
 }
@@ -1638,7 +1734,7 @@ onUnmounted(() => {
 .discount-badge {
   background: #ba441b;
   color: #ffffff;
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   font-weight: 800;
   padding: 2px 6px;
   border-radius: 4px;
@@ -1646,7 +1742,7 @@ onUnmounted(() => {
 
 .product-card-title {
   margin: 0 0 8px 0;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   font-weight: 600;
   color: #1e293b;
   line-height: 1.35;
@@ -1671,12 +1767,12 @@ onUnmounted(() => {
 
 .stars-gold {
   color: #f59e0b;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   letter-spacing: 1px;
 }
 
 .review-score {
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   color: #64748b;
 }
 
@@ -1692,7 +1788,7 @@ onUnmounted(() => {
   border: 1px solid #fed7aa;
   border-radius: 8px;
   padding: 8px 0;
-  font-size: 0.82rem;
+  font-size: 0.84rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
@@ -1708,13 +1804,14 @@ onUnmounted(() => {
    7. WIDE PROMO BANNER (SHEA LOTION)
    ========================================================== */
 .wide-promo-section {
+  width: 100%;
   padding: 16px 0 36px 0;
 }
 
 .wide-promo-card {
   background: linear-gradient(90deg, #fef3ec 0%, #fae8de 60%, #f6ddcf 100%);
   border-radius: 20px;
-  padding: clamp(20px, 3.5vw, 36px) clamp(24px, 4vw, 48px);
+  padding: clamp(24px, 3.5vw, 40px) clamp(28px, 4vw, 56px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1725,20 +1822,20 @@ onUnmounted(() => {
 }
 
 .wide-promo-left {
-  max-width: 440px;
+  max-width: 480px;
 }
 
 .promo-overline {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: #64748b;
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .promo-main-heading {
   margin: 0;
-  font-size: clamp(1.4rem, 2.4vw, 2.2rem);
+  font-size: clamp(1.5rem, 2.5vw, 2.4rem);
   font-weight: 900;
   color: #0f172a;
   line-height: 1.2;
@@ -1748,11 +1845,11 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .pricing-label {
-  font-size: 0.88rem;
+  font-size: 0.92rem;
   font-weight: 800;
   color: #0f172a;
 }
@@ -1760,18 +1857,18 @@ onUnmounted(() => {
 .pricing-oval-tag {
   background: #ba441b;
   color: #ffffff;
-  font-size: 1.5rem;
+  font-size: 1.6rem;
   font-weight: 900;
-  padding: 10px 24px;
+  padding: 12px 28px;
   border-radius: 999px;
   position: relative;
-  box-shadow: 0 6px 18px rgba(186, 68, 27, 0.35);
+  box-shadow: 0 6px 20px rgba(186, 68, 27, 0.35);
 }
 
 .wide-promo-right {
-  width: 260px;
-  height: 140px;
-  border-radius: 12px;
+  width: 280px;
+  height: 150px;
+  border-radius: 14px;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -1786,6 +1883,7 @@ onUnmounted(() => {
    8. TOP SELLER USERS SECTION
    ========================================================== */
 .top-sellers-section {
+  width: 100%;
   padding: 16px 0 36px 0;
 }
 
@@ -1804,7 +1902,7 @@ onUnmounted(() => {
 
 .sellers-heading {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.55rem;
   font-weight: 800;
   color: #0f172a;
 }
@@ -1817,12 +1915,12 @@ onUnmounted(() => {
 }
 
 .see-more-link {
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   font-weight: 700;
   color: #ba441b;
   text-decoration: none;
   border: 1px solid #fed7aa;
-  padding: 6px 16px;
+  padding: 7px 18px;
   border-radius: 999px;
   background: #ffffff;
   transition: all 0.2s;
@@ -1836,7 +1934,8 @@ onUnmounted(() => {
 .sellers-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
+  gap: 18px;
+  width: 100%;
 }
 
 @media (max-width: 900px) {
@@ -1847,12 +1946,12 @@ onUnmounted(() => {
 
 .seller-card {
   background: #ffffff;
-  border: 1px solid #f1f5f9;
+  border: 1px solid #eef2f6;
   border-radius: 14px;
-  padding: 14px;
+  padding: 16px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   transition: all 0.2s;
 }
 
@@ -1862,8 +1961,8 @@ onUnmounted(() => {
 }
 
 .seller-avatar-wrap {
-  width: 60px;
-  height: 60px;
+  width: 64px;
+  height: 64px;
   border-radius: 12px;
   overflow: hidden;
   flex-shrink: 0;
@@ -1880,11 +1979,11 @@ onUnmounted(() => {
 }
 
 .seller-featured-tag {
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   font-weight: 700;
   color: #ba441b;
   background: #ffedd5;
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 4px;
   display: inline-block;
   margin-bottom: 4px;
@@ -1892,14 +1991,14 @@ onUnmounted(() => {
 
 .seller-name {
   margin: 0 0 4px 0;
-  font-size: 0.95rem;
+  font-size: 0.98rem;
   font-weight: 700;
   color: #0f172a;
 }
 
 .seller-stars {
   color: #f59e0b;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   letter-spacing: 1px;
 }
 
@@ -1907,6 +2006,7 @@ onUnmounted(() => {
    9. DEAL OF THE WEEK SECTION
    ========================================================== */
 .deal-week-section {
+  width: 100%;
   padding: 16px 0 60px 0;
 }
 
@@ -1914,7 +2014,8 @@ onUnmounted(() => {
   background: #ffffff;
   border: 2.5px solid #ba441b;
   border-radius: 20px;
-  padding: clamp(18px, 3vw, 32px);
+  padding: clamp(20px, 3vw, 36px);
+  width: 100%;
 }
 
 .deal-head-bar {
@@ -1930,7 +2031,7 @@ onUnmounted(() => {
 
 .deal-heading {
   margin: 0;
-  font-size: 1.6rem;
+  font-size: 1.65rem;
   font-weight: 800;
   color: #0f172a;
 }
@@ -1943,8 +2044,8 @@ onUnmounted(() => {
 .countdown-unit-box {
   background: #ba441b;
   color: #ffffff;
-  min-width: 48px;
-  height: 48px;
+  min-width: 50px;
+  height: 50px;
   border-radius: 8px;
   display: flex;
   flex-direction: column;
@@ -1954,13 +2055,13 @@ onUnmounted(() => {
 }
 
 .countdown-num {
-  font-size: 1.05rem;
+  font-size: 1.1rem;
   font-weight: 900;
   line-height: 1;
 }
 
 .countdown-label {
-  font-size: 0.62rem;
+  font-size: 0.65rem;
   text-transform: uppercase;
   font-weight: 600;
   opacity: 0.9;
@@ -1968,8 +2069,8 @@ onUnmounted(() => {
 
 .deal-body-grid {
   display: grid;
-  grid-template-columns: 1fr 2.2fr;
-  gap: 20px;
+  grid-template-columns: 1fr 2.4fr;
+  gap: 24px;
 }
 
 @media (max-width: 992px) {
@@ -1982,7 +2083,7 @@ onUnmounted(() => {
   position: relative;
   border-radius: 16px;
   overflow: hidden;
-  min-height: 260px;
+  min-height: 280px;
 }
 
 .spotlight-img {
@@ -2003,7 +2104,7 @@ onUnmounted(() => {
 }
 
 .spotlight-tag {
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 700;
   color: #ffedd5;
   text-transform: uppercase;
@@ -2012,24 +2113,24 @@ onUnmounted(() => {
 
 .spotlight-title {
   margin: 6px 0;
-  font-size: 1.4rem;
+  font-size: 1.45rem;
   font-weight: 800;
 }
 
 .spotlight-discount {
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   font-weight: 800;
   color: #fed7aa;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .btn-spotlight-shop {
   background: #ba441b;
   color: #ffffff;
   border: none;
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   font-weight: 700;
-  padding: 8px 18px;
+  padding: 9px 20px;
   border-radius: 999px;
   align-self: flex-start;
   cursor: pointer;
@@ -2043,7 +2144,7 @@ onUnmounted(() => {
 .deal-items-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  gap: 18px;
 }
 
 @media (max-width: 768px) {
@@ -2054,9 +2155,9 @@ onUnmounted(() => {
 
 .deal-product-item {
   background: #ffffff;
-  border: 1px solid #f1f5f9;
+  border: 1px solid #eef2f6;
   border-radius: 14px;
-  padding: 12px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   transition: all 0.2s;
@@ -2074,19 +2175,19 @@ onUnmounted(() => {
 }
 
 .deal-item-cat {
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   color: #94a3b8;
   font-weight: 600;
 }
 
 .deal-item-heart {
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   cursor: pointer;
 }
 
 .deal-item-media {
   width: 100%;
-  height: 110px;
+  height: 120px;
   margin: 8px 0;
   display: flex;
   align-items: center;
@@ -2108,13 +2209,13 @@ onUnmounted(() => {
 }
 
 .deal-curr-price {
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   font-weight: 800;
   color: #ba441b;
 }
 
 .deal-old-price {
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   color: #94a3b8;
   text-decoration: line-through;
 }
@@ -2122,15 +2223,15 @@ onUnmounted(() => {
 .deal-badge {
   background: #ba441b;
   color: #ffffff;
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   font-weight: 800;
-  padding: 2px 4px;
+  padding: 2px 5px;
   border-radius: 4px;
 }
 
 .deal-item-title {
   margin: 0 0 6px 0;
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: #1e293b;
   line-height: 1.3;
@@ -2138,7 +2239,7 @@ onUnmounted(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 34px;
+  min-height: 36px;
 }
 
 .deal-item-stars {
@@ -2159,8 +2260,8 @@ onUnmounted(() => {
   color: #ba441b;
   border: 1px solid #fed7aa;
   border-radius: 8px;
-  padding: 6px 0;
-  font-size: 0.8rem;
+  padding: 7px 0;
+  font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
