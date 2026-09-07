@@ -1,495 +1,226 @@
-<script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
-import { useRouter } from "vue-router";
-
-const router = useRouter();
-
-// State
-const searchQuery = ref("");
-const selectedCategory = ref("All Categories");
-const cartCount = ref(0);
-const wishlistCount = ref(0);
-const activeProductTab = ref("All");
-const wishlistedIds = ref<number[]>([]);
-
-// 7 Categories in 1 clean row (full-width)
-const categories = [
-  { name: "Vegetables", count: 6, icon: "🥗", bg: "#fef3ee" },
-  { name: "Fresh Fruits", count: 8, icon: "🍊", bg: "#fff7ed" },
-  { name: "Desserts", count: 9, icon: "🧁", bg: "#fdf2f8" },
-  { name: "Drinks & Juice", count: 6, icon: "🧃", bg: "#f0fdf4" },
-  { name: "Fish & Meats", count: 6, icon: "🐟", bg: "#eff6ff" },
-  { name: "Pets & Animals", count: 4, icon: "🐶", bg: "#fffbeb" },
-  { name: "Beverage", count: 8, icon: "☕", bg: "#faf5ff" }
-];
-
-// Featured Products
-interface Product {
-  id: number;
-  name: string;
-  category: string;
-  image: string;
-  price: string;
-  oldPrice?: string;
-  discountBadge?: string;
-  weights: string[];
-  rating: number;
-  reviewScore: string;
-}
-
-const allProducts = ref<Product[]>([
-  {
-    id: 1,
-    name: "Russet Idaho Potatoes Fresh Premium Fruit and Produce",
-    category: "Vegetables",
-    image: "https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=500&auto=format&fit=crop&q=80",
-    price: "$30.00 - $38.00",
-    discountBadge: "-16%",
-    weights: ["100gm", "500gm"],
-    rating: 5,
-    reviewScore: "5.00"
-  },
-  {
-    id: 2,
-    name: "Aptamil Gold+ ProNutra Biotik Stage 1 Infant Formula",
-    category: "Desserts",
-    image: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=500&auto=format&fit=crop&q=80",
-    price: "$25.00 - $30.00",
-    discountBadge: "-44%",
-    weights: ["100gm", "375ml"],
-    rating: 5,
-    reviewScore: "5.00"
-  },
-  {
-    id: 3,
-    name: "Whole Foods Market, Organic Trimmed Green Peas Fresh Bag",
-    category: "Vegetables",
-    image: "https://images.unsplash.com/photo-1592394533824-9440e5d68530?w=500&auto=format&fit=crop&q=80",
-    price: "$3.00 - $8.00",
-    discountBadge: "-77%",
-    weights: ["100gm", "500gm"],
-    rating: 5,
-    reviewScore: "5.00"
-  },
-  {
-    id: 4,
-    name: "Whole Foods Market, Romaine Hearts Salad Bag Fresh Farm",
-    category: "Vegetables",
-    image: "https://images.unsplash.com/photo-1550411294-b3b1bf5bece1?w=500&auto=format&fit=crop&q=80",
-    price: "$19.00",
-    oldPrice: "$22.00",
-    discountBadge: "-14%",
-    weights: ["100gm"],
-    rating: 5,
-    reviewScore: "5.00"
-  },
-  {
-    id: 5,
-    name: "Red Rock Deli Style Potato Chips, Lime & Cracked Pepper",
-    category: "Beverage",
-    image: "https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=500&auto=format&fit=crop&q=80",
-    price: "$34.00",
-    oldPrice: "$45.00",
-    discountBadge: "-24%",
-    weights: ["100gm"],
-    rating: 5,
-    reviewScore: "5.00"
-  },
-  {
-    id: 6,
-    name: "Fresh and Sweet Watermelon Delights for Refreshing Days",
-    category: "Vegetables",
-    image: "https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=500&auto=format&fit=crop&q=80",
-    price: "$18.00 - $45.00",
-    discountBadge: "-33%",
-    weights: ["375ml", "500gm"],
-    rating: 4,
-    reviewScore: "4.00"
-  }
-]);
-
-// Filter products based on selected tab
-const filteredProducts = computed(() => {
-  if (activeProductTab.value === "All") return allProducts.value;
-  return allProducts.value.filter(p => p.category === activeProductTab.value);
-});
-
-// Top Sellers
-const topSellers = [
-  {
-    id: 1,
-    name: "Eleanor Pena",
-    avatar: "https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?w=200&auto=format&fit=crop&q=80",
-    rating: 5,
-    featured: false
-  },
-  {
-    id: 2,
-    name: "Dianne Russell",
-    avatar: "https://images.unsplash.com/photo-1592417817098-8f3d6910985b?w=200&auto=format&fit=crop&q=80",
-    rating: 5,
-    featured: true
-  },
-  {
-    id: 3,
-    name: "Michel Richard",
-    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80",
-    rating: 5,
-    featured: false
-  },
-  {
-    id: 4,
-    name: "Marvin McKinney",
-    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80",
-    rating: 5,
-    featured: false
-  }
-];
-
-// Deal of the Week Products
-const dealProducts = [
-  {
-    id: 101,
-    name: "Delicious Lay's Potato Chips, Classic, 8 oz Bag",
-    category: "Beverage",
-    image: "https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80",
-    price: "$12.00",
-    oldPrice: "$21.00",
-    discountBadge: "-43%",
-    rating: 4,
-    reviewScore: "4.00"
-  },
-  {
-    id: 102,
-    name: "SunChips Minis, Garden Salsa Flavored Canister 7 oz",
-    category: "Beverage",
-    image: "https://images.unsplash.com/photo-1621447504864-d8686e12698c?w=400&auto=format&fit=crop&q=80",
-    price: "$22.00",
-    discountBadge: "-20%",
-    rating: 4,
-    reviewScore: "4.00"
-  },
-  {
-    id: 103,
-    name: "Farm Fresh Russet Potatoes Organic Harvest Bag",
-    category: "Vegetables",
-    image: "https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=400&auto=format&fit=crop&q=80",
-    price: "$15.00",
-    oldPrice: "$25.00",
-    discountBadge: "-40%",
-    rating: 5,
-    reviewScore: "5.00"
-  }
-];
-
-// Countdown timer state
-const days = ref("04");
-const hours = ref("18");
-const minutes = ref("35");
-const seconds = ref("42");
-let timerInterval: any = null;
-
-const startCountdown = () => {
-  let totalSecs = 4 * 86400 + 18 * 3600 + 35 * 60 + 42;
-  timerInterval = setInterval(() => {
-    if (totalSecs <= 0) {
-      clearInterval(timerInterval);
-      return;
-    }
-    totalSecs--;
-    const d = Math.floor(totalSecs / 86400);
-    const h = Math.floor((totalSecs % 86400) / 3600);
-    const m = Math.floor((totalSecs % 3600) / 60);
-    const s = totalSecs % 60;
-    days.value = d < 10 ? `0${d}` : `${d}`;
-    hours.value = h < 10 ? `0${h}` : `${h}`;
-    minutes.value = m < 10 ? `0${m}` : `${m}`;
-    seconds.value = s < 10 ? `0${s}` : `${s}`;
-  }, 1000);
-};
-
-// Toggle wishlist
-const toggleWishlist = (id: number) => {
-  if (wishlistedIds.value.includes(id)) {
-    wishlistedIds.value = wishlistedIds.value.filter(item => item !== id);
-    wishlistCount.value = Math.max(0, wishlistCount.value - 1);
-  } else {
-    wishlistedIds.value.push(id);
-    wishlistCount.value++;
-  }
-};
-
-// Add to cart
-const addToCart = () => {
-  cartCount.value++;
-};
-
-// Search handling
-const handleSearch = () => {
-  if (searchQuery.value.trim()) {
-    router.push({ path: "/products", query: { q: searchQuery.value } });
-  } else {
-    router.push("/products");
-  }
-};
-
-const scrollToTop = () => {
-  window.scrollTo({ top: 0, behavior: "smooth" });
-};
-
-onMounted(() => {
-  startCountdown();
-});
-
-onUnmounted(() => {
-  if (timerInterval) clearInterval(timerInterval);
-});
-</script>
-
 <template>
-  <div class="zilly-style-home">
-    <!-- FLOATING CART WIDGET ON RIGHT EDGE (MATCHING TARGET DEMO) -->
+  <div class="zilly-store font-sans text-slate-800 antialiased">
+    <!-- FLOATING CART WIDGET (ON RIGHT EDGE) -->
     <div class="floating-cart-badge" @click="router.push('/cart')" title="Xem giỏ hàng">
-      <div class="floating-cart-icon">🛍️</div>
+      <div class="floating-cart-icon"><i class="bi bi-bag-check-fill"></i></div>
       <div class="floating-cart-info">
         <span class="floating-count">{{ cartCount }} Item</span>
         <span class="floating-price">$0.00</span>
       </div>
     </div>
 
-    <!-- 1. TOP ANNOUNCEMENT / INFO BAR (FULL-WIDTH) -->
-    <div class="top-info-bar">
-      <div class="fluid-container info-bar-content">
-        <div class="info-left">
-          <span class="info-item">
-            <span class="info-icon">📍</span> 23/A Mark Street Road, Da Nang City
-          </span>
-          <span class="info-divider">|</span>
-          <span class="info-item">
-            <span class="info-icon">✉️</span> info@zonemart.com
-          </span>
+    <!-- 1. TOP BAR -->
+    <div class="top-bar">
+      <div class="container-fluid top-bar-content">
+        <div class="top-left">
+          <span><i class="bi bi-geo-alt"></i> 23/A Mark Street Road, Da Nang City</span>
+          <span class="divider">|</span>
+          <span><i class="bi bi-envelope"></i> info@zonemart.com</span>
         </div>
-        <div class="info-right">
-          <span class="promo-hint">‹ Try ZoneMart for free</span>
-          <router-link to="/register-seller" class="open-store-link">Open store right now</router-link>
-          <span class="promo-arrow">›</span>
+        <div class="top-center">
+          <button class="arrow-btn"><i class="bi bi-chevron-left"></i></button>
+          <span class="promo-text">
+            Try <strong>ZoneMart</strong> for free <span class="highlight-yellow" @click="router.push('/register-seller')">Open store right now</span>
+          </span>
+          <button class="arrow-btn"><i class="bi bi-chevron-right"></i></button>
+        </div>
+        <div class="top-right">
+          <span>English <i class="bi bi-chevron-down"></i></span>
+          <span class="divider">|</span>
+          <span>USD <i class="bi bi-chevron-down"></i></span>
         </div>
       </div>
     </div>
 
-    <!-- 2. MAIN HEADER (FULL-WIDTH) -->
+    <!-- 2. MAIN HEADER (LOGO, SEARCH, ACTIONS) -->
     <header class="main-header">
-      <div class="fluid-container header-inner">
+      <div class="container-fluid header-container">
         <!-- Logo -->
-        <router-link to="/" class="brand-logo">
-          <div class="brand-icon-wrap">
-            <svg viewBox="0 0 24 24" class="bag-svg" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
-              <line x1="3" y1="6" x2="21" y2="6"/>
-              <path d="M16 10a4 4 0 0 1-8 0"/>
+        <router-link to="/" class="logo-brand">
+          <div class="logo-icon">
+            <svg viewBox="0 0 36 36" fill="none" class="bag-svg">
+              <path d="M7 11H29L26 31H10L7 11Z" fill="#ba441b" />
+              <path d="M13 11V7C13 4.79086 14.7909 3 17 3H19C21.2091 3 23 4.79086 23 7V11" stroke="#9a3412" stroke-width="3" stroke-linecap="round" />
+              <circle cx="18" cy="18" r="4" fill="#fbbf24" />
             </svg>
           </div>
-          <span class="brand-title">Zone<span class="brand-accent">Mart</span></span>
+          <span class="logo-text">Zone<span class="brand-sub">Mart</span></span>
         </router-link>
 
-        <!-- Search Bar with Category Dropdown -->
-        <div class="search-cluster">
-          <div class="category-dropdown-btn">
+        <!-- Search Bar with Category Select -->
+        <div class="search-box-wrapper">
+          <div class="category-dropdown" @click="toggleCategoryDropdown">
             <span>{{ selectedCategory }}</span>
-            <span class="dropdown-caret">▾</span>
+            <i class="bi bi-chevron-down ms-2"></i>
+            <div class="dropdown-list" v-if="showCategoryDropdown">
+              <div 
+                v-for="cat in searchCategories" 
+                :key="cat" 
+                class="dropdown-item"
+                @click.stop="selectCategory(cat)"
+              >
+                {{ cat }}
+              </div>
+            </div>
           </div>
-          <div class="cluster-divider"></div>
-          <input
-            v-model="searchQuery"
-            type="text"
-            placeholder="Type Your Products ..."
-            class="search-text-input"
+          <input 
+            type="text" 
+            v-model="searchQuery" 
+            placeholder="Type Your Products ..." 
+            class="search-input"
             @keyup.enter="handleSearch"
           />
-          <button class="search-submit-btn" @click="handleSearch">
+          <button class="search-btn" @click="handleSearch">
             <span>Search</span>
-            <span class="search-btn-icon">🔍</span>
+            <i class="bi bi-search ms-2"></i>
           </button>
         </div>
 
-        <!-- Action Icons: User, Wishlist, Cart -->
-        <div class="header-action-group">
-          <router-link to="/profile" class="header-action-btn" title="Hồ sơ cá nhân">
-            <span class="action-icon">👤</span>
+        <!-- User Actions -->
+        <div class="header-actions">
+          <router-link to="/profile" class="action-item" title="Tài khoản">
+            <i class="bi bi-person"></i>
           </router-link>
-
-          <div class="header-action-btn" title="Yêu thích">
-            <span class="action-icon">💛</span>
-            <span class="action-badge">{{ wishlistCount }}</span>
+          <div class="action-item" title="Yêu thích">
+            <i class="bi bi-heart"></i>
+            <span class="badge-count">{{ wishlistCount }}</span>
           </div>
-
-          <router-link to="/cart" class="header-action-btn" title="Giỏ hàng">
-            <span class="action-icon">🛒</span>
-            <span class="action-badge">{{ cartCount }}</span>
+          <router-link to="/cart" class="action-item" title="Giỏ hàng">
+            <i class="bi bi-bag"></i>
+            <span class="badge-count">{{ cartCount }}</span>
           </router-link>
-
-          <button class="header-action-btn hamburger-btn" title="Menu">
-            <span class="action-icon">☰</span>
-          </button>
-
-          <button class="header-action-btn scroll-top-btn" @click="scrollToTop" title="Lên đầu trang">
-            <span class="action-icon">▲</span>
+          <button class="menu-toggle-btn" title="Menu">
+            <i class="bi bi-list"></i>
           </button>
         </div>
       </div>
     </header>
 
-    <!-- 3. SUB-NAV MENU & HOTLINE (FULL-WIDTH) -->
-    <nav class="sub-nav-bar">
-      <div class="fluid-container sub-nav-inner">
-        <ul class="nav-menu-list">
-          <li class="nav-menu-item active">
-            <router-link to="/">Home ▾</router-link>
+    <!-- 3. NAVIGATION BAR -->
+    <nav class="nav-bar">
+      <div class="container-fluid nav-container">
+        <ul class="nav-links">
+          <li class="nav-item has-dropdown">
+            <router-link to="/" class="nav-link active">Home <i class="bi bi-chevron-down"></i></router-link>
           </li>
-          <li class="nav-menu-item">
-            <router-link to="/products">Pages ▾</router-link>
+          <li class="nav-item has-dropdown">
+            <router-link to="/products" class="nav-link">Pages <i class="bi bi-chevron-down"></i></router-link>
           </li>
-          <li class="nav-menu-item">
-            <router-link to="/products">Shop ▾</router-link>
+          <li class="nav-item has-dropdown">
+            <router-link to="/products" class="nav-link">Shop <i class="bi bi-chevron-down"></i></router-link>
           </li>
-          <li class="nav-menu-item">
-            <router-link to="/register-seller">Vendor ▾</router-link>
+          <li class="nav-item has-dropdown">
+            <router-link to="/register-seller" class="nav-link">Vendor <i class="bi bi-chevron-down"></i></router-link>
           </li>
-          <li class="nav-menu-item">
-            <router-link to="/shipper">Elements ▾</router-link>
+          <li class="nav-item has-dropdown">
+            <router-link to="/shipper" class="nav-link">Elements <i class="bi bi-chevron-down"></i></router-link>
           </li>
-          <li class="nav-menu-item">
-            <router-link to="/map">Blog ▾</router-link>
+          <li class="nav-item has-dropdown">
+            <router-link to="/map" class="nav-link">Blog <i class="bi bi-chevron-down"></i></router-link>
           </li>
-          <li class="nav-menu-item">
-            <router-link to="/contact">Contact</router-link>
+          <li class="nav-item">
+            <router-link to="/contact" class="nav-link">Contact</router-link>
           </li>
         </ul>
 
-        <div class="sub-nav-right">
-          <div class="weekly-discount-tag">
-            <span class="discount-icon">🏷️</span>
+        <div class="nav-right">
+          <div class="weekly-discount">
+            <i class="bi bi-percent discount-icon"></i>
             <span>Weekly Discount!</span>
           </div>
-          <div class="hotline-pill">
-            <span class="hotline-icon">📞</span>
-            <div class="hotline-text">
+          <div class="hotline-badge">
+            <i class="bi bi-telephone-fill"></i>
+            <div>
               <span class="hotline-label">Hotline Number</span>
-              <span class="hotline-num">+988-256-666</span>
+              <span class="hotline-number">+9888-256-666</span>
             </div>
           </div>
         </div>
       </div>
     </nav>
 
-    <!-- 4. CATEGORIES ROW (7 ITEMS IN 1 SINGLE ROW - FULL WIDTH) -->
-    <section class="categories-section">
-      <div class="fluid-container">
-        <div class="categories-row">
-          <div
-            v-for="(cat, idx) in categories"
-            :key="idx"
+    <!-- 4. CATEGORIES HORIZONTAL BAR (7 IN 1 ROW - FULL WIDTH) -->
+    <section class="category-strip">
+      <div class="container-fluid">
+        <div class="category-list">
+          <div 
+            v-for="(cat, index) in categoryPills" 
+            :key="index" 
             class="category-pill-card"
             @click="router.push('/products')"
           >
-            <div class="cat-circle-avatar" :style="{ backgroundColor: cat.bg }">
-              <span class="cat-emoji">{{ cat.icon }}</span>
+            <div class="pill-icon-wrap" :style="{ backgroundColor: cat.bgColor }">
+              <img :src="cat.image" :alt="cat.name" class="pill-img" />
             </div>
-            <div class="cat-details">
-              <h4 class="cat-title">{{ cat.name }}</h4>
-              <p class="cat-count">{{ cat.count }} Products</p>
+            <div class="pill-info">
+              <h4 class="pill-title">{{ cat.name }}</h4>
+              <p class="pill-subtitle">{{ cat.productsCount }} Products</p>
             </div>
-            <span class="cat-dot-menu">⋮</span>
+            <span class="pill-dots"><i class="bi bi-three-dots-vertical"></i></span>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 5. HERO BANNERS GRID (EXPANDED FULL-WIDTH) -->
+    <!-- 5. HERO / BANNER GRID -->
     <section class="hero-banners-section">
-      <div class="fluid-container hero-grid">
-        <!-- Main Large Banner (Left - 63%) -->
-        <div class="hero-main-card">
-          <div class="hero-main-content">
-            <span class="farm-fresh-badge">100% Farm Fresh Food</span>
-            <h1 class="hero-fresh-title">
-              Fresh Organic<br />
-              <span class="script-subtitle">Food For All</span>
-            </h1>
-            <div class="hero-price-tag">$59.00</div>
-            <button class="btn-shop-now" @click="router.push('/products')">
-              Shop Now
-            </button>
-          </div>
-          <div class="hero-main-visual">
-            <img
-              src="https://images.unsplash.com/photo-1540420773420-3366772f4999?w=1100&auto=format&fit=crop&q=80"
-              alt="Fresh Organic Food Platter"
-              class="hero-food-img"
-            />
-          </div>
-        </div>
-
-        <!-- Right Banner Column (37%) -->
-        <div class="hero-side-column">
-          <!-- Top Side Banner (Honeynuts) -->
-          <div class="side-banner-card top-nuts-card">
-            <div class="side-card-text">
-              <h3 class="side-card-title">Premium Honeynuts</h3>
-              <p class="side-card-sub">100% Salted Organic Nuts</p>
-              <div class="side-card-price">$15.00</div>
-              <button class="btn-side-shop" @click="router.push('/products')">
+      <div class="container-fluid">
+        <div class="banners-grid">
+          <!-- Main Left Big Banner -->
+          <div class="banner-large" style="background-image: url('https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=1200&q=80')">
+            <div class="banner-overlay"></div>
+            <div class="banner-content">
+              <div class="tag-ribbon">100% Farm Fresh Food</div>
+              <h1 class="hero-title">
+                Fresh <span class="cursive-text">Organic</span>
+              </h1>
+              <h2 class="hero-subtitle">Food For All</h2>
+              <div class="hero-price">$59.00</div>
+              <button class="btn-shop-green" @click="shopNow('Fresh Organic Food')">
                 Shop Now
               </button>
             </div>
-            <div class="side-card-media">
-              <img
-                src="https://images.unsplash.com/photo-1536599018102-9f803c140fc1?w=500&auto=format&fit=crop&q=80"
-                alt="Organic Nuts"
-                class="side-media-img"
-              />
-            </div>
           </div>
 
-          <!-- Bottom Split Banners -->
-          <div class="side-banner-split-row">
-            <!-- Split 1: Baby Diaper -->
-            <div class="mini-promo-card baby-card">
-              <div class="mini-text">
-                <h4 class="mini-title">New Baby Diaper</h4>
-                <span class="mini-tag">Top Quality Product</span>
-                <button class="btn-mini-shop" @click="router.push('/products')">
-                  Shop Now
-                </button>
+          <!-- Right Grid (3 smaller cards) -->
+          <div class="banners-right-group">
+            <!-- Top Right: Premium Honeynuts -->
+            <div class="banner-card banner-honeynuts">
+              <div class="card-text">
+                <h3>Premium Honeynuts</h3>
+                <p>100% Salted Organic Nuts</p>
+                <div class="card-price">$15.00</div>
+                <button class="btn-shop-pill" @click="shopNow('Premium Honeynuts')">Shop Now</button>
               </div>
-              <div class="mini-img-wrap">
-                <img
-                  src="https://images.unsplash.com/photo-1519689680058-324335c77eba?w=400&auto=format&fit=crop&q=80"
-                  alt="Baby Diaper"
-                  class="mini-card-img"
-                />
+              <div class="card-img-wrap">
+                <img src="https://images.unsplash.com/photo-1536599018102-9f803c140fc1?auto=format&fit=crop&w=400&q=80" alt="Honeynuts" />
               </div>
             </div>
 
-            <!-- Split 2: Dark Wash FaceWash -->
-            <div class="mini-promo-card facewash-card">
-              <div class="discount-circle-pill">
-                <span>15%</span>
-                <span class="off-text">OFF</span>
+            <!-- Bottom Row: 2 Small Cards -->
+            <div class="banner-bottom-row">
+              <!-- Diaper card -->
+              <div class="banner-small-card diaper-card">
+                <div class="card-text">
+                  <h4>New Baby Diaper</h4>
+                  <p>Top Quality Product</p>
+                  <button class="btn-shop-pill btn-white" @click="shopNow('Baby Diaper')">Shop Now</button>
+                </div>
+                <img src="https://images.unsplash.com/photo-1519689680058-324335c77eba?auto=format&fit=crop&w=300&q=80" alt="Baby Diaper" class="diaper-img" />
               </div>
-              <div class="mini-text">
-                <h4 class="mini-title">Dark wash FaceWash</h4>
-                <span class="mini-tag">All Fixed Size</span>
-                <button class="btn-mini-shop" @click="router.push('/products')">
-                  Shop Now
-                </button>
-              </div>
-              <div class="mini-img-wrap">
-                <img
-                  src="https://images.unsplash.com/photo-1556228720-195a672e8a03?w=400&auto=format&fit=crop&q=80"
-                  alt="Face Wash"
-                  class="mini-card-img"
-                />
+
+              <!-- Face wash card -->
+              <div class="banner-small-card facewash-card">
+                <div class="discount-circle">
+                  <span>15%</span>
+                  <small>OFF</small>
+                </div>
+                <div class="card-text">
+                  <h4>Dark wash FaceWash</h4>
+                  <p>All Fixed Size</p>
+                  <button class="btn-shop-pill btn-white" @click="shopNow('FaceWash')">Shop Now</button>
+                </div>
+                <img src="https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=300&q=80" alt="Face Wash" class="facewash-img" />
               </div>
             </div>
           </div>
@@ -497,128 +228,91 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- 6. FEATURED PRODUCTS SECTION (FULL-WIDTH 6 COLS) -->
+    <!-- 6. FEATURED PRODUCTS SECTION -->
     <section class="featured-products-section">
-      <div class="fluid-container">
-        <!-- Section Header with Filter Tabs -->
-        <div class="section-head-bar">
+      <div class="container-fluid">
+        <!-- Header & Filter Tabs -->
+        <div class="section-header-flex">
           <h2 class="section-heading">Featured Products</h2>
-          <div class="section-controls">
-            <div class="filter-tab-buttons">
-              <button
-                :class="['filter-btn', { active: activeProductTab === 'All' }]"
-                @click="activeProductTab = 'All'"
+          <div class="filter-tabs-wrapper">
+            <ul class="filter-tabs">
+              <li 
+                v-for="tab in filterTabs" 
+                :key="tab"
+                :class="{ active: currentTab === tab }"
+                @click="currentTab = tab"
               >
-                All
-              </button>
-              <button
-                :class="['filter-btn', { active: activeProductTab === 'Desserts' }]"
-                @click="activeProductTab = 'Desserts'"
-              >
-                Desserts
-              </button>
-              <button
-                :class="['filter-btn', { active: activeProductTab === 'Vegetables' }]"
-                @click="activeProductTab = 'Vegetables'"
-              >
-                Vegetables
-              </button>
-              <button
-                :class="['filter-btn', { active: activeProductTab === 'Beverage' }]"
-                @click="activeProductTab = 'Beverage'"
-              >
-                Beverage
-              </button>
-            </div>
-            <div class="arrow-nav-group">
-              <button class="nav-arrow-btn" aria-label="Previous">‹</button>
-              <button class="nav-arrow-btn" aria-label="Next">›</button>
+                {{ tab }}
+              </li>
+            </ul>
+            <div class="slider-nav-arrows">
+              <button class="slider-btn" @click="prevProductSlide"><i class="bi bi-chevron-left"></i></button>
+              <button class="slider-btn" @click="nextProductSlide"><i class="bi bi-chevron-right"></i></button>
             </div>
           </div>
         </div>
 
-        <!-- 6 Products Grid -->
+        <!-- Products Grid (6 cards) -->
         <div class="products-grid">
-          <div
-            v-for="prod in filteredProducts"
-            :key="prod.id"
+          <div 
+            v-for="product in filteredProducts" 
+            :key="product.id" 
             class="product-card"
           >
-            <!-- Top Card Header: Category Tag & Heart -->
-            <div class="card-top-row">
-              <span class="product-cat-tag">{{ prod.category }}</span>
-              <button
-                class="heart-toggle-btn"
-                :class="{ active: wishlistedIds.includes(prod.id) }"
-                @click="toggleWishlist(prod.id)"
-              >
-                {{ wishlistedIds.includes(prod.id) ? "❤️" : "🤍" }}
+            <div class="product-top-bar">
+              <span class="prod-category">{{ product.category }}</span>
+              <button class="btn-wishlist" @click="toggleWishlist(product)">
+                <i :class="product.isLiked ? 'bi bi-heart-fill text-danger' : 'bi bi-heart'"></i>
               </button>
             </div>
 
-            <!-- Product Image -->
-            <div class="product-media-wrap" @click="router.push('/products')">
-              <img :src="prod.image" :alt="prod.name" class="product-photo" />
+            <div class="product-thumb" @click="router.push('/products')">
+              <img :src="product.image" :alt="product.name" />
             </div>
 
-            <!-- Weight pills -->
-            <div class="weight-tags-row">
-              <span v-for="(w, widx) in prod.weights" :key="widx" class="weight-tag">
-                {{ w }}
-              </span>
+            <div class="product-tags">
+              <span v-for="tag in product.weights" :key="tag" class="weight-badge">{{ tag }}</span>
             </div>
 
-            <!-- Price & Discount -->
-            <div class="product-price-row">
-              <span class="price-current">{{ prod.price }}</span>
-              <span v-if="prod.oldPrice" class="price-old">{{ prod.oldPrice }}</span>
-              <span v-if="prod.discountBadge" class="discount-badge">
-                {{ prod.discountBadge }}
-              </span>
+            <div class="product-pricing">
+              <span class="price-val">{{ product.price }}</span>
+              <span v-if="product.oldPrice" class="old-price">{{ product.oldPrice }}</span>
+              <span v-if="product.discount" class="discount-badge">{{ product.discount }}</span>
             </div>
 
-            <!-- Product Title -->
-            <h3 class="product-card-title" :title="prod.name" @click="router.push('/products')">
-              {{ prod.name }}
-            </h3>
+            <h3 class="product-title" :title="product.name" @click="router.push('/products')">{{ product.name }}</h3>
 
-            <!-- Rating Stars -->
-            <div class="product-stars-row">
-              <span class="stars-gold">★★★★★</span>
-              <span class="review-score">({{ prod.reviewScore }})</span>
+            <div class="product-rating">
+              <div class="stars">
+                <i v-for="star in 5" :key="star" class="bi bi-star-fill" :class="{ 'star-active': star <= Math.floor(product.rating) }"></i>
+              </div>
+              <span class="rating-num">({{ product.rating.toFixed(2) }})</span>
             </div>
 
-            <!-- Select Options Button -->
-            <button class="btn-select-options" @click="addToCart">
-              <span class="basket-icon">🧺</span>
-              <span>Select Options</span>
+            <button class="btn-select-options" @click="addToCart(product)">
+              <i class="bi bi-basket me-2"></i> Select Options
             </button>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 7. WIDE PROMO BANNER (SHEA LOTION) -->
-    <section class="wide-promo-section">
-      <div class="fluid-container">
-        <div class="wide-promo-card">
-          <div class="wide-promo-left">
-            <span class="promo-overline">The brand New Collection Shea</span>
-            <h2 class="promo-main-heading">Nourishing Women Body Lotions</h2>
+    <!-- 7. PROMO MIDDLE STRIP BANNER -->
+    <section class="promo-strip-section">
+      <div class="container-fluid">
+        <div class="promo-banner-container">
+          <div class="promo-text-area">
+            <span class="sub-text">The brand New Collection Shea</span>
+            <h3 class="main-text">Nourshing Women Body Lotions</h3>
           </div>
-          <div class="wide-promo-center">
-            <span class="pricing-label">Our Pricing Start</span>
-            <div class="pricing-oval-tag">
-              <span>$45.00</span>
-              <div class="oval-rays"></div>
-            </div>
+          
+          <div class="pricing-start-badge">
+            <span class="label">Our Pricing<br>Start</span>
+            <div class="price-bubble">$45.00</div>
           </div>
-          <div class="wide-promo-right">
-            <img
-              src="https://images.unsplash.com/photo-1608248597359-57e3f890cf28?w=700&auto=format&fit=crop&q=80"
-              alt="Women Body Lotions Collection"
-              class="lotion-bottles-img"
-            />
+
+          <div class="promo-bottles-img">
+            <img src="https://images.unsplash.com/photo-1608248597359-57e3f890cf28?auto=format&fit=crop&w=600&q=80" alt="Body Lotions Collection" />
           </div>
         </div>
       </div>
@@ -626,30 +320,30 @@ onUnmounted(() => {
 
     <!-- 8. TOP SELLER USERS SECTION -->
     <section class="top-sellers-section">
-      <div class="fluid-container">
-        <div class="sellers-head-row">
-          <div class="sellers-title-wrap">
-            <h2 class="sellers-heading">Top Seller Users</h2>
-            <div class="heading-accent-line"></div>
+      <div class="container-fluid">
+        <div class="sellers-header">
+          <div class="d-flex align-items-center gap-3">
+            <h2 class="section-heading">Top Seller Users</h2>
+            <div class="header-line"></div>
           </div>
-          <router-link to="/products" class="see-more-link">
-            See More ›
-          </router-link>
+          <router-link to="/products" class="see-more-link">See More <i class="bi bi-chevron-right ms-1"></i></router-link>
         </div>
 
         <div class="sellers-grid">
-          <div
-            v-for="seller in topSellers"
-            :key="seller.id"
+          <div 
+            v-for="seller in sellers" 
+            :key="seller.id" 
             class="seller-card"
           >
-            <div class="seller-avatar-wrap">
-              <img :src="seller.avatar" :alt="seller.name" class="seller-avatar-img" />
+            <div class="seller-avatar">
+              <img :src="seller.avatar" :alt="seller.name" />
             </div>
             <div class="seller-info">
-              <span v-if="seller.featured" class="seller-featured-tag">Featured</span>
+              <span v-if="seller.isFeatured" class="badge-featured">Featured</span>
               <h4 class="seller-name">{{ seller.name }}</h4>
-              <div class="seller-stars">★★★★★</div>
+              <div class="stars">
+                <i v-for="s in 5" :key="s" class="bi bi-star-fill star-active"></i>
+              </div>
             </div>
           </div>
         </div>
@@ -657,80 +351,92 @@ onUnmounted(() => {
     </section>
 
     <!-- 9. DEAL OF THE WEEK SECTION -->
-    <section class="deal-week-section">
-      <div class="fluid-container">
-        <div class="deal-week-card">
-          <!-- Deal Header with Live Countdown -->
-          <div class="deal-head-bar">
-            <h2 class="deal-heading">Deal Of The Week</h2>
-            <div class="deal-countdown-cluster">
-              <div class="countdown-unit-box">
-                <span class="countdown-num">{{ days }}</span>
-                <span class="countdown-label">Day</span>
+    <section class="deal-of-week-section">
+      <div class="container-fluid">
+        <div class="deal-wrapper-box">
+          <!-- Deal Header with Countdown Timer -->
+          <div class="deal-header">
+            <h2 class="deal-title">Deal Of The Week</h2>
+            <div class="countdown-group">
+              <div class="time-box">
+                <span class="time-num">{{ countdown.days }}</span>
+                <span class="time-unit">Day</span>
               </div>
-              <div class="countdown-unit-box">
-                <span class="countdown-num">{{ hours }}</span>
-                <span class="countdown-label">Hr</span>
+              <div class="time-box">
+                <span class="time-num">{{ countdown.hours }}</span>
+                <span class="time-unit">Hr</span>
               </div>
-              <div class="countdown-unit-box">
-                <span class="countdown-num">{{ minutes }}</span>
-                <span class="countdown-label">Min</span>
+              <div class="time-box">
+                <span class="time-num">{{ countdown.mins }}</span>
+                <span class="time-unit">Min</span>
               </div>
-              <div class="countdown-unit-box">
-                <span class="countdown-num">{{ seconds }}</span>
-                <span class="countdown-label">Secs</span>
+              <div class="time-box">
+                <span class="time-num">{{ countdown.secs }}</span>
+                <span class="time-unit">Secs</span>
               </div>
             </div>
           </div>
 
           <!-- Deal Content Grid -->
-          <div class="deal-body-grid">
-            <!-- Left Feature Item Banner -->
-            <div class="deal-feature-spotlight">
-              <img
-                src="https://images.unsplash.com/photo-1540420773420-3366772f4999?w=700&auto=format&fit=crop&q=80"
-                alt="Deal spotlight"
-                class="spotlight-img"
-              />
-              <div class="spotlight-overlay">
-                <span class="spotlight-tag">Special Weekly Offer</span>
-                <h3 class="spotlight-title">Organic Farm Bundle</h3>
-                <span class="spotlight-discount">Up to 50% OFF</span>
-                <button class="btn-spotlight-shop" @click="router.push('/products')">
-                  Shop Deal
-                </button>
+          <div class="deal-items-grid">
+            <!-- Left Promo Banner with Veggie -->
+            <div class="deal-left-banner">
+              <div class="deal-left-content">
+                <span class="deal-badge-organic">100% Organic</span>
+                <h3>Fresh Organic & Healthy Food</h3>
+                <p>Save up to 40% on organic farm vegetables</p>
+                <button class="btn-deal-shop" @click="shopNow('Deal of Week')">Explore Deal</button>
               </div>
+              <img src="https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=500&q=80" alt="Deal Organic" class="deal-hero-img" />
             </div>
 
-            <!-- Right Deal Products Grid -->
-            <div class="deal-items-row">
-              <div
-                v-for="item in dealProducts"
-                :key="item.id"
-                class="deal-product-item"
-              >
-                <div class="deal-item-head">
-                  <span class="deal-item-cat">{{ item.category }}</span>
-                  <span class="deal-item-heart">🤍</span>
-                </div>
-                <div class="deal-item-media" @click="router.push('/products')">
-                  <img :src="item.image" :alt="item.name" class="deal-item-img" />
-                </div>
-                <div class="deal-item-price-row">
-                  <span class="deal-curr-price">{{ item.price }}</span>
-                  <span v-if="item.oldPrice" class="deal-old-price">{{ item.oldPrice }}</span>
-                  <span class="deal-badge">{{ item.discountBadge }}</span>
-                </div>
-                <h4 class="deal-item-title">{{ item.name }}</h4>
-                <div class="deal-item-stars">
-                  <span class="stars-gold">★★★★☆</span>
-                  <span class="review-score">({{ item.reviewScore }})</span>
-                </div>
-                <button class="btn-deal-add" @click="addToCart">
-                  <span class="basket-icon">🧺</span>
-                  <span>Add to Cart</span>
-                </button>
+            <!-- Deal Product Card 1 -->
+            <div class="product-card deal-card">
+              <div class="product-top-bar">
+                <span class="prod-category">Beverage</span>
+                <button class="btn-wishlist"><i class="bi bi-heart"></i></button>
               </div>
+              <div class="product-thumb" @click="router.push('/products')">
+                <img src="https://images.unsplash.com/photo-1566478989037-eec170784d0b?auto=format&fit=crop&w=300&q=80" alt="Lay's Classic" />
+              </div>
+              <div class="product-pricing">
+                <span class="price-val">$12.00</span>
+                <span class="old-price">$21.00</span>
+              </div>
+              <h3 class="product-title">Delicious Lay's Potato Chips, Classic, 8 oz Bag</h3>
+              <div class="product-rating">
+                <div class="stars">
+                  <i v-for="star in 5" :key="star" class="bi bi-star-fill" :class="{ 'star-active': star <= 4 }"></i>
+                </div>
+                <span class="rating-num">(4.00)</span>
+              </div>
+              <button class="btn-select-options mt-2" @click="cartCount++">
+                <i class="bi bi-basket me-2"></i> Add to Cart
+              </button>
+            </div>
+
+            <!-- Deal Product Card 2 -->
+            <div class="product-card deal-card">
+              <div class="product-top-bar">
+                <span class="prod-category">Beverage</span>
+                <button class="btn-wishlist"><i class="bi bi-heart"></i></button>
+              </div>
+              <div class="product-thumb" @click="router.push('/products')">
+                <img src="https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?auto=format&fit=crop&w=300&q=80" alt="SunChips Minis" />
+              </div>
+              <div class="product-pricing">
+                <span class="price-val">$22.00</span>
+              </div>
+              <h3 class="product-title">SunChips Minis, Garden Salsa Flavored Caniste...</h3>
+              <div class="product-rating">
+                <div class="stars">
+                  <i v-for="star in 5" :key="star" class="bi bi-star-fill" :class="{ 'star-active': star <= 4 }"></i>
+                </div>
+                <span class="rating-num">(4.00)</span>
+              </div>
+              <button class="btn-select-options mt-2" @click="cartCount++">
+                <i class="bi bi-basket me-2"></i> Add to Cart
+              </button>
             </div>
           </div>
         </div>
@@ -739,35 +445,290 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
-/* ==========================================================
-   THEME PALETTE (Terracotta / Burnt Orange Brand Theme)
-   Primary: #ba441b / #c2410c / #ea580c
-   Dark: #1e293b / #0f172a
-   Light BGs: #ffffff / #f8fafc / #fdfaf6
-   ========================================================== */
+<script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
 
-.zilly-style-home {
-  width: 100%;
-  min-height: 100vh;
+const router = useRouter();
+
+// Top Bar & State
+const searchQuery = ref('');
+const selectedCategory = ref('All Categories');
+const showCategoryDropdown = ref(false);
+const wishlistCount = ref(0);
+const cartCount = ref(0);
+
+const searchCategories = [
+  'All Categories',
+  'Vegetables',
+  'Fresh Fruits',
+  'Desserts',
+  'Drinks & Juice',
+  'Fish & Meats',
+  'Pets & Animals',
+  'Beverage'
+];
+
+const toggleCategoryDropdown = () => {
+  showCategoryDropdown.value = !showCategoryDropdown.value;
+};
+
+const selectCategory = (cat: string) => {
+  selectedCategory.value = cat;
+  showCategoryDropdown.value = false;
+};
+
+const handleSearch = () => {
+  if (searchQuery.value.trim()) {
+    router.push({ path: '/products', query: { q: searchQuery.value } });
+  } else {
+    router.push('/products');
+  }
+};
+
+// Horizontal Categories Strip (7 Items)
+const categoryPills = ref([
+  {
+    name: 'Vegetables',
+    productsCount: 6,
+    image: 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?auto=format&fit=crop&w=150&q=80',
+    bgColor: '#fff7ed'
+  },
+  {
+    name: 'Fresh Fruits',
+    productsCount: 8,
+    image: 'https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=150&q=80',
+    bgColor: '#ffedd5'
+  },
+  {
+    name: 'Desserts',
+    productsCount: 9,
+    image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=150&q=80',
+    bgColor: '#fdf2f8'
+  },
+  {
+    name: 'Drinks & Juice',
+    productsCount: 6,
+    image: 'https://images.unsplash.com/photo-1600271886742-f049cd451bba?auto=format&fit=crop&w=150&q=80',
+    bgColor: '#fef3ee'
+  },
+  {
+    name: 'Fish & Meats',
+    productsCount: 6,
+    image: 'https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?auto=format&fit=crop&w=150&q=80',
+    bgColor: '#eff6ff'
+  },
+  {
+    name: 'Pets & Animals',
+    productsCount: 4,
+    image: 'https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?auto=format&fit=crop&w=150&q=80',
+    bgColor: '#fffbeb'
+  },
+  {
+    name: 'Beverage',
+    productsCount: 8,
+    image: 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?auto=format&fit=crop&w=150&q=80',
+    bgColor: '#faf5ff'
+  }
+]);
+
+// Featured Products Section
+const filterTabs = ['All', 'Desserts', 'Vegetables', 'Beverage'];
+const currentTab = ref('All');
+
+const products = ref([
+  {
+    id: 1,
+    category: 'Vegetables',
+    name: 'Russet Idaho Potatoes Fresh Premium Fruit and Produc...',
+    image: 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?auto=format&fit=crop&w=400&q=80',
+    weights: ['100gm', '500gm'],
+    price: '$30.00 - $38.00',
+    oldPrice: undefined,
+    discount: '-16%',
+    rating: 5.00,
+    isLiked: false
+  },
+  {
+    id: 2,
+    category: 'Desserts',
+    name: 'Aptamil Gold+ ProNutra Biotik Stage 1 Infant...',
+    image: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=400&q=80',
+    weights: ['100gm', '375ml'],
+    price: '$25.00 - $30.00',
+    oldPrice: undefined,
+    discount: '-44%',
+    rating: 5.00,
+    isLiked: false
+  },
+  {
+    id: 3,
+    category: 'Vegetables',
+    name: 'Whole Foods Market, Organic Trimmed Green...',
+    image: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=400&q=80',
+    weights: ['100gm', '500gm'],
+    price: '$3.00 - $8.00',
+    oldPrice: undefined,
+    discount: '-77%',
+    rating: 5.00,
+    isLiked: false
+  },
+  {
+    id: 4,
+    category: 'Vegetables',
+    name: 'Whole Foods Market, Romaine Hearts Salad Bag...',
+    image: 'https://images.unsplash.com/photo-1556801712-76c8eb07bbc9?auto=format&fit=crop&w=400&q=80',
+    weights: ['100gm'],
+    price: '$19.00',
+    oldPrice: '$22.00',
+    discount: '-14%',
+    rating: 5.00,
+    isLiked: false
+  },
+  {
+    id: 5,
+    category: 'Beverage',
+    name: 'Red Rock Deli Style Potato Chips, Lime & Cracked...',
+    image: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?auto=format&fit=crop&w=400&q=80',
+    weights: ['100gm'],
+    price: '$34.00',
+    oldPrice: '$45.00',
+    discount: '-24%',
+    rating: 5.00,
+    isLiked: false
+  },
+  {
+    id: 6,
+    category: 'Vegetables',
+    name: 'Fresh and Sweet Watermelon Delights for...',
+    image: 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?auto=format&fit=crop&w=400&q=80',
+    weights: ['375ml', '500gm'],
+    price: '$18.00 - $45.00',
+    oldPrice: undefined,
+    discount: '-33%',
+    rating: 4.00,
+    isLiked: false
+  }
+]);
+
+const filteredProducts = computed(() => {
+  if (currentTab.value === 'All') return products.value;
+  return products.value.filter(p => p.category.toLowerCase() === currentTab.value.toLowerCase());
+});
+
+const toggleWishlist = (product: any) => {
+  product.isLiked = !product.isLiked;
+  if (product.isLiked) wishlistCount.value++;
+  else wishlistCount.value = Math.max(0, wishlistCount.value - 1);
+};
+
+const addToCart = (_product: any) => {
+  cartCount.value++;
+};
+
+const shopNow = (_title: string) => {
+  router.push('/products');
+};
+
+const prevProductSlide = () => {
+  const first = products.value.shift();
+  if (first) products.value.push(first);
+};
+
+const nextProductSlide = () => {
+  const last = products.value.pop();
+  if (last) products.value.unshift(last);
+};
+
+// Top Sellers Data
+const sellers = ref([
+  {
+    id: 1,
+    name: 'Eleanor Pena',
+    isFeatured: false,
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=160&q=80'
+  },
+  {
+    id: 2,
+    name: 'Dianne Russell',
+    isFeatured: true,
+    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=160&q=80'
+  },
+  {
+    id: 3,
+    name: 'Michel Richard',
+    isFeatured: false,
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=160&q=80'
+  },
+  {
+    id: 4,
+    name: 'Marvin McKinney',
+    isFeatured: false,
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=160&q=80'
+  }
+]);
+
+// Countdown Timer logic
+const countdown = ref({
+  days: '04',
+  hours: '18',
+  mins: '35',
+  secs: '42'
+});
+
+let timerInterval: any = null;
+let totalSecs = 4 * 86400 + 18 * 3600 + 35 * 60 + 42;
+
+const updateCountdown = () => {
+  if (totalSecs <= 0) {
+    if (timerInterval) clearInterval(timerInterval);
+    return;
+  }
+  totalSecs--;
+  const d = Math.floor(totalSecs / 86400);
+  const h = Math.floor((totalSecs % 86400) / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  const s = totalSecs % 60;
+
+  countdown.value.days = d < 10 ? '0' + d : String(d);
+  countdown.value.hours = h < 10 ? '0' + h : String(h);
+  countdown.value.mins = m < 10 ? '0' + m : String(m);
+  countdown.value.secs = s < 10 ? '0' + s : String(s);
+};
+
+onMounted(() => {
+  timerInterval = setInterval(updateCountdown, 1000);
+});
+
+onUnmounted(() => {
+  if (timerInterval) clearInterval(timerInterval);
+});
+</script>
+
+<style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Great+Vibes&display=swap');
+@import url('https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css');
+
+/* Global Container Styles */
+.zilly-store {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #2b3445;
   background-color: #ffffff;
-  color: #1e293b;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  min-height: 100vh;
+  width: 100%;
   overflow-x: hidden;
   position: relative;
 }
 
-/* FLUID CONTAINER: NO MAX-WIDTH LIMIT, SPREADS ACROSS THE WHOLE SCREEN */
-.fluid-container {
+/* FLUID CONTAINER: NO BOXED LIMIT, EXPANDS FULL WIDTH LIKE THE REAL SITE */
+.container-fluid {
   width: 100%;
   max-width: 100%;
-  padding: 0 clamp(20px, 2.8vw, 56px);
+  padding: 0 clamp(20px, 2.6vw, 52px);
   box-sizing: border-box;
 }
 
-/* ==========================================================
-   FLOATING CART WIDGET ON RIGHT EDGE (MATCHING TARGET DEMO)
-   ========================================================== */
+/* FLOATING CART WIDGET ON RIGHT EDGE */
 .floating-cart-badge {
   position: fixed;
   right: 0;
@@ -810,86 +771,80 @@ onUnmounted(() => {
   font-size: 0.8rem;
 }
 
-/* ==========================================================
-   1. TOP INFO BAR (FULL-WIDTH)
-   ========================================================== */
-.top-info-bar {
-  width: 100%;
+/* 1. TOP BAR */
+.top-bar {
   background-color: #ba441b;
-  color: #ffffff;
+  color: #ffedd5;
   font-size: 0.84rem;
-  padding: 9px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 8px 0;
 }
 
-.info-bar-content {
+.top-bar-content {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  justify-content: space-between;
 }
 
-.info-left {
+.top-left, .top-right {
   display: flex;
   align-items: center;
   gap: 14px;
 }
 
-.info-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  opacity: 0.95;
+.top-left i {
+  color: #ffedd5;
 }
 
-.info-divider {
-  opacity: 0.4;
+.divider {
+  color: rgba(255, 255, 255, 0.3);
 }
 
-.info-right {
+.top-center {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.promo-hint {
-  opacity: 0.9;
-}
-
-.open-store-link {
+.arrow-btn {
+  background: transparent;
+  border: none;
   color: #ffedd5;
-  font-weight: 700;
-  text-decoration: underline;
+  cursor: pointer;
+  padding: 2px 4px;
   transition: color 0.2s;
 }
 
-.open-store-link:hover {
+.arrow-btn:hover {
   color: #ffffff;
 }
 
-.promo-arrow {
-  font-weight: bold;
+.promo-text {
+  color: #ffffff;
 }
 
-/* ==========================================================
-   2. MAIN HEADER (FULL-WIDTH)
-   ========================================================== */
+.highlight-yellow {
+  color: #ffedd5;
+  font-weight: 700;
+  text-decoration: underline;
+  margin-left: 4px;
+  cursor: pointer;
+}
+
+/* 2. MAIN HEADER */
 .main-header {
-  width: 100%;
-  background: #ffffff;
-  border-bottom: 1px solid #f1f5f9;
+  background-color: #ffffff;
   padding: 16px 0;
+  border-bottom: 1px solid #f1f5f9;
 }
 
-.header-inner {
+.header-container {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 28px;
 }
 
-.brand-logo {
+.logo-brand {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -897,269 +852,245 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.brand-icon-wrap {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background-color: #ffedd5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #ba441b;
-}
-
 .bag-svg {
-  width: 26px;
-  height: 26px;
+  width: 38px;
+  height: 38px;
 }
 
-.brand-title {
-  font-size: 1.8rem;
+.logo-text {
+  font-size: 1.85rem;
   font-weight: 800;
   color: #1e293b;
   letter-spacing: -0.5px;
 }
 
-.brand-accent {
+.brand-sub {
   color: #ba441b;
 }
 
-/* Search Cluster */
-.search-cluster {
-  display: flex;
-  align-items: center;
+.search-box-wrapper {
   flex: 1;
   max-width: 680px;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 999px;
-  background: #ffffff;
-  padding: 4px 6px 4px 20px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.search-cluster:focus-within {
-  border-color: #ba441b;
-  box-shadow: 0 0 0 3px rgba(186, 68, 27, 0.12);
-}
-
-.category-dropdown-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
+  background-color: #ffffff;
+  border: 2px solid #ba441b;
+  border-radius: 50px;
+  padding: 3px 4px 3px 18px;
+  position: relative;
+}
+
+.category-dropdown {
+  position: relative;
   font-size: 0.88rem;
   font-weight: 600;
-  color: #475569;
+  color: #374151;
   cursor: pointer;
+  padding-right: 14px;
+  border-right: 1px solid #e5e7eb;
   white-space: nowrap;
+  user-select: none;
 }
 
-.dropdown-caret {
-  font-size: 0.75rem;
-  color: #94a3b8;
+.dropdown-list {
+  position: absolute;
+  top: 130%;
+  left: 0;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+  padding: 8px 0;
+  z-index: 100;
+  min-width: 170px;
+  border: 1px solid #e5e7eb;
 }
 
-.cluster-divider {
-  width: 1px;
-  height: 26px;
-  background: #e2e8f0;
-  margin: 0 16px;
-}
-
-.search-text-input {
-  flex: 1;
-  border: none;
-  outline: none;
-  font-size: 0.92rem;
-  color: #1e293b;
-  background: transparent;
-}
-
-.search-text-input::placeholder {
-  color: #94a3b8;
-}
-
-.search-submit-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #ba441b;
-  color: #ffffff;
-  border: none;
-  border-radius: 999px;
-  padding: 10px 24px;
-  font-size: 0.9rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.2s, transform 0.1s;
-}
-
-.search-submit-btn:hover {
-  background: #9a3412;
-}
-
-.search-submit-btn:active {
-  transform: scale(0.97);
-}
-
-/* User Header Actions */
-.header-action-group {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-}
-
-.header-action-btn {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: #f8fafc;
-  color: #334155;
-  text-decoration: none;
-  border: 1px solid #e2e8f0;
-  cursor: pointer;
-  font-size: 1.15rem;
+.dropdown-item {
+  padding: 8px 16px;
+  font-size: 0.85rem;
   transition: all 0.2s;
 }
 
-.header-action-btn:hover {
-  background: #ffedd5;
+.dropdown-item:hover {
+  background-color: #fff7ed;
   color: #ba441b;
-  border-color: #fed7aa;
 }
 
-.action-badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  background: #ba441b;
+.search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 8px 16px;
+  font-size: 0.92rem;
+  color: #374151;
+}
+
+.search-btn {
+  background-color: #ba441b;
   color: #ffffff;
-  font-size: 0.65rem;
-  font-weight: 800;
-  min-width: 18px;
-  height: 18px;
-  border-radius: 999px;
+  border: none;
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding: 10px 24px;
+  border-radius: 50px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: background-color 0.2s;
+}
+
+.search-btn:hover {
+  background-color: #9a3412;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.action-item {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid #e5e7eb;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 4px;
-  border: 2px solid #ffffff;
+  color: #374151;
+  font-size: 1.25rem;
+  text-decoration: none;
+  transition: all 0.2s;
 }
 
-.hamburger-btn,
-.scroll-top-btn {
-  background: #ffffff;
+.action-item:hover {
+  border-color: #ba441b;
+  color: #ba441b;
+  background-color: #fff7ed;
 }
 
-.scroll-top-btn {
-  font-size: 0.85rem;
-  color: #64748b;
+.badge-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background-color: #ba441b;
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* ==========================================================
-   3. SUB-NAV MENU & HOTLINE (FULL-WIDTH)
-   ========================================================== */
-.sub-nav-bar {
-  width: 100%;
-  background: #ffffff;
+.menu-toggle-btn {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  color: #374151;
+  cursor: pointer;
+}
+
+/* 3. NAVIGATION BAR */
+.nav-bar {
+  background-color: #ffffff;
   border-bottom: 1px solid #f1f5f9;
   padding: 8px 0;
 }
 
-.sub-nav-inner {
+.nav-container {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
 }
 
-.nav-menu-list {
+.nav-links {
   display: flex;
-  align-items: center;
   list-style: none;
   margin: 0;
   padding: 0;
   gap: 32px;
 }
 
-.nav-menu-item a {
+.nav-link {
   text-decoration: none;
-  font-size: 0.95rem;
+  color: #374151;
   font-weight: 600;
-  color: #334155;
-  padding: 8px 0;
-  display: inline-block;
+  font-size: 0.94rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   transition: color 0.2s;
 }
 
-.nav-menu-item:hover a,
-.nav-menu-item.active a {
+.nav-link.active, .nav-link:hover {
   color: #ba441b;
 }
 
-.sub-nav-right {
+.nav-right {
   display: flex;
   align-items: center;
   gap: 24px;
 }
 
-.weekly-discount-tag {
+.weekly-discount {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 0.9rem;
   font-weight: 700;
   color: #ba441b;
-  white-space: nowrap;
 }
 
-.hotline-pill {
+.discount-icon {
+  background-color: #fff7ed;
+  color: #ba441b;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+}
+
+.hotline-badge {
+  background-color: #ba441b;
+  color: #ffffff;
+  padding: 6px 18px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #ba441b;
-  color: #ffffff;
-  padding: 8px 20px;
-  border-radius: 999px;
-  box-shadow: 0 4px 14px rgba(186, 68, 27, 0.25);
-  white-space: nowrap;
 }
 
-.hotline-icon {
-  font-size: 1.15rem;
-}
-
-.hotline-text {
-  display: flex;
-  flex-direction: column;
+.hotline-badge i {
+  font-size: 1.2rem;
 }
 
 .hotline-label {
+  display: block;
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
-.hotline-num {
-  font-size: 0.98rem;
-  font-weight: 800;
-  letter-spacing: 0.2px;
+.hotline-number {
+  font-weight: 700;
+  font-size: 0.92rem;
 }
 
-/* ==========================================================
-   4. CATEGORIES ROW (7 ITEMS IN 1 SINGLE ROW - FULL WIDTH)
-   ========================================================== */
-.categories-section {
-  width: 100%;
-  padding: 24px 0 16px 0;
+/* 4. CATEGORIES HORIZONTAL BAR (7 ITEMS IN 1 FULL-WIDTH ROW) */
+.category-strip {
+  padding: 24px 0 16px;
 }
 
-.categories-row {
+.category-list {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 14px;
@@ -1167,450 +1098,420 @@ onUnmounted(() => {
 }
 
 @media (max-width: 1200px) {
-  .categories-row {
+  .category-list {
     grid-template-columns: repeat(4, 1fr);
   }
 }
 
 @media (max-width: 768px) {
-  .categories-row {
+  .category-list {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
 .category-pill-card {
-  background: #ffffff;
-  border: 1px solid #eef2f6;
-  border-radius: 12px;
-  padding: 10px 14px;
+  background-color: #ffffff;
+  border-radius: 50px;
+  padding: 8px 14px;
   display: flex;
   align-items: center;
   gap: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+  border: 1px solid #f1f5f9;
+  transition: all 0.2s;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
   min-width: 0;
 }
 
 .category-pill-card:hover {
   transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(186,68,27,0.12);
   border-color: #fed7aa;
-  box-shadow: 0 6px 18px rgba(186, 68, 27, 0.1);
 }
 
-.cat-circle-avatar {
+.pill-icon-wrap {
   width: 44px;
   height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.3rem;
+  overflow: hidden;
   flex-shrink: 0;
 }
 
-.cat-details {
+.pill-img {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.pill-info {
   flex: 1;
   min-width: 0;
 }
 
-.cat-title {
-  margin: 0;
+.pill-title {
   font-size: 0.88rem;
   font-weight: 700;
-  color: #1e293b;
+  margin: 0;
+  color: #1f2937;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.cat-count {
-  margin: 2px 0 0 0;
+.pill-subtitle {
   font-size: 0.74rem;
-  color: #94a3b8;
+  color: #9ca3af;
+  margin: 0;
   white-space: nowrap;
 }
 
-.cat-dot-menu {
-  color: #cbd5e1;
-  font-size: 1.1rem;
+.pill-dots {
+  color: #d1d5db;
+  font-size: 0.8rem;
   flex-shrink: 0;
 }
 
-/* ==========================================================
-   5. HERO BANNERS GRID (EXPANDED FULL-WIDTH)
-   ========================================================== */
+/* 5. HERO / BANNER GRID */
 .hero-banners-section {
-  width: 100%;
-  padding: 16px 0 32px 0;
+  padding: 12px 0 28px;
 }
 
-.hero-grid {
+.banners-grid {
   display: grid;
   grid-template-columns: 1.65fr 1fr;
   gap: 24px;
   width: 100%;
 }
 
-/* Main Left Card */
-.hero-main-card {
-  background: #fdf6ec;
-  border-radius: 20px;
-  overflow: hidden;
+.banner-large {
   position: relative;
-  min-height: 460px;
+  border-radius: 20px;
+  background-size: cover;
+  background-position: center;
+  min-height: 440px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: clamp(28px, 4vw, 56px);
+  padding: 40px 48px;
+  overflow: hidden;
   border: 1px solid #fed7aa;
 }
 
-.hero-main-content {
-  z-index: 2;
-  max-width: 360px;
+.banner-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.75) 45%, rgba(255,255,255,0.1) 100%);
 }
 
-.farm-fresh-badge {
+.banner-content {
+  position: relative;
+  z-index: 2;
+  max-width: 420px;
+}
+
+.tag-ribbon {
   display: inline-block;
-  background: #ba441b;
+  background-color: #ba441b;
   color: #ffffff;
   font-size: 0.78rem;
   font-weight: 800;
-  padding: 5px 14px;
-  border-radius: 999px;
-  margin-bottom: 18px;
-  letter-spacing: 0.3px;
+  padding: 5px 16px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  clip-path: polygon(0% 0%, 92% 0%, 100% 50%, 92% 100%, 0% 100%);
 }
 
-.hero-fresh-title {
-  font-size: clamp(2.2rem, 3.5vw, 3.4rem);
-  font-weight: 900;
+.hero-title {
+  font-size: 3.2rem;
+  font-weight: 800;
   line-height: 1.1;
-  color: #0f172a;
-  margin: 0 0 18px 0;
+  color: #111827;
+  margin: 0;
 }
 
-.script-subtitle {
-  font-family: "Georgia", serif;
-  font-style: italic;
+.cursive-text {
+  font-family: 'Great Vibes', cursive;
   color: #ba441b;
-  font-weight: 600;
+  font-weight: 400;
+  font-size: 3.8rem;
 }
 
-.hero-price-tag {
+.hero-subtitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #9a3412;
+  margin: 8px 0 14px;
+}
+
+.hero-price {
   font-size: 2.2rem;
   font-weight: 800;
   color: #ba441b;
-  margin-bottom: 22px;
+  margin-bottom: 20px;
 }
 
-.btn-shop-now {
-  background: #ba441b;
+.btn-shop-green {
+  background-color: #ba441b;
   color: #ffffff;
-  border: none;
-  font-size: 1rem;
   font-weight: 700;
-  padding: 14px 32px;
-  border-radius: 999px;
+  padding: 12px 32px;
+  border-radius: 50px;
+  border: none;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 4px 16px rgba(186, 68, 27, 0.32);
+  box-shadow: 0 4px 14px rgba(186, 68, 27, 0.3);
 }
 
-.btn-shop-now:hover {
-  background: #9a3412;
+.btn-shop-green:hover {
+  background-color: #9a3412;
   transform: translateY(-2px);
 }
 
-.hero-main-visual {
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 55%;
-  overflow: hidden;
-}
-
-.hero-food-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  mask-image: linear-gradient(to right, transparent, black 25%);
-  -webkit-mask-image: linear-gradient(to right, transparent, black 25%);
-}
-
-/* Right Banner Column */
-.hero-side-column {
+.banners-right-group {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
 }
 
-.side-banner-card {
-  background: #f8fafc;
-  border-radius: 18px;
-  overflow: hidden;
-  padding: 24px 28px;
+.banner-card.banner-honeynuts {
+  background-color: #fff8f0;
+  border-radius: 20px;
+  padding: 24px 30px;
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  border: 1px solid #e2e8f0;
-  position: relative;
-  min-height: 215px;
+  align-items: center;
+  height: 205px;
+  overflow: hidden;
+  border: 1px solid #ffedd5;
 }
 
-.top-nuts-card {
-  background: #fff8f0;
-  border-color: #ffedd5;
-}
-
-.side-card-text {
-  max-width: 55%;
-  z-index: 2;
-}
-
-.side-card-title {
-  margin: 0;
+.banner-card .card-text h3 {
   font-size: 1.35rem;
   font-weight: 800;
-  color: #0f172a;
+  margin: 0 0 4px;
 }
 
-.side-card-sub {
-  margin: 6px 0 10px 0;
-  font-size: 0.85rem;
-  color: #64748b;
+.banner-card .card-text p {
+  font-size: 0.82rem;
+  color: #6b7280;
+  margin: 0 0 10px;
 }
 
-.side-card-price {
+.card-price {
   font-size: 1.5rem;
   font-weight: 800;
   color: #ba441b;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
-.btn-side-shop {
-  background: #ffffff;
-  color: #1e293b;
-  border: 1px solid #cbd5e1;
-  font-size: 0.85rem;
+.btn-shop-pill {
+  background-color: #ffffff;
+  color: #1f2937;
+  border: 1px solid #e5e7eb;
+  padding: 6px 20px;
+  border-radius: 50px;
+  font-size: 0.82rem;
   font-weight: 700;
-  padding: 8px 20px;
-  border-radius: 999px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.btn-side-shop:hover {
-  background: #ba441b;
+.btn-shop-pill:hover {
+  background-color: #ba441b;
   color: #ffffff;
   border-color: #ba441b;
 }
 
-.side-card-media {
-  width: 42%;
-  height: 155px;
+.card-img-wrap img {
+  max-height: 155px;
+  object-fit: contain;
   border-radius: 12px;
-  overflow: hidden;
 }
 
-.side-media-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-/* Split row */
-.side-banner-split-row {
+.banner-bottom-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 18px;
+  flex: 1;
 }
 
-.mini-promo-card {
-  border-radius: 18px;
-  padding: 18px;
+.banner-small-card {
+  border-radius: 20px;
+  padding: 20px 22px;
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  position: relative;
-  min-height: 215px;
   overflow: hidden;
+  height: 205px;
 }
 
-.baby-card {
-  background: #eff6ff;
-  border: 1px solid #dbeafe;
+.diaper-card {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  color: #1e293b;
+  border: 1px solid #bfdbfe;
+}
+
+.diaper-card h4 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.diaper-card p {
+  font-size: 0.78rem;
+  opacity: 0.9;
+  margin: 4px 0 16px;
+}
+
+.diaper-img {
+  position: absolute;
+  bottom: -10px;
+  right: -10px;
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 50%;
+  opacity: 0.9;
 }
 
 .facewash-card {
-  background: #fff1f2;
-  border: 1px solid #ffe4e6;
+  background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);
+  color: #1f2937;
+  border: 1px solid #fecdd3;
 }
 
-.mini-title {
-  margin: 0;
-  font-size: 1.05rem;
+.facewash-card h4 {
+  font-size: 1.15rem;
   font-weight: 800;
-  color: #0f172a;
+  margin: 0;
 }
 
-.mini-tag {
-  display: block;
+.facewash-card p {
   font-size: 0.78rem;
-  color: #64748b;
-  margin: 4px 0 12px 0;
+  color: #6b7280;
+  margin: 4px 0 16px;
 }
 
-.btn-mini-shop {
-  background: #ffffff;
-  color: #1e293b;
-  border: 1px solid #cbd5e1;
-  font-size: 0.8rem;
-  font-weight: 700;
-  padding: 6px 16px;
-  border-radius: 999px;
-  cursor: pointer;
-  align-self: flex-start;
-  transition: all 0.2s;
-}
-
-.btn-mini-shop:hover {
-  background: #ba441b;
-  color: #ffffff;
-  border-color: #ba441b;
-}
-
-.mini-img-wrap {
-  width: 100%;
-  height: 95px;
-  border-radius: 10px;
-  overflow: hidden;
-  margin-top: 10px;
-}
-
-.mini-card-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.discount-circle-pill {
+.discount-circle {
   position: absolute;
-  top: 14px;
-  right: 14px;
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background: #ba441b;
+  top: 16px;
+  right: 16px;
+  background-color: #ba441b;
   color: #ffffff;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 0.78rem;
-  font-weight: 900;
+  font-weight: 800;
+  font-size: 0.85rem;
   line-height: 1;
+  z-index: 2;
 }
 
-.off-text {
-  font-size: 0.58rem;
-  font-weight: 700;
+.discount-circle small {
+  font-size: 0.6rem;
 }
 
-/* ==========================================================
-   6. FEATURED PRODUCTS SECTION (FULL-WIDTH 6 COLS)
-   ========================================================== */
+.facewash-img {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+}
+
+/* 6. FEATURED PRODUCTS SECTION */
 .featured-products-section {
-  width: 100%;
-  padding: 24px 0 40px 0;
+  padding: 30px 0;
 }
 
-.section-head-bar {
+.section-header-flex {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: 24px;
-  flex-wrap: wrap;
-  gap: 16px;
 }
 
 .section-heading {
   font-size: 1.65rem;
   font-weight: 800;
-  color: #0f172a;
+  color: #111827;
   margin: 0;
 }
 
-.section-controls {
+.filter-tabs-wrapper {
   display: flex;
   align-items: center;
   gap: 24px;
 }
 
-.filter-tab-buttons {
+.filter-tabs {
   display: flex;
-  align-items: center;
-  gap: 20px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 18px;
 }
 
-.filter-btn {
-  background: none;
-  border: none;
-  font-size: 0.95rem;
+.filter-tabs li {
+  font-size: 0.92rem;
   font-weight: 600;
-  color: #64748b;
+  color: #6b7280;
   cursor: pointer;
-  padding: 4px 0;
+  transition: all 0.2s;
+  padding-bottom: 2px;
   position: relative;
-  transition: color 0.2s;
 }
 
-.filter-btn:hover,
-.filter-btn.active {
+.filter-tabs li.active, .filter-tabs li:hover {
   color: #ba441b;
   font-weight: 700;
 }
 
-.filter-btn.active::after {
-  content: "";
+.filter-tabs li.active::after {
+  content: '';
   position: absolute;
   left: 0;
-  bottom: -3px;
+  bottom: -2px;
   width: 100%;
-  height: 2.5px;
-  background: #ba441b;
+  height: 2px;
+  background-color: #ba441b;
   border-radius: 2px;
 }
 
-.arrow-nav-group {
+.slider-nav-arrows {
   display: flex;
-  align-items: center;
   gap: 8px;
 }
 
-.nav-arrow-btn {
+.slider-btn {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
   width: 34px;
   height: 34px;
-  border-radius: 50%;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  color: #475569;
-  font-size: 1.15rem;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  color: #6b7280;
   transition: all 0.2s;
 }
 
-.nav-arrow-btn:hover {
-  background: #ffedd5;
-  border-color: #fed7aa;
+.slider-btn:hover {
+  border-color: #ba441b;
   color: #ba441b;
+  background-color: #fff7ed;
 }
 
-/* Products Grid: 6 in 1 row across full screen width */
 .products-grid {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -1618,116 +1519,99 @@ onUnmounted(() => {
   width: 100%;
 }
 
-@media (max-width: 1300px) {
-  .products-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-@media (max-width: 680px) {
-  .products-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
 .product-card {
   background: #ffffff;
-  border: 1px solid #eef2f6;
   border-radius: 16px;
-  padding: 14px;
+  border: 1px solid #f1f5f9;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  transition: all 0.2s ease-in-out;
-  position: relative;
+  justify-content: space-between;
+  transition: all 0.25s;
 }
 
 .product-card:hover {
   transform: translateY(-4px);
+  box-shadow: 0 10px 25px rgba(186, 68, 27, 0.08);
   border-color: #fed7aa;
-  box-shadow: 0 10px 24px rgba(186, 68, 27, 0.08);
 }
 
-.card-top-row {
+.product-top-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.product-cat-tag {
+.prod-category {
   font-size: 0.74rem;
+  color: #9ca3af;
   font-weight: 600;
-  color: #94a3b8;
 }
 
-.heart-toggle-btn {
-  background: none;
+.btn-wishlist {
+  background: transparent;
   border: none;
-  font-size: 0.95rem;
+  color: #9ca3af;
   cursor: pointer;
-  padding: 2px;
-  transition: transform 0.15s;
+  font-size: 1rem;
 }
 
-.heart-toggle-btn:hover {
-  transform: scale(1.2);
+.text-danger {
+  color: #dc2626 !important;
 }
 
-.product-media-wrap {
-  width: 100%;
+.product-thumb {
   height: 140px;
-  margin: 10px 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: 10px 0;
   cursor: pointer;
-  overflow: hidden;
-  border-radius: 8px;
 }
 
-.product-photo {
+.product-thumb img {
+  max-height: 125px;
   max-width: 100%;
-  max-height: 100%;
   object-fit: contain;
-  transition: transform 0.3s ease;
+  transition: transform 0.3s;
 }
 
-.product-card:hover .product-photo {
+.product-card:hover .product-thumb img {
   transform: scale(1.06);
 }
 
-.weight-tags-row {
+.product-tags {
   display: flex;
   gap: 6px;
   margin-bottom: 8px;
 }
 
-.weight-tag {
+.weight-badge {
   background: #f8fafc;
-  color: #64748b;
-  border: 1px solid #e2e8f0;
   font-size: 0.7rem;
-  font-weight: 600;
   padding: 2px 7px;
   border-radius: 4px;
+  color: #64748b;
+  font-weight: 600;
+  border: 1px solid #e2e8f0;
 }
 
-.product-price-row {
+.product-pricing {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
+  align-items: baseline;
   gap: 6px;
   margin-bottom: 6px;
 }
 
-.price-current {
-  font-size: 0.98rem;
+.price-val {
   font-weight: 800;
+  font-size: 0.98rem;
   color: #ba441b;
 }
 
-.price-old {
-  font-size: 0.8rem;
-  color: #94a3b8;
+.old-price {
+  font-size: 0.78rem;
+  color: #9ca3af;
   text-decoration: line-through;
 }
 
@@ -1735,219 +1619,176 @@ onUnmounted(() => {
   background: #ba441b;
   color: #ffffff;
   font-size: 0.68rem;
-  font-weight: 800;
+  font-weight: 700;
   padding: 2px 6px;
   border-radius: 4px;
 }
 
-.product-card-title {
-  margin: 0 0 8px 0;
+.product-title {
   font-size: 0.88rem;
   font-weight: 600;
-  color: #1e293b;
   line-height: 1.35;
+  color: #1f2937;
+  height: 38px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: 38px;
+  margin: 0 0 8px;
   cursor: pointer;
 }
 
-.product-card-title:hover {
+.product-title:hover {
   color: #ba441b;
 }
 
-.product-stars-row {
+.product-rating {
   display: flex;
   align-items: center;
   gap: 4px;
   margin-bottom: 12px;
 }
 
-.stars-gold {
-  color: #f59e0b;
-  font-size: 0.82rem;
-  letter-spacing: 1px;
+.stars {
+  color: #d1d5db;
+  font-size: 0.75rem;
 }
 
-.review-score {
-  font-size: 0.74rem;
-  color: #64748b;
+.star-active {
+  color: #fbbf24;
+}
+
+.rating-num {
+  font-size: 0.72rem;
+  color: #9ca3af;
 }
 
 .btn-select-options {
-  margin-top: auto;
-  width: 100%;
+  background-color: #fff7ed;
+  color: #ba441b;
+  border: 1px solid #fed7aa;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  background: #fdf6ec;
-  color: #ba441b;
-  border: 1px solid #fed7aa;
-  border-radius: 8px;
-  padding: 8px 0;
-  font-size: 0.84rem;
-  font-weight: 700;
-  cursor: pointer;
   transition: all 0.2s;
+  width: 100%;
 }
 
 .btn-select-options:hover {
-  background: #ba441b;
+  background-color: #ba441b;
   color: #ffffff;
   border-color: #ba441b;
 }
 
-/* ==========================================================
-   7. WIDE PROMO BANNER (SHEA LOTION)
-   ========================================================== */
-.wide-promo-section {
-  width: 100%;
-  padding: 16px 0 36px 0;
+/* 7. PROMO MIDDLE STRIP BANNER */
+.promo-strip-section {
+  padding: 20px 0 35px;
 }
 
-.wide-promo-card {
+.promo-banner-container {
   background: linear-gradient(90deg, #fef3ec 0%, #fae8de 60%, #f6ddcf 100%);
-  border-radius: 20px;
-  padding: clamp(24px, 3.5vw, 40px) clamp(28px, 4vw, 56px);
+  border-radius: 16px;
+  padding: 28px 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  position: relative;
+  overflow: hidden;
   border: 1px solid #fed7aa;
-  overflow: hidden;
-  position: relative;
-  gap: 20px;
 }
 
-.wide-promo-left {
-  max-width: 480px;
-}
-
-.promo-overline {
-  font-size: 0.95rem;
+.promo-text-area .sub-text {
+  font-size: 1.1rem;
   font-weight: 600;
-  color: #64748b;
+  color: #475569;
   display: block;
-  margin-bottom: 8px;
 }
 
-.promo-main-heading {
-  margin: 0;
-  font-size: clamp(1.5rem, 2.5vw, 2.4rem);
-  font-weight: 900;
-  color: #0f172a;
-  line-height: 1.2;
-}
-
-.wide-promo-center {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.pricing-label {
-  font-size: 0.92rem;
+.promo-text-area .main-text {
+  font-size: 1.8rem;
   font-weight: 800;
-  color: #0f172a;
+  color: #111827;
+  margin: 4px 0 0;
 }
 
-.pricing-oval-tag {
-  background: #ba441b;
+.pricing-start-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pricing-start-badge .label {
+  font-size: 1.1rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #1f2937;
+}
+
+.price-bubble {
+  background-color: #ba441b;
   color: #ffffff;
-  font-size: 1.6rem;
-  font-weight: 900;
-  padding: 12px 28px;
-  border-radius: 999px;
-  position: relative;
-  box-shadow: 0 6px 20px rgba(186, 68, 27, 0.35);
+  font-weight: 800;
+  font-size: 1.5rem;
+  padding: 10px 24px;
+  border-radius: 50px;
+  box-shadow: 0 4px 14px rgba(186,68,27,0.3);
 }
 
-.wide-promo-right {
-  width: 280px;
-  height: 150px;
-  border-radius: 14px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.lotion-bottles-img {
-  width: 100%;
-  height: 100%;
+.promo-bottles-img img {
+  height: 95px;
+  border-radius: 10px;
   object-fit: cover;
 }
 
-/* ==========================================================
-   8. TOP SELLER USERS SECTION
-   ========================================================== */
+/* 8. TOP SELLER USERS */
 .top-sellers-section {
-  width: 100%;
-  padding: 16px 0 36px 0;
+  padding: 20px 0 35px;
 }
 
-.sellers-head-row {
+.sellers-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-end;
   margin-bottom: 24px;
 }
 
-.sellers-title-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.sellers-heading {
-  margin: 0;
-  font-size: 1.55rem;
-  font-weight: 800;
-  color: #0f172a;
-}
-
-.heading-accent-line {
-  width: 50px;
-  height: 4px;
-  background: #ba441b;
-  border-radius: 999px;
+.header-line {
+  width: 40px;
+  height: 3px;
+  background-color: #ba441b;
+  border-radius: 2px;
 }
 
 .see-more-link {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #ba441b;
+  color: #6b7280;
   text-decoration: none;
-  border: 1px solid #fed7aa;
-  padding: 7px 18px;
-  border-radius: 999px;
-  background: #ffffff;
-  transition: all 0.2s;
+  font-size: 0.88rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
 }
 
 .see-more-link:hover {
-  background: #ba441b;
-  color: #ffffff;
+  color: #ba441b;
 }
 
 .sellers-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 18px;
+  gap: 20px;
   width: 100%;
-}
-
-@media (max-width: 900px) {
-  .sellers-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
 }
 
 .seller-card {
   background: #ffffff;
-  border: 1px solid #eef2f6;
-  border-radius: 14px;
+  border-radius: 16px;
+  border: 1px solid #f1f5f9;
   padding: 16px;
   display: flex;
   align-items: center;
@@ -1956,11 +1797,11 @@ onUnmounted(() => {
 }
 
 .seller-card:hover {
+  box-shadow: 0 8px 20px rgba(186,68,27,0.08);
   border-color: #fed7aa;
-  box-shadow: 0 6px 18px rgba(186, 68, 27, 0.08);
 }
 
-.seller-avatar-wrap {
+.seller-avatar {
   width: 64px;
   height: 64px;
   border-radius: 12px;
@@ -1968,347 +1809,201 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.seller-avatar-img {
+.seller-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.seller-info {
-  flex: 1;
-}
-
-.seller-featured-tag {
+.badge-featured {
+  background-color: #ffedd5;
+  color: #ba441b;
   font-size: 0.68rem;
   font-weight: 700;
-  color: #ba441b;
-  background: #ffedd5;
-  padding: 2px 7px;
+  padding: 2px 6px;
   border-radius: 4px;
   display: inline-block;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .seller-name {
-  margin: 0 0 4px 0;
   font-size: 0.98rem;
   font-weight: 700;
-  color: #0f172a;
+  color: #111827;
+  margin: 2px 0 4px;
 }
 
-.seller-stars {
-  color: #f59e0b;
-  font-size: 0.8rem;
-  letter-spacing: 1px;
+/* 9. DEAL OF THE WEEK */
+.deal-of-week-section {
+  padding: 20px 0 50px;
 }
 
-/* ==========================================================
-   9. DEAL OF THE WEEK SECTION
-   ========================================================== */
-.deal-week-section {
-  width: 100%;
-  padding: 16px 0 60px 0;
-}
-
-.deal-week-card {
+.deal-wrapper-box {
   background: #ffffff;
-  border: 2.5px solid #ba441b;
+  border: 2px solid #ba441b;
   border-radius: 20px;
-  padding: clamp(20px, 3vw, 36px);
+  padding: 28px;
   width: 100%;
 }
 
-.deal-head-bar {
+.deal-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
+  justify-content: space-between;
   margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #f1f5f9;
 }
 
-.deal-heading {
-  margin: 0;
+.deal-title {
   font-size: 1.65rem;
   font-weight: 800;
-  color: #0f172a;
+  color: #111827;
+  margin: 0;
 }
 
-.deal-countdown-cluster {
+.countdown-group {
   display: flex;
   gap: 8px;
 }
 
-.countdown-unit-box {
-  background: #ba441b;
+.time-box {
+  background-color: #ba441b;
   color: #ffffff;
-  min-width: 50px;
+  width: 50px;
   height: 50px;
-  border-radius: 8px;
+  border-radius: 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 4px;
 }
 
-.countdown-num {
+.time-num {
   font-size: 1.1rem;
-  font-weight: 900;
+  font-weight: 800;
   line-height: 1;
 }
 
-.countdown-label {
-  font-size: 0.65rem;
+.time-unit {
+  font-size: 0.62rem;
   text-transform: uppercase;
   font-weight: 600;
   opacity: 0.9;
 }
 
-.deal-body-grid {
+.deal-items-grid {
   display: grid;
-  grid-template-columns: 1fr 2.4fr;
-  gap: 24px;
-}
-
-@media (max-width: 992px) {
-  .deal-body-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.deal-feature-spotlight {
-  position: relative;
-  border-radius: 16px;
-  overflow: hidden;
-  min-height: 280px;
-}
-
-.spotlight-img {
+  grid-template-columns: 1.2fr 0.9fr 0.9fr;
+  gap: 20px;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
-.spotlight-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.2) 0%, rgba(15, 23, 42, 0.85) 100%);
-  padding: 24px;
+.deal-left-banner {
+  background: #fdf6ec;
+  border: 1px solid #fed7aa;
+  border-radius: 16px;
+  padding: 28px;
   display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  color: #ffffff;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
 }
 
-.spotlight-tag {
-  font-size: 0.78rem;
+.deal-left-content {
+  max-width: 240px;
+  z-index: 2;
+}
+
+.deal-badge-organic {
+  color: #ba441b;
   font-weight: 700;
-  color: #ffedd5;
+  font-size: 0.8rem;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
-.spotlight-title {
-  margin: 6px 0;
-  font-size: 1.45rem;
+.deal-left-content h3 {
+  font-size: 1.35rem;
   font-weight: 800;
+  color: #0f172a;
+  margin: 8px 0;
 }
 
-.spotlight-discount {
-  font-size: 1.15rem;
-  font-weight: 800;
-  color: #fed7aa;
-  margin-bottom: 14px;
+.deal-left-content p {
+  font-size: 0.82rem;
+  color: #64748b;
+  margin-bottom: 16px;
 }
 
-.btn-spotlight-shop {
-  background: #ba441b;
+.btn-deal-shop {
+  background-color: #ba441b;
   color: #ffffff;
   border: none;
-  font-size: 0.88rem;
   font-weight: 700;
-  padding: 9px 20px;
-  border-radius: 999px;
-  align-self: flex-start;
+  padding: 8px 18px;
+  border-radius: 50px;
+  font-size: 0.84rem;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.btn-spotlight-shop:hover {
-  background: #9a3412;
+.btn-deal-shop:hover {
+  background-color: #9a3412;
 }
 
-.deal-items-row {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 18px;
+.deal-hero-img {
+  width: 140px;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 50%;
 }
 
-@media (max-width: 768px) {
-  .deal-items-row {
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  .products-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .sellers-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
-.deal-product-item {
-  background: #ffffff;
-  border: 1px solid #eef2f6;
-  border-radius: 14px;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  transition: all 0.2s;
-}
-
-.deal-product-item:hover {
-  border-color: #fed7aa;
-  box-shadow: 0 8px 20px rgba(186, 68, 27, 0.08);
-}
-
-.deal-item-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.deal-item-cat {
-  font-size: 0.74rem;
-  color: #94a3b8;
-  font-weight: 600;
-}
-
-.deal-item-heart {
-  font-size: 0.92rem;
-  cursor: pointer;
-}
-
-.deal-item-media {
-  width: 100%;
-  height: 120px;
-  margin: 8px 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.deal-item-img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.deal-item-price-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.deal-curr-price {
-  font-size: 0.95rem;
-  font-weight: 800;
-  color: #ba441b;
-}
-
-.deal-old-price {
-  font-size: 0.78rem;
-  color: #94a3b8;
-  text-decoration: line-through;
-}
-
-.deal-badge {
-  background: #ba441b;
-  color: #ffffff;
-  font-size: 0.68rem;
-  font-weight: 800;
-  padding: 2px 5px;
-  border-radius: 4px;
-}
-
-.deal-item-title {
-  margin: 0 0 6px 0;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #1e293b;
-  line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: 36px;
-}
-
-.deal-item-stars {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 10px;
-}
-
-.btn-deal-add {
-  margin-top: auto;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  background: #fdf6ec;
-  color: #ba441b;
-  border: 1px solid #fed7aa;
-  border-radius: 8px;
-  padding: 7px 0;
-  font-size: 0.82rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-deal-add:hover {
-  background: #ba441b;
-  color: #ffffff;
-  border-color: #ba441b;
-}
-
-/* ==========================================================
-   RESPONSIVE QUERIES
-   ========================================================== */
 @media (max-width: 992px) {
-  .hero-grid {
+  .banners-grid {
     grid-template-columns: 1fr;
   }
-  .sub-nav-inner {
-    flex-wrap: wrap;
+  .deal-items-grid {
+    grid-template-columns: 1fr;
   }
-  .nav-menu-list {
-    gap: 16px;
-    flex-wrap: wrap;
+  .nav-links {
+    display: none;
   }
 }
 
 @media (max-width: 768px) {
-  .info-bar-content {
-    justify-content: center;
-    text-align: center;
+  .top-left, .top-right {
+    display: none;
   }
-  .header-inner {
+  .top-bar-content {
+    justify-content: center;
+  }
+  .header-container {
     flex-wrap: wrap;
   }
-  .search-cluster {
+  .search-box-wrapper {
     order: 3;
+    width: 100%;
     max-width: 100%;
-    width: 100%;
   }
-  .wide-promo-card {
+  .products-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .banner-bottom-row {
+    grid-template-columns: 1fr;
+  }
+  .promo-banner-container {
     flex-direction: column;
+    gap: 16px;
     text-align: center;
-  }
-  .wide-promo-right {
-    width: 100%;
-    height: 160px;
   }
 }
 </style>
