@@ -1,0 +1,46 @@
+﻿# Dependencies
+node_modules/
+ZoneMart/node_modules/
+
+# .NET Build Outputs
+[Bb]in/
+[Oo]bj/
+server/bin/
+server/obj/
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+appsettings.Development.json
+server/appsettings.Development.json
+appsettings.Production.json
+server/appsettings.Production.json
+
+# IDE & Editor files
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build outputs
+dist/
+dist-ssr/
+ZoneMart/dist/
+*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS Files
+.DS_Store
+Thumbs.db
