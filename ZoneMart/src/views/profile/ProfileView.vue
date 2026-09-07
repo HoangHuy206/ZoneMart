@@ -1,210 +1,888 @@
-﻿<script setup lang="ts">
-/**
- * ================================================================
- * HỒ SƠ CÁ NHÂN & VÍ TIỀN (PROFILE) - Phụ trách: Huy
- * ================================================================
- */
+<script setup lang="ts">
 import { ref } from "vue";
+import { useRouter } from "vue-router";
 
-const user = ref({
-  phone_email: "huyhoangzz@zonemart.vn",
-  full_name: "Hoàng Huy",
-  avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200",
-  wallet_balance: 450000,
-  is_buyer: true,
-  is_seller: false,
-  is_shipper: false,
-  address: "123 Đường Cầu Giấy, Quận Cầu Giấy, Hà Nội",
-  role_application_status: "none"
+const router = useRouter();
+
+// Tab navigation in sidebar
+const activeTab = ref<"personal" | "orders" | "stalls">("personal");
+
+// Profile form state matching screenshot
+const profileData = ref({
+  firstName: "Alex",
+  lastName: "Huy",
+  password: "••••••••••••",
+  email: "alex.huy@zonemart.vn",
+  personalInfoName: "alex_zone2026",
+  savePasswordOption: "SAVE Password",
+  avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80"
 });
 
-const isEditing = ref(false);
-const showUpgradeModal = ref(false);
-const upgradeType = ref<"seller" | "shipper">("seller");
-const upgradeForm = ref({ cccd: "", nameOrVehicle: "" });
+// Toast notification
+const showToast = ref(false);
+const toastMessage = ref("");
 
-const handleSaveProfile = () => {
-  isEditing.value = false;
-  alert("Cập nhật thông tin tài khoản thành công!");
+const triggerToast = (msg: string) => {
+  toastMessage.value = msg;
+  showToast.value = true;
+  setTimeout(() => {
+    showToast.value = false;
+  }, 3000);
 };
 
-const handleOpenUpgrade = (type: "seller" | "shipper") => {
-  upgradeType.value = type;
-  showUpgradeModal.value = true;
+// Handle Save Changes
+const handleSaveChanges = () => {
+  triggerToast("Đã lưu thay đổi hồ sơ thành công! (Saved Changes)");
 };
 
-const handleSubmitUpgrade = () => {
-  if (!upgradeForm.value.cccd || !upgradeForm.value.nameOrVehicle) {
-    alert("Vui lòng điền đầy đủ số CCCD và thông tin đăng ký!");
-    return;
+// Handle Avatar file selection
+const fileInputRef = ref<HTMLInputElement | null>(null);
+const handleAvatarClick = () => {
+  fileInputRef.value?.click();
+};
+
+const onFileSelected = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  if (target.files && target.files[0]) {
+    const file = target.files[0];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        profileData.value.avatarUrl = e.target.result as string;
+        triggerToast("Ảnh đại diện đã được cập nhật!");
+      }
+    };
+    reader.readAsDataURL(file);
   }
-  user.value.role_application_status = "pending";
-  showUpgradeModal.value = false;
-  alert(`Đơn đăng ký làm ${upgradeType.value === 'seller' ? 'Người bán hàng' : 'Tài xế giao hàng'} đã được gửi duyệt!`);
 };
+
+// Saved stalls mock data
+const savedStalls = ref([
+  { id: 1, name: "Cơm Tấm Sài Gòn 10km", address: "123 Cầu Giấy, Hà Nội", rating: 4.8, image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80" },
+  { id: 2, name: "Trà Sữa ZoneTea & Coffee", address: "88 Trần Thái Tông", rating: 4.9, image: "https://images.unsplash.com/photo-1558857563-b371033873b8?auto=format&fit=crop&w=200&q=80" },
+  { id: 3, name: "Bánh Mì Chảo Bờ Hồ", address: "45 Nguyễn Khánh Toàn", rating: 4.7, image: "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=200&q=80" }
+]);
 </script>
 
 <template>
-  <div class="profile-container">
-    <!-- Header Profile -->
-    <div class="profile-card hero-card">
-      <div class="avatar-section">
-        <img :src="user.avatar" alt="Avatar" class="avatar-img" />
-        <div class="user-meta">
-          <h2>{{ user.full_name }}</h2>
-          <p class="user-email">✉️ {{ user.phone_email }}</p>
-          <div class="badge-group">
-            <span class="badge buyer-badge" v-if="user.is_buyer">🛍️ Người mua</span>
-            <span class="badge seller-badge" v-if="user.is_seller">🏪 Chủ cửa hàng</span>
-            <span class="badge shipper-badge" v-if="user.is_shipper">🛵 Tài xế Shipper</span>
-          </div>
-        </div>
-      </div>
+  <div class="profile-layout-container">
+    <!-- Hidden File Input for Avatar -->
+    <input
+      type="file"
+      ref="fileInputRef"
+      accept="image/*"
+      class="hidden-file-input"
+      @change="onFileSelected"
+    />
 
-      <div class="wallet-card">
-        <div class="wallet-title">Ví Tiền Nội Bộ ZoneMart</div>
-        <div class="wallet-amount">{{ user.wallet_balance.toLocaleString("vi-VN") }} ₫</div>
-        <div class="wallet-actions">
-          <button class="btn btn-sm btn-primary">+ Nạp tiền</button>
-          <button class="btn btn-sm btn-outline">Lịch sử GD</button>
-        </div>
-      </div>
+    <!-- Toast Alert -->
+    <div v-if="showToast" class="toast-notification">
+      ✓ {{ toastMessage }}
     </div>
 
-    <!-- Thông tin & Đối tác -->
-    <div class="profile-grid">
-      <div class="profile-card">
-        <div class="card-header">
-          <h3>👤 Thông Tin Cá Nhân</h3>
-          <button class="btn btn-sm btn-outline" @click="isEditing = !isEditing">
-            {{ isEditing ? "Hủy" : "Chỉnh sửa" }}
+    <!-- MAIN WRAPPER CARD -->
+    <div class="market-card-wrapper">
+      <!-- LEFT SIDEBAR -->
+      <aside class="sidebar-panel">
+        <!-- LOGO SECTION -->
+        <div class="sidebar-logo">
+          <div class="logo-icon-box">
+            <svg class="apple-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.75 1.04-1.8 0.92-2.85-.9.04-2 .6-2.64 1.35-.56.65-1.05 1.72-.92 2.74 1.01.08 2.02-.51 2.64-1.24z"/>
+            </svg>
+          </div>
+          <span class="logo-text">LOGO</span>
+        </div>
+
+        <!-- SIDEBAR NAVIGATION MENU -->
+        <nav class="sidebar-nav">
+          <button
+            class="nav-btn"
+            :class="{ active: activeTab === 'personal' }"
+            @click="activeTab = 'personal'"
+          >
+            <span class="nav-icon">👤</span>
+            <span class="nav-label">Personal Info</span>
           </button>
-        </div>
 
-        <div class="form-group">
-          <label>Họ và tên:</label>
-          <input v-if="isEditing" v-model="user.full_name" type="text" class="input-field" />
-          <p v-else class="text-val">{{ user.full_name }}</p>
-        </div>
+          <button
+            class="nav-btn"
+            :class="{ active: activeTab === 'orders' }"
+            @click="activeTab = 'orders'"
+          >
+            <span class="nav-icon">📋</span>
+            <span class="nav-label">Orders</span>
+          </button>
 
-        <div class="form-group">
-          <label>Số điện thoại / Email:</label>
-          <p class="text-val">{{ user.phone_email }}</p>
-        </div>
+          <button
+            class="nav-btn"
+            :class="{ active: activeTab === 'stalls' }"
+            @click="activeTab = 'stalls'"
+          >
+            <span class="nav-icon">🔖</span>
+            <span class="nav-label">Saved Stalls</span>
+          </button>
+        </nav>
+      </aside>
 
-        <div class="form-group">
-          <label>Địa chỉ nhận hàng mặc định:</label>
-          <input v-if="isEditing" v-model="user.address" type="text" class="input-field" />
-          <p v-else class="text-val">{{ user.address }}</p>
-        </div>
+      <!-- RIGHT MAIN CONTENT -->
+      <main class="content-panel">
+        <!-- TOP HEADER BAR -->
+        <header class="top-header">
+          <h1 class="market-brand-title">LOCAL MARKET</h1>
 
-        <button v-if="isEditing" class="btn btn-primary btn-block" @click="handleSaveProfile">
-          Lưu thay đổi
-        </button>
-      </div>
+          <div class="user-profile-badge">
+            <img :src="profileData.avatarUrl" alt="Avatar small" class="header-avatar" />
+            <div class="badge-text">
+              <span class="badge-title">Profile Info</span>
+              <span class="badge-email">@meiohumia.com</span>
+            </div>
+            <span class="dropdown-arrow">⌵</span>
+          </div>
+        </header>
 
-      <div class="profile-card">
-        <div class="card-header">
-          <h3>🚀 Nâng Cấp Đối Tác (Seller / Shipper)</h3>
-        </div>
-        <p class="desc-text">Bạn muốn mở cửa hàng kinh doanh hoặc đăng ký chạy xe giao hàng cùng ZoneMart?</p>
+        <!-- VIEW: PERSONAL INFO (EXACT SCREENSHOT LAYOUT) -->
+        <div v-if="activeTab === 'personal'" class="profile-main-body">
+          <h2 class="section-heading">USER PROFILE</h2>
 
-        <div v-if="user.role_application_status === 'pending'" class="status-box pending">
-          ⏳ Hồ sơ đăng ký đang được <strong>Manager xét duyệt</strong>. Kết quả sẽ được gửi qua Email!
-        </div>
-
-        <div class="partner-options" v-else>
-          <div class="partner-box">
-            <h4>🏪 Mở Gian Hàng (Seller)</h4>
-            <p>Đăng bán sản phẩm cho khách hàng trong bán kính 10km.</p>
-            <button class="btn btn-secondary" @click="handleOpenUpgrade('seller')">Đăng ký làm Shop</button>
+          <!-- TOP 4 INPUTS GRID (First Name, Last Name, Password, Email) -->
+          <div class="top-input-grid">
+            <div class="input-box-wrapper">
+              <input
+                v-model="profileData.firstName"
+                type="text"
+                placeholder="First Name"
+                class="pill-input"
+              />
+            </div>
+            <div class="input-box-wrapper">
+              <input
+                v-model="profileData.lastName"
+                type="text"
+                placeholder="Last Name"
+                class="pill-input"
+              />
+            </div>
+            <div class="input-box-wrapper">
+              <input
+                v-model="profileData.password"
+                type="password"
+                placeholder="Password"
+                class="pill-input"
+              />
+            </div>
+            <div class="input-box-wrapper">
+              <input
+                v-model="profileData.email"
+                type="email"
+                placeholder="Email"
+                class="pill-input"
+              />
+            </div>
           </div>
 
-          <div class="partner-box">
-            <h4>🛵 Đăng Ký Tài Xế (Shipper)</h4>
-            <p>Nhận các đơn hỏa tốc &le; 3km và đơn thường với thù lao hấp dẫn.</p>
-            <button class="btn btn-secondary" @click="handleOpenUpgrade('shipper')">Đăng ký Shipper</button>
+          <!-- MIDDLE SECTION (AVATAR LEFT + STACKED FIELDS RIGHT) -->
+          <div class="middle-form-section">
+            <!-- LEFT: CIRCULAR AVATAR -->
+            <div class="avatar-col">
+              <div class="avatar-circle-wrap" @click="handleAvatarClick" title="Nhấn để đổi ảnh đại diện">
+                <img :src="profileData.avatarUrl" alt="User avatar" class="circle-avatar-img" />
+                <div class="avatar-upload-overlay">
+                  <span>📷 Đổi ảnh</span>
+                </div>
+              </div>
+              <p class="avatar-label-title">User avatar</p>
+              <p class="avatar-label-sub">Bo góc tròn</p>
+            </div>
+
+            <!-- RIGHT: DETAILED FORM FIELDS -->
+            <div class="details-col">
+              <!-- Group 1: Personal info (First Name + Last Name stacked) -->
+              <div class="field-group">
+                <label class="group-label">Personal info</label>
+                <div class="stacked-inputs-box">
+                  <input
+                    v-model="profileData.firstName"
+                    type="text"
+                    placeholder="First Name"
+                    class="stacked-input top-border-input"
+                  />
+                  <input
+                    v-model="profileData.lastName"
+                    type="text"
+                    placeholder="Last Name"
+                    class="stacked-input bottom-border-input"
+                  />
+                </div>
+              </div>
+
+              <!-- Group 2: Email address (Personal infoname) -->
+              <div class="field-group">
+                <label class="group-label">Email address</label>
+                <div class="input-box-wrapper">
+                  <input
+                    v-model="profileData.personalInfoName"
+                    type="text"
+                    placeholder="Personal infoname"
+                    class="pill-input"
+                  />
+                </div>
+              </div>
+
+              <!-- Group 3: Email address / SAVE Password Dropdown -->
+              <div class="field-group">
+                <label class="group-label">Email address</label>
+                <div class="dropdown-input-wrapper">
+                  <select v-model="profileData.savePasswordOption" class="pill-input select-pill">
+                    <option value="SAVE Password">SAVE Password</option>
+                    <option value="Update Password">Update Password</option>
+                    <option value="Reset Password">Reset Password</option>
+                  </select>
+                  <span class="select-caret">⌵</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- BOTTOM ACTION BUTTON -->
+          <div class="bottom-action-bar">
+            <button class="btn-save-changes" @click="handleSaveChanges">
+              SAVE CHANGES
+            </button>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Modal Form -->
-    <div v-if="showUpgradeModal" class="modal-backdrop">
-      <div class="modal-content">
-        <h3>Đăng ký: {{ upgradeType === 'seller' ? 'Chủ Cửa Hàng' : 'Tài Xế Shipper' }}</h3>
-        <p class="sub-text">Hồ sơ sẽ được chuyển cho Manager kiểm tra theo Luồng 1.</p>
-
-        <div class="form-group">
-          <label>Số CCCD:</label>
-          <input v-model="upgradeForm.cccd" type="text" placeholder="12 số CCCD" class="input-field" />
+        <!-- VIEW: ORDERS (QUẢN LÝ ĐƠN HÀNG) -->
+        <div v-else-if="activeTab === 'orders'" class="tab-content-panel">
+          <h2 class="section-heading">ORDERS (ĐƠN HÀNG CỦA BẠN)</h2>
+          <p class="tab-desc">Theo dõi các đơn hàng giao nhanh trong bán kính 10km của bạn.</p>
+          <div class="orders-quick-box">
+            <div class="order-item-card">
+              <div class="order-header-row">
+                <span class="order-id">Đơn #ZM-8921</span>
+                <span class="order-status-tag">🛵 Đang giao hàng</span>
+              </div>
+              <p class="order-shop">Cơm Tấm Sài Gòn • 1.8km</p>
+              <p class="order-total">Tổng tiền: <strong>75.000 ₫</strong></p>
+            </div>
+            <button class="btn-secondary-link" @click="router.push('/buyer-orders')">
+              👉 Xem chi tiết toàn bộ đơn mua
+            </button>
+          </div>
         </div>
 
-        <div class="form-group">
-          <label>{{ upgradeType === 'seller' ? 'Tên Cửa hàng:' : 'Biển số & Loại xe:' }}</label>
-          <input v-model="upgradeForm.nameOrVehicle" type="text" placeholder="Nhập thông tin..." class="input-field" />
+        <!-- VIEW: SAVED STALLS (QUÁN ĐÃ LƯU) -->
+        <div v-else-if="activeTab === 'stalls'" class="tab-content-panel">
+          <h2 class="section-heading">SAVED STALLS (QUÁN ĐÃ LƯU)</h2>
+          <p class="tab-desc">Các quán ăn & cửa hàng yêu thích gần bạn trong bán kính 10km.</p>
+          <div class="stalls-grid">
+            <div v-for="stall in savedStalls" :key="stall.id" class="stall-item-card">
+              <img :src="stall.image" :alt="stall.name" class="stall-thumb" />
+              <div class="stall-info">
+                <h4>{{ stall.name }}</h4>
+                <p>{{ stall.address }}</p>
+                <span class="rating-badge">⭐ {{ stall.rating }}</span>
+              </div>
+            </div>
+          </div>
         </div>
-
-        <div class="modal-actions">
-          <button class="btn btn-outline" @click="showUpgradeModal = false">Hủy</button>
-          <button class="btn btn-primary" @click="handleSubmitUpgrade">Gửi duyệt hồ sơ</button>
-        </div>
-      </div>
+      </main>
     </div>
   </div>
 </template>
 
 <style scoped>
-.profile-container { max-width: 1050px; margin: 30px auto 60px auto; padding: 0 20px; }
-.profile-card { background: #ffffff; border-radius: 16px; padding: 24px; border: 1px solid #e2e8f0; }
-
-.hero-card {
-  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; margin-bottom: 24px;
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+/* ==========================================================================
+   GLOBAL LAYOUT & CONTAINERS
+   ========================================================================== */
+.profile-layout-container {
+  min-height: 85vh;
+  background-color: #f7f3ee;
+  padding: 30px 16px 60px 16px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #2b231d;
 }
-.avatar-section { display: flex; align-items: center; gap: 20px; }
-.avatar-img { width: 90px; height: 90px; border-radius: 50%; border: 3px solid #2563eb; object-fit: cover; }
-.user-meta h2 { margin: 0 0 4px 0; color: #1e293b; }
-.user-email { margin: 0 0 10px 0; color: #64748b; font-size: 14px; }
-.badge-group { display: flex; gap: 8px; }
-.badge { font-size: 12px; padding: 4px 10px; border-radius: 20px; font-weight: 600; }
-.buyer-badge { background: #dbeafe; color: #1e40af; }
-.seller-badge { background: #ffedd5; color: #c2410c; }
-.shipper-badge { background: #f3e8ff; color: #7e22ce; }
 
-.wallet-card { background: #0f172a; color: #fff; padding: 18px 24px; border-radius: 14px; text-align: right; }
-.wallet-title { font-size: 13px; color: #94a3b8; }
-.wallet-amount { font-size: 26px; font-weight: 800; color: #4ade80; margin: 6px 0 12px 0; }
-.wallet-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.hidden-file-input {
+  display: none;
+}
 
-.profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-@media (max-width: 768px) { .profile-grid { grid-template-columns: 1fr; } }
+/* Toast Message */
+.toast-notification {
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  background-color: #15803d;
+  color: #ffffff;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
+  animation: slideIn 0.3s ease-out;
+}
 
-.card-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 12px; margin-bottom: 16px; }
-.card-header h3 { margin: 0; font-size: 18px; color: #0f172a; }
+@keyframes slideIn {
+  from { transform: translateX(50px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
 
-.form-group { margin-bottom: 16px; }
-.form-group label { display: block; font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 6px; }
-.text-val { font-size: 15px; color: #0f172a; margin: 0; font-weight: 500; }
-.input-field { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; box-sizing: border-box; }
-.desc-text { color: #64748b; font-size: 14px; margin-bottom: 16px; }
+/* MAIN CARD CONTAINER (SPLIT INTO SIDEBAR + CONTENT) */
+.market-card-wrapper {
+  width: 100%;
+  max-width: 980px;
+  background-color: #fcf9f5;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(78, 42, 23, 0.08);
+  display: flex;
+  min-height: 640px;
+  border: 1px solid #ebdcd1;
+}
 
-.partner-box { background: #f8fafc; border: 1px dashed #cbd5e1; padding: 16px; border-radius: 10px; margin-bottom: 14px; }
-.partner-box h4 { margin: 0 0 4px 0; font-size: 15px; color: #1e293b; }
-.partner-box p { font-size: 13px; color: #64748b; margin: 0 0 10px 0; }
-.status-box.pending { background: #fef9c3; color: #854d0e; padding: 14px; border-radius: 8px; font-size: 14px; border: 1px solid #fde047; }
+/* ==========================================================================
+   LEFT SIDEBAR (TERRACOTTA THEME #b9441a)
+   ========================================================================== */
+.sidebar-panel {
+  width: 230px;
+  background-color: #ba441b;
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding: 24px 0;
+}
 
-.btn { border: none; cursor: pointer; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 14px; }
-.btn-sm { padding: 6px 12px; font-size: 12px; }
-.btn-primary { background: #2563eb; color: #fff; }
-.btn-primary:hover { background: #1d4ed8; }
-.btn-secondary { background: #e27d2b; color: #fff; }
-.btn-secondary:hover { background: #c2410c; }
-.btn-outline { background: transparent; border: 1px solid #cbd5e1; color: #334155; }
-.btn-block { width: 100%; margin-top: 10px; }
+/* Sidebar Logo */
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px 28px 24px;
+}
 
-.modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 999; }
-.modal-content { background: #fff; padding: 28px; border-radius: 14px; width: 90%; max-width: 480px; }
-.modal-content h3 { margin-top: 0; color: #0f172a; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.logo-icon-box {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ba441b;
+  background-color: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.apple-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.sidebar-logo .logo-text {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: #ffffff;
+}
+
+/* Sidebar Navigation Items */
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 12px;
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 15px;
+  font-weight: 500;
+  text-align: left;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nav-btn:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.nav-btn.active {
+  background-color: rgba(0, 0, 0, 0.12);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.nav-icon {
+  font-size: 17px;
+}
+
+/* ==========================================================================
+   RIGHT CONTENT PANEL
+   ========================================================================== */
+.content-panel {
+  flex: 1;
+  padding: 24px 36px 36px 36px;
+  display: flex;
+  flex-direction: column;
+  background-color: #fdfaf6;
+}
+
+/* TOP HEADER */
+.top-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.market-brand-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  color: #ba441b;
+  letter-spacing: 0.5px;
+}
+
+.user-profile-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+.user-profile-badge:hover {
+  background-color: #f4eae0;
+}
+
+.header-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.badge-text {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.badge-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2b231d;
+  line-height: 1.2;
+}
+
+.badge-email {
+  font-size: 11px;
+  color: #7b6f67;
+  line-height: 1.2;
+}
+
+.dropdown-arrow {
+  font-size: 11px;
+  color: #7b6f67;
+  margin-left: 2px;
+}
+
+/* ==========================================================================
+   PROFILE BODY: SECTION TITLE & INPUTS
+   ========================================================================== */
+.profile-main-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.section-heading {
+  margin: 0 0 16px 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #221d19;
+  letter-spacing: 0.5px;
+}
+
+/* TOP 4-INPUT GRID */
+.top-input-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 18px;
+  margin-bottom: 24px;
+}
+
+.input-box-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.pill-input {
+  width: 100%;
+  padding: 11px 18px;
+  background-color: #fdf7f0;
+  border: 1.5px solid #cb774c;
+  border-radius: 12px;
+  font-size: 14px;
+  color: #3b2c23;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.pill-input:focus {
+  border-color: #ba441b;
+  background-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(186, 68, 27, 0.12);
+}
+
+.pill-input::placeholder {
+  color: #5c4b40;
+  opacity: 0.85;
+}
+
+/* ==========================================================================
+   MIDDLE SECTION: AVATAR + FORM DETAILS
+   ========================================================================== */
+.middle-form-section {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 28px;
+  align-items: flex-start;
+  margin-bottom: 28px;
+}
+
+/* Left: Avatar Column */
+.avatar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.avatar-circle-wrap {
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  margin-bottom: 12px;
+  border: 2px solid #ecdcd2;
+}
+
+.circle-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar-upload-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.avatar-circle-wrap:hover .avatar-upload-overlay {
+  opacity: 1;
+}
+
+.avatar-label-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #2b231d;
+}
+
+.avatar-label-sub {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: #7b6f67;
+}
+
+/* Right: Details Column */
+.details-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.group-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2b231d;
+}
+
+/* Stacked Personal Info inputs */
+.stacked-inputs-box {
+  display: flex;
+  flex-direction: column;
+  background-color: #fdf7f0;
+  border: 1.5px solid #cb774c;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.stacked-input {
+  width: 100%;
+  padding: 10px 18px;
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  color: #3b2c23;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.stacked-input:focus {
+  background-color: #ffffff;
+}
+
+.top-border-input {
+  border-bottom: 1px solid #cb774c;
+}
+
+/* Dropdown select pill */
+.dropdown-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.select-pill {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  padding-right: 36px;
+}
+
+.select-caret {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 13px;
+  color: #5c4b40;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   BOTTOM ACTION BUTTON
+   ========================================================================== */
+.bottom-action-bar {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.btn-save-changes {
+  width: 100%;
+  background-color: #ba441b;
+  color: #ffffff;
+  border: none;
+  padding: 14px 24px;
+  border-radius: 30px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s, box-shadow 0.2s;
+  box-shadow: 0 4px 12px rgba(186, 68, 27, 0.25);
+}
+
+.btn-save-changes:hover {
+  background-color: #a33813;
+  box-shadow: 0 6px 16px rgba(186, 68, 27, 0.35);
+}
+
+.btn-save-changes:active {
+  transform: scale(0.99);
+}
+
+/* ==========================================================================
+   EXTRA TABS (ORDERS & SAVED STALLS)
+   ========================================================================== */
+.tab-content-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tab-desc {
+  font-size: 14px;
+  color: #6a5e55;
+  margin: -8px 0 12px 0;
+}
+
+.order-item-card {
+  background-color: #ffffff;
+  border: 1.5px solid #ebdcd1;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 14px;
+}
+
+.order-header-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.order-id {
+  font-weight: 700;
+  color: #ba441b;
+}
+
+.order-status-tag {
+  background-color: #fef3c7;
+  color: #92400e;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.order-shop {
+  margin: 0 0 6px 0;
+  font-size: 14px;
+  color: #3b2c23;
+}
+
+.order-total {
+  margin: 0;
+  font-size: 14px;
+  color: #15803d;
+}
+
+.btn-secondary-link {
+  background: transparent;
+  border: 1.5px solid #ba441b;
+  color: #ba441b;
+  padding: 10px 18px;
+  border-radius: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-start;
+  transition: all 0.2s;
+}
+
+.btn-secondary-link:hover {
+  background-color: #ba441b;
+  color: #ffffff;
+}
+
+.stalls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.stall-item-card {
+  background-color: #ffffff;
+  border: 1.5px solid #ebdcd1;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: transform 0.2s;
+}
+
+.stall-item-card:hover {
+  transform: translateY(-2px);
+}
+
+.stall-thumb {
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+}
+
+.stall-info {
+  padding: 12px;
+}
+
+.stall-info h4 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  color: #2b231d;
+}
+
+.stall-info p {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: #7b6f67;
+}
+
+.rating-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #d97706;
+}
+
+/* ==========================================================================
+   RESPONSIVE
+   ========================================================================== */
+@media (max-width: 820px) {
+  .market-card-wrapper {
+    flex-direction: column;
+  }
+
+  .sidebar-panel {
+    width: 100%;
+    padding: 16px 20px;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .content-panel {
+    padding: 20px;
+  }
+
+  .middle-form-section {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .details-col {
+    width: 100%;
+  }
+}
+
+@media (max-width: 540px) {
+  .top-input-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>
