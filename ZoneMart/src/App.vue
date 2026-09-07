@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, computed } from "vue";
+import { useRoute } from "vue-router";
+
+const route = useRoute();
+const isHome = computed(() => route.path === "/");
 
 const isMobileMenuOpen = ref(false);
 
@@ -10,8 +14,8 @@ const toggleMobileMenu = () => {
 
 <template>
   <div class="app-wrapper">
-    <!-- Navbar ZoneMart -->
-    <header class="navbar">
+    <!-- Navbar ZoneMart (chỉ hiển thị ở các trang con, trang chủ dùng header riêng theo thiết kế) -->
+    <header class="navbar" v-if="!isHome">
       <div class="nav-container">
         <!-- Logo -->
         <router-link to="/" class="brand-logo">
