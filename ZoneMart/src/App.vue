@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref } from "vue";
 
 const isMobileMenuOpen = ref(false);
@@ -15,9 +15,12 @@ const toggleMobileMenu = () => {
       <div class="nav-container">
         <!-- Logo -->
         <router-link to="/" class="brand-logo">
-          <span class="logo-icon">🚀</span>
-          <span class="logo-text">Zone<span class="highlight">Mart</span></span>
-          <span class="tag-10km">10km Delivery</span>
+          <img src="/logo.png" alt="ZoneMart Logo" class="brand-logo-img" />
+          <div class="brand-text-wrap">
+            <span class="logo-text">Zone<span class="highlight">Mart</span></span>
+            <span class="logo-slogan">Giao hàng hỏa tốc</span>
+          </div>
+          <span class="tag-10km">10km</span>
         </router-link>
 
         <!-- Navigation Links cho cả 3 thành viên -->
@@ -134,13 +137,35 @@ body {
 .brand-logo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   text-decoration: none;
-  color: #0f172a;
+  color: #1a2f50;
 }
-.logo-icon { font-size: 24px; }
-.logo-text { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
-.logo-text .highlight { color: #f97316; }
+.brand-logo-img {
+  height: 48px;
+  width: auto;
+  object-fit: contain;
+}
+.brand-text-wrap {
+  display: flex;
+  flex-direction: column;
+}
+.logo-text {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+  color: #1a2f50;
+}
+.logo-text .highlight {
+  color: #e27d2b;
+}
+.logo-slogan {
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.3px;
+}
 .tag-10km {
   font-size: 11px;
   background: #eff6ff;
@@ -148,7 +173,7 @@ body {
   padding: 2px 8px;
   border-radius: 12px;
   font-weight: 700;
-  margin-left: 6px;
+  margin-left: 4px;
   border: 1px solid #dbeafe;
 }
 
