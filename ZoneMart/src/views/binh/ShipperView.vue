@@ -759,27 +759,35 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 4. NÚT BẬT / TẮT HOẠT ĐỘNG (Ở PHÍA DƯỚI - NGAY TRÊN THANH ĐIỀU HƯỚNG) -->
+    <!-- 4. NÚT CÔNG TẮC BẬT / TẮT HOẠT ĐỘNG (TOGGLE SWITCH CHUẨN) -->
     <div v-show="currentTab === 'map'" class="floating-toggle-bar">
-      <div class="active-toggle-container">
-        <button
-          class="bottom-master-toggle-btn"
-          :class="{ 'is-online': isOnline, 'is-offline': !isOnline }"
-          @click="toggleOnline"
+      <div class="toggle-switch-card" @click="toggleOnline">
+        <div class="toggle-info-col">
+          <div class="status-indicator-badge" :class="{ 'online': isOnline }">
+            <span class="status-live-dot"></span>
+            <span class="status-badge-text">{{ isOnline ? "Đang BẬT Hoạt Động" : "Đang TẮT Hoạt Động" }}</span>
+          </div>
+          <p class="status-sub-desc">
+            {{ isOnline ? "Bán kính quét: 10km quanh vị trí bạn" : "Gạt công tắc để bắt đầu nhận đơn" }}
+          </p>
+        </div>
+
+        <!-- Công tắc gạt BẬT / TẮT chuẩn -->
+        <div 
+          class="switch-control-wrap" 
+          :class="{ 'is-active': isOnline }"
+          role="switch"
+          :aria-checked="isOnline"
+          :title="isOnline ? 'Nhấn để Tắt hoạt động' : 'Nhấn để Bật hoạt động'"
         >
-          <div class="toggle-state-visual">
-            <div class="toggle-switch-knob">
+          <div class="switch-capsule">
+            <span class="switch-label label-on">BẬT</span>
+            <span class="switch-thumb">
               <i class="bi" :class="isOnline ? 'bi-lightning-charge-fill' : 'bi-power'"></i>
-            </div>
-            <div class="toggle-state-text">
-              <span class="state-title">{{ isOnline ? "ĐANG HOẠT ĐỘNG" : "ĐANG TẠM NGHỈ" }}</span>
-              <span class="state-sub">{{ isOnline ? "Chạm để Tắt hoạt động" : "Chạm để BẬT nhận đơn hỏa tốc" }}</span>
-            </div>
+            </span>
+            <span class="switch-label label-off">TẮT</span>
           </div>
-          <div class="toggle-action-badge">
-            <span>{{ isOnline ? "TẮT" : "BẬT" }}</span>
-          </div>
-        </button>
+        </div>
       </div>
     </div>
 
@@ -1600,7 +1608,7 @@ onUnmounted(() => {
 }
 
 /* ==========================================================================
-   4. NÚT BẬT / TẮT HOẠT ĐỘNG (Ở PHÍA DƯỚI - NGAY TRÊN THANH ĐIỀU HƯỚNG)
+   4. NÚT CÔNG TẮC BẬT / TẮT HOẠT ĐỘNG (TOGGLE SWITCH CHUẨN)
    ========================================================================== */
 .floating-toggle-bar {
   position: absolute;
@@ -1614,107 +1622,148 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.active-toggle-container {
+.toggle-switch-card {
   pointer-events: auto;
-  width: 100%;
-  max-width: 440px;
-}
-
-.bottom-master-toggle-btn {
-  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px 10px 10px;
-  border-radius: 20px;
-  border: none;
+  gap: 16px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(14px);
+  padding: 10px 18px 10px 20px;
+  border-radius: 999px;
+  box-shadow: 0 10px 30px -4px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
   cursor: pointer;
-  font-family: inherit;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: 440px;
+  width: 100%;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
 }
 
-.bottom-master-toggle-btn:hover {
+.toggle-switch-card:hover {
   transform: translateY(-2px);
+  box-shadow: 0 14px 34px -4px rgba(0, 0, 0, 0.2);
 }
 
-.bottom-master-toggle-btn.is-offline {
-  background: #1e293b;
-  color: #ffffff;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+.toggle-info-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
 }
 
-.bottom-master-toggle-btn.is-offline .toggle-switch-knob {
-  background: #334155;
-  color: #94a3b8;
+.status-indicator-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
-.bottom-master-toggle-btn.is-offline .toggle-action-badge {
+.status-live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #94a3b8;
+  transition: all 0.3s;
+}
+
+.status-indicator-badge.online .status-live-dot {
   background: #22c55e;
-  color: #ffffff;
-  box-shadow: 0 2px 10px rgba(34, 197, 94, 0.4);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3);
+  animation: pulseDot 2s infinite;
 }
 
-.bottom-master-toggle-btn.is-online {
-  background: linear-gradient(135deg, #15803d 0%, #166534 100%);
-  color: #ffffff;
-  box-shadow: 0 10px 30px rgba(22, 163, 74, 0.45);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+.status-badge-text {
+  font-size: 14.5px;
+  font-weight: 900;
+  color: #0f172a;
+  letter-spacing: 0.2px;
 }
 
-.bottom-master-toggle-btn.is-online .toggle-switch-knob {
-  background: #ffffff;
-  color: #16a34a;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+.status-sub-desc {
+  font-size: 11.5px;
+  color: #64748b;
+  margin: 0;
+  font-weight: 600;
 }
 
-.bottom-master-toggle-btn.is-online .toggle-action-badge {
-  background: rgba(0, 0, 0, 0.35);
-  color: #ffffff;
+/* Công tắc gạt (Toggle Switch Control) */
+.switch-control-wrap {
+  flex-shrink: 0;
+  user-select: none;
 }
 
-.toggle-state-visual {
+.switch-capsule {
+  position: relative;
+  width: 78px;
+  height: 42px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  border: 2px solid #cbd5e1;
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  padding: 0 8px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
-.toggle-switch-knob {
-  width: 46px;
-  height: 46px;
-  border-radius: 15px;
+.switch-control-wrap.is-active .switch-capsule {
+  background: #22c55e;
+  border-color: #16a34a;
+  box-shadow: 0 2px 14px rgba(34, 197, 94, 0.45);
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  flex-shrink: 0;
-  transition: all 0.25s;
-}
-
-.toggle-state-text {
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-}
-
-.state-title {
   font-size: 15px;
-  font-weight: 900;
-  color: #ffffff;
-  letter-spacing: 0.3px;
+  color: #64748b;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), color 0.3s;
+  z-index: 2;
 }
 
-.state-sub {
-  font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.8);
+.switch-control-wrap.is-active .switch-thumb {
+  transform: translateX(36px);
+  color: #16a34a;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
-.toggle-action-badge {
-  padding: 7px 16px;
-  border-radius: 999px;
-  font-size: 12px;
+.switch-label {
+  font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.5px;
+  z-index: 1;
+  transition: opacity 0.25s;
+}
+
+.label-on {
+  color: #ffffff;
+  opacity: 0;
+  margin-left: 2px;
+}
+
+.label-off {
+  color: #64748b;
+  opacity: 1;
+  margin-left: auto;
+  margin-right: 2px;
+}
+
+.switch-control-wrap.is-active .label-on {
+  opacity: 1;
+}
+
+.switch-control-wrap.is-active .label-off {
+  opacity: 0;
 }
 
 /* ==========================================================================
