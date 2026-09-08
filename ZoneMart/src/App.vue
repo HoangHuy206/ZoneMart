@@ -80,7 +80,7 @@ const handleLogout = () => {
 
         <!-- 3. Khu vực bên phải: Tự động đổi theo vai trò Khách ghé thăm (Guest) hoặc Đã đăng nhập -->
         <div class="nav-right-actions">
-          <!-- Hai liên kết cơ bản luôn hiển thị: Sản Phẩm & Bản Đồ -->
+          <!-- Liên kết cơ bản hiển thị: Sản Phẩm -->
           <nav class="desktop-links">
             <router-link
               to="/products"
@@ -88,9 +88,6 @@ const handleLogout = () => {
               active-class="active"
             >
               Sản Phẩm
-            </router-link>
-            <router-link to="/map" class="quick-link" active-class="active">
-              Bản Đồ
             </router-link>
           </nav>
 
@@ -209,9 +206,6 @@ const handleLogout = () => {
         <router-link to="/products" class="mobile-link" @click="closeDropdowns">
           🛍️ Sản Phẩm
         </router-link>
-        <router-link to="/map" class="mobile-link" @click="closeDropdowns">
-          🗺️ Bản Đồ 10km
-        </router-link>
 
         <template v-if="!isLoggedIn">
           <div class="mobile-divider"></div>
@@ -313,9 +307,6 @@ const handleLogout = () => {
           <ul class="footer-links">
             <li>
               <router-link to="/contact">Giới thiệu về ZoneMart</router-link>
-            </li>
-            <li>
-              <router-link to="/map">Bản đồ phủ sóng bán kính 10km</router-link>
             </li>
             <li><a href="#rules">Quy chế hoạt động sàn TMĐT</a></li>
             <li><a href="#safety">Tiêu chuẩn nông sản VietGAP</a></li>
