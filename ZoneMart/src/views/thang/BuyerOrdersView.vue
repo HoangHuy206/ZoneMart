@@ -1,22 +1,145 @@
 ﻿<script setup lang="ts">
-// Code logic Quản Lý Đơn Mua của Thắng viết tại đây
+/**
+ * ================================================================
+ * QUẢN LÝ ĐƠN MUA (BUYER ORDERS) - Phụ trách: Thắng
+ * ================================================================
+ */
+import { ref } from "vue";
+
+const orders = ref([
+  {
+    orderId: "ORD_98213",
+    date: "07/09/2026 18:30",
+    total: 395000,
+    paymentMethod: "ONLINE_QR",
+    deliveryType: "express",
+    subOrders: [
+      {
+        subId: "SUB_01",
+        storeName: "ZoneMart Cầu Giấy",
+        items: "Thịt Bò Mỹ Nhập Khẩu (x2), Gạo ST25 (x1)",
+        status: "delivering",
+        statusText: "🛵 Shipper đang giao hàng tới bạn",
+        shipperInfo: "Nguyễn Văn Nam (29M1-8888)",
+        shipperPhone: "0987 654 321"
+      }
+    ]
+  },
+  {
+    orderId: "ORD_97842",
+    date: "05/09/2026 12:15",
+    total: 125000,
+    paymentMethod: "COD",
+    deliveryType: "standard",
+    subOrders: [
+      {
+        subId: "SUB_02",
+        storeName: "Siêu Thị Trái Cây Xanh",
+        items: "Dâu Tây Đà Lạt (x1)",
+        status: "completed",
+        statusText: "✅ Giao hàng thành công",
+        shipperInfo: "Trần Đình Trọng (29H2-4321)",
+        shipperPhone: "0912 333 444"
+      }
+    ]
+  }
+]);
+
+const handleConfirmReceived = (subId: string) => {
+  alert(`Cảm ơn bạn đã xác nhận nhận hàng cho đơn #${subId}! Đơn hàng đã hoàn tất.`);
+};
+
+const handleReportIssue = (subId: string) => {
+  alert(`Đã gửi yêu cầu khiếu nại cho đơn #${subId}. CSKH ZoneMart sẽ liên hệ hỗ trợ bạn!`);
+};
 </script>
 
 <template>
-  <div class="demo-container">
-    <div class="demo-card">
-      <span class="badge badge-thang">Phụ trách: Thắng</span>
-      <h2>Demo Trang Giao Diện Buyer (Đơn Mua)</h2>
-      <p>Khu vực phát triển theo dõi đơn hàng của Khách (Xem tiến độ Sub-Order, xác nhận Đã nhận hàng, báo cáo khiếu nại theo Luồng 4).</p>
+  <div class="buyer-orders-container">
+    <div class="header">
+      <h2>📦 Đơn Mua Của Bạn</h2>
+      <p>Theo dõi trực tiếp trạng thái các đơn hàng đang giao và lịch sử mua sắm.</p>
+    </div>
+
+    <div class="orders-list">
+      <div v-for="order in orders" :key="order.orderId" class="order-card">
+        <div class="order-top">
+          <div>
+            <strong>Đơn hàng: #{{ order.orderId }}</strong>
+            <span class="date">{{ order.date }}</span>
+          </div>
+          <div class="badges">
+            <span class="badge express" v-if="order.deliveryType === 'express'">⚡ Hỏa Tốc</span>
+            <span class="badge pay">{{ order.paymentMethod === 'ONLINE_QR' ? 'Đã thanh toán QR' : 'COD (Tiền mặt)' }}</span>
+          </div>
+        </div>
+
+        <div class="sub-orders">
+          <div v-for="sub in order.subOrders" :key="sub.subId" class="sub-card">
+            <div class="sub-head">
+              <span class="store-name">🏪 {{ sub.storeName }}</span>
+              <span class="status-badge" :class="sub.status">{{ sub.statusText }}</span>
+            </div>
+            <p class="items-text">🛒 {{ sub.items }}</p>
+
+            <div v-if="sub.status === 'delivering'" class="shipper-bar">
+              <div class="s-info">
+                <span>🛵 Tài xế: <strong>{{ sub.shipperInfo }}</strong></span>
+                <span>☎️ <strong>{{ sub.shipperPhone }}</strong></span>
+              </div>
+              <div class="actions">
+                <button class="btn btn-sm btn-success" @click="handleConfirmReceived(sub.subId)">
+                  ✅ Đã nhận được hàng
+                </button>
+                <button class="btn btn-sm btn-danger" @click="handleReportIssue(sub.subId)">
+                  ⚠️ Báo cáo sự cố
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="order-bottom">
+          <span>Tổng tiền:</span>
+          <strong class="total-val">{{ order.total.toLocaleString("vi-VN") }} ₫</strong>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.demo-container { max-width: 900px; margin: 60px auto; padding: 0 20px; }
-.demo-card { background: #fff; border-radius: 14px; border: 2px dashed #cbd5e1; padding: 50px 30px; text-align: center; }
-.badge { font-size: 13px; font-weight: 700; padding: 6px 14px; border-radius: 20px; display: inline-block; }
-.badge-thang { background: #dbeafe; color: #1e40af; }
-h2 { margin: 18px 0 8px 0; font-size: 24px; color: #0f172a; }
-p { margin: 0; color: #64748b; font-size: 15px; }
+.buyer-orders-container { max-width: 1050px; margin: 30px auto 60px auto; padding: 0 20px; }
+.header h2 { margin: 0 0 6px 0; color: #0f172a; font-size: 24px; }
+.header p { margin: 0 0 24px 0; color: #64748b; font-size: 14px; }
+
+.orders-list { display: flex; flex-direction: column; gap: 20px; }
+.order-card { background: #fff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; }
+
+.order-top { background: #f8fafc; padding: 14px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+.date { color: #94a3b8; font-size: 13px; margin-left: 10px; }
+.badges { display: flex; gap: 8px; }
+.badge { font-size: 12px; padding: 3px 8px; border-radius: 6px; font-weight: 600; }
+.badge.express { background: #fee2e2; color: #dc2626; }
+.badge.pay { background: #dbeafe; color: #1e40af; }
+
+.sub-orders { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.sub-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; }
+.sub-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.store-name { font-weight: 700; color: #1e293b; font-size: 14px; }
+.status-badge { font-size: 13px; font-weight: 600; }
+.status-badge.delivering { color: #2563eb; }
+.status-badge.completed { color: #16a34a; }
+.items-text { margin: 0 0 10px 0; font-size: 13px; color: #475569; }
+
+.shipper-bar { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.s-info { display: flex; gap: 14px; font-size: 13px; color: #1e40af; }
+.actions { display: flex; gap: 8px; }
+
+.order-bottom { padding: 14px 20px; border-top: 1px solid #f1f5f9; display: flex; justify-content: flex-end; align-items: center; gap: 10px; }
+.total-val { font-size: 18px; color: #dc2626; }
+
+.btn { border: none; cursor: pointer; padding: 6px 12px; border-radius: 6px; font-weight: 600; font-size: 12px; }
+.btn-success { background: #16a34a; color: #fff; }
+.btn-danger { background: transparent; border: 1px solid #fca5a5; color: #dc2626; }
 </style>

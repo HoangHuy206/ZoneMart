@@ -357,7 +357,9 @@ const goToRoute = (path: string) => {
                 stroke-linecap="round"
                 stroke-linejoin="round"
               >
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <path
+                  d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+                ></path>
                 <polyline points="9 22 9 12 15 12 15 22"></polyline>
               </svg>
               <svg
@@ -372,7 +374,7 @@ const goToRoute = (path: string) => {
                 stroke-linejoin="round"
               >
                 <rect x="1" y="3" width="15" height="13"></rect>
-                <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+                <polygon points="16 8 20 8 23 11 23 16 16 16 8"></polygon>
                 <circle cx="5.5" cy="18.5" r="2.5"></circle>
                 <circle cx="18.5" cy="18.5" r="2.5"></circle>
               </svg>
@@ -507,9 +509,7 @@ const goToRoute = (path: string) => {
     <section class="section-container how-it-works-section">
       <div class="how-header">
         <span class="how-badge">MÔ HÌNH VẬN HÀNH THÔNG MINH</span>
-        <h2 class="section-title text-center">
-          ZoneMart Hoạt Động Như Thế Nào?
-        </h2>
+        <h2 class="section-title text-center">ZoneMart Hoạt Động Như Thế Nào?</h2>
         <p class="section-subtitle text-center">
           Giao hàng siêu tốc trong bán kính 10km nhờ công nghệ kết nối tự động
           giữa Người Mua, Nhà Vườn và Tài Xế
@@ -534,8 +534,8 @@ const goToRoute = (path: string) => {
         <div class="header-left">
           <h2 class="section-title">Gian Hàng Đối Tác Tiêu Biểu</h2>
           <p class="section-subtitle">
-            Ghé thăm những nhà vườn hữu cơ và vựa trái cây chuẩn chất lượng
-            quanh bạn
+            Ghé thăm những nhà vườn hữu cơ và vựa trái cây chuẩn chất lượng quanh
+            bạn
           </p>
         </div>
         <router-link to="/products" class="view-all-link">

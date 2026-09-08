@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import logoImg from './assets/logo.jpg';
+import logoImg from './assets/logo.png';
 
 const router = useRouter();
 const isMobileMenuOpen = ref(false);
@@ -13,7 +13,6 @@ const cartItemCount = ref(0);
 const isLoggedIn = ref(false);
 
 onMounted(() => {
-  // Đồng bộ với localStorage nếu sau này có phiên đăng nhập
   const savedStatus = localStorage.getItem('isLoggedIn');
   if (savedStatus === 'true') {
     isLoggedIn.value = true;
@@ -44,7 +43,6 @@ const handleHeaderSearch = () => {
   }
 };
 
-// Hàm đăng xuất giả lập khi đã có tài khoản
 const handleLogout = () => {
   isLoggedIn.value = false;
   localStorage.removeItem('isLoggedIn');
@@ -55,16 +53,14 @@ const handleLogout = () => {
 
 <template>
   <div class="app-wrapper" @click="isUserDropdownOpen = false">
-    <!-- Header chuẩn theo hình Sample Mockup (Warm Humanist & Terracotta) -->
-    <header class="navbar">
+    <!-- Header chuẩn theo hình Sample Mockup (Tự động ẩn ở trang 404 qua meta.hideHeader) -->
+    <header v-if="!$route.meta.hideHeader" class="navbar">
       <div class="nav-container">
         <!-- 1. Logo thương hiệu bên trái -->
         <router-link to="/" class="brand-logo" @click="closeDropdowns">
           <img :src="logoImg" alt="ZoneMart Logo" class="brand-logo-img" />
           <div class="brand-text-block">
-            <span class="brand-name"
-              >Zone<span class="highlight">Mart</span></span
-            >
+            <span class="brand-name">Zone<span class="highlight">Mart</span></span>
             <span class="brand-tagline">Giao hàng hỏa tốc 10km</span>
           </div>
         </router-link>
@@ -84,11 +80,7 @@ const handleLogout = () => {
         <div class="nav-right-actions">
           <!-- Hai liên kết cơ bản luôn hiển thị: Sản Phẩm & Bản Đồ -->
           <nav class="desktop-links">
-            <router-link
-              to="/products"
-              class="quick-link"
-              active-class="active"
-            >
+            <router-link to="/products" class="quick-link" active-class="active">
               Sản Phẩm
             </router-link>
             <router-link to="/map" class="quick-link" active-class="active">
@@ -96,10 +88,7 @@ const handleLogout = () => {
             </router-link>
           </nav>
 
-          <!-- ==========================================================
-               A. KHI LÀ KHÁCH GHÉ THĂM (GUEST - CHƯA ĐĂNG NHẬP):
-               Chỉ có 2 nút: Đăng Ký và Đăng Nhập
-               ========================================================== -->
+          <!-- A. KHI LÀ KHÁCH GHÉ THĂM (GUEST): 2 nút Đăng Ký và Đăng Nhập -->
           <div v-if="!isLoggedIn" class="guest-auth-actions">
             <router-link to="/register" class="btn-auth-outline">
               Đăng Ký
@@ -109,10 +98,7 @@ const handleLogout = () => {
             </router-link>
           </div>
 
-          <!-- ==========================================================
-               B. KHI ĐÃ ĐĂNG NHẬP (LOGGED IN):
-               Hiển thị Icon Hồ sơ / Ví và Icon Giỏ hàng
-               ========================================================== -->
+          <!-- B. KHI ĐÃ ĐĂNG NHẬP: Hiển thị Icon Hồ sơ / Ví và Icon Giỏ hàng -->
           <div v-else class="logged-in-actions">
             <!-- Icon Tài khoản với Menu Dropdown -->
             <div class="user-menu-wrapper" @click.stop>
@@ -121,16 +107,7 @@ const handleLogout = () => {
                 title="Tài khoản của bạn"
                 @click="toggleUserDropdown"
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="22"
-                  height="22"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                   <circle cx="12" cy="7" r="4"></circle>
                 </svg>
@@ -140,40 +117,20 @@ const handleLogout = () => {
                 <div class="dropdown-header">
                   <strong>Tài Khoản ZoneMart</strong>
                 </div>
-                <router-link
-                  to="/profile"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
+                <router-link to="/profile" class="dropdown-item" @click="closeDropdowns">
                   👤 Hồ Sơ & Ví Tiền
                 </router-link>
-                <router-link
-                  to="/buyer-orders"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
+                <router-link to="/buyer-orders" class="dropdown-item" @click="closeDropdowns">
                   📦 Đơn Mua Của Bạn
                 </router-link>
                 <div class="dropdown-divider"></div>
-                <router-link
-                  to="/shipper"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
+                <router-link to="/shipper" class="dropdown-item" @click="closeDropdowns">
                   🛵 Cổng Shipper
                 </router-link>
-                <router-link
-                  to="/admin"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
+                <router-link to="/admin" class="dropdown-item" @click="closeDropdowns">
                   🛡️ Bảng Điều Khiển Admin
                 </router-link>
-                <router-link
-                  to="/contact"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
+                <router-link to="/contact" class="dropdown-item" @click="closeDropdowns">
                   📞 Liên Hệ Hỗ Trợ
                 </router-link>
                 <div class="dropdown-divider"></div>
@@ -185,21 +142,10 @@ const handleLogout = () => {
 
             <!-- Icon Giỏ hàng kèm huy hiệu số lượng -->
             <router-link to="/cart" class="icon-btn cart-btn" title="Giỏ hàng">
-              <svg
-                viewBox="0 0 24 24"
-                width="22"
-                height="22"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="9" cy="21" r="1"></circle>
                 <circle cx="20" cy="21" r="1"></circle>
-                <path
-                  d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
-                ></path>
+                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
               </svg>
               <span class="cart-badge">{{ cartItemCount }}</span>
             </router-link>
@@ -221,51 +167,29 @@ const handleLogout = () => {
           🗺️ Bản Đồ 10km
         </router-link>
 
-        <!-- Nếu là Guest trên điện thoại -->
         <template v-if="!isLoggedIn">
           <div class="mobile-divider"></div>
           <div class="mobile-auth-grid">
-            <router-link
-              to="/register"
-              class="btn-auth-outline mobile-btn"
-              @click="closeDropdowns"
-            >
+            <router-link to="/register" class="btn-auth-outline mobile-btn" @click="closeDropdowns">
               Đăng Ký
             </router-link>
-            <router-link
-              to="/login"
-              class="btn-auth-solid mobile-btn"
-              @click="closeDropdowns"
-            >
+            <router-link to="/login" class="btn-auth-solid mobile-btn" @click="closeDropdowns">
               Đăng Nhập
             </router-link>
           </div>
         </template>
 
-        <!-- Nếu đã đăng nhập trên điện thoại -->
         <template v-else>
           <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
             🛒 Giỏ Hàng ({{ cartItemCount }})
           </router-link>
-          <router-link
-            to="/buyer-orders"
-            class="mobile-link"
-            @click="closeDropdowns"
-          >
+          <router-link to="/buyer-orders" class="mobile-link" @click="closeDropdowns">
             📦 Đơn Mua
           </router-link>
-          <router-link
-            to="/profile"
-            class="mobile-link"
-            @click="closeDropdowns"
-          >
+          <router-link to="/profile" class="mobile-link" @click="closeDropdowns">
             👤 Hồ Sơ/Ví
           </router-link>
-          <router-link
-            to="/shipper"
-            class="mobile-link"
-            @click="closeDropdowns"
-          >
+          <router-link to="/shipper" class="mobile-link" @click="closeDropdowns">
             🛵 Shipper
           </router-link>
           <router-link to="/admin" class="mobile-link" @click="closeDropdowns">
@@ -284,8 +208,8 @@ const handleLogout = () => {
       <router-view />
     </main>
 
-    <!-- Footer ZoneMart – Chuẩn sàn Thương Mại Điện Tử -->
-    <footer class="app-footer">
+    <!-- Footer ZoneMart – Chuẩn sàn Thương Mại Điện Tử (Tự động ẩn ở trang 404 qua meta.hideFooter) -->
+    <footer v-if="!$route.meta.hideFooter" class="app-footer">
       <div class="footer-main-container">
         <!-- Cột 1: Thông tin thương hiệu, Liên hệ & Trụ sở -->
         <div class="footer-col col-brand">
@@ -297,23 +221,13 @@ const handleLogout = () => {
             </div>
           </div>
           <p class="footer-tagline">
-            Sàn thương mại điện tử kết nối trực tiếp Nhà Vườn, Tiểu Thương với
-            Khách Hàng lân cận trong bán kính 10km.
+            Sàn thương mại điện tử kết nối trực tiếp Nhà Vườn, Tiểu Thương với Khách Hàng lân cận trong bán kính 10km.
           </p>
           <ul class="footer-contact-list">
-            <li>
-              📍 <strong>Trụ sở:</strong> Tòa nhà ZoneMart, Khu Công Nghệ Cao,
-              TP. Hồ Chí Minh
-            </li>
-            <li>
-              📞 <strong>Tổng đài hỗ trợ:</strong> 1900 6868 (8:00 - 21:00 hàng
-              ngày)
-            </li>
+            <li>📍 <strong>Trụ sở:</strong> Tòa nhà ZoneMart, Khu Công Nghệ Cao, TP. Hồ Chí Minh</li>
+            <li>📞 <strong>Tổng đài hỗ trợ:</strong> 1900 6868 (8:00 - 21:00 hàng ngày)</li>
             <li>✉️ <strong>Email hỗ trợ:</strong> support@zonemart.vn</li>
-            <li>
-              🕒 <strong>Thời gian hoạt động:</strong> 06:00 - 22:00 (Cả Thứ 7,
-              CN)
-            </li>
+            <li>🕒 <strong>Thời gian hoạt động:</strong> 06:00 - 22:00 (Cả Thứ 7, CN)</li>
           </ul>
         </div>
 
@@ -321,12 +235,8 @@ const handleLogout = () => {
         <div class="footer-col">
           <h5 class="footer-heading">VỀ ZONEMART</h5>
           <ul class="footer-links">
-            <li>
-              <router-link to="/contact">Giới thiệu về ZoneMart</router-link>
-            </li>
-            <li>
-              <router-link to="/map">Bản đồ phủ sóng bán kính 10km</router-link>
-            </li>
+            <li><router-link to="/contact">Giới thiệu về ZoneMart</router-link></li>
+            <li><router-link to="/map">Bản đồ phủ sóng bán kính 10km</router-link></li>
             <li><a href="#rules">Quy chế hoạt động sàn TMĐT</a></li>
             <li><a href="#safety">Tiêu chuẩn nông sản VietGAP</a></li>
             <li><a href="#news">Tin tức & Mẹo tiêu dùng sạch</a></li>
@@ -338,9 +248,7 @@ const handleLogout = () => {
         <div class="footer-col">
           <h5 class="footer-heading">HỖ TRỢ KHÁCH HÀNG</h5>
           <ul class="footer-links">
-            <li>
-              <router-link to="/contact">Trung tâm hỗ trợ 24/7</router-link>
-            </li>
+            <li><router-link to="/contact">Trung tâm hỗ trợ 24/7</router-link></li>
             <li><a href="#guide">Hướng dẫn đặt mua & Chọn nhà vườn</a></li>
             <li><a href="#shipping">Chính sách giao hỏa tốc 10km</a></li>
             <li><a href="#refund">Chính sách đổi trả & Hoàn tiền</a></li>
@@ -353,24 +261,12 @@ const handleLogout = () => {
         <div class="footer-col">
           <h5 class="footer-heading">HỢP TÁC & PHÁT TRIỂN</h5>
           <ul class="footer-links">
-            <li>
-              <router-link to="/register-seller"
-                >Mở gian hàng Nông Dân / Shop</router-link
-              >
-            </li>
-            <li>
-              <router-link to="/shipper"
-                >Đăng ký làm Tài xế Shipper</router-link
-              >
-            </li>
-            <li>
-              <router-link to="/admin">Cổng quản trị viên Admin</router-link>
-            </li>
+            <li><router-link to="/register-seller">Mở gian hàng Nông Dân / Shop</router-link></li>
+            <li><router-link to="/shipper">Đăng ký làm Tài xế Shipper</router-link></li>
+            <li><router-link to="/admin">Cổng quản trị viên Admin</router-link></li>
           </ul>
 
-          <h5 class="footer-heading footer-subheading-mt">
-            PHƯƠNG THỨC THANH TOÁN
-          </h5>
+          <h5 class="footer-heading footer-subheading-mt">PHƯƠNG THỨC THANH TOÁN</h5>
           <div class="payment-badges">
             <span class="pay-tag">COD (Tiền mặt)</span>
             <span class="pay-tag">Ví ZoneMart</span>
@@ -378,9 +274,7 @@ const handleLogout = () => {
             <span class="pay-tag">MoMo</span>
           </div>
 
-          <h5 class="footer-heading footer-subheading-mt">
-            KẾT NỐI VỚI CHÚNG TÔI
-          </h5>
+          <h5 class="footer-heading footer-subheading-mt">KẾT NỐI VỚI CHÚNG TÔI</h5>
           <div class="social-links">
             <a href="#facebook" class="social-icon" title="Facebook">📘</a>
             <a href="#zalo" class="social-icon" title="Zalo">💬</a>
@@ -393,9 +287,13 @@ const handleLogout = () => {
       <!-- Dòng Bản quyền & Ghi chú thành viên dưới cùng -->
       <div class="footer-bottom-bar">
         <div class="footer-bottom-container">
+          <div class="member-credits">
+            <span>🚀 <strong>Huy</strong>: Profile, Map, Sản Phẩm, Liên Hệ, 404</span> | 
+            <span><strong>Thắng</strong>: Home, Giỏ Hàng, Thanh Toán, Đơn Mua</span> | 
+            <span><strong>Bình</strong>: Auth, Đăng Ký Shop, Shipper, Admin</span>
+          </div>
           <p class="copyright">
-            © 2026 ZoneMart E-Commerce Platform. Nền tảng thương mại điện tử
-            giao hàng siêu tốc 10km.
+            © 2026 ZoneMart E-Commerce Platform. Nền tảng thương mại điện tử giao hàng siêu tốc 10km.
           </p>
         </div>
       </div>
@@ -411,9 +309,7 @@ const handleLogout = () => {
 body {
   margin: 0;
   padding: 0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Plus Jakarta Sans', 'Segoe UI', Roboto,
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "Segoe UI", Roboto, sans-serif;
   background-color: #faf7f2;
   color: #2b1b14;
 }
@@ -672,14 +568,8 @@ body {
   animation: fadeIn 0.18s ease-out;
 }
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .dropdown-header {
   padding: 10px 16px 8px;
@@ -803,7 +693,7 @@ body {
    FOOTER CHUẨN SÀN THƯƠNG MẠI ĐIỆN TỬ
    ========================================================== */
 .app-footer {
-  background: #19100a; /* Nền tối ấm sang trọng */
+  background: #19100a;
   color: #a49187;
   padding: 50px 0 0 0;
   margin-top: 50px;
@@ -926,9 +816,7 @@ body {
   font-size: 20px;
   text-decoration: none;
   opacity: 0.85;
-  transition:
-    transform 0.2s,
-    opacity 0.2s;
+  transition: transform 0.2s, opacity 0.2s;
 }
 .social-icon:hover {
   transform: translateY(-2px);

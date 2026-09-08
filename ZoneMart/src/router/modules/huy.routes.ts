@@ -1,4 +1,4 @@
-﻿import type { RouteRecordRaw } from "vue-router";
+import type { RouteRecordRaw } from "vue-router";
 
 /**
  * CÁC ROUTE DO HUY PHỤ TRÁCH:
@@ -43,10 +43,12 @@ export const huyRoutes: RouteRecordRaw[] = [
     path: "/404",
     name: "NotFound",
     component: () => import("../../views/not-found/NotFoundView.vue"),
-    meta: { title: "404 Không Tìm Thấy - ZoneMart" }
+    meta: { title: "404 - ACCESS DENIED", hideHeader: true, hideFooter: true }
   },
   {
     path: "/:pathMatch(.*)*",
-    redirect: "/404"
+    name: "NotFoundCatchAll",
+    component: () => import("../../views/not-found/NotFoundView.vue"),
+    meta: { title: "404 - ACCESS DENIED", hideHeader: true, hideFooter: true }
   }
 ];
