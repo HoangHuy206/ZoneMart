@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# AI Agent Skills (Local only)
+.agents/
+.agent/
+_agents/
+_agent/

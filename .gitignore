@@ -1,4 +1,4 @@
-﻿# Dependencies
+# Dependencies
 node_modules/
 ZoneMart/node_modules/
 
@@ -44,3 +44,9 @@ pnpm-debug.log*
 # OS Files
 .DS_Store
 Thumbs.db
+
+# AI Agent Skills & Config (Local only - do not push to Git)
+.agents/
+.agent/
+_agents/
+_agent/
