@@ -491,29 +491,6 @@ const handleConfirmPicked = () => {
   renderOrderOnMap();
 };
 
-const demoOrderTemplate = {
-  orderId: "ZM-7749",
-  deliveryType: "express",
-  shippingFee: 38500,
-  distanceKm: 2.2,
-  items: "2x Thịt Ba Chỉ Bò Mỹ, 1x Gạo ST25 (5kg), 1x Nấm Kim Châm",
-  notes: "Gọi trước khi đến 5 phút, giao lên tầng 5 phòng 502",
-  store: {
-    name: "ZoneMart Bách Hóa Cầu Giấy",
-    address: "245 Cầu Giấy, P. Dịch Vọng, Hà Nội",
-    phone: "024 1234 5678",
-    lat: 21.0360,
-    lng: 105.7985
-  },
-  customer: {
-    name: "Anh Hoàng Huy",
-    address: "Số 165 Cầu Giấy, P. Dịch Vọng, Hà Nội",
-    phone: "0912 345 678",
-    lat: 21.0315,
-    lng: 105.7910
-  }
-};
-
 const handleConfirmDelivered = () => {
   currentStep.value = "delivered";
   if (activeOrder.value) {
@@ -537,13 +514,6 @@ const handleConfirmDelivered = () => {
 
     triggerToast(`🎉 Đã giao hàng thành công! +${fee.toLocaleString('vi-VN')} ₫ vào ví.`);
   }
-  renderOrderOnMap();
-};
-
-const handleAcceptNewOrder = () => {
-  activeOrder.value = { ...demoOrderTemplate };
-  currentStep.value = "accepted";
-  triggerToast("⚡ Đã nhận đơn hàng mới! Hãy di chuyển đến quán.");
   renderOrderOnMap();
 };
 
@@ -656,17 +626,6 @@ onUnmounted(() => {
         >
           <i class="bi bi-wallet2 text-blue"></i>
           <span class="action-label">Thu nhập</span>
-        </button>
-
-        <!-- Thử nhận đơn (Demo) -->
-        <button
-          v-if="isOnline && currentStep === 'idle'"
-          class="map-action-btn btn-demo"
-          @click="handleAcceptNewOrder"
-          title="Thử nghiệm nhận đơn hàng mới (Demo)"
-        >
-          <i class="bi bi-lightning-charge-fill text-orange"></i>
-          <span class="action-label">Đơn mẫu</span>
         </button>
 
         <!-- GPS Recenter -->
@@ -1529,24 +1488,6 @@ onUnmounted(() => {
 .radar-info small {
   font-size: 10.5px;
   color: #94a3b8;
-}
-
-.btn-demo-order {
-  background: #2563eb;
-  color: #ffffff;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.2s;
-  white-space: nowrap;
-  margin-left: auto;
-}
-
-.btn-demo-order:hover {
-  background: #1d4ed8;
 }
 
 /* ==========================================================================
