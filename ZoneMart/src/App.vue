@@ -384,18 +384,6 @@ const handleLogout = () => {
       <div class="footer-bottom-bar">
         <div class="footer-bottom-container">
           <div class="member-credits">
-            <span
-              >🚀 <strong>Huy</strong>: Profile, Map, Sản Phẩm, Liên Hệ,
-              404</span
-            >
-            |
-            <span
-              ><strong>Thắng</strong>: Home, Giỏ Hàng, Thanh Toán, Đơn Mua</span
-            >
-            |
-            <span
-              ><strong>Bình</strong>: Auth, Đăng Ký Shop, Shipper, Admin</span
-            >
           </div>
           <p class="copyright">
             © 2026 ZoneMart E-Commerce Platform. Nền tảng thương mại điện tử

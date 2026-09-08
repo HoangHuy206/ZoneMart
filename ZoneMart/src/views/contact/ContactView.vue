@@ -254,10 +254,6 @@ const resetForm = () => {
           </div>
         </div>
 
-        <!-- Channel 3: Trụ Sở & Điểm Điều Phối -->
-        <div class="channel-card channel-location">
-          <div class="card-icon-wrap location-icon">
-            <i class="bi bi-geo-alt-fill"></i>
         <!-- Channel 3: Trụ Sở & Điểm Điều Phối (Bản Đồ Google Maps Trực Tiếp) -->
         <div class="channel-card channel-location channel-location-map">
           <div class="location-card-header">
@@ -270,10 +266,6 @@ const resetForm = () => {
               <p class="card-desc-sm">P. Tây Mỗ, Q. Nam Từ Liêm, Hà Nội</p>
             </div>
           </div>
-          <div class="card-body-wrap">
-            <div class="card-meta">Trụ sở & Hub Vận Hành</div>
-            <h3 class="card-headline">245 Cầu Giấy, Hà Nội</h3>
-            <p class="card-desc">Trung tâm điều phối hỏa tốc khu vực miền Bắc. Tiếp nhận khiếu nại trực tiếp tại văn phòng.</p>
 
           <div class="embedded-map-container">
             <iframe
@@ -285,10 +277,6 @@ const resetForm = () => {
               title="Trụ sở ZoneMart - Trường Cao đẳng Công nghệ Cao Hà Nội"
             ></iframe>
           </div>
-          <router-link to="/map" class="channel-action-btn secondary">
-            <span>Xem Hub trên bản đồ</span>
-            <i class="bi bi-compass"></i>
-          </router-link>
 
           <a
             href="https://maps.google.com/?q=Trường+Cao+đẳng+Công+nghệ+Cao+Hà+Nội"
