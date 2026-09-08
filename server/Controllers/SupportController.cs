@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using ZoneMart.Server.Models;
 using ZoneMart.Server.Services;
 
@@ -61,6 +61,7 @@ public class SupportController : ControllerBase
                 Topic = request.Topic,
                 Message = request.Message,
                 FileName = request.FileName,
+                FileBase64 = request.FileBase64,
                 CreatedAt = DateTime.UtcNow,
                 Status = "Pending"
             };

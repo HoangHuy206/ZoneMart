@@ -1,4 +1,4 @@
-﻿using MailKit.Net.Smtp;
+using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Options;
 using MimeKit;
@@ -42,9 +42,55 @@ public class EmailService : IEmailService
 
             var vnTime = DateTime.UtcNow.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss");
 
-            var bodyBuilder = new BodyBuilder
+            var bodyBuilder = new BodyBuilder();
+
+            string attachmentHtml = "";
+            if (!string.IsNullOrWhiteSpace(request.FileBase64))
             {
-                HtmlBody = $@"
+                try
+                {
+                    var base64Data = request.FileBase64;
+                    var commaIdx = base64Data.IndexOf(',');
+                    if (commaIdx >= 0)
+                    {
+                        base64Data = base64Data.Substring(commaIdx + 1);
+                    }
+                    var fileBytes = Convert.FromBase64String(base64Data);
+                    var fileName = !string.IsNullOrWhiteSpace(request.FileName) ? request.FileName : "attachment.jpg";
+
+                    var attachment = bodyBuilder.Attachments.Add(fileName, fileBytes);
+
+                    var isImage = fileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                                  fileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                                  fileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                                  fileName.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ||
+                                  fileName.EndsWith(".gif", StringComparison.OrdinalIgnoreCase);
+
+                    if (isImage)
+                    {
+                        attachment.ContentId = MimeKit.Utils.MimeUtils.GenerateMessageId();
+                        attachmentHtml = $@"
+                        <h3 style=""font-size: 16px; color: #0f172a; margin-top: 20px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;"">🖼️ Hình Ảnh Minh Họa / Đính Kèm</h3>
+                        <div style=""background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; text-align: center; margin-top: 10px;"">
+                            <img src=""cid:{attachment.ContentId}"" style=""max-width: 100%; max-height: 480px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);"" alt=""{fileName}"" />
+                            <div style=""margin-top: 8px; font-size: 12px; color: #64748b;"">📎 Tên file: <strong>{fileName}</strong> (Đã đính kèm trong email)</div>
+                        </div>";
+                    }
+                    else
+                    {
+                        attachmentHtml = $@"
+                        <div style=""background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-top: 16px; font-size: 14px; color: #334155;"">
+                            📎 <strong>Tệp đính kèm:</strong> {fileName} (Đã đính kèm trong email)
+                        </div>";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "EmailService: Lỗi xử lý đính kèm file Base64");
+                }
+            }
+
+            bodyBuilder.HtmlBody = $@"
                 <div style=""font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #ffffff;"">
                     <div style=""background: linear-gradient(135deg, #2563eb, #1d4ed8); padding: 24px; color: #ffffff; text-align: center;"">
                         <h1 style=""margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.5px;"">🛒 ZONEMART CSKH 24/7</h1>
@@ -96,12 +142,13 @@ public class EmailService : IEmailService
                         <h3 style=""font-size: 16px; color: #0f172a; margin-top: 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;"">💬 Nội Dung Chi Tiết</h3>
                         <div style=""background: #f1f5f9; border-left: 4px solid #2563eb; padding: 14px; border-radius: 0 8px 8px 0; font-size: 14px; line-height: 1.6; color: #1e293b; white-space: pre-wrap;"">{request.Message}</div>
 
+                        {attachmentHtml}
+
                         <div style=""margin-top: 24px; padding-top: 16px; border-top: 1px dashed #cbd5e1; text-align: center; font-size: 12px; color: #94a3b8;"">
                             Đây là email tự động gửi từ Cổng Hỗ Trợ Khách Hàng ZoneMart. Vui lòng không trả lời trực tiếp email này.
                         </div>
                     </div>
-                </div>"
-            };
+                </div>";
 
             message.Body = bodyBuilder.ToMessageBody();
 

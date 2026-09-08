@@ -25,7 +25,9 @@ const form = reactive({
   phone: "",
   orderCode: "",
   message: "",
-  fileName: ""
+  fileName: "",
+  fileBase64: "",
+  previewUrl: ""
 });
 
 const isSubmitting = ref(false);
@@ -66,16 +68,32 @@ const faqs = [
   }
 ];
 
-// File upload handler
+// File upload handler: Đọc file sang Base64 để gửi về Backend (Gmail + Telegram)
 const handleFileUpload = (event: Event) => {
   const target = event.target as HTMLInputElement;
   if (target.files && target.files[0]) {
-    form.fileName = target.files[0].name;
+    const file = target.files[0];
+    form.fileName = file.name;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = (e.target?.result as string) || "";
+      form.fileBase64 = result;
+      if (file.type.startsWith("image/")) {
+        form.previewUrl = result;
+      } else {
+        form.previewUrl = "";
+      }
+    };
+    reader.readAsDataURL(file);
   }
 };
 
 const removeFile = () => {
   form.fileName = "";
+  form.fileBase64 = "";
+  form.previewUrl = "";
+  const input = document.getElementById("file-input") as HTMLInputElement;
+  if (input) input.value = "";
 };
 
 const sendDirectTelegram = async (ticketCode: string, p: {
@@ -86,8 +104,11 @@ const sendDirectTelegram = async (ticketCode: string, p: {
   topic: string;
   message: string;
   fileName: string | null;
+  fileBase64?: string | null;
 }) => {
   try {
+    const botToken = "8873124743:AAGnQs8cqHBf8lolMKlgjl6jqEh2aF8XN_Y";
+    const chatId = "5807941249";
     const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
     const orderLine = p.orderCode ? `📦 <b>Mã đơn hàng:</b> <code>#${p.orderCode}</code>\n` : "";
     const fileLine = p.fileName ? `📎 <b>Tệp đính kèm:</b> ${p.fileName}\n` : "";
@@ -106,11 +127,47 @@ ${fileLine}
 ━━━━━━━━━━━━━━━━━━━━
 <i>⚡ Hệ thống tự động đẩy thông báo từ ZoneMart Portal</i>`;
 
-    const res = await fetch("https://api.telegram.org/bot8873124743:AAGnQs8cqHBf8lolMKlgjl6jqEh2aF8XN_Y/sendMessage", {
+    // Nếu có fileBase64, gửi ảnh qua sendPhoto hoặc sendDocument
+    if (p.fileBase64) {
+      try {
+        const commaIdx = p.fileBase64.indexOf(",");
+        const base64Data = commaIdx >= 0 ? p.fileBase64.slice(commaIdx + 1) : p.fileBase64;
+        const mimeMatch = p.fileBase64.match(/^data:(.*?);base64,/);
+        const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+        const byteCharacters = atob(base64Data);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: mimeType });
+
+        const isImage = mimeType.startsWith("image/");
+        const endpoint = isImage ? "sendPhoto" : "sendDocument";
+        const fieldName = isImage ? "photo" : "document";
+
+        const formData = new FormData();
+        formData.append("chat_id", chatId);
+        formData.append(fieldName, blob, p.fileName || "attachment.jpg");
+        const caption = text.length > 1000 ? text.slice(0, 995) + "..." : text;
+        formData.append("caption", caption);
+        formData.append("parse_mode", "HTML");
+
+        const photoRes = await fetch(`https://api.telegram.org/bot${botToken}/${endpoint}`, {
+          method: "POST",
+          body: formData
+        });
+        if (photoRes.ok) return true;
+      } catch (fileErr) {
+        console.warn("Direct Telegram sendPhoto failed, fallback to sendMessage:", fileErr);
+      }
+    }
+
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        chat_id: "5807941249",
+        chat_id: chatId,
         text: text,
         parse_mode: "HTML"
       })
@@ -139,7 +196,8 @@ const handleSubmit = async () => {
     orderCode: form.orderCode ? form.orderCode.trim() : null,
     topic: topicLabel,
     message: form.message.trim(),
-    fileName: form.fileName || null
+    fileName: form.fileName || null,
+    fileBase64: form.fileBase64 || null
   };
 
   const fallbackTicketCode = "ZM-" + Math.floor(100000 + Math.random() * 900000);
@@ -193,6 +251,8 @@ const resetForm = () => {
   form.orderCode = "";
   form.message = "";
   form.fileName = "";
+  form.fileBase64 = "";
+  form.previewUrl = "";
   deliveryStatus.value = { emailSent: false, telegramSent: false, message: "" };
   isSubmitted.value = false;
 };
@@ -417,7 +477,8 @@ const resetForm = () => {
                 </div>
               </label>
               <div v-else class="file-attached-pill">
-                <i class="bi bi-file-earmark-check-fill"></i>
+                <img v-if="form.previewUrl" :src="form.previewUrl" class="file-preview-thumb" alt="Preview" />
+                <i v-else class="bi bi-file-earmark-check-fill"></i>
                 <span class="file-name">{{ form.fileName }}</span>
                 <button type="button" class="btn-remove-file" @click="removeFile" title="Xóa file">
                   <i class="bi bi-x"></i>
@@ -1005,6 +1066,14 @@ const resetForm = () => {
   border-radius: 10px;
   font-size: 13px;
   font-weight: 600;
+}
+
+.file-preview-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #86efac;
 }
 
 .btn-remove-file {

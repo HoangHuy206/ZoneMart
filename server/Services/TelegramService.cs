@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
@@ -74,6 +74,64 @@ public class TelegramService : ITelegramService
 <blockquote>{EscapeHtml(request.Message)}</blockquote>
 ━━━━━━━━━━━━━━━━━━━━
 <i>⚡ Hệ thống tự động đẩy thông báo từ ZoneMart Portal</i>";
+
+            // Nếu người dùng có đính kèm ảnh / tệp base64, gửi qua sendPhoto hoặc sendDocument
+            if (!string.IsNullOrWhiteSpace(request.FileBase64))
+            {
+                try
+                {
+                    var base64Data = request.FileBase64;
+                    var commaIdx = base64Data.IndexOf(',');
+                    if (commaIdx >= 0)
+                    {
+                        base64Data = base64Data.Substring(commaIdx + 1);
+                    }
+                    var fileBytes = Convert.FromBase64String(base64Data);
+                    var fileName = !string.IsNullOrWhiteSpace(request.FileName) ? request.FileName : "attachment.jpg";
+
+                    var isImage = fileName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                                  fileName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                                  fileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                                  fileName.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ||
+                                  fileName.EndsWith(".gif", StringComparison.OrdinalIgnoreCase);
+
+                    var endpoint = isImage ? "sendPhoto" : "sendDocument";
+                    var fieldName = isImage ? "photo" : "document";
+
+                    // Caption Telegram tối đa 1024 ký tự
+                    var captionText = text;
+                    if (captionText.Length > 1000)
+                    {
+                        captionText = captionText.Substring(0, 995) + "...";
+                    }
+
+                    using var form = new MultipartFormDataContent();
+                    form.Add(new StringContent(chatId), "chat_id");
+                    form.Add(new StringContent(captionText, Encoding.UTF8), "caption");
+                    form.Add(new StringContent("HTML"), "parse_mode");
+
+                    var fileContent = new ByteArrayContent(fileBytes);
+                    form.Add(fileContent, fieldName, fileName);
+
+                    var uploadUrl = $"https://api.telegram.org/bot{_settings.BotToken.Trim()}/{endpoint}";
+                    var uploadResponse = await _httpClient.PostAsync(uploadUrl, form);
+                    var uploadResult = await uploadResponse.Content.ReadAsStringAsync();
+
+                    if (uploadResponse.IsSuccessStatusCode)
+                    {
+                        _logger.LogInformation("TelegramService: Đã gửi file ({Endpoint}) thành công cho Ticket #{TicketCode} đến chat_id {ChatId}", endpoint, ticketCode, chatId);
+                        return true;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("TelegramService: Gửi {Endpoint} thất bại ({Response}), fallback gửi sendMessage thường...", endpoint, uploadResult);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "TelegramService: Lỗi xử lý gửi ảnh/file qua Telegram, fallback sang sendMessage");
+                }
+            }
 
             var payload = new
             {

@@ -17,6 +17,7 @@ public class SupportTicket
     public string Topic { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
     public string? FileName { get; set; }
+    public string? FileBase64 { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string Status { get; set; } = "Pending";
 }
@@ -30,6 +31,7 @@ public class SupportTicketRequest
     public string Topic { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
     public string? FileName { get; set; }
+    public string? FileBase64 { get; set; }
 }
 
 public class SupportTicketResponse
