@@ -1,66 +1,282 @@
-﻿<script setup lang="ts">
-import { ref } from "vue";
+<script setup lang="ts">
+import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
+import logoImg from './assets/logo.jpg';
 
+const router = useRouter();
 const isMobileMenuOpen = ref(false);
+const isUserDropdownOpen = ref(false);
+const searchQuery = ref('');
+const cartItemCount = ref(0);
+
+// TRẠNG THÁI ĐĂNG NHẬP: Mặc định là Khách ghé thăm (Guest = false)
+const isLoggedIn = ref(false);
+
+onMounted(() => {
+  // Đồng bộ với localStorage nếu sau này có phiên đăng nhập
+  const savedStatus = localStorage.getItem('isLoggedIn');
+  if (savedStatus === 'true') {
+    isLoggedIn.value = true;
+  }
+});
 
 const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value;
 };
+
+const toggleUserDropdown = () => {
+  isUserDropdownOpen.value = !isUserDropdownOpen.value;
+};
+
+const closeDropdowns = () => {
+  isUserDropdownOpen.value = false;
+  isMobileMenuOpen.value = false;
+};
+
+const handleHeaderSearch = () => {
+  if (searchQuery.value.trim()) {
+    router.push({
+      path: '/products',
+      query: { search: searchQuery.value.trim() },
+    });
+  } else {
+    router.push('/products');
+  }
+};
+
+// Hàm đăng xuất giả lập khi đã có tài khoản
+const handleLogout = () => {
+  isLoggedIn.value = false;
+  localStorage.removeItem('isLoggedIn');
+  closeDropdowns();
+  router.push('/');
+};
 </script>
 
 <template>
-  <div class="app-wrapper">
-    <!-- Navbar ZoneMart -->
+  <div class="app-wrapper" @click="isUserDropdownOpen = false">
+    <!-- Header chuẩn theo hình Sample Mockup (Warm Humanist & Terracotta) -->
     <header class="navbar">
       <div class="nav-container">
-        <!-- Logo -->
-        <router-link to="/" class="brand-logo">
-          <span class="logo-icon">🚀</span>
-          <span class="logo-text">Zone<span class="highlight">Mart</span></span>
-          <span class="tag-10km">10km Delivery</span>
+        <!-- 1. Logo thương hiệu bên trái -->
+        <router-link to="/" class="brand-logo" @click="closeDropdowns">
+          <img :src="logoImg" alt="ZoneMart Logo" class="brand-logo-img" />
+          <div class="brand-text-block">
+            <span class="brand-name"
+              >Zone<span class="highlight">Mart</span></span
+            >
+            <span class="brand-tagline">Giao hàng hỏa tốc 10km</span>
+          </div>
         </router-link>
 
-        <!-- Navigation Links cho cả 3 thành viên -->
-        <nav class="nav-links" :class="{ 'open': isMobileMenuOpen }">
-          <!-- Huy -->
-          <router-link to="/products" class="nav-item" active-class="active">
-            🛍️ Sản Phẩm
-          </router-link>
-          <router-link to="/map" class="nav-item" active-class="active">
-            🗺️ Bản Đồ
-          </router-link>
-          <router-link to="/contact" class="nav-item" active-class="active">
-            📞 Liên Hệ
-          </router-link>
-          <router-link to="/profile" class="nav-item" active-class="active">
-            👤 Hồ Sơ/Ví
-          </router-link>
+        <!-- 2. Thanh tìm kiếm chính giữa -->
+        <div class="header-search-wrap">
+          <span class="search-icon">🔍</span>
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Tìm kiếm nông sản, thực phẩm tươi..."
+            @keyup.enter="handleHeaderSearch"
+          />
+        </div>
 
-          <!-- Thắng -->
-          <router-link to="/cart" class="nav-item" active-class="active">
-            🛒 Giỏ Hàng
+        <!-- 3. Khu vực bên phải: Tự động đổi theo vai trò Khách ghé thăm (Guest) hoặc Đã đăng nhập -->
+        <div class="nav-right-actions">
+          <!-- Hai liên kết cơ bản luôn hiển thị: Sản Phẩm & Bản Đồ -->
+          <nav class="desktop-links">
+            <router-link
+              to="/products"
+              class="quick-link"
+              active-class="active"
+            >
+              Sản Phẩm
+            </router-link>
+            <router-link to="/map" class="quick-link" active-class="active">
+              Bản Đồ
+            </router-link>
+          </nav>
+
+          <!-- ==========================================================
+               A. KHI LÀ KHÁCH GHÉ THĂM (GUEST - CHƯA ĐĂNG NHẬP):
+               Chỉ có 2 nút: Đăng Ký và Đăng Nhập
+               ========================================================== -->
+          <div v-if="!isLoggedIn" class="guest-auth-actions">
+            <router-link to="/register" class="btn-auth-outline">
+              Đăng Ký
+            </router-link>
+            <router-link to="/login" class="btn-auth-solid">
+              Đăng Nhập
+            </router-link>
+          </div>
+
+          <!-- ==========================================================
+               B. KHI ĐÃ ĐĂNG NHẬP (LOGGED IN):
+               Hiển thị Icon Hồ sơ / Ví và Icon Giỏ hàng
+               ========================================================== -->
+          <div v-else class="logged-in-actions">
+            <!-- Icon Tài khoản với Menu Dropdown -->
+            <div class="user-menu-wrapper" @click.stop>
+              <button
+                class="icon-btn user-btn"
+                title="Tài khoản của bạn"
+                @click="toggleUserDropdown"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="22"
+                  height="22"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+              </button>
+
+              <div v-if="isUserDropdownOpen" class="user-dropdown">
+                <div class="dropdown-header">
+                  <strong>Tài Khoản ZoneMart</strong>
+                </div>
+                <router-link
+                  to="/profile"
+                  class="dropdown-item"
+                  @click="closeDropdowns"
+                >
+                  👤 Hồ Sơ & Ví Tiền
+                </router-link>
+                <router-link
+                  to="/buyer-orders"
+                  class="dropdown-item"
+                  @click="closeDropdowns"
+                >
+                  📦 Đơn Mua Của Bạn
+                </router-link>
+                <div class="dropdown-divider"></div>
+                <router-link
+                  to="/shipper"
+                  class="dropdown-item"
+                  @click="closeDropdowns"
+                >
+                  🛵 Cổng Shipper
+                </router-link>
+                <router-link
+                  to="/admin"
+                  class="dropdown-item"
+                  @click="closeDropdowns"
+                >
+                  🛡️ Bảng Điều Khiển Admin
+                </router-link>
+                <router-link
+                  to="/contact"
+                  class="dropdown-item"
+                  @click="closeDropdowns"
+                >
+                  📞 Liên Hệ Hỗ Trợ
+                </router-link>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item logout-btn" @click="handleLogout">
+                  🚪 Đăng Xuất
+                </button>
+              </div>
+            </div>
+
+            <!-- Icon Giỏ hàng kèm huy hiệu số lượng -->
+            <router-link to="/cart" class="icon-btn cart-btn" title="Giỏ hàng">
+              <svg
+                viewBox="0 0 24 24"
+                width="22"
+                height="22"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="9" cy="21" r="1"></circle>
+                <circle cx="20" cy="21" r="1"></circle>
+                <path
+                  d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
+                ></path>
+              </svg>
+              <span class="cart-badge">{{ cartItemCount }}</span>
+            </router-link>
+          </div>
+
+          <!-- Mobile Toggle Button -->
+          <button class="mobile-toggle" @click.stop="toggleMobileMenu">
+            ☰
+          </button>
+        </div>
+      </div>
+
+      <!-- Menu trên điện thoại -->
+      <nav v-if="isMobileMenuOpen" class="mobile-menu">
+        <router-link to="/products" class="mobile-link" @click="closeDropdowns">
+          🛍️ Sản Phẩm
+        </router-link>
+        <router-link to="/map" class="mobile-link" @click="closeDropdowns">
+          🗺️ Bản Đồ 10km
+        </router-link>
+
+        <!-- Nếu là Guest trên điện thoại -->
+        <template v-if="!isLoggedIn">
+          <div class="mobile-divider"></div>
+          <div class="mobile-auth-grid">
+            <router-link
+              to="/register"
+              class="btn-auth-outline mobile-btn"
+              @click="closeDropdowns"
+            >
+              Đăng Ký
+            </router-link>
+            <router-link
+              to="/login"
+              class="btn-auth-solid mobile-btn"
+              @click="closeDropdowns"
+            >
+              Đăng Nhập
+            </router-link>
+          </div>
+        </template>
+
+        <!-- Nếu đã đăng nhập trên điện thoại -->
+        <template v-else>
+          <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
+            🛒 Giỏ Hàng ({{ cartItemCount }})
           </router-link>
-          <router-link to="/buyer-orders" class="nav-item" active-class="active">
+          <router-link
+            to="/buyer-orders"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
             📦 Đơn Mua
           </router-link>
-
-          <!-- Bình -->
-          <router-link to="/shipper" class="nav-item shipper-nav" active-class="active">
+          <router-link
+            to="/profile"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
+            👤 Hồ Sơ/Ví
+          </router-link>
+          <router-link
+            to="/shipper"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
             🛵 Shipper
           </router-link>
-          <router-link to="/admin" class="nav-item admin-nav" active-class="active">
+          <router-link to="/admin" class="mobile-link" @click="closeDropdowns">
             🛡️ Admin
           </router-link>
-          <router-link to="/login" class="nav-item login-btn">
-            Đăng Nhập
-          </router-link>
-        </nav>
-
-        <!-- Mobile Menu Toggle -->
-        <button class="mobile-toggle" @click="toggleMobileMenu">
-          ☰
-        </button>
-      </div>
+          <div class="mobile-divider"></div>
+          <button class="mobile-link logout-link" @click="handleLogout">
+            🚪 Đăng Xuất
+          </button>
+        </template>
+      </nav>
     </header>
 
     <!-- Nội dung chính được điều hướng qua Router -->
@@ -68,20 +284,119 @@ const toggleMobileMenu = () => {
       <router-view />
     </main>
 
-    <!-- Footer ZoneMart -->
+    <!-- Footer ZoneMart – Chuẩn sàn Thương Mại Điện Tử -->
     <footer class="app-footer">
-      <div class="footer-container">
-        <div class="footer-brand">
-          <h4>ZoneMart Multi-Vendor & On-Demand Delivery Platform</h4>
-          <p>Hệ thống thương mại điện tử giao hàng siêu tốc trong bán kính 10km.</p>
-        </div>
-        <div class="footer-meta">
-          <div class="member-credits">
-            <span>🚀 <strong>Huy</strong>: Profile, Map, Sản Phẩm, Liên Hệ, 404</span> | 
-            <span><strong>Thắng</strong>: Home, Giỏ Hàng, Thanh Toán, Đơn Mua</span> | 
-            <span><strong>Bình</strong>: Auth, Đăng Ký Shop, Shipper, Admin</span>
+      <div class="footer-main-container">
+        <!-- Cột 1: Thông tin thương hiệu, Liên hệ & Trụ sở -->
+        <div class="footer-col col-brand">
+          <div class="footer-logo-row">
+            <img :src="logoImg" alt="ZoneMart" class="footer-logo-img" />
+            <div class="footer-brand-title">
+              <h4>ZoneMart</h4>
+              <span>Giao Hàng Hỏa Tốc 10km</span>
+            </div>
           </div>
-          <p class="copyright">© 2026 ZoneMart Project Team. All rights reserved.</p>
+          <p class="footer-tagline">
+            Sàn thương mại điện tử kết nối trực tiếp Nhà Vườn, Tiểu Thương với
+            Khách Hàng lân cận trong bán kính 10km.
+          </p>
+          <ul class="footer-contact-list">
+            <li>
+              📍 <strong>Trụ sở:</strong> Tòa nhà ZoneMart, Khu Công Nghệ Cao,
+              TP. Hồ Chí Minh
+            </li>
+            <li>
+              📞 <strong>Tổng đài hỗ trợ:</strong> 1900 6868 (8:00 - 21:00 hàng
+              ngày)
+            </li>
+            <li>✉️ <strong>Email hỗ trợ:</strong> support@zonemart.vn</li>
+            <li>
+              🕒 <strong>Thời gian hoạt động:</strong> 06:00 - 22:00 (Cả Thứ 7,
+              CN)
+            </li>
+          </ul>
+        </div>
+
+        <!-- Cột 2: Về ZoneMart -->
+        <div class="footer-col">
+          <h5 class="footer-heading">VỀ ZONEMART</h5>
+          <ul class="footer-links">
+            <li>
+              <router-link to="/contact">Giới thiệu về ZoneMart</router-link>
+            </li>
+            <li>
+              <router-link to="/map">Bản đồ phủ sóng bán kính 10km</router-link>
+            </li>
+            <li><a href="#rules">Quy chế hoạt động sàn TMĐT</a></li>
+            <li><a href="#safety">Tiêu chuẩn nông sản VietGAP</a></li>
+            <li><a href="#news">Tin tức & Mẹo tiêu dùng sạch</a></li>
+            <li><a href="#careers">Tuyển dụng Shipper & Nhân sự</a></li>
+          </ul>
+        </div>
+
+        <!-- Cột 3: Hỗ Trợ Khách Hàng -->
+        <div class="footer-col">
+          <h5 class="footer-heading">HỖ TRỢ KHÁCH HÀNG</h5>
+          <ul class="footer-links">
+            <li>
+              <router-link to="/contact">Trung tâm hỗ trợ 24/7</router-link>
+            </li>
+            <li><a href="#guide">Hướng dẫn đặt mua & Chọn nhà vườn</a></li>
+            <li><a href="#shipping">Chính sách giao hỏa tốc 10km</a></li>
+            <li><a href="#refund">Chính sách đổi trả & Hoàn tiền</a></li>
+            <li><a href="#dispute">Giải quyết tranh chấp khiếu nại</a></li>
+            <li><a href="#privacy">Chính sách bảo mật thông tin</a></li>
+          </ul>
+        </div>
+
+        <!-- Cột 4: Hợp Tác & Thanh Toán -->
+        <div class="footer-col">
+          <h5 class="footer-heading">HỢP TÁC & PHÁT TRIỂN</h5>
+          <ul class="footer-links">
+            <li>
+              <router-link to="/register-seller"
+                >Mở gian hàng Nông Dân / Shop</router-link
+              >
+            </li>
+            <li>
+              <router-link to="/shipper"
+                >Đăng ký làm Tài xế Shipper</router-link
+              >
+            </li>
+            <li>
+              <router-link to="/admin">Cổng quản trị viên Admin</router-link>
+            </li>
+          </ul>
+
+          <h5 class="footer-heading footer-subheading-mt">
+            PHƯƠNG THỨC THANH TOÁN
+          </h5>
+          <div class="payment-badges">
+            <span class="pay-tag">COD (Tiền mặt)</span>
+            <span class="pay-tag">Ví ZoneMart</span>
+            <span class="pay-tag">VNPAY QR</span>
+            <span class="pay-tag">MoMo</span>
+          </div>
+
+          <h5 class="footer-heading footer-subheading-mt">
+            KẾT NỐI VỚI CHÚNG TÔI
+          </h5>
+          <div class="social-links">
+            <a href="#facebook" class="social-icon" title="Facebook">📘</a>
+            <a href="#zalo" class="social-icon" title="Zalo">💬</a>
+            <a href="#youtube" class="social-icon" title="YouTube">📺</a>
+            <a href="#tiktok" class="social-icon" title="TikTok">🎵</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dòng Bản quyền & Ghi chú thành viên dưới cùng -->
+      <div class="footer-bottom-bar">
+        <div class="footer-bottom-container">
+          <p class="copyright">
+            © 2026 ZoneMart E-Commerce Platform. Nền tảng thương mại điện tử
+            giao hàng siêu tốc 10km.
+          </p>
         </div>
       </div>
     </footer>
@@ -96,9 +411,11 @@ const toggleMobileMenu = () => {
 body {
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
-  background-color: #f8fafc;
-  color: #1e293b;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Plus Jakarta Sans', 'Segoe UI', Roboto,
+    sans-serif;
+  background-color: #faf7f2;
+  color: #2b1b14;
 }
 
 .app-wrapper {
@@ -111,131 +428,558 @@ body {
   flex-grow: 1;
 }
 
-/* Header & Navbar */
+/* ==========================================================
+   HEADER THEO THIẾT KẾ LOCAL MARKET & PHÂN QUYỀN GUEST
+   ========================================================== */
+
 .navbar {
   background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1.5px solid #ebdcd3;
   position: sticky;
   top: 0;
-  z-index: 100;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  z-index: 1000;
+  box-shadow: 0 2px 10px rgba(43, 27, 20, 0.03);
 }
 
 .nav-container {
-  max-width: 1250px;
-  margin: 0 auto;
-  padding: 0 20px;
-  height: 68px;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 clamp(16px, 3.5vw, 48px);
+  height: 70px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 20px;
 }
 
+/* 1. BRAND LOGO */
 .brand-logo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   text-decoration: none;
-  color: #0f172a;
+  flex-shrink: 0;
 }
-.logo-icon { font-size: 24px; }
-.logo-text { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
-.logo-text .highlight { color: #f97316; }
-.tag-10km {
+.brand-logo-img {
+  height: 48px;
+  width: auto;
+  object-fit: contain;
+  border-radius: 6px;
+  transition: transform 0.2s ease;
+}
+.brand-logo:hover .brand-logo-img {
+  transform: scale(1.05);
+}
+.brand-text-block {
+  display: flex;
+  flex-direction: column;
+}
+.brand-name {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-size: 19px;
+  font-weight: 850;
+  letter-spacing: -0.3px;
+  color: #1e3a5f;
+  line-height: 1.1;
+}
+.brand-name .highlight {
+  color: #d85a2a;
+}
+.brand-tagline {
   font-size: 11px;
-  background: #eff6ff;
-  color: #2563eb;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-weight: 700;
-  margin-left: 6px;
-  border: 1px solid #dbeafe;
+  font-weight: 600;
+  color: #7b6960;
+  letter-spacing: 0.2px;
+  margin-top: 1px;
 }
 
-.nav-links {
+/* 2. SEARCH BAR CHÍNH GIỮA */
+.header-search-wrap {
+  flex: 1;
+  max-width: 440px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  background: #fbf5ef;
+  border: 1px solid #ebd9ce;
+  border-radius: 50px;
+  padding: 6px 16px;
+  transition: all 0.25s ease;
+}
+.header-search-wrap:focus-within {
+  background: #ffffff;
+  border-color: #d85a2a;
+  box-shadow: 0 0 0 3px rgba(216, 90, 42, 0.12);
+}
+.header-search-wrap .search-icon {
+  font-size: 14px;
+  margin-right: 10px;
+  opacity: 0.55;
+}
+.header-search-wrap input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 13.5px;
+  color: #2b1b14;
+}
+.header-search-wrap input::placeholder {
+  color: #968379;
 }
 
-.nav-item {
+/* 3. RIGHT ACTIONS */
+.nav-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.desktop-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.quick-link {
   text-decoration: none;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: #475569;
-  padding: 8px 10px;
+  color: #55443d;
+  padding: 8px 14px;
   border-radius: 8px;
   transition: all 0.2s;
+}
+.quick-link:hover {
+  color: #d85a2a;
+  background: #fdf5f0;
+}
+.quick-link.active {
+  color: #d85a2a;
+  background: #fbf0e8;
+}
+
+/* 2 NÚT ĐĂNG KÝ / ĐĂNG NHẬP CHO KHÁCH (GUEST) */
+.guest-auth-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-auth-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  background: transparent;
+  color: #d85a2a;
+  border: 1.5px solid #d85a2a;
+  padding: 8px 18px;
+  border-radius: 50px;
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: all 0.2s ease;
   white-space: nowrap;
 }
-.nav-item:hover {
-  background: #f1f5f9;
-  color: #0f172a;
-}
-.nav-item.active {
-  background: #eff6ff;
-  color: #2563eb;
+.btn-auth-outline:hover {
+  background: #fdf2eb;
+  border-color: #bf4a1f;
+  color: #bf4a1f;
 }
 
-.shipper-nav.active { background: #f3e8ff; color: #7e22ce; }
-.admin-nav.active { background: #fee2e2; color: #dc2626; }
-
-.login-btn {
-  background: #0f172a;
+.btn-auth-solid {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  background: #d85a2a;
   color: #ffffff !important;
-  margin-left: 6px;
-  padding: 8px 14px;
+  border: 1.5px solid #d85a2a;
+  padding: 8px 20px;
+  border-radius: 50px;
+  font-size: 13.5px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(216, 90, 42, 0.22);
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
-.login-btn:hover {
-  background: #334155 !important;
+.btn-auth-solid:hover {
+  background: #bf4a1f;
+  border-color: #bf4a1f;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(216, 90, 42, 0.32);
 }
 
+/* KHI ĐÃ ĐĂNG NHẬP */
+.logged-in-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: #2b1b14;
+  background: #ffffff;
+  border: 1px solid #ebdcd3;
+  cursor: pointer;
+  position: relative;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.icon-btn:hover {
+  border-color: #d85a2a;
+  color: #d85a2a;
+  background: #fdf5f0;
+}
+
+.cart-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  background: #d85a2a;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #ffffff;
+}
+
+.user-menu-wrapper {
+  position: relative;
+}
+.user-dropdown {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  width: 230px;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #ebdcd3;
+  box-shadow: 0 10px 30px rgba(43, 27, 20, 0.12);
+  padding: 8px 0;
+  z-index: 1001;
+  animation: fadeIn 0.18s ease-out;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.dropdown-header {
+  padding: 10px 16px 8px;
+  font-size: 13px;
+  color: #d85a2a;
+  border-bottom: 1px solid #f3e7df;
+}
+.dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4a3830;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.dropdown-item:hover {
+  background: #fdf5f0;
+  color: #d85a2a;
+}
+.dropdown-divider {
+  height: 1px;
+  background: #f3e7df;
+  margin: 6px 0;
+}
+.logout-btn {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+/* Mobile Toggle */
 .mobile-toggle {
   display: none;
   background: none;
+  border: 1px solid #ebdcd3;
+  border-radius: 8px;
+  font-size: 20px;
+  padding: 6px 10px;
+  cursor: pointer;
+  color: #2b1b14;
+}
+
+/* Mobile Menu */
+.mobile-menu {
+  display: none;
+  position: absolute;
+  top: 70px;
+  left: 0;
+  width: 100%;
+  background: #ffffff;
+  border-bottom: 1.5px solid #ebdcd3;
+  padding: 16px 20px;
+  box-shadow: 0 10px 20px rgba(43, 27, 20, 0.08);
+  flex-direction: column;
+  gap: 8px;
+}
+.mobile-link {
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: #4a3830;
+  padding: 10px 12px;
+  border-radius: 8px;
+  transition: all 0.2s;
+  background: none;
   border: none;
-  font-size: 24px;
+  text-align: left;
   cursor: pointer;
 }
+.mobile-link:hover {
+  background: #fdf5f0;
+  color: #d85a2a;
+}
+.mobile-divider {
+  height: 1px;
+  background: #ebdcd3;
+  margin: 8px 0;
+}
+.mobile-auth-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+.mobile-btn {
+  width: 100%;
+  text-align: center;
+}
+.logout-link {
+  color: #dc2626;
+}
 
-@media (max-width: 1050px) {
-  .mobile-toggle { display: block; }
-  .nav-links {
+/* Responsive */
+@media (max-width: 860px) {
+  .header-search-wrap {
     display: none;
-    position: absolute;
-    top: 68px;
-    left: 0;
-    width: 100%;
-    background: #fff;
-    flex-direction: column;
-    padding: 16px 20px;
-    border-bottom: 1px solid #e2e8f0;
-    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
   }
-  .nav-links.open { display: flex; }
-  .nav-item { width: 100%; padding: 10px; }
+  .desktop-links {
+    display: none;
+  }
+  .guest-auth-actions {
+    display: none;
+  }
+  .logged-in-actions {
+    display: none;
+  }
+  .mobile-toggle {
+    display: block;
+  }
+  .mobile-menu {
+    display: flex;
+  }
 }
 
-/* Footer */
+/* ==========================================================
+   FOOTER CHUẨN SÀN THƯƠNG MẠI ĐIỆN TỬ
+   ========================================================== */
 .app-footer {
-  background: #0f172a;
-  color: #94a3b8;
-  padding: 30px 20px 20px 20px;
+  background: #19100a; /* Nền tối ấm sang trọng */
+  color: #a49187;
+  padding: 50px 0 0 0;
   margin-top: 50px;
+  border-top: 3px solid #3c2419;
+  font-size: 13.5px;
 }
-.footer-container {
-  max-width: 1250px;
-  margin: 0 auto;
+
+.footer-main-container {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 clamp(16px, 3.5vw, 48px) 40px;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1.1fr;
+  gap: clamp(20px, 3vw, 40px);
+}
+
+.footer-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.footer-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.footer-logo-img {
+  height: 44px;
+  width: auto;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 2px;
+}
+.footer-brand-title h4 {
+  margin: 0;
+  color: #fff9f5;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+.footer-brand-title span {
+  font-size: 11px;
+  color: #d85a2a;
+  font-weight: 600;
+}
+
+.footer-tagline {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #c7b5ab;
+  margin: 0 0 16px 0;
+}
+
+.footer-contact-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #b5a297;
+}
+.footer-contact-list strong {
+  color: #f1dfd5;
+}
+
+.footer-heading {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: #fff9f5;
+  margin: 0 0 16px 0;
+  text-transform: uppercase;
+}
+.footer-subheading-mt {
+  margin-top: 20px;
+}
+
+.footer-links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.footer-links a {
+  color: #a49187;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.footer-links a:hover {
+  color: #d85a2a;
+  padding-left: 4px;
+}
+
+.payment-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pay-tag {
+  background: #2b1c14;
+  color: #e5d4cb;
+  border: 1px solid #4a3427;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.social-links {
+  display: flex;
+  gap: 12px;
+}
+.social-icon {
+  font-size: 20px;
+  text-decoration: none;
+  opacity: 0.85;
+  transition:
+    transform 0.2s,
+    opacity 0.2s;
+}
+.social-icon:hover {
+  transform: translateY(-2px);
+  opacity: 1;
+}
+
+/* Bottom Bar */
+.footer-bottom-bar {
+  background: #110b07;
+  border-top: 1px solid #29180f;
+  padding: 16px 0;
+}
+.footer-bottom-container {
+  width: 100%;
+  max-width: 100%;
+  padding: 0 clamp(16px, 3.5vw, 48px);
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 20px;
+  gap: 12px;
 }
-.footer-brand h4 { margin: 0 0 6px 0; color: #f8fafc; font-size: 16px; }
-.footer-brand p { margin: 0; font-size: 13px; }
-.footer-meta { text-align: right; }
-.member-credits { font-size: 12px; color: #cbd5e1; margin-bottom: 6px; line-height: 1.6; }
-.member-credits strong { color: #38bdf8; }
-.copyright { margin: 0; font-size: 12px; color: #64748b; }
+.member-credits {
+  font-size: 12px;
+  color: #b5a297;
+  line-height: 1.6;
+}
+.member-credits strong {
+  color: #f28b5b;
+}
+.copyright {
+  margin: 0;
+  font-size: 12px;
+  color: #7b6960;
+}
+
+/* Footer Responsive */
+@media (max-width: 992px) {
+  .footer-main-container {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 30px;
+  }
+}
+@media (max-width: 600px) {
+  .footer-main-container {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .footer-bottom-container {
+    flex-direction: column;
+    text-align: center;
+  }
+}
 </style>
