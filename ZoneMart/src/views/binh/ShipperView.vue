@@ -66,7 +66,6 @@ const triggerToast = (msg: string) => {
   setTimeout(() => showToast.value = false, 2800);
 };
 
-// 4. Biến quản lý bản đồ Leaflet
 // 4. Biến quản lý bản đồ Google Maps (Leaflet engine)
 let map: L.Map | null = null;
 let tileLayer: L.TileLayer | null = null;
@@ -76,17 +75,19 @@ let customerMarker: L.Marker | null = null;
 let radiusCircle: L.Circle | null = null;
 let routeLineCasing: L.Polyline | null = null;
 let routeLine: L.Polyline | null = null;
+let accuracyCircle: L.Circle | null = null;
+let watchId: number | null = null;
 
-// Tạo icon tùy biến
 // Chế độ bản đồ Google Maps: 'roadmap' (Bản đồ chuẩn) hoặc 'satellite' (Vệ tinh hybrid)
 const mapType = ref<'roadmap' | 'satellite'>('roadmap');
 const showTraffic = ref(false);
 const isFullscreen = ref(false);
+const isLocating = ref(false);
+const gpsAccuracy = ref<number | null>(null);
+const locationAddress = ref("Khu vực: Cầu Giấy, Hà Nội • Google Maps GPS");
 
 // Tạo icon tùy biến chuẩn Google Maps
 const driverIcon = L.divIcon({
-  className: "custom-map-icon",
-  html: `<div class="marker-driver"><span class="driver-wave"></span><span class="icon-char">🛵</span></div>`,
   className: "custom-gm-icon",
   html: `
     <div class="gm-driver-beacon">
@@ -101,10 +102,6 @@ const driverIcon = L.divIcon({
 });
 
 const storeIcon = L.divIcon({
-  className: "custom-map-icon",
-  html: `<div class="marker-store"><span class="icon-char">🏪</span></div>`,
-  iconSize: [38, 38],
-  iconAnchor: [19, 19]
   className: "custom-gm-icon",
   html: `
     <div class="gm-marker-pin store-pin">
@@ -121,10 +118,6 @@ const storeIcon = L.divIcon({
 });
 
 const customerIcon = L.divIcon({
-  className: "custom-map-icon",
-  html: `<div class="marker-customer"><span class="icon-char">📍</span></div>`,
-  iconSize: [38, 38],
-  iconAnchor: [19, 19]
   className: "custom-gm-icon",
   html: `
     <div class="gm-marker-pin customer-pin">
@@ -140,7 +133,6 @@ const customerIcon = L.divIcon({
   popupAnchor: [0, -42]
 });
 
-// Khởi tạo bản đồ
 // Cập nhật lớp hiển thị Google Maps (Bản đồ / Vệ tinh / Giao thông)
 const updateMapLayers = () => {
   if (!map) return;
@@ -212,27 +204,15 @@ const initMap = () => {
 
   map = L.map("shipperMap", {
     center: [driverLocation.value.lat, driverLocation.value.lng],
-    zoom: 14,
-    zoomControl: false
     zoom: 15,
     zoomControl: false,
     attributionControl: false
   });
 
-  L.control.zoom({ position: "bottomright" }).addTo(map);
   updateMapLayers();
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: "© OpenStreetMap contributors | ZoneMart Driver",
-    maxZoom: 19
-  }).addTo(map);
-
-  // Vòng bán kính 10km
   // Vòng bán kính quét đơn Google Style
   radiusCircle = L.circle([driverLocation.value.lat, driverLocation.value.lng], {
-    radius: 3000, // Hiển thị 3km vùng nhận đơn hỏa tốc gần
-    color: "#ea580c",
-    fillColor: "#ea580c",
     radius: 3000,
     color: "#1a73e8",
     fillColor: "#4285f4",
@@ -241,12 +221,10 @@ const initMap = () => {
     dashArray: "6, 6"
   }).addTo(map);
 
-  // Ghim tài xế
   // Ghim vị trí tài xế
   driverMarker = L.marker([driverLocation.value.lat, driverLocation.value.lng], {
     icon: driverIcon,
     title: "Vị trí của bạn"
-  }).addTo(map).bindPopup("<b>🛵 Vị trí hiện tại của bạn</b><br>Đang trực tuyến sẵn sàng nhận đơn.");
   }).addTo(map).bindPopup(`
     <div class="gm-infowindow">
       <div class="gm-iw-tag text-primary">VỊ TRÍ CỦA BẠN</div>
@@ -259,12 +237,10 @@ const initMap = () => {
   renderOrderOnMap();
 };
 
-// Vẽ đơn hàng lên bản đồ
 // Vẽ tuyến đường & các điểm đơn hàng chuẩn Google Navigation
 const renderOrderOnMap = () => {
   if (!map) return;
 
-  // Xóa marker cũ
   // Xóa layers cũ
   if (storeMarker) map.removeLayer(storeMarker);
   if (customerMarker) map.removeLayer(customerMarker);
@@ -275,7 +251,6 @@ const renderOrderOnMap = () => {
     // Ghim Shop
     storeMarker = L.marker([activeOrder.value.store.lat, activeOrder.value.store.lng], {
       icon: storeIcon
-    }).addTo(map).bindPopup(`<b>🏪 ${activeOrder.value.store.name}</b><br>${activeOrder.value.store.address}`);
     }).addTo(map).bindPopup(`
       <div class="gm-infowindow">
         <div class="gm-iw-tag text-blue">ĐIỂM LẤY HÀNG</div>
@@ -285,11 +260,9 @@ const renderOrderOnMap = () => {
       </div>
     `);
 
-    // Ghim Khách
     // Ghim Khách hàng
     customerMarker = L.marker([activeOrder.value.customer.lat, activeOrder.value.customer.lng], {
       icon: customerIcon
-    }).addTo(map).bindPopup(`<b>👤 ${activeOrder.value.customer.name}</b><br>${activeOrder.value.customer.address}`);
     }).addTo(map).bindPopup(`
       <div class="gm-infowindow">
         <div class="gm-iw-tag text-danger">ĐIỂM GIAO HÀNG</div>
@@ -299,7 +272,6 @@ const renderOrderOnMap = () => {
       </div>
     `);
 
-    // Vẽ đường đi
     // Tọa độ chặng đi
     const waypoints: [number, number][] = currentStep.value === "accepted"
       ? [
@@ -321,47 +293,212 @@ const renderOrderOnMap = () => {
     }).addTo(map);
 
     routeLine = L.polyline(waypoints, {
-      color: currentStep.value === "accepted" ? "#2563eb" : "#16a34a",
       color: currentStep.value === "accepted" ? "#4285f4" : "#34a853",
       weight: 5,
-      opacity: 0.85,
-      dashArray: "8, 10"
       opacity: 1,
       lineCap: "round",
       lineJoin: "round"
     }).addTo(map);
 
-    // Fit view
     // Fit view bao trọn lộ trình
     const bounds = L.latLngBounds(waypoints);
-    map.fitBounds(bounds, { padding: [50, 50] });
     map.fitBounds(bounds, { padding: [60, 60] });
   }
 };
 
-// Điều hướng tâm bản đồ về tài xế
-const recenterMap = () => {
-  if (map) {
-    map.setView([driverLocation.value.lat, driverLocation.value.lng], 15);
-    driverMarker?.openPopup();
-    triggerToast("Đã định vị lại vị trí của bạn");
-    triggerToast("Đã định vị lại vị trí của bạn trên Google Maps");
+// Lấy tên địa chỉ thực tế từ tọa độ qua reverse geocode tiếng Việt
+const fetchAddressName = async (lat: number, lng: number) => {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=vi`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.display_name) {
+        const parts = data.display_name.split(",");
+        const shortAddr = parts.slice(0, 3).join(", ").trim();
+        locationAddress.value = `📍 ${shortAddr}`;
+
+        if (driverMarker) {
+          driverMarker.bindPopup(`
+            <div class="gm-infowindow">
+              <div class="gm-iw-tag text-primary">VỊ TRÍ THỰC TẾ QUA GPS</div>
+              <h4 class="gm-iw-title">Tài xế ZoneMart (Bạn)</h4>
+              <p class="gm-iw-desc">📍 ${shortAddr}</p>
+              <div class="gm-iw-meta">Sai số GPS: ±${gpsAccuracy.value || 5}m • Đang trực tuyến</div>
+            </div>
+          `).openPopup();
+        }
+      }
+    }
+  } catch (e) {
+    console.debug("Reverse geocode fallback", e);
   }
+};
+
+// Định vị chính xác vị trí tài xế qua GPS của thiết bị
+const locateAndTrackDriver = (isSilent = false) => {
+  if (!navigator.geolocation) {
+    triggerToast("Trình duyệt không hỗ trợ Geolocation GPS");
+    return;
+  }
+
+  isLocating.value = true;
+  if (!isSilent) {
+    triggerToast("📡 Đang lấy tọa độ GPS thực tế từ thiết bị của bạn...");
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      isLocating.value = false;
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const accuracy = Math.round(pos.coords.accuracy);
+      gpsAccuracy.value = accuracy;
+
+      // Cập nhật tọa độ tài xế
+      driverLocation.value.lat = lat;
+      driverLocation.value.lng = lng;
+      driverLocation.value.name = "Vị trí thực tế của bạn";
+      locationAddress.value = `GPS chính xác (±${accuracy}m): ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+      // Cập nhật marker tài xế
+      if (driverMarker) {
+        driverMarker.setLatLng([lat, lng]);
+        driverMarker.setPopupContent(`
+          <div class="gm-infowindow">
+            <div class="gm-iw-tag text-primary">VỊ TRÍ THỰC TẾ QUA GPS</div>
+            <h4 class="gm-iw-title">Tài xế ZoneMart (Bạn)</h4>
+            <p class="gm-iw-desc">🟢 Đang trực tuyến tại vị trí hiện tại</p>
+            <div class="gm-iw-meta">Độ chính xác GPS: ±${accuracy}m • ${lat.toFixed(4)}, ${lng.toFixed(4)}</div>
+          </div>
+        `);
+      }
+
+      // Cập nhật vòng bán kính 10km quanh tài xế
+      if (radiusCircle) {
+        radiusCircle.setLatLng([lat, lng]);
+      }
+
+      // Vòng tròn độ chính xác GPS (Accuracy Circle)
+      if (map) {
+        if (accuracyCircle) map.removeLayer(accuracyCircle);
+        accuracyCircle = L.circle([lat, lng], {
+          radius: Math.max(accuracy, 20),
+          color: "#1a73e8",
+          fillColor: "#4285f4",
+          fillOpacity: 0.12,
+          weight: 1
+        }).addTo(map);
+
+        // Di chuyển camera mượt mà đến vị trí thực tế
+        map.flyTo([lat, lng], 16, {
+          animate: true,
+          duration: 1.2
+        });
+
+        setTimeout(() => {
+          driverMarker?.openPopup();
+        }, 1300);
+      }
+
+      triggerToast(`🎯 Đã định vị chính xác vị trí của bạn (sai số ±${accuracy}m)!`);
+
+      // Lấy tên đường tiếng Việt
+      fetchAddressName(lat, lng);
+
+      // Cập nhật lại đường đi đơn hàng nếu có
+      renderOrderOnMap();
+    },
+    (err) => {
+      isLocating.value = false;
+      console.warn("Lỗi Geolocation:", err);
+      let errorMsg = "⚠️ Không thể định vị GPS (Vui lòng chọn 'Cho phép' khi trình duyệt hỏi quyền vị trí)";
+      if (err.code === err.PERMISSION_DENIED) {
+        errorMsg = "⚠️ Bạn chưa cấp quyền truy cập vị trí trên trình duyệt!";
+      } else if (err.code === err.TIMEOUT) {
+        errorMsg = "⏳ Quá thời gian định vị GPS, dùng vị trí khu vực Cầu Giấy.";
+      }
+      triggerToast(errorMsg);
+
+      if (map) {
+        map.setView([driverLocation.value.lat, driverLocation.value.lng], 15);
+        driverMarker?.openPopup();
+      }
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    }
+  );
+};
+
+// Theo dõi di chuyển GPS thời gian thực khi đang hoạt động
+const startLocationWatch = () => {
+  if (!navigator.geolocation) return;
+  stopLocationWatch();
+  watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      if (!isOnline.value) return;
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const accuracy = Math.round(pos.coords.accuracy);
+      gpsAccuracy.value = accuracy;
+      driverLocation.value.lat = lat;
+      driverLocation.value.lng = lng;
+
+      if (driverMarker) {
+        driverMarker.setLatLng([lat, lng]);
+      }
+      if (radiusCircle) {
+        radiusCircle.setLatLng([lat, lng]);
+      }
+      if (accuracyCircle) {
+        accuracyCircle.setLatLng([lat, lng]);
+        accuracyCircle.setRadius(Math.max(accuracy, 20));
+      }
+    },
+    (err) => console.debug("Watch position err:", err),
+    {
+      enableHighAccuracy: true,
+      maximumAge: 3000,
+      timeout: 15000
+    }
+  );
+};
+
+const stopLocationWatch = () => {
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+  }
+};
+
+// Điều hướng tâm bản đồ về tài xế & định vị lại GPS
+const recenterMap = () => {
+  locateAndTrackDriver(false);
 };
 
 // Xử lý bật/tắt online
 const toggleOnline = () => {
   isOnline.value = !isOnline.value;
   if (isOnline.value) {
-    triggerToast("🟢 Đã BẬT nhận đơn! Hệ thống đang quét đơn hàng 10km quanh bạn.");
+    triggerToast("🟢 Đã BẬT nhận đơn! Đang quét GPS định vị vị trí của bạn...");
     if (radiusCircle) {
-      radiusCircle.setStyle({ color: "#ea580c", fillColor: "#ea580c" });
       radiusCircle.setStyle({ color: "#1a73e8", fillColor: "#4285f4" });
     }
+    // Tự động định vị ngay lập tức vị trí thực tế của người dùng
+    locateAndTrackDriver(false);
+    startLocationWatch();
   } else {
+    stopLocationWatch();
+    locationAddress.value = "Chế độ tạm nghỉ • GPS tạm dừng";
     triggerToast("🔴 Đã TẮT nhận đơn. Bạn đang ở trạng thái tạm nghỉ.");
     if (radiusCircle) {
       radiusCircle.setStyle({ color: "#94a3b8", fillColor: "#94a3b8" });
+    }
+    if (accuracyCircle && map) {
+      map.removeLayer(accuracyCircle);
+      accuracyCircle = null;
     }
   }
   nextTick(() => {
@@ -412,9 +549,15 @@ const onFullscreenChange = () => {
 onMounted(() => {
   initMap();
   document.addEventListener("fullscreenchange", onFullscreenChange);
+  // Nếu đang mở hoạt động sẵn, tự động định vị vị trí người dùng
+  if (isOnline.value) {
+    locateAndTrackDriver(true);
+    startLocationWatch();
+  }
 });
 
 onUnmounted(() => {
+  stopLocationWatch();
   document.removeEventListener("fullscreenchange", onFullscreenChange);
   if (map) {
     map.remove();
@@ -521,12 +664,6 @@ onUnmounted(() => {
 
       <!-- 3. Main Operational View: Map + Mission Panel -->
       <div class="operational-grid">
-        <!-- MAP SECTION -->
-        <section class="map-card-wrapper">
-          <div class="map-top-overlay">
-            <div class="map-tag">
-              <i class="bi bi-broadcast"></i>
-              <span>{{ isOnline ? "Bán kính quét đơn: 10km" : "Chế độ: Ngoại tuyến" }}</span>
         <!-- MAP SECTION (GOOGLE MAPS AUTHENTIC UI) -->
         <section class="map-card-wrapper" :class="{ 'is-fullscreen': isFullscreen }">
           <!-- 1. Google Maps Floating Search Bar & Status Chips (Top) -->
@@ -538,7 +675,7 @@ onUnmounted(() => {
               <input
                 type="text"
                 class="gm-search-input"
-                value="Cầu Giấy, Hà Nội • Google Maps GPS"
+                :value="locationAddress"
                 readonly
               />
               <div class="gm-search-actions">
@@ -551,8 +688,6 @@ onUnmounted(() => {
                 </button>
               </div>
             </div>
-            <button class="map-btn-gps" @click="recenterMap" title="Về vị trí của tôi">
-              <i class="bi bi-crosshair"></i>
 
             <div class="gm-status-chips">
               <!-- Live Traffic Toggle Chip -->
@@ -604,8 +739,13 @@ onUnmounted(() => {
             </button>
 
             <!-- My Location Crosshair -->
-            <button class="gm-ctrl-btn gm-my-location" @click="recenterMap" title="Vị trí của bạn">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="#5f6368">
+            <button
+              class="gm-ctrl-btn gm-my-location"
+              :class="{ 'is-locating': isLocating }"
+              @click="recenterMap"
+              title="Định vị vị trí GPS chính xác của bạn"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" :fill="isLocating ? '#1a73e8' : '#5f6368'">
                 <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
               </svg>
             </button>
@@ -1082,16 +1222,11 @@ onUnmounted(() => {
   align-items: start;
 }
 
-/* Map Card */
 /* Map Card (Google Maps Experience) */
 .map-card-wrapper {
-  background: #ffffff;
-  border-radius: 22px;
   background: #e5e3df;
   border-radius: 20px;
   overflow: hidden;
-  border: 1px solid #f1f5f9;
-  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.04);
   border: 1px solid #e2e8f0;
   box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.06);
   position: relative;
@@ -1121,34 +1256,23 @@ onUnmounted(() => {
   filter: grayscale(80%) opacity(0.65);
 }
 
-.map-top-overlay {
 /* 1. Google Maps Top Bar Controls */
 .gm-top-controls {
   position: absolute;
-  top: 18px;
-  left: 18px;
-  right: 18px;
   top: 14px;
   left: 14px;
   right: 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  align-items: center;
   gap: 12px;
   z-index: 10;
   pointer-events: none;
   flex-wrap: wrap;
 }
 
-.map-tag {
 .gm-search-box {
   pointer-events: auto;
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(8px);
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 700;
   display: flex;
   align-items: center;
   background: #ffffff;
@@ -1227,23 +1351,17 @@ onUnmounted(() => {
   border-radius: 20px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   padding: 6px 14px;
-  border-radius: 9999px;
   font-size: 12.5px;
   font-weight: 600;
   color: #3c4043;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   gap: 7px;
   border: 1px solid #dadce0;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.map-btn-gps {
-  pointer-events: auto;
-  width: 38px;
-  height: 38px;
 .gm-chip:hover {
   background: #f8f9fa;
 }
@@ -1366,10 +1484,6 @@ onUnmounted(() => {
   width: 40px;
   height: 40px;
   background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  color: #0f172a;
-  font-size: 17px;
   border: none;
   border-radius: 6px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
@@ -1388,6 +1502,16 @@ onUnmounted(() => {
 
 .gm-my-location:hover svg {
   fill: #1a73e8;
+}
+
+.gm-my-location.is-locating svg {
+  animation: spinGps 1s linear infinite;
+  fill: #1a73e8;
+}
+
+@keyframes spinGps {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 .gm-zoom-group {
@@ -1410,17 +1534,11 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s ease;
   cursor: pointer;
   transition: background 0.15s;
   user-select: none;
 }
 
-.map-btn-gps:hover {
-  background: #ea580c;
-  color: #ffffff;
-  border-color: #ea580c;
 .gm-zoom-btn:hover {
   background: #f1f3f4;
   color: #202124;
@@ -1853,63 +1971,40 @@ onUnmounted(() => {
 }
 
 /* ==========================================================================
-   LEAFLET CUSTOM MARKER STYLES
    GOOGLE MAPS CUSTOM MARKER & INFOWINDOW STYLES
    ========================================================================== */
-:deep(.custom-map-icon) {
-  background: none;
 :deep(.custom-gm-icon) {
   background: transparent;
   border: none;
 }
 
-:deep(.marker-driver) {
 /* 1. Driver Beacon (Google Blue Navigation Beacon) */
 :deep(.gm-driver-beacon) {
   position: relative;
   width: 44px;
   height: 44px;
-  background: #ea580c;
-  color: #ffffff;
-  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.4);
-  border: 3px solid #ffffff;
 }
 
-:deep(.driver-wave) {
 :deep(.gm-beacon-wave) {
   position: absolute;
-  top: -6px;
-  left: -6px;
-  right: -6px;
-  bottom: -6px;
   top: 0;
   left: 0;
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: 2px solid #ea580c;
-  animation: pulseRadar 2s infinite;
   background: rgba(66, 133, 244, 0.22);
   border: 1.5px solid rgba(66, 133, 244, 0.6);
   animation: gmBeaconPulse 2s infinite ease-out;
 }
 
-@keyframes pulseRadar {
-  0% { transform: scale(0.9); opacity: 0.8; }
 @keyframes gmBeaconPulse {
   0% { transform: scale(0.65); opacity: 1; }
   100% { transform: scale(1.4); opacity: 0; }
 }
 
-:deep(.marker-store) {
-  width: 38px;
-  height: 38px;
-  background: #2563eb;
 :deep(.gm-beacon-core) {
   position: relative;
   width: 32px;
@@ -1921,17 +2016,9 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
   z-index: 2;
 }
 
-:deep(.marker-customer) {
-  width: 38px;
-  height: 38px;
-  background: #16a34a;
-  border-radius: 50%;
 :deep(.gm-core-icon) {
   font-size: 16px;
   line-height: 1;
@@ -1955,9 +2042,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35);
   border: 2px solid #ffffff;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
   z-index: 2;
