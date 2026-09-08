@@ -766,18 +766,6 @@ onUnmounted(() => {
           Tiếp tục quét đơn mới
         </button>
       </div>
-
-      <!-- Case C: Đang online quét đơn -->
-      <div v-else-if="isOnline && currentStep === 'idle'" class="floating-radar-chip">
-        <div class="radar-dot-pulse"></div>
-        <div class="radar-info">
-          <strong>Đang quét đơn gần bạn...</strong>
-          <small>Bán kính 10km khu vực Cầu Giấy</small>
-        </div>
-        <button class="btn-demo-order" @click="handleAcceptNewOrder" title="Thử nghiệm nhận đơn hỏa tốc">
-          ⚡ Thử Nhận Đơn
-        </button>
-      </div>
     </div>
 
     <!-- 4. NÚT CÔNG TẮC BẬT / TẮT HOẠT ĐỘNG (TOGGLE SWITCH CHUẨN) -->
@@ -815,15 +803,6 @@ onUnmounted(() => {
     <!-- 5. SLIDING OVERLAY PANEL CHO CÁC PHẦN: THU NHẬP / CUỐC XE / HỒ SƠ -->
     <div v-if="currentTab !== 'map'" class="sub-tab-panel-overlay">
       <header class="panel-header">
-        <div class="panel-title-row">
-          <i class="bi" :class="{
-            'bi-wallet2': currentTab === 'earnings',
-            'bi-box-seam-fill': currentTab === 'trips',
-            'bi-person-badge-fill': currentTab === 'profile'
-          }"></i>
-          <h2>
-            {{ currentTab === 'earnings' ? 'Thu Nhập & Ví Tài Xế' : (currentTab === 'trips' ? 'Lịch Sử Cuốc Xe' : 'Hồ Sơ & Trợ Giúp') }}
-          </h2>
         <div class="panel-sub-tabs">
           <button class="sub-tab-btn" :class="{ 'active': currentTab === 'earnings' }" @click="switchTab('earnings')">
             <i class="bi bi-wallet2"></i> Thu Nhập
@@ -991,60 +970,6 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
-
-    <!-- 6. THANH ĐIỀU HƯỚNG Ở DƯỚI CÙNG (BOTTOM NAVIGATION BAR) -->
-    <nav class="bottom-navigation-bar">
-      <!-- 1. Map Tab -->
-      <button
-        class="nav-tab-item"
-        :class="{ 'active': currentTab === 'map' }"
-        @click="switchTab('map')"
-      >
-        <div class="tab-icon-wrap">
-          <i class="bi bi-geo-alt-fill"></i>
-          <span v-if="isOnline" class="nav-online-dot"></span>
-        </div>
-        <span class="nav-tab-label">Bản Đồ</span>
-      </button>
-
-      <!-- 2. Earnings Tab -->
-      <button
-        class="nav-tab-item"
-        :class="{ 'active': currentTab === 'earnings' }"
-        @click="switchTab('earnings')"
-      >
-        <div class="tab-icon-wrap">
-          <i class="bi bi-wallet2"></i>
-          <span v-if="shiftStats.todayEarnings > 0" class="nav-count-badge">₫</span>
-        </div>
-        <span class="nav-tab-label">Thu Nhập</span>
-      </button>
-
-      <!-- 3. Trips Tab -->
-      <button
-        class="nav-tab-item"
-        :class="{ 'active': currentTab === 'trips' }"
-        @click="switchTab('trips')"
-      >
-        <div class="tab-icon-wrap">
-          <i class="bi bi-box-seam-fill"></i>
-          <span v-if="tripHistory.length > 0" class="nav-count-badge">{{ tripHistory.length }}</span>
-        </div>
-        <span class="nav-tab-label">Cuốc Xe</span>
-      </button>
-
-      <!-- 4. Profile Tab -->
-      <button
-        class="nav-tab-item"
-        :class="{ 'active': currentTab === 'profile' }"
-        @click="switchTab('profile')"
-      >
-        <div class="tab-icon-wrap">
-          <i class="bi bi-person-fill"></i>
-        </div>
-        <span class="nav-tab-label">Tài Khoản</span>
-      </button>
-    </nav>
   </div>
 </template>
 
@@ -1356,7 +1281,6 @@ onUnmounted(() => {
    ========================================================================== */
 .floating-mission-container {
   position: absolute;
-  bottom: 165px;
   bottom: 96px;
   left: 14px;
   right: 14px;
@@ -1644,7 +1568,6 @@ onUnmounted(() => {
    ========================================================================== */
 .floating-toggle-bar {
   position: absolute;
-  bottom: 84px;
   bottom: 24px;
   left: 0;
   right: 0;
@@ -1884,7 +1807,6 @@ onUnmounted(() => {
 .sub-tab-panel-overlay {
   position: absolute;
   inset: 0;
-  bottom: 70px;
   bottom: 0;
   z-index: 58;
   background: #f8fafc;
@@ -1900,7 +1822,6 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid #e2e8f0;
-  padding: 14px 20px;
   padding: 12px 20px;
   display: flex;
   align-items: center;
@@ -1910,23 +1831,15 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
-.panel-title-row {
 .panel-sub-tabs {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 20px;
-  color: #2563eb;
   gap: 6px;
   background: #f1f5f9;
   padding: 4px;
   border-radius: 12px;
 }
 
-.panel-title-row h2 {
-  font-size: 17px;
-  font-weight: 900;
-  margin: 0;
 .sub-tab-btn {
   display: inline-flex;
   align-items: center;
