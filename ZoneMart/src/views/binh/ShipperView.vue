@@ -67,17 +67,35 @@ const triggerToast = (msg: string) => {
 };
 
 // 4. Biến quản lý bản đồ Leaflet
+// 4. Biến quản lý bản đồ Google Maps (Leaflet engine)
 let map: L.Map | null = null;
+let tileLayer: L.TileLayer | null = null;
 let driverMarker: L.Marker | null = null;
 let storeMarker: L.Marker | null = null;
 let customerMarker: L.Marker | null = null;
 let radiusCircle: L.Circle | null = null;
+let routeLineCasing: L.Polyline | null = null;
 let routeLine: L.Polyline | null = null;
 
 // Tạo icon tùy biến
+// Chế độ bản đồ Google Maps: 'roadmap' (Bản đồ chuẩn) hoặc 'satellite' (Vệ tinh hybrid)
+const mapType = ref<'roadmap' | 'satellite'>('roadmap');
+const showTraffic = ref(false);
+const isFullscreen = ref(false);
+
+// Tạo icon tùy biến chuẩn Google Maps
 const driverIcon = L.divIcon({
   className: "custom-map-icon",
   html: `<div class="marker-driver"><span class="driver-wave"></span><span class="icon-char">🛵</span></div>`,
+  className: "custom-gm-icon",
+  html: `
+    <div class="gm-driver-beacon">
+      <div class="gm-beacon-wave"></div>
+      <div class="gm-beacon-core">
+        <span class="gm-core-icon">🛵</span>
+      </div>
+    </div>
+  `,
   iconSize: [44, 44],
   iconAnchor: [22, 22]
 });
@@ -87,6 +105,19 @@ const storeIcon = L.divIcon({
   html: `<div class="marker-store"><span class="icon-char">🏪</span></div>`,
   iconSize: [38, 38],
   iconAnchor: [19, 19]
+  className: "custom-gm-icon",
+  html: `
+    <div class="gm-marker-pin store-pin">
+      <div class="gm-pin-bubble">
+        <span class="gm-pin-icon">🏪</span>
+      </div>
+      <div class="gm-pin-point"></div>
+      <div class="gm-pin-shadow"></div>
+    </div>
+  `,
+  iconSize: [36, 46],
+  iconAnchor: [18, 44],
+  popupAnchor: [0, -42]
 });
 
 const customerIcon = L.divIcon({
@@ -94,9 +125,87 @@ const customerIcon = L.divIcon({
   html: `<div class="marker-customer"><span class="icon-char">📍</span></div>`,
   iconSize: [38, 38],
   iconAnchor: [19, 19]
+  className: "custom-gm-icon",
+  html: `
+    <div class="gm-marker-pin customer-pin">
+      <div class="gm-pin-bubble">
+        <span class="gm-pin-dot"></span>
+      </div>
+      <div class="gm-pin-point"></div>
+      <div class="gm-pin-shadow"></div>
+    </div>
+  `,
+  iconSize: [36, 46],
+  iconAnchor: [18, 44],
+  popupAnchor: [0, -42]
 });
 
 // Khởi tạo bản đồ
+// Cập nhật lớp hiển thị Google Maps (Bản đồ / Vệ tinh / Giao thông)
+const updateMapLayers = () => {
+  if (!map) return;
+  if (tileLayer) {
+    map.removeLayer(tileLayer);
+  }
+
+  let tileUrl = 'https://mt{s}.google.com/vt/lyrs=m&hl=vi&x={x}&y={y}&z={z}';
+  if (mapType.value === 'satellite') {
+    tileUrl = 'https://mt{s}.google.com/vt/lyrs=y&hl=vi&x={x}&y={y}&z={z}';
+  } else if (showTraffic.value) {
+    tileUrl = 'https://mt{s}.google.com/vt/lyrs=m,traffic&hl=vi&x={x}&y={y}&z={z}';
+  }
+
+  tileLayer = L.tileLayer(tileUrl, {
+    subdomains: ['0', '1', '2', '3'],
+    maxZoom: 20
+  }).addTo(map);
+
+  if (radiusCircle) radiusCircle.bringToFront();
+  if (routeLineCasing) routeLineCasing.bringToFront();
+  if (routeLine) routeLine.bringToFront();
+};
+
+// Chuyển đổi qua lại giữa Bản đồ đường sá và Vệ tinh
+const toggleMapType = () => {
+  mapType.value = mapType.value === 'roadmap' ? 'satellite' : 'roadmap';
+  updateMapLayers();
+  triggerToast(mapType.value === 'satellite' ? '🛰️ Đã chuyển sang chế độ Vệ tinh Google Maps' : '🗺️ Đã chuyển sang chế độ Bản đồ Google Maps');
+};
+
+// Bật/Tắt dữ liệu giao thông trực tiếp Google Traffic
+const toggleTraffic = () => {
+  showTraffic.value = !showTraffic.value;
+  updateMapLayers();
+  triggerToast(showTraffic.value ? '🚦 Đã bật dữ liệu Giao thông trực tiếp Google' : '🚦 Đã tắt lớp dữ liệu Giao thông');
+};
+
+// Zoom Google Maps
+const zoomIn = () => {
+  map?.zoomIn();
+};
+
+const zoomOut = () => {
+  map?.zoomOut();
+};
+
+// Toàn màn hình
+const toggleFullscreen = () => {
+  const elem = document.querySelector('.map-card-wrapper') as HTMLElement | null;
+  if (!elem) return;
+  if (!document.fullscreenElement) {
+    elem.requestFullscreen?.().then(() => {
+      isFullscreen.value = true;
+      setTimeout(() => map?.invalidateSize(), 200);
+    });
+  } else {
+    document.exitFullscreen?.().then(() => {
+      isFullscreen.value = false;
+      setTimeout(() => map?.invalidateSize(), 200);
+    });
+  }
+};
+
+// Khởi tạo bản đồ Google Maps
 const initMap = () => {
   const container = document.getElementById("shipperMap");
   if (!container || map) return;
@@ -105,9 +214,13 @@ const initMap = () => {
     center: [driverLocation.value.lat, driverLocation.value.lng],
     zoom: 14,
     zoomControl: false
+    zoom: 15,
+    zoomControl: false,
+    attributionControl: false
   });
 
   L.control.zoom({ position: "bottomright" }).addTo(map);
+  updateMapLayers();
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "© OpenStreetMap contributors | ZoneMart Driver",
@@ -115,31 +228,47 @@ const initMap = () => {
   }).addTo(map);
 
   // Vòng bán kính 10km
+  // Vòng bán kính quét đơn Google Style
   radiusCircle = L.circle([driverLocation.value.lat, driverLocation.value.lng], {
     radius: 3000, // Hiển thị 3km vùng nhận đơn hỏa tốc gần
     color: "#ea580c",
     fillColor: "#ea580c",
+    radius: 3000,
+    color: "#1a73e8",
+    fillColor: "#4285f4",
     fillOpacity: 0.08,
     weight: 2,
     dashArray: "6, 6"
   }).addTo(map);
 
   // Ghim tài xế
+  // Ghim vị trí tài xế
   driverMarker = L.marker([driverLocation.value.lat, driverLocation.value.lng], {
     icon: driverIcon,
     title: "Vị trí của bạn"
   }).addTo(map).bindPopup("<b>🛵 Vị trí hiện tại của bạn</b><br>Đang trực tuyến sẵn sàng nhận đơn.");
+  }).addTo(map).bindPopup(`
+    <div class="gm-infowindow">
+      <div class="gm-iw-tag text-primary">VỊ TRÍ CỦA BẠN</div>
+      <h4 class="gm-iw-title">Tài xế ZoneMart Driver</h4>
+      <p class="gm-iw-desc">🟢 Đang trực tuyến sẵn sàng nhận đơn</p>
+      <div class="gm-iw-meta">Độ chính xác GPS: &lt; 5m • Cầu Giấy</div>
+    </div>
+  `);
 
   renderOrderOnMap();
 };
 
 // Vẽ đơn hàng lên bản đồ
+// Vẽ tuyến đường & các điểm đơn hàng chuẩn Google Navigation
 const renderOrderOnMap = () => {
   if (!map) return;
 
   // Xóa marker cũ
+  // Xóa layers cũ
   if (storeMarker) map.removeLayer(storeMarker);
   if (customerMarker) map.removeLayer(customerMarker);
+  if (routeLineCasing) map.removeLayer(routeLineCasing);
   if (routeLine) map.removeLayer(routeLine);
 
   if (isOnline.value && currentStep.value !== "idle" && currentStep.value !== "delivered") {
@@ -147,13 +276,31 @@ const renderOrderOnMap = () => {
     storeMarker = L.marker([activeOrder.value.store.lat, activeOrder.value.store.lng], {
       icon: storeIcon
     }).addTo(map).bindPopup(`<b>🏪 ${activeOrder.value.store.name}</b><br>${activeOrder.value.store.address}`);
+    }).addTo(map).bindPopup(`
+      <div class="gm-infowindow">
+        <div class="gm-iw-tag text-blue">ĐIỂM LẤY HÀNG</div>
+        <h4 class="gm-iw-title">${activeOrder.value.store.name}</h4>
+        <p class="gm-iw-desc">📍 ${activeOrder.value.store.address}</p>
+        <div class="gm-iw-rating">★ 4.9 <span class="text-muted">(1,240 đánh giá) • Mở cửa</span></div>
+      </div>
+    `);
 
     // Ghim Khách
+    // Ghim Khách hàng
     customerMarker = L.marker([activeOrder.value.customer.lat, activeOrder.value.customer.lng], {
       icon: customerIcon
     }).addTo(map).bindPopup(`<b>👤 ${activeOrder.value.customer.name}</b><br>${activeOrder.value.customer.address}`);
+    }).addTo(map).bindPopup(`
+      <div class="gm-infowindow">
+        <div class="gm-iw-tag text-danger">ĐIỂM GIAO HÀNG</div>
+        <h4 class="gm-iw-title">${activeOrder.value.customer.name}</h4>
+        <p class="gm-iw-desc">📍 ${activeOrder.value.customer.address}</p>
+        <div class="gm-iw-meta">📞 ${activeOrder.value.customer.phone} • Hỏa tốc 10km</div>
+      </div>
+    `);
 
     // Vẽ đường đi
+    // Tọa độ chặng đi
     const waypoints: [number, number][] = currentStep.value === "accepted"
       ? [
           [driverLocation.value.lat, driverLocation.value.lng],
@@ -164,16 +311,31 @@ const renderOrderOnMap = () => {
           [activeOrder.value.customer.lat, activeOrder.value.customer.lng]
         ];
 
+    // Tuyến đường Google Maps kép: Casing ngoài + Inner line màu sáng
+    routeLineCasing = L.polyline(waypoints, {
+      color: currentStep.value === "accepted" ? "#1a73e8" : "#137333",
+      weight: 8,
+      opacity: 0.95,
+      lineCap: "round",
+      lineJoin: "round"
+    }).addTo(map);
+
     routeLine = L.polyline(waypoints, {
       color: currentStep.value === "accepted" ? "#2563eb" : "#16a34a",
+      color: currentStep.value === "accepted" ? "#4285f4" : "#34a853",
       weight: 5,
       opacity: 0.85,
       dashArray: "8, 10"
+      opacity: 1,
+      lineCap: "round",
+      lineJoin: "round"
     }).addTo(map);
 
     // Fit view
+    // Fit view bao trọn lộ trình
     const bounds = L.latLngBounds(waypoints);
     map.fitBounds(bounds, { padding: [50, 50] });
+    map.fitBounds(bounds, { padding: [60, 60] });
   }
 };
 
@@ -183,6 +345,7 @@ const recenterMap = () => {
     map.setView([driverLocation.value.lat, driverLocation.value.lng], 15);
     driverMarker?.openPopup();
     triggerToast("Đã định vị lại vị trí của bạn");
+    triggerToast("Đã định vị lại vị trí của bạn trên Google Maps");
   }
 };
 
@@ -193,6 +356,7 @@ const toggleOnline = () => {
     triggerToast("🟢 Đã BẬT nhận đơn! Hệ thống đang quét đơn hàng 10km quanh bạn.");
     if (radiusCircle) {
       radiusCircle.setStyle({ color: "#ea580c", fillColor: "#ea580c" });
+      radiusCircle.setStyle({ color: "#1a73e8", fillColor: "#4285f4" });
     }
   } else {
     triggerToast("🔴 Đã TẮT nhận đơn. Bạn đang ở trạng thái tạm nghỉ.");
@@ -240,11 +404,18 @@ watch(isOnline, () => {
   renderOrderOnMap();
 });
 
+const onFullscreenChange = () => {
+  isFullscreen.value = !!document.fullscreenElement;
+  setTimeout(() => map?.invalidateSize(), 200);
+};
+
 onMounted(() => {
   initMap();
+  document.addEventListener("fullscreenchange", onFullscreenChange);
 });
 
 onUnmounted(() => {
+  document.removeEventListener("fullscreenchange", onFullscreenChange);
   if (map) {
     map.remove();
     map = null;
@@ -356,10 +527,111 @@ onUnmounted(() => {
             <div class="map-tag">
               <i class="bi bi-broadcast"></i>
               <span>{{ isOnline ? "Bán kính quét đơn: 10km" : "Chế độ: Ngoại tuyến" }}</span>
+        <!-- MAP SECTION (GOOGLE MAPS AUTHENTIC UI) -->
+        <section class="map-card-wrapper" :class="{ 'is-fullscreen': isFullscreen }">
+          <!-- 1. Google Maps Floating Search Bar & Status Chips (Top) -->
+          <div class="gm-top-controls">
+            <div class="gm-search-box">
+              <div class="gm-search-icon">
+                <i class="bi bi-geo-alt-fill text-danger"></i>
+              </div>
+              <input
+                type="text"
+                class="gm-search-input"
+                value="Cầu Giấy, Hà Nội • Google Maps GPS"
+                readonly
+              />
+              <div class="gm-search-actions">
+                <button class="gm-icon-btn" title="Định vị tâm bản đồ" @click="recenterMap">
+                  <i class="bi bi-cursor-fill text-primary"></i>
+                </button>
+                <div class="gm-search-divider"></div>
+                <button class="gm-icon-btn" title="Tìm kiếm trên Google Maps" @click="triggerToast('Đang kết nối cơ sở dữ liệu Google Maps...')">
+                  <i class="bi bi-search"></i>
+                </button>
+              </div>
             </div>
             <button class="map-btn-gps" @click="recenterMap" title="Về vị trí của tôi">
               <i class="bi bi-crosshair"></i>
+
+            <div class="gm-status-chips">
+              <!-- Live Traffic Toggle Chip -->
+              <button
+                class="gm-chip gm-traffic-chip"
+                :class="{ 'chip-active': showTraffic }"
+                @click="toggleTraffic"
+                title="Bật/Tắt dữ liệu giao thông trực tiếp Google"
+              >
+                <span class="traffic-dots">
+                  <span class="dot dot-green"></span>
+                  <span class="dot dot-orange"></span>
+                  <span class="dot dot-red"></span>
+                </span>
+                <span>Giao thông</span>
+              </button>
+
+              <!-- Radar Radius Info Chip -->
+              <div class="gm-chip gm-radius-chip">
+                <i class="bi bi-broadcast"></i>
+                <span>{{ isOnline ? "Bán kính: 10km" : "Ngoại tuyến" }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Google Maps Layer Switcher & Watermark (Bottom Left) -->
+          <div class="gm-bottom-left-controls">
+            <div
+              class="gm-layer-card"
+              @click="toggleMapType"
+              :title="mapType === 'roadmap' ? 'Xem chế độ vệ tinh Google' : 'Xem chế độ bản đồ Google'"
+            >
+              <div class="gm-layer-thumb" :class="mapType === 'roadmap' ? 'thumb-satellite' : 'thumb-roadmap'">
+                <span class="gm-layer-badge">{{ mapType === 'roadmap' ? 'Vệ tinh' : 'Bản đồ' }}</span>
+              </div>
+            </div>
+
+            <!-- Official Google Logo Watermark -->
+            <div class="gm-watermark-logo">
+              <span class="g-blue">G</span><span class="g-red">o</span><span class="g-yellow">o</span><span class="g-blue">g</span><span class="g-green">l</span><span class="g-red">e</span>
+            </div>
+          </div>
+
+          <!-- 3. Google Maps Floating Controls Stack (Bottom Right) -->
+          <div class="gm-bottom-right-controls">
+            <!-- Fullscreen Button -->
+            <button class="gm-ctrl-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Thu nhỏ' : 'Toàn màn hình'">
+              <i class="bi" :class="isFullscreen ? 'bi-fullscreen-exit' : 'bi-arrows-fullscreen'"></i>
             </button>
+
+            <!-- My Location Crosshair -->
+            <button class="gm-ctrl-btn gm-my-location" @click="recenterMap" title="Vị trí của bạn">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="#5f6368">
+                <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
+              </svg>
+            </button>
+
+            <!-- Street View Pegman (Yellow Man) -->
+            <button
+              class="gm-ctrl-btn gm-pegman"
+              @click="triggerToast('Chế độ xem phố Google Street View: Đang tải hình ảnh 360°...')"
+              title="Chế độ xem phố Street View"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20">
+                <path d="M12 2c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm4 7h-2.5v13h-3v-6h-1v6h-3V9H4c-.55 0-1-.45-1-1s.45-1 1-1h12c.55 0 1 .45 1 1s-.45 1-1 1z" fill="#f4b400"/>
+              </svg>
+            </button>
+
+            <!-- Google Maps Zoom Group -->
+            <div class="gm-zoom-group">
+              <button class="gm-zoom-btn" @click="zoomIn" title="Phóng to">+</button>
+              <div class="gm-zoom-divider"></div>
+              <button class="gm-zoom-btn" @click="zoomOut" title="Thu nhỏ">−</button>
+            </div>
+          </div>
+
+          <!-- 4. Google Maps Footer Legal Notice -->
+          <div class="gm-footer-legal">
+            <span>Dữ liệu bản đồ ©2026 Google • Điều khoản</span>
           </div>
 
           <!-- Leaflet Map Element -->
@@ -811,14 +1083,31 @@ onUnmounted(() => {
 }
 
 /* Map Card */
+/* Map Card (Google Maps Experience) */
 .map-card-wrapper {
   background: #ffffff;
   border-radius: 22px;
+  background: #e5e3df;
+  border-radius: 20px;
   overflow: hidden;
   border: 1px solid #f1f5f9;
   box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.04);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.06);
   position: relative;
   height: 580px;
+}
+
+.map-card-wrapper.is-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 99999;
+  border-radius: 0;
 }
 
 .leaflet-map-element {
@@ -833,52 +1122,329 @@ onUnmounted(() => {
 }
 
 .map-top-overlay {
+/* 1. Google Maps Top Bar Controls */
+.gm-top-controls {
   position: absolute;
   top: 18px;
   left: 18px;
   right: 18px;
+  top: 14px;
+  left: 14px;
+  right: 14px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   z-index: 10;
   pointer-events: none;
+  flex-wrap: wrap;
 }
 
 .map-tag {
+.gm-search-box {
   pointer-events: auto;
   background: rgba(15, 23, 42, 0.85);
   backdrop-filter: blur(8px);
   color: #ffffff;
   font-size: 12px;
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+  height: 44px;
+  padding: 0 8px;
+  min-width: 280px;
+  max-width: 380px;
+  flex: 1;
+}
+
+.gm-search-icon {
+  width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+}
+
+.gm-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #202124;
+  background: transparent;
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gm-search-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gm-icon-btn {
+  background: transparent;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5f6368;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.gm-icon-btn:hover {
+  background: #f1f3f4;
+  color: #202124;
+}
+
+.gm-search-divider {
+  width: 1px;
+  height: 20px;
+  background: #dadce0;
+  margin: 0 4px;
+}
+
+.gm-status-chips {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gm-chip {
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   padding: 6px 14px;
   border-radius: 9999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #3c4043;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  gap: 7px;
+  border: 1px solid #dadce0;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .map-btn-gps {
   pointer-events: auto;
   width: 38px;
   height: 38px;
+.gm-chip:hover {
+  background: #f8f9fa;
+}
+
+.gm-chip.chip-active {
+  background: #e8f0fe;
+  color: #1a73e8;
+  border-color: #1a73e8;
+}
+
+.traffic-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.traffic-dots .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.traffic-dots .dot-green { background: #34a853; }
+.traffic-dots .dot-orange { background: #fbbc04; }
+.traffic-dots .dot-red { background: #ea4335; }
+
+.gm-radius-chip {
+  cursor: default;
+  background: rgba(32, 33, 36, 0.88);
+  backdrop-filter: blur(4px);
+  color: #ffffff;
+  border: none;
+}
+
+/* 2. Google Maps Bottom Left Controls */
+.gm-bottom-left-controls {
+  position: absolute;
+  bottom: 22px;
+  left: 14px;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  z-index: 10;
+}
+
+.gm-layer-card {
+  width: 58px;
+  height: 58px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.15s ease;
+}
+
+.gm-layer-card:hover {
+  transform: scale(1.05);
+}
+
+.gm-layer-thumb {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 2px;
+}
+
+.thumb-satellite {
+  background: url("https://mt1.google.com/vt/lyrs=s&hl=vi&x=13&y=7&z=4") center/cover no-repeat;
+}
+
+.thumb-roadmap {
+  background: url("https://mt1.google.com/vt/lyrs=m&hl=vi&x=13&y=7&z=4") center/cover no-repeat;
+}
+
+.gm-layer-badge {
+  background: rgba(32, 33, 36, 0.85);
+  color: #ffffff;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1.2;
+}
+
+/* Official Google Watermark Logo */
+.gm-watermark-logo {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 2px 8px;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  line-height: 1.2;
+}
+
+.g-blue { color: #4285F4; }
+.g-red { color: #EA4335; }
+.g-yellow { color: #FBBC05; }
+.g-green { color: #34A853; }
+
+/* 3. Google Maps Bottom Right Controls Stack */
+.gm-bottom-right-controls {
+  position: absolute;
+  bottom: 24px;
+  right: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  z-index: 10;
+}
+
+.gm-ctrl-btn {
+  width: 40px;
+  height: 40px;
   background: #ffffff;
   border: 1px solid #cbd5e1;
   border-radius: 10px;
   color: #0f172a;
   font-size: 17px;
+  border: none;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5f6368;
   cursor: pointer;
+  transition: background 0.15s;
+}
+
+.gm-ctrl-btn:hover {
+  background: #f1f3f4;
+  color: #202124;
+}
+
+.gm-my-location:hover svg {
+  fill: #1a73e8;
+}
+
+.gm-zoom-group {
+  width: 40px;
+  background: #ffffff;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.gm-zoom-btn {
+  width: 40px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  color: #5f6368;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   transition: all 0.2s ease;
+  cursor: pointer;
+  transition: background 0.15s;
+  user-select: none;
 }
 
 .map-btn-gps:hover {
   background: #ea580c;
   color: #ffffff;
   border-color: #ea580c;
+.gm-zoom-btn:hover {
+  background: #f1f3f4;
+  color: #202124;
+}
+
+.gm-zoom-divider {
+  height: 1px;
+  background: #e8eaed;
+  margin: 0 4px;
+}
+
+/* 4. Footer Legal */
+.gm-footer-legal {
+  position: absolute;
+  bottom: 2px;
+  right: 6px;
+  font-size: 10px;
+  color: #5f6368;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 1px 6px;
+  border-radius: 2px;
+  z-index: 9;
+  user-select: none;
+  pointer-events: none;
 }
 
 /* Offline Map Overlay Prompt */
@@ -1288,13 +1854,18 @@ onUnmounted(() => {
 
 /* ==========================================================================
    LEAFLET CUSTOM MARKER STYLES
+   GOOGLE MAPS CUSTOM MARKER & INFOWINDOW STYLES
    ========================================================================== */
 :deep(.custom-map-icon) {
   background: none;
+:deep(.custom-gm-icon) {
+  background: transparent;
   border: none;
 }
 
 :deep(.marker-driver) {
+/* 1. Driver Beacon (Google Blue Navigation Beacon) */
+:deep(.gm-driver-beacon) {
   position: relative;
   width: 44px;
   height: 44px;
@@ -1310,18 +1881,28 @@ onUnmounted(() => {
 }
 
 :deep(.driver-wave) {
+:deep(.gm-beacon-wave) {
   position: absolute;
   top: -6px;
   left: -6px;
   right: -6px;
   bottom: -6px;
+  top: 0;
+  left: 0;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: 2px solid #ea580c;
   animation: pulseRadar 2s infinite;
+  background: rgba(66, 133, 244, 0.22);
+  border: 1.5px solid rgba(66, 133, 244, 0.6);
+  animation: gmBeaconPulse 2s infinite ease-out;
 }
 
 @keyframes pulseRadar {
   0% { transform: scale(0.9); opacity: 0.8; }
+@keyframes gmBeaconPulse {
+  0% { transform: scale(0.65); opacity: 1; }
   100% { transform: scale(1.4); opacity: 0; }
 }
 
@@ -1329,13 +1910,21 @@ onUnmounted(() => {
   width: 38px;
   height: 38px;
   background: #2563eb;
+:deep(.gm-beacon-core) {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  background: #1a73e8;
+  border: 3px solid #ffffff;
   border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(26, 115, 232, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
   border: 2.5px solid #ffffff;
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+  z-index: 2;
 }
 
 :deep(.marker-customer) {
@@ -1343,12 +1932,129 @@ onUnmounted(() => {
   height: 38px;
   background: #16a34a;
   border-radius: 50%;
+:deep(.gm-core-icon) {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* 2. Google Drop Pins (Store & Customer) */
+:deep(.gm-marker-pin) {
+  position: relative;
+  width: 36px;
+  height: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+:deep(.gm-pin-bubble) {
+  width: 34px;
+  height: 34px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
   border: 2.5px solid #ffffff;
   box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35);
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  z-index: 2;
+}
+
+:deep(.gm-marker-pin.store-pin .gm-pin-bubble) {
+  background: #1a73e8;
+}
+
+:deep(.gm-marker-pin.customer-pin .gm-pin-bubble) {
+  background: #ea4335;
+}
+
+:deep(.gm-pin-icon) {
+  transform: rotate(45deg);
+  font-size: 15px;
+  line-height: 1;
+}
+
+:deep(.gm-pin-dot) {
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+:deep(.gm-pin-shadow) {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 50%;
+  filter: blur(1px);
+  z-index: 1;
+}
+
+/* 3. Google Maps InfoWindow Popup Styling */
+:deep(.leaflet-popup-content-wrapper) {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 7px 1px rgba(0, 0, 0, 0.25);
+  padding: 0;
+  overflow: hidden;
+}
+
+:deep(.leaflet-popup-content) {
+  margin: 0;
+  line-height: 1.4;
+}
+
+:deep(.leaflet-popup-tip) {
+  background: #ffffff;
+  box-shadow: 0 2px 7px 1px rgba(0, 0, 0, 0.2);
+}
+
+:deep(.gm-infowindow) {
+  padding: 12px 14px;
+  min-width: 210px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+:deep(.gm-iw-tag) {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+:deep(.gm-iw-tag.text-blue) { color: #1a73e8; }
+:deep(.gm-iw-tag.text-danger) { color: #ea4335; }
+:deep(.gm-iw-tag.text-primary) { color: #1a73e8; }
+
+:deep(.gm-iw-title) {
+  font-size: 14px;
+  font-weight: 700;
+  color: #202124;
+  margin: 0 0 4px 0;
+}
+
+:deep(.gm-iw-desc) {
+  font-size: 12px;
+  color: #3c4043;
+  margin: 0 0 6px 0;
+}
+
+:deep(.gm-iw-meta),
+:deep(.gm-iw-rating) {
+  font-size: 11.5px;
+  color: #70757a;
+}
+:deep(.gm-iw-rating) {
+  color: #e37400;
+  font-weight: 600;
 }
 
 /* ==========================================================================
