@@ -763,41 +763,27 @@ onUnmounted(() => {
           </div>
         </div>
         <button class="btn btn-primary w-100" @click="currentStep = 'idle'">
-          Tiếp tục quét đơn mới
+          Hoàn tất cuốc xe
         </button>
       </div>
     </div>
 
-    <!-- 4. NÚT CÔNG TẮC BẬT / TẮT HOẠT ĐỘNG (TOGGLE SWITCH CHUẨN) -->
+    <!-- 4. NÚT CÔNG TẮC BẬT / TẮT HOẠT ĐỘNG (MASTER TOGGLE BUTTON) -->
     <div v-show="currentTab === 'map'" class="floating-toggle-bar">
-      <div class="toggle-switch-card" @click="toggleOnline">
-        <div class="toggle-info-col">
-          <div class="status-indicator-badge" :class="{ 'online': isOnline }">
-            <span class="status-live-dot"></span>
-            <span class="status-badge-text">{{ isOnline ? "Đang BẬT Hoạt Động" : "Đang TẮT Hoạt Động" }}</span>
-          </div>
-          <p class="status-sub-desc">
-            {{ isOnline ? "Bán kính quét: 10km quanh vị trí bạn" : "Gạt công tắc để bắt đầu nhận đơn" }}
-          </p>
-        </div>
-
-        <!-- Công tắc gạt BẬT / TẮT chuẩn -->
-        <div 
-          class="switch-control-wrap" 
-          :class="{ 'is-active': isOnline }"
-          role="switch"
-          :aria-checked="isOnline"
-          :title="isOnline ? 'Nhấn để Tắt hoạt động' : 'Nhấn để Bật hoạt động'"
-        >
-          <div class="switch-capsule">
-            <span class="switch-label label-on">BẬT</span>
-            <span class="switch-thumb">
-              <i class="bi" :class="isOnline ? 'bi-lightning-charge-fill' : 'bi-power'"></i>
-            </span>
-            <span class="switch-label label-off">TẮT</span>
-          </div>
-        </div>
-      </div>
+      <button 
+        type="button" 
+        class="master-toggle-btn" 
+        :class="{ 'is-online': isOnline }"
+        @click="toggleOnline"
+        :title="isOnline ? 'Nhấn để Tắt hoạt động' : 'Nhấn để Bật hoạt động'"
+      >
+        <span class="toggle-knob">
+          <i class="bi" :class="isOnline ? 'bi-lightning-charge-fill' : 'bi-power'"></i>
+        </span>
+        <span class="toggle-text">
+          {{ isOnline ? 'TẮT HOẠT ĐỘNG' : 'BẬT HOẠT ĐỘNG' }}
+        </span>
+      </button>
     </div>
 
     <!-- 5. SLIDING OVERLAY PANEL CHO CÁC PHẦN: THU NHẬP / CUỐC XE / HỒ SƠ -->
@@ -1564,7 +1550,7 @@ onUnmounted(() => {
 }
 
 /* ==========================================================================
-   4. NÚT CÔNG TẮC BẬT / TẮT HOẠT ĐỘNG (TOGGLE SWITCH CHUẨN)
+   4. NÚT CÔNG TẮC BẬT / TẮT HOẠT ĐỘNG (MASTER TOGGLE BUTTON)
    ========================================================================== */
 .floating-toggle-bar {
   position: absolute;
@@ -1578,227 +1564,79 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.toggle-switch-card {
+.master-toggle-btn {
   pointer-events: auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(14px);
-  padding: 10px 18px 10px 20px;
-  border-radius: 999px;
-  box-shadow: 0 10px 30px -4px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1.5px solid rgba(255, 255, 255, 0.9);
-  cursor: pointer;
-  max-width: 440px;
-  width: 100%;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
-}
-
-.toggle-switch-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 14px 34px -4px rgba(0, 0, 0, 0.2);
-}
-
-.toggle-info-col {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: left;
-}
-
-.status-indicator-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.status-live-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #94a3b8;
-  transition: all 0.3s;
-}
-
-.status-indicator-badge.online .status-live-dot {
-  background: #22c55e;
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3);
-  animation: pulseDot 2s infinite;
-}
-
-.status-badge-text {
-  font-size: 14.5px;
-  font-weight: 900;
-  color: #0f172a;
-  letter-spacing: 0.2px;
-}
-
-.status-sub-desc {
-  font-size: 11.5px;
-  color: #64748b;
-  margin: 0;
-  font-weight: 600;
-}
-
-/* Công tắc gạt (Toggle Switch Control) */
-.switch-control-wrap {
-  flex-shrink: 0;
-  user-select: none;
-}
-
-.switch-capsule {
   position: relative;
-  width: 78px;
-  height: 42px;
-  border-radius: 999px;
-  background: #e2e8f0;
-  border: 2px solid #cbd5e1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 8px;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  box-sizing: border-box;
+  width: 250px;
+  height: 52px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  background: #1e293b;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 10px 28px -4px rgba(15, 23, 42, 0.35), 0 3px 10px rgba(0, 0, 0, 0.1);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  overflow: hidden;
+  padding: 0;
 }
 
-.switch-control-wrap.is-active .switch-capsule {
-  background: #22c55e;
-  border-color: #16a34a;
-  box-shadow: 0 2px 14px rgba(34, 197, 94, 0.45);
+.master-toggle-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px -4px rgba(15, 23, 42, 0.4);
 }
 
-.switch-thumb {
+.master-toggle-btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.master-toggle-btn.is-online {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  border-color: #86efac;
+  box-shadow: 0 10px 28px -2px rgba(34, 197, 94, 0.48), 0 3px 10px rgba(22, 163, 74, 0.25);
+}
+
+.toggle-knob {
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 32px;
-  height: 32px;
+  top: 5px;
+  left: 6px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   background: #ffffff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  font-size: 18px;
   color: #64748b;
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), color 0.3s;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), color 0.3s;
   z-index: 2;
 }
 
-.switch-control-wrap.is-active .switch-thumb {
-  transform: translateX(36px);
+.master-toggle-btn.is-online .toggle-knob {
+  transform: translateX(196px);
   color: #16a34a;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
 }
 
-.switch-label {
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.5px;
-  z-index: 1;
-  transition: opacity 0.25s;
-}
-
-.label-on {
-  color: #ffffff;
-  opacity: 0;
-  margin-left: 2px;
-}
-
-.label-off {
-  color: #64748b;
-  opacity: 1;
-  margin-left: auto;
-  margin-right: 2px;
-}
-
-.switch-control-wrap.is-active .label-on {
-  opacity: 1;
-}
-
-.switch-control-wrap.is-active .label-off {
-  opacity: 0;
-}
-
-/* ==========================================================================
-   5. THANH ĐIỀU HƯỚNG Ở DƯỚI CÙNG (BOTTOM NAVIGATION BAR)
-   ========================================================================== */
-.bottom-navigation-bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 70px;
-  z-index: 60;
-  background: #ffffff;
-  border-top: 1px solid #e2e8f0;
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06);
-  display: flex;
-  align-items: center;
-  justify-content: space-around;
-  padding: 0 10px;
-}
-
-.nav-tab-item {
-  flex: 1;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  color: #64748b;
-  font-family: inherit;
-  transition: color 0.15s;
-}
-
-.nav-tab-item:hover {
-  color: #0f172a;
-}
-
-.nav-tab-item.active {
-  color: #2563eb;
-}
-
-.tab-icon-wrap {
-  position: relative;
-  font-size: 20px;
-  line-height: 1;
-}
-
-.nav-online-dot {
-  position: absolute;
-  top: -1px;
-  right: -3px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #22c55e;
-  border: 1.5px solid #ffffff;
-  animation: pulseDot 2s infinite;
-}
-
-.nav-count-badge {
-  position: absolute;
-  top: -5px;
-  right: -8px;
-  background: #ef4444;
-  color: #ffffff;
-  font-size: 10px;
+.toggle-text {
+  width: 100%;
+  text-align: center;
+  font-size: 14.5px;
   font-weight: 800;
-  padding: 1px 5px;
-  border-radius: 999px;
-  line-height: 1.2;
+  letter-spacing: 0.6px;
+  color: #ffffff;
+  transition: padding 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1;
+  padding-left: 36px;
 }
 
-.nav-tab-label {
-  font-size: 11px;
-  font-weight: 700;
+.master-toggle-btn.is-online .toggle-text {
+  padding-left: 0;
+  padding-right: 36px;
 }
 
 /* ==========================================================================
