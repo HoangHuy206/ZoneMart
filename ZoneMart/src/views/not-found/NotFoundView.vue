@@ -97,7 +97,7 @@ const goProducts = () => {
       <div class="content-wrapper">
         <h1 class="error-title">404 - ACCESS DENIED</h1>
         <p class="error-desc">
-          It seems this market is temporarily closed or you do not have permission to access it.
+          It seems this market is temporarily closed or you do<br class="break-line" />not have permission to access it.
         </p>
 
         <!-- Navigation Actions -->
@@ -120,6 +120,8 @@ const goProducts = () => {
 </template>
 
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,700;0,6..96,800;0,6..96,900;1,6..96,700;1,6..96,800&family=DM+Serif+Display:ital@0;1&family=Playfair+Display:ital,wght@0,700;0,800;0,900;1,700;1,800;1,900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
 /* Page Layout: Warm cream eggshell background full screen */
 .not-found-page {
   min-height: 100vh;
@@ -141,11 +143,11 @@ const goProducts = () => {
   position: relative;
 }
 
-/* Illustration Wrapper */
+/* Illustration Wrapper: Proportioned to match heading width */
 .illustration-wrapper {
   width: 100%;
-  max-width: 320px;
-  margin: 0 auto 32px auto;
+  max-width: 250px;
+  margin: 0 auto 28px auto;
   display: flex;
   justify-content: center;
 }
@@ -176,23 +178,28 @@ const goProducts = () => {
 }
 
 .error-title {
-  font-family: 'Playfair Display', Didot, 'Bodoni MT', Georgia, serif;
-  font-size: 34px;
-  font-weight: 900;
-  letter-spacing: 0.02em;
-  color: #18181b;
-  margin: 0 0 16px 0;
-  line-height: 1.2;
+  font-family: 'Bodoni Moda', 'Playfair Display', 'DM Serif Display', Didot, 'Bodoni MT', 'Times New Roman', serif;
+  font-optical-sizing: auto;
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: 0.015em;
+  color: #111827;
+  margin: 0 0 14px 0;
+  line-height: 1.15;
 }
 
 .error-desc {
   font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 15px;
-  line-height: 1.65;
-  color: #52525b;
-  max-width: 420px;
+  line-height: 1.52;
+  color: #4b5563;
+  max-width: 440px;
   margin: 0 0 32px 0;
-  font-weight: 500;
+  font-weight: 400;
+}
+
+.break-line {
+  display: inline;
 }
 
 /* Actions Row */
