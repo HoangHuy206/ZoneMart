@@ -286,17 +286,20 @@ const handleLogout = () => {
           </p>
           <ul class="footer-contact-list">
             <li>
-              📍 <strong>Trụ sở:</strong> Tòa nhà ZoneMart, Khu Công Nghệ Cao,
-              TP. Hồ Chí Minh
+              <i class="bi bi-geo-alt-fill footer-info-icon"></i>
+              <span><strong>Trụ sở:</strong> Tòa nhà ZoneMart, Khu Công Nghệ Cao, TP. Hà Nội</span>
             </li>
             <li>
-              📞 <strong>Tổng đài hỗ trợ:</strong> 1900 6868 (8:00 - 21:00 hàng
-              ngày)
+              <i class="bi bi-telephone-fill footer-info-icon"></i>
+              <span><strong>Tổng đài hỗ trợ:</strong> 1900 6868 (8:00 - 21:00 hàng ngày)</span>
             </li>
-            <li>✉️ <strong>Email hỗ trợ:</strong> support@zonemart.vn</li>
             <li>
-              🕒 <strong>Thời gian hoạt động:</strong> 06:00 - 22:00 (Cả Thứ 7,
-              CN)
+              <i class="bi bi-envelope-fill footer-info-icon"></i>
+              <span><strong>Email hỗ trợ:</strong> support@zonemart.vn</span>
+            </li>
+            <li>
+              <i class="bi bi-clock-fill footer-info-icon"></i>
+              <span><strong>Thời gian hoạt động:</strong> 06:00 - 22:00 (Cả Thứ 7, CN)</span>
             </li>
           </ul>
         </div>
@@ -363,10 +366,21 @@ const handleLogout = () => {
             KẾT NỐI VỚI CHÚNG TÔI
           </h5>
           <div class="social-links">
-            <a href="#facebook" class="social-icon" title="Facebook">📘</a>
-            <a href="#zalo" class="social-icon" title="Zalo">💬</a>
-            <a href="#youtube" class="social-icon" title="YouTube">📺</a>
-            <a href="#tiktok" class="social-icon" title="TikTok">🎵</a>
+            <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" class="social-icon social-facebook" title="Facebook ZoneMart">
+              <i class="bi bi-facebook"></i>
+            </a>
+            <a href="https://zalo.me" target="_blank" rel="noopener noreferrer" class="social-icon social-zalo" title="Zalo ZoneMart">
+              <svg viewBox="0 0 32 32" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M16 2C8.268 2 2 7.747 2 14.836c0 4.14 2.146 7.828 5.485 10.22-.246 2.05-.986 4.14-1.01 4.21a.7.7 0 0 0 .65.934c2.463 0 4.708-1.127 6.035-1.928 1.05.258 2.155.398 3.3.398 7.732 0 14-5.747 14-12.834C30 7.747 23.732 2 16 2z" fill="#0068FF"/>
+                <path d="M9.5 19.5v-1.5l3.8-4.8H9.7v-1.8h5.9v1.5l-3.8 4.8h3.8v1.8H9.5zm7.7-8.1h2.2v8.1h-2.2v-8.1zm4.5 3h2.1v.8c.5-.6 1.2-1 2-1 1.5 0 2.6 1.2 2.6 3v4.3h-2.2v-4c0-.7-.4-1.1-1.1-1.1-.6 0-1.1.4-1.1 1.1v4h-2.3v-6.3z" fill="#ffffff"/>
+              </svg>
+            </a>
+            <a href="https://youtube.com" target="_blank" rel="noopener noreferrer" class="social-icon social-youtube" title="YouTube ZoneMart">
+              <i class="bi bi-youtube"></i>
+            </a>
+            <a href="https://tiktok.com" target="_blank" rel="noopener noreferrer" class="social-icon social-tiktok" title="TikTok ZoneMart">
+              <i class="bi bi-tiktok"></i>
+            </a>
           </div>
         </div>
       </div>
@@ -848,9 +862,21 @@ body {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   font-size: 12.5px;
   color: #b5a297;
+}
+.footer-contact-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  line-height: 1.5;
+}
+.footer-info-icon {
+  color: #ea580c;
+  font-size: 13.5px;
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 .footer-contact-list strong {
   color: #f1dfd5;
@@ -903,19 +929,65 @@ body {
 
 .social-links {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
 }
 .social-icon {
-  font-size: 20px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #2b1c14;
+  border: 1px solid #4a3427;
   text-decoration: none;
-  opacity: 0.85;
-  transition:
-    transform 0.2s,
-    opacity 0.2s;
+  font-size: 18px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .social-icon:hover {
-  transform: translateY(-2px);
-  opacity: 1;
+  transform: translateY(-3px);
+}
+
+/* Facebook: Xanh dương đặc trưng */
+.social-icon.social-facebook {
+  color: #1877f2;
+}
+.social-icon.social-facebook:hover {
+  background: #1877f2;
+  border-color: #1877f2;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(24, 119, 242, 0.45);
+}
+
+/* Zalo: Nền xanh Zalo đặc trưng */
+.social-icon.social-zalo:hover {
+  background: #0068ff;
+  border-color: #0068ff;
+  box-shadow: 0 4px 14px rgba(0, 104, 255, 0.45);
+}
+
+/* YouTube: Đỏ tươi đặc trưng */
+.social-icon.social-youtube {
+  color: #ff0000;
+}
+.social-icon.social-youtube:hover {
+  background: #ff0000;
+  border-color: #ff0000;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(255, 0, 0, 0.45);
+}
+
+/* TikTok: Đen viền neon đặc trưng */
+.social-icon.social-tiktok {
+  color: #ffffff;
+}
+.social-icon.social-tiktok:hover {
+  background: #000000;
+  border-color: #fe2c55;
+  color: #fe2c55;
+  box-shadow: 0 4px 14px rgba(254, 44, 85, 0.45);
 }
 
 /* Bottom Bar */
