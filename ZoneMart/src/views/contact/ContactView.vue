@@ -78,8 +78,50 @@ const removeFile = () => {
   form.fileName = "";
 };
 
-// Form submit
-const handleSubmit = () => {
+const sendDirectTelegram = async (ticketCode: string, p: {
+  fullName: string;
+  email: string;
+  phone: string;
+  orderCode: string | null;
+  topic: string;
+  message: string;
+  fileName: string | null;
+}) => {
+  try {
+    const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+    const orderLine = p.orderCode ? `📦 <b>Mã đơn hàng:</b> <code>#${p.orderCode}</code>\n` : "";
+    const fileLine = p.fileName ? `📎 <b>Tệp đính kèm:</b> ${p.fileName}\n` : "";
+    const text = `🔔 <b>[ZONEMART] CÓ YÊU CẦU HỖ TRỢ MỚI!</b>
+━━━━━━━━━━━━━━━━━━━━
+🏷 <b>Mã Ticket:</b> <code>#${ticketCode}</code>
+⏰ <b>Thời gian:</b> ${vnTime}
+
+👤 <b>Khách hàng:</b> ${p.fullName}
+📧 <b>Email:</b> <code>${p.email}</code>
+📞 <b>Số điện thoại:</b> <code>${p.phone || 'Chưa cung cấp'}</code>
+${orderLine}📂 <b>Chủ đề:</b> ${p.topic}
+${fileLine}
+💬 <b>Nội dung yêu cầu:</b>
+<blockquote>${p.message}</blockquote>
+━━━━━━━━━━━━━━━━━━━━
+<i>⚡ Hệ thống tự động đẩy thông báo từ ZoneMart Portal</i>`;
+
+    const res = await fetch("https://api.telegram.org/bot8873124743:AAGnQs8cqHBf8lolMKlgjl6jqEh2aF8XN_Y/sendMessage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: "5807941249",
+        text: text,
+        parse_mode: "HTML"
+      })
+    });
+    return res.ok;
+  } catch (e) {
+    console.error("Direct telegram send error:", e);
+    return false;
+  }
+};
+
 // Form submit: Gửi về Backend C# -> Bắn Email & Bot Telegram
 const handleSubmit = async () => {
   if (!form.fullName || !form.email || !form.message) {
@@ -87,8 +129,6 @@ const handleSubmit = async () => {
   }
   isSubmitting.value = true;
 
-  // Simulate network request
-  setTimeout(() => {
   const currentTopicObj = topics.find(t => t.id === selectedTopic.value);
   const topicLabel = currentTopicObj ? currentTopicObj.label : selectedTopic.value;
 
@@ -102,6 +142,8 @@ const handleSubmit = async () => {
     fileName: form.fileName || null
   };
 
+  const fallbackTicketCode = "ZM-" + Math.floor(100000 + Math.random() * 900000);
+
   try {
     const res = await fetch("http://localhost:5128/api/support/ticket", {
       method: "POST",
@@ -113,10 +155,16 @@ const handleSubmit = async () => {
 
     if (res.ok) {
       const data = await res.json();
-      submittedTicketId.value = data.ticketCode || ("ZM-" + Math.floor(100000 + Math.random() * 900000));
+      submittedTicketId.value = data.ticketCode || fallbackTicketCode;
+      
+      let teleOk = !!data.telegramSent;
+      if (!teleOk) {
+        teleOk = await sendDirectTelegram(submittedTicketId.value, payload);
+      }
+
       deliveryStatus.value = {
         emailSent: !!data.emailSent,
-        telegramSent: !!data.telegramSent,
+        telegramSent: teleOk,
         message: data.message || "Yêu cầu đã được tiếp nhận thành công!"
       };
       isSubmitted.value = true;
@@ -124,19 +172,17 @@ const handleSubmit = async () => {
       throw new Error(`Server returned status ${res.status}`);
     }
   } catch (err) {
-    console.warn("Backend API call error, falling back to local acknowledgment:", err);
-    submittedTicketId.value = "ZM-" + Math.floor(100000 + Math.random() * 900000);
+    console.warn("Backend API offline, sending via Direct Telegram fallback:", err);
+    submittedTicketId.value = fallbackTicketCode;
+    const teleDirectOk = await sendDirectTelegram(fallbackTicketCode, payload);
     deliveryStatus.value = {
       emailSent: true,
-      telegramSent: false,
+      telegramSent: teleDirectOk,
       message: "Yêu cầu đã được ghi nhận vào hệ thống!"
     };
     isSubmitted.value = true;
   } finally {
     isSubmitting.value = false;
-    isSubmitted.value = true;
-    submittedTicketId.value = "ZM-" + Math.floor(100000 + Math.random() * 900000);
-  }, 700);
   }
 };
 
