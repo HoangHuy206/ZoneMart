@@ -97,6 +97,7 @@ const driverIcon = L.divIcon({
       <div class="gm-beacon-wave"></div>
       <div class="gm-beacon-core">
         <span class="gm-core-icon">🛵</span>
+        <span class="gm-core-icon"><i class="bi bi-bicycle"></i></span>
       </div>
     </div>
   `,
@@ -110,6 +111,7 @@ const storeIcon = L.divIcon({
     <div class="gm-marker-pin store-pin">
       <div class="gm-pin-bubble">
         <span class="gm-pin-icon">🏪</span>
+        <span class="gm-pin-icon"><i class="bi bi-shop"></i></span>
       </div>
       <div class="gm-pin-point"></div>
       <div class="gm-pin-shadow"></div>
@@ -165,6 +167,7 @@ const toggleMapType = () => {
   mapType.value = mapType.value === 'roadmap' ? 'satellite' : 'roadmap';
   updateMapLayers();
   triggerToast(mapType.value === 'satellite' ? '🛰️ Đã chuyển sang chế độ Vệ tinh Google Maps' : '🗺️ Đã chuyển sang chế độ Bản đồ Google Maps');
+  triggerToast(mapType.value === 'satellite' ? 'Đã chuyển sang chế độ Vệ tinh Google Maps' : 'Đã chuyển sang chế độ Bản đồ Google Maps');
 };
 
 // Bật/Tắt dữ liệu giao thông trực tiếp Google Traffic
@@ -172,6 +175,7 @@ const toggleTraffic = () => {
   showTraffic.value = !showTraffic.value;
   updateMapLayers();
   triggerToast(showTraffic.value ? '🚦 Đã bật dữ liệu Giao thông trực tiếp Google' : '🚦 Đã tắt lớp dữ liệu Giao thông');
+  triggerToast(showTraffic.value ? 'Đã bật dữ liệu Giao thông trực tiếp Google' : 'Đã tắt lớp dữ liệu Giao thông');
 };
 
 // Khởi tạo bản đồ Google Maps
@@ -234,6 +238,8 @@ const renderOrderOnMap = () => {
         <h4 class="gm-iw-title">${activeOrder.value.store.name}</h4>
         <p class="gm-iw-desc">📍 ${activeOrder.value.store.address}</p>
         <div class="gm-iw-rating">★ 4.9 <span class="text-muted">(1,240 đánh giá) • Mở cửa</span></div>
+        <p class="gm-iw-desc"><i class="bi bi-geo-alt-fill text-primary"></i> ${activeOrder.value.store.address}</p>
+        <div class="gm-iw-rating"><i class="bi bi-star-fill text-warning"></i> 4.9 <span class="text-muted">(1,240 đánh giá) • Mở cửa</span></div>
       </div>
     `);
 
@@ -246,6 +252,8 @@ const renderOrderOnMap = () => {
         <h4 class="gm-iw-title">${activeOrder.value.customer.name}</h4>
         <p class="gm-iw-desc">📍 ${activeOrder.value.customer.address}</p>
         <div class="gm-iw-meta">📞 ${activeOrder.value.customer.phone} • Hỏa tốc 10km</div>
+        <p class="gm-iw-desc"><i class="bi bi-geo-alt-fill text-danger"></i> ${activeOrder.value.customer.address}</p>
+        <div class="gm-iw-meta"><i class="bi bi-telephone-fill"></i> ${activeOrder.value.customer.phone} • Hỏa tốc 10km</div>
       </div>
     `);
 
@@ -293,6 +301,7 @@ const fetchAddressName = async (lat: number, lng: number) => {
         const parts = data.display_name.split(",");
         const shortAddr = parts.slice(0, 3).join(", ").trim();
         locationAddress.value = `📍 ${shortAddr}`;
+        locationAddress.value = shortAddr;
 
         if (driverMarker) {
           driverMarker.bindPopup(`
@@ -300,6 +309,7 @@ const fetchAddressName = async (lat: number, lng: number) => {
               <div class="gm-iw-tag text-primary">VỊ TRÍ THỰC TẾ QUA GPS</div>
               <h4 class="gm-iw-title">Tài xế ZoneMart (Bạn)</h4>
               <p class="gm-iw-desc">📍 ${shortAddr}</p>
+              <p class="gm-iw-desc"><i class="bi bi-geo-alt-fill text-primary"></i> ${shortAddr}</p>
               <div class="gm-iw-meta">Sai số GPS: ±${gpsAccuracy.value || 5}m • Đang trực tuyến</div>
             </div>
           `).openPopup();
@@ -389,10 +399,13 @@ const locateAndTrackDriver = (isSilent = false) => {
       isLocating.value = false;
       console.warn("Lỗi Geolocation:", err);
       let errorMsg = "⚠️ Không thể định vị GPS (Vui lòng chọn 'Cho phép' khi trình duyệt hỏi quyền vị trí)";
+      let errorMsg = "Không thể định vị GPS (Vui lòng chọn 'Cho phép' khi trình duyệt hỏi quyền vị trí)";
       if (err.code === err.PERMISSION_DENIED) {
         errorMsg = "⚠️ Bạn chưa cấp quyền truy cập vị trí trên trình duyệt!";
+        errorMsg = "Bạn chưa cấp quyền truy cập vị trí trên trình duyệt!";
       } else if (err.code === err.TIMEOUT) {
         errorMsg = "⏳ Quá thời gian định vị GPS, dùng vị trí khu vực Cầu Giấy.";
+        errorMsg = "Quá thời gian định vị GPS, dùng vị trí khu vực Cầu Giấy.";
       }
       triggerToast(errorMsg);
 
@@ -488,6 +501,7 @@ const toggleOnline = () => {
 const handleConfirmPicked = () => {
   currentStep.value = "picked";
   triggerToast("📦 Đã lấy hàng tại Shop! Hãy di chuyển tới địa chỉ khách.");
+  triggerToast("Đã lấy hàng tại Shop! Hãy di chuyển tới địa chỉ khách.");
   renderOrderOnMap();
 };
 
@@ -581,12 +595,14 @@ onUnmounted(() => {
       <div class="driver-mini-pill" @click="switchTab('profile')" title="Xem chi tiết hồ sơ tài xế">
         <div class="driver-pill-avatar">
           <span>🛵</span>
+          <i class="bi bi-bicycle text-success"></i>
           <span class="pill-dot" :class="{ 'online': isOnline }"></span>
         </div>
         <div class="driver-pill-info">
           <div class="pill-name-row">
             <strong class="pill-name">Trần Văn Bình</strong>
             <span class="pill-rating">★ 5.0</span>
+            <span class="pill-rating"><i class="bi bi-star-fill text-warning"></i> 5.0</span>
           </div>
           <span class="pill-status-text">
             {{ isOnline ? "Trực tuyến • Bán kính 10km" : "Ngoại tuyến • Tạm nghỉ" }}
@@ -675,6 +691,7 @@ onUnmounted(() => {
           </div>
           <div class="f-items-summary">
             📦 <em>{{ activeOrder.items }}</em>
+            <i class="bi bi-box-seam me-1" aria-hidden="true"></i> <em>{{ activeOrder.items }}</em>
           </div>
           <div class="f-actions-row">
             <a :href="'tel:' + activeOrder.store.phone" class="btn btn-call">
@@ -682,6 +699,7 @@ onUnmounted(() => {
             </a>
             <button class="btn btn-primary flex-1" @click="handleConfirmPicked">
               📦 ĐÃ LẤY HÀNG ➜
+              <i class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></i> ĐÃ LẤY HÀNG <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i>
             </button>
           </div>
         </div>
@@ -697,6 +715,7 @@ onUnmounted(() => {
           </div>
           <div class="f-items-summary" v-if="activeOrder.notes">
             💬 Ghi chú: <em>"{{ activeOrder.notes }}"</em>
+            <i class="bi bi-chat-left-dots me-1" aria-hidden="true"></i> Ghi chú: <em>"{{ activeOrder.notes }}"</em>
           </div>
           <div class="f-actions-row">
             <a :href="'tel:' + activeOrder.customer.phone" class="btn btn-call">
@@ -704,10 +723,12 @@ onUnmounted(() => {
             </a>
             <button class="btn btn-success flex-1" @click="handleConfirmDelivered">
               🎉 ĐÃ GIAO XONG
+              <i class="bi bi-check2-circle me-1" aria-hidden="true"></i> ĐÃ GIAO XONG
             </button>
           </div>
           <button class="btn-report-link" @click="handleReportIssue">
             ⚠️ Báo cáo sự cố / Khách không nhận
+            <i class="bi bi-exclamation-triangle-fill text-warning me-1" aria-hidden="true"></i> Báo cáo sự cố / Khách không nhận
           </button>
         </div>
       </div>
@@ -878,10 +899,13 @@ onUnmounted(() => {
           <div class="profile-card">
             <div class="profile-avatar-row">
               <div class="p-avatar">🛵</div>
+              <div class="p-avatar"><i class="bi bi-bicycle"></i></div>
               <div class="p-info">
                 <h3>Trần Văn Bình</h3>
                 <p>Tài xế Hỏa Tốc ZoneMart • ⭐ 5.0</p>
                 <span class="verified-badge">✔ Đã xác thực CCCD & Bằng lái</span>
+                <p>Tài xế Hỏa Tốc ZoneMart • <i class="bi bi-star-fill text-warning"></i> 5.0</p>
+                <span class="verified-badge"><i class="bi bi-patch-check-fill text-primary me-1"></i> Đã xác thực CCCD & Bằng lái</span>
               </div>
             </div>
 

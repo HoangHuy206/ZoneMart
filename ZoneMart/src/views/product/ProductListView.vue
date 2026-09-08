@@ -48,6 +48,7 @@ watch(
 );
 
 // Danh mục ngành hàng với màu nền pastel nhẹ và biểu tượng
+// Danh mục ngành hàng với biểu tượng Bootstrap Icons chuẩn nhận diện
 const categories = [
   { id: "all", name: "Tất cả", icon: "✨", count: 12 },
   { id: "food", name: "Thực phẩm tươi", icon: "🥩", count: 4 },
@@ -55,6 +56,12 @@ const categories = [
   { id: "fastfood", name: "Món ăn nóng", icon: "🍱", count: 2 },
   { id: "beverage", name: "Đồ uống & Trái cây", icon: "🧃", count: 3 },
   { id: "household", name: "Nhu yếu phẩm", icon: "🧴", count: 2 }
+  { id: "all", name: "Tất cả", icon: "bi-grid-fill", count: 12 },
+  { id: "food", name: "Thực phẩm tươi", icon: "bi-fire", count: 4 },
+  { id: "veggie", name: "Rau củ VietGAP", icon: "bi-flower1", count: 3 },
+  { id: "fastfood", name: "Món ăn nóng", icon: "bi-cup-hot-fill", count: 2 },
+  { id: "beverage", name: "Đồ uống & Trái cây", icon: "bi-cup-straw", count: 3 },
+  { id: "household", name: "Nhu yếu phẩm", icon: "bi-basket2-fill", count: 2 }
 ];
 
 // Danh sách sản phẩm đầy đủ với dữ liệu chân thực
@@ -370,19 +377,24 @@ const resetFilters = () => {
 
             <div class="spotlight-search-bar">
               <span class="lens-icon">🔍</span>
+              <i class="bi bi-search lens-icon" aria-hidden="true"></i>
               <input
                 v-model="searchQuery"
                 type="text"
                 placeholder="Tìm thịt tươi, rau sạch, bún chả, cơm tấm..."
                 class="spotlight-input"
+                aria-label="Tìm kiếm sản phẩm thực phẩm"
               />
               <button
                 v-if="searchQuery"
+                type="button"
                 class="btn-clear-search"
+                aria-label="Xóa tìm kiếm"
                 @click="searchQuery = ''"
                 title="Xóa tìm kiếm"
               >
                 ✕
+                <i class="bi bi-x-lg" aria-hidden="true"></i>
               </button>
             </div>
           </div>
@@ -407,6 +419,7 @@ const resetFilters = () => {
         <div class="bento-card-sub">
           <div class="sub-badge-speed">
             <span>🚀 15 - 25 PHÚT</span>
+            <span><i class="bi bi-lightning-charge-fill me-1" aria-hidden="true"></i> 15 - 25 PHÚT</span>
           </div>
           <h3 class="sub-card-title">Càng Gần Càng Nhanh, Càng Tươi</h3>
           <p class="sub-card-desc">
@@ -446,6 +459,7 @@ const resetFilters = () => {
             @click="selectedCategory = cat.id"
           >
             <span class="cat-pill-icon">{{ cat.icon }}</span>
+            <i class="bi cat-pill-icon" :class="cat.icon" aria-hidden="true"></i>
             <span class="cat-pill-name">{{ cat.name }}</span>
             <span class="cat-pill-count">{{ cat.count }}</span>
           </button>
@@ -460,6 +474,13 @@ const resetFilters = () => {
             <option value="rating">⭐ Đánh giá cao nhất</option>
             <option value="price-asc">💰 Giá tăng dần</option>
             <option value="price-desc">💰 Giá giảm dần</option>
+          <label class="sort-label" for="sort-select">Sắp xếp:</label>
+          <select id="sort-select" v-model="sortBy" class="sort-dropdown-select" aria-label="Sắp xếp sản phẩm">
+            <option value="popular">Bán chạy nhất</option>
+            <option value="distance">Gần bạn nhất</option>
+            <option value="rating">Đánh giá cao nhất</option>
+            <option value="price-asc">Giá: Thấp đến cao</option>
+            <option value="price-desc">Giá: Cao đến thấp</option>
           </select>
         </div>
       </section>
@@ -476,6 +497,8 @@ const resetFilters = () => {
           @click="resetFilters"
         >
           🔄 Đặt lại bộ lọc
+          <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+          <span>Đặt lại bộ lọc</span>
         </button>
       </div>
 
@@ -512,6 +535,10 @@ const resetFilters = () => {
           <div class="product-card-body">
             <div class="store-info-line">
               <span class="store-name-text">🏪 {{ p.storeName }}</span>
+              <span class="store-name-text">
+                <i class="bi bi-shop store-inline-icon" aria-hidden="true"></i>
+                {{ p.storeName }}
+              </span>
               <span class="category-name-chip">{{ p.categoryName }}</span>
             </div>
 
@@ -521,6 +548,10 @@ const resetFilters = () => {
 
             <div class="product-rating-meta">
               <span class="star-rating">⭐ {{ p.rating.toFixed(1) }}</span>
+              <span class="star-rating">
+                <i class="bi bi-star-fill star-icon" aria-hidden="true"></i>
+                {{ p.rating.toFixed(1) }}
+              </span>
               <span class="sold-stat">Đã bán {{ p.sold }}</span>
               <span class="unit-stat">• {{ p.unit }}</span>
             </div>
@@ -536,9 +567,12 @@ const resetFilters = () => {
               <button
                 class="btn-add-tactile"
                 title="Thêm vào giỏ hàng"
+                aria-label="Thêm vào giỏ hàng"
                 @click.stop="onAddToCart(p.name)"
               >
                 + Thêm
+                <i class="bi bi-bag-plus-fill" aria-hidden="true"></i>
+                <span>Thêm</span>
               </button>
             </div>
           </div>
@@ -548,12 +582,17 @@ const resetFilters = () => {
       <!-- Empty State khi không tìm thấy món -->
       <div v-else class="empty-results-box">
         <div class="empty-icon-circle">🔍</div>
+        <div class="empty-icon-circle">
+          <i class="bi bi-search" aria-hidden="true"></i>
+        </div>
         <h3>Không tìm thấy sản phẩm nào!</h3>
         <p>
           Không có sản phẩm nào khớp với tìm kiếm "<strong>{{ searchQuery }}</strong>" hoặc trong bán kính <strong>{{ maxRadiusKm }}km</strong>.
         </p>
         <button class="btn-restore-filters" @click="resetFilters">
           Xem tất cả sản phẩm
+          <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+          <span>Xem tất cả sản phẩm</span>
         </button>
       </div>
     </div>
@@ -1097,6 +1136,18 @@ const resetFilters = () => {
   text-decoration: line-through;
 }
 
+.store-inline-icon {
+  font-size: 12px;
+  color: #ea580c;
+  margin-right: 3px;
+}
+
+.star-icon {
+  color: #f59e0b;
+  font-size: 11px;
+  margin-right: 2px;
+}
+
 .btn-add-tactile {
   background: #0f172a;
   color: #ffffff;
@@ -1106,6 +1157,9 @@ const resetFilters = () => {
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   transition: all 0.2s ease;
 }
 
@@ -1113,6 +1167,24 @@ const resetFilters = () => {
   background: #ea580c;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3);
+}
+
+.btn-reset-filter {
+  background: none;
+  border: none;
+  color: #ea580c;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-restore-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* Empty State */

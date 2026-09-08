@@ -70,12 +70,23 @@ const handleLogout = () => {
         <!-- 2. Thanh tìm kiếm chính giữa -->
         <div class="header-search-wrap">
           <span class="search-icon">🔍</span>
+          <i class="bi bi-search search-icon" aria-hidden="true"></i>
           <input
             v-model="searchQuery"
             type="text"
             placeholder="Tìm kiếm nông sản, thực phẩm tươi..."
+            aria-label="Tìm kiếm sản phẩm"
             @keyup.enter="handleHeaderSearch"
           />
+          <button
+            v-if="searchQuery"
+            type="button"
+            class="clear-search-btn"
+            aria-label="Xóa từ khóa tìm kiếm"
+            @click="searchQuery = ''"
+          >
+            <i class="bi bi-x-circle-fill" aria-hidden="true"></i>
+          </button>
         </div>
 
         <!-- 3. Khu vực bên phải: Tự động đổi theo vai trò Khách ghé thăm (Guest) hoặc Đã đăng nhập -->
@@ -108,6 +119,7 @@ const handleLogout = () => {
               <button
                 class="icon-btn user-btn"
                 title="Tài khoản của bạn"
+                aria-label="Tài khoản của bạn"
                 @click="toggleUserDropdown"
               >
                 <svg
@@ -119,6 +131,7 @@ const handleLogout = () => {
                   stroke-width="1.8"
                   stroke-linecap="round"
                   stroke-linejoin="round"
+                  aria-hidden="true"
                 >
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                   <circle cx="12" cy="7" r="4"></circle>
@@ -135,6 +148,8 @@ const handleLogout = () => {
                   @click="closeDropdowns"
                 >
                   👤 Hồ Sơ & Ví Tiền
+                  <i class="bi bi-person-circle menu-icon" aria-hidden="true"></i>
+                  <span>Hồ Sơ & Ví Tiền</span>
                 </router-link>
                 <router-link
                   to="/buyer-orders"
@@ -142,6 +157,8 @@ const handleLogout = () => {
                   @click="closeDropdowns"
                 >
                   📦 Đơn Mua Của Bạn
+                  <i class="bi bi-bag-check menu-icon" aria-hidden="true"></i>
+                  <span>Đơn Mua Của Bạn</span>
                 </router-link>
                 <div class="dropdown-divider"></div>
                 <router-link
@@ -150,6 +167,8 @@ const handleLogout = () => {
                   @click="closeDropdowns"
                 >
                   🛵 Cổng Shipper
+                  <i class="bi bi-bicycle menu-icon" aria-hidden="true"></i>
+                  <span>Cổng Shipper</span>
                 </router-link>
                 <router-link
                   to="/admin"
@@ -157,6 +176,8 @@ const handleLogout = () => {
                   @click="closeDropdowns"
                 >
                   🛡️ Bảng Điều Khiển Admin
+                  <i class="bi bi-shield-check menu-icon" aria-hidden="true"></i>
+                  <span>Bảng Điều Khiển Admin</span>
                 </router-link>
                 <router-link
                   to="/contact"
@@ -164,16 +185,21 @@ const handleLogout = () => {
                   @click="closeDropdowns"
                 >
                   📞 Liên Hệ Hỗ Trợ
+                  <i class="bi bi-headset menu-icon" aria-hidden="true"></i>
+                  <span>Liên Hệ Hỗ Trợ</span>
                 </router-link>
                 <div class="dropdown-divider"></div>
                 <button class="dropdown-item logout-btn" @click="handleLogout">
                   🚪 Đăng Xuất
+                  <i class="bi bi-box-arrow-right menu-icon" aria-hidden="true"></i>
+                  <span>Đăng Xuất</span>
                 </button>
               </div>
             </div>
 
             <!-- Icon Giỏ hàng kèm huy hiệu số lượng -->
             <router-link to="/cart" class="icon-btn cart-btn" title="Giỏ hàng">
+            <router-link to="/cart" class="icon-btn cart-btn" title="Giỏ hàng" aria-label="Xem giỏ hàng">
               <svg
                 viewBox="0 0 24 24"
                 width="22"
@@ -183,6 +209,7 @@ const handleLogout = () => {
                 stroke-width="1.8"
                 stroke-linecap="round"
                 stroke-linejoin="round"
+                aria-hidden="true"
               >
                 <circle cx="9" cy="21" r="1"></circle>
                 <circle cx="20" cy="21" r="1"></circle>
@@ -197,14 +224,24 @@ const handleLogout = () => {
           <!-- Mobile Toggle Button -->
           <button class="mobile-toggle" @click.stop="toggleMobileMenu">
             ☰
+          <button
+            class="mobile-toggle"
+            :aria-label="isMobileMenuOpen ? 'Đóng Menu' : 'Mở Menu'"
+            :aria-expanded="isMobileMenuOpen"
+            @click.stop="toggleMobileMenu"
+          >
+            <i class="bi" :class="isMobileMenuOpen ? 'bi-x-lg' : 'bi-list'" aria-hidden="true"></i>
           </button>
         </div>
       </div>
 
       <!-- Menu trên điện thoại -->
       <nav v-if="isMobileMenuOpen" class="mobile-menu">
+      <nav v-if="isMobileMenuOpen" class="mobile-menu" aria-label="Menu điều hướng di động">
         <router-link to="/products" class="mobile-link" @click="closeDropdowns">
           🛍️ Sản Phẩm
+          <i class="bi bi-grid-fill menu-icon" aria-hidden="true"></i>
+          <span>Sản Phẩm</span>
         </router-link>
 
         <template v-if="!isLoggedIn">
@@ -216,6 +253,8 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               Đăng Ký
+              <i class="bi bi-person-plus-fill" aria-hidden="true"></i>
+              <span>Đăng Ký</span>
             </router-link>
             <router-link
               to="/login"
@@ -223,6 +262,8 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               Đăng Nhập
+              <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
+              <span>Đăng Nhập</span>
             </router-link>
           </div>
         </template>
@@ -230,6 +271,8 @@ const handleLogout = () => {
         <template v-else>
           <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
             🛒 Giỏ Hàng ({{ cartItemCount }})
+            <i class="bi bi-cart3 menu-icon" aria-hidden="true"></i>
+            <span>Giỏ Hàng ({{ cartItemCount }})</span>
           </router-link>
           <router-link
             to="/buyer-orders"
@@ -237,6 +280,8 @@ const handleLogout = () => {
             @click="closeDropdowns"
           >
             📦 Đơn Mua
+            <i class="bi bi-bag-check menu-icon" aria-hidden="true"></i>
+            <span>Đơn Mua</span>
           </router-link>
           <router-link
             to="/profile"
@@ -244,6 +289,8 @@ const handleLogout = () => {
             @click="closeDropdowns"
           >
             👤 Hồ Sơ/Ví
+            <i class="bi bi-person-circle menu-icon" aria-hidden="true"></i>
+            <span>Hồ Sơ & Ví</span>
           </router-link>
           <router-link
             to="/shipper"
@@ -251,13 +298,19 @@ const handleLogout = () => {
             @click="closeDropdowns"
           >
             🛵 Shipper
+            <i class="bi bi-bicycle menu-icon" aria-hidden="true"></i>
+            <span>Cổng Shipper</span>
           </router-link>
           <router-link to="/admin" class="mobile-link" @click="closeDropdowns">
             🛡️ Admin
+            <i class="bi bi-shield-check menu-icon" aria-hidden="true"></i>
+            <span>Admin</span>
           </router-link>
           <div class="mobile-divider"></div>
           <button class="mobile-link logout-link" @click="handleLogout">
             🚪 Đăng Xuất
+            <i class="bi bi-box-arrow-right menu-icon" aria-hidden="true"></i>
+            <span>Đăng Xuất</span>
           </button>
         </template>
       </nav>
@@ -507,8 +560,30 @@ body {
 }
 .header-search-wrap .search-icon {
   font-size: 14px;
+  font-size: 15px;
   margin-right: 10px;
   opacity: 0.55;
+  color: #968379;
+  flex-shrink: 0;
+  transition: color 0.2s ease;
+}
+.header-search-wrap:focus-within .search-icon {
+  color: #d85a2a;
+}
+.clear-search-btn {
+  background: none;
+  border: none;
+  color: #a49187;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  font-size: 15px;
+  margin-left: 6px;
+  transition: color 0.15s ease;
+}
+.clear-search-btn:hover {
+  color: #ea580c;
 }
 .header-search-wrap input {
   flex: 1;
@@ -683,20 +758,34 @@ body {
 }
 .dropdown-item {
   display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   text-align: left;
   background: none;
   border: none;
   padding: 9px 16px;
+  padding: 10px 16px;
   font-size: 13px;
   font-weight: 500;
   color: #4a3830;
   text-decoration: none;
   cursor: pointer;
   transition: background 0.2s;
+  transition: all 0.2s;
+}
+.dropdown-item .menu-icon {
+  font-size: 15px;
+  color: #a49187;
+  flex-shrink: 0;
+  transition: color 0.2s;
 }
 .dropdown-item:hover {
   background: #fdf5f0;
+  color: #d85a2a;
+}
+.dropdown-item:hover .menu-icon {
   color: #d85a2a;
 }
 .dropdown-divider {
@@ -707,6 +796,9 @@ body {
 .logout-btn {
   color: #dc2626;
   font-weight: 600;
+}
+.logout-btn .menu-icon {
+  color: #dc2626;
 }
 
 /* Mobile Toggle */
@@ -736,6 +828,9 @@ body {
   gap: 8px;
 }
 .mobile-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   text-decoration: none;
   font-size: 14px;
   font-weight: 600;
@@ -747,6 +842,11 @@ body {
   border: none;
   text-align: left;
   cursor: pointer;
+}
+.mobile-link .menu-icon {
+  font-size: 16px;
+  color: #d85a2a;
+  flex-shrink: 0;
 }
 .mobile-link:hover {
   background: #fdf5f0;
@@ -765,6 +865,10 @@ body {
 }
 .mobile-btn {
   width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   text-align: center;
 }
 .logout-link {
