@@ -230,10 +230,7 @@ const toggleMobileMenu = () => {
 
         <!-- Bottom Credits & Copyright -->
         <div class="footer-bottom-row">
-          <div class="footer-credits">
-            <span>Dự án: <strong>ZoneMart On-Demand Multi-Vendor</strong></span> | 
-            <span>Nhóm phát triển: <strong>Huy</strong> (Profile, Map, SP) • <strong>Thắng</strong> (Home, Cart, Checkout) • <strong>Bình</strong> (Auth, Shop, Shipper, Admin)</span>
-          </div>
+         
           <p class="footer-copyright">
             © 2026 ZoneMart Platform. Bản quyền thuộc về ZoneMart Project Team. All rights reserved.
           </p>
