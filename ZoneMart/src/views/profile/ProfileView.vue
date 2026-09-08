@@ -118,6 +118,13 @@ const savedStalls = ref([
             <span class="nav-icon">🔖</span>
             <span class="nav-label">Saved Stalls</span>
           </button>
+
+          <div class="sidebar-divider"></div>
+
+          <button class="nav-btn btn-home-link" @click="router.push('/')">
+            <span class="nav-icon">🏠</span>
+            <span class="nav-label">Về Trang Chủ</span>
+          </button>
         </nav>
       </aside>
 
@@ -292,12 +299,12 @@ const savedStalls = ref([
    GLOBAL LAYOUT & CONTAINERS
    ========================================================================== */
 .profile-layout-container {
-  min-height: 85vh;
-  background-color: #f7f3ee;
-  padding: 30px 16px 60px 16px;
+  min-height: calc(100vh - 72px);
+  background-color: #fdfaf6;
+  padding: 0;
+  margin: 0;
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  width: 100%;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: #2b231d;
 }
@@ -327,30 +334,31 @@ const savedStalls = ref([
   to { transform: translateX(0); opacity: 1; }
 }
 
-/* MAIN CARD CONTAINER (SPLIT INTO SIDEBAR + CONTENT) */
+/* FULL-SCREEN WRAPPER (EDGE-TO-EDGE SIDEBAR + CONTENT) */
 .market-card-wrapper {
   width: 100%;
-  max-width: 980px;
-  background-color: #fcf9f5;
-  border-radius: 20px;
-  overflow: hidden;
-  box-shadow: 0 10px 30px rgba(78, 42, 23, 0.08);
+  max-width: 100%;
+  background-color: #fdfaf6;
+  border-radius: 0;
+  overflow: visible;
+  box-shadow: none;
   display: flex;
-  min-height: 640px;
-  border: 1px solid #ebdcd1;
+  min-height: calc(100vh - 72px);
+  border: none;
 }
 
 /* ==========================================================================
    LEFT SIDEBAR (TERRACOTTA THEME #b9441a)
    ========================================================================== */
 .sidebar-panel {
-  width: 230px;
+  width: 260px;
   background-color: #ba441b;
   color: #ffffff;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  padding: 24px 0;
+  padding: 28px 0;
+  min-height: calc(100vh - 72px);
 }
 
 /* Sidebar Logo */
@@ -409,7 +417,7 @@ const savedStalls = ref([
 }
 
 .nav-btn.active {
-  background-color: rgba(0, 0, 0, 0.12);
+  background-color: rgba(0, 0, 0, 0.14);
   color: #ffffff;
   font-weight: 700;
 }
@@ -418,15 +426,31 @@ const savedStalls = ref([
   font-size: 17px;
 }
 
+.sidebar-divider {
+  height: 1px;
+  background-color: rgba(255, 255, 255, 0.18);
+  margin: 10px 8px;
+}
+
+.btn-home-link {
+  color: rgba(255, 255, 255, 0.95);
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.btn-home-link:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
 /* ==========================================================================
    RIGHT CONTENT PANEL
    ========================================================================== */
 .content-panel {
   flex: 1;
-  padding: 24px 36px 36px 36px;
+  padding: 32px 56px 60px 56px;
   display: flex;
   flex-direction: column;
   background-color: #fdfaf6;
+  min-height: calc(100vh - 72px);
 }
 
 /* TOP HEADER */
@@ -434,7 +458,9 @@ const savedStalls = ref([
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
+  max-width: 980px;
+  width: 100%;
 }
 
 .market-brand-title {
@@ -497,6 +523,8 @@ const savedStalls = ref([
 .profile-main-body {
   display: flex;
   flex-direction: column;
+  max-width: 980px;
+  width: 100%;
 }
 
 .section-heading {
@@ -726,6 +754,8 @@ const savedStalls = ref([
   display: flex;
   flex-direction: column;
   gap: 16px;
+  max-width: 980px;
+  width: 100%;
 }
 
 .tab-desc {

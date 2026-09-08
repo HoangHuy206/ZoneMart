@@ -13,7 +13,7 @@ export const huyRoutes: RouteRecordRaw[] = [
     path: "/profile",
     name: "Profile",
     component: () => import("../../views/profile/ProfileView.vue"),
-    meta: { title: "Hồ Sơ Cá Nhân - ZoneMart" }
+    meta: { title: "Hồ Sơ Cá Nhân - ZoneMart", hideFooter: true }
   },
   {
     path: "/map",
