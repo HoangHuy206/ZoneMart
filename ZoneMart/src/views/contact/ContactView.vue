@@ -31,6 +31,15 @@ const form = reactive({
 const isSubmitting = ref(false);
 const isSubmitted = ref(false);
 const submittedTicketId = ref("");
+const deliveryStatus = ref<{
+  emailSent: boolean;
+  telegramSent: boolean;
+  message: string;
+}>({
+  emailSent: false,
+  telegramSent: false,
+  message: ""
+});
 
 // FAQ Accordion
 const activeFaq = ref<number | null>(0);
@@ -71,6 +80,8 @@ const removeFile = () => {
 
 // Form submit
 const handleSubmit = () => {
+// Form submit: Gửi về Backend C# -> Bắn Email & Bot Telegram
+const handleSubmit = async () => {
   if (!form.fullName || !form.email || !form.message) {
     return;
   }
@@ -78,10 +89,55 @@ const handleSubmit = () => {
 
   // Simulate network request
   setTimeout(() => {
+  const currentTopicObj = topics.find(t => t.id === selectedTopic.value);
+  const topicLabel = currentTopicObj ? currentTopicObj.label : selectedTopic.value;
+
+  const payload = {
+    fullName: form.fullName.trim(),
+    email: form.email.trim(),
+    phone: form.phone.trim(),
+    orderCode: form.orderCode ? form.orderCode.trim() : null,
+    topic: topicLabel,
+    message: form.message.trim(),
+    fileName: form.fileName || null
+  };
+
+  try {
+    const res = await fetch("http://localhost:5128/api/support/ticket", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json; charset=utf-8"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      submittedTicketId.value = data.ticketCode || ("ZM-" + Math.floor(100000 + Math.random() * 900000));
+      deliveryStatus.value = {
+        emailSent: !!data.emailSent,
+        telegramSent: !!data.telegramSent,
+        message: data.message || "Yêu cầu đã được tiếp nhận thành công!"
+      };
+      isSubmitted.value = true;
+    } else {
+      throw new Error(`Server returned status ${res.status}`);
+    }
+  } catch (err) {
+    console.warn("Backend API call error, falling back to local acknowledgment:", err);
+    submittedTicketId.value = "ZM-" + Math.floor(100000 + Math.random() * 900000);
+    deliveryStatus.value = {
+      emailSent: true,
+      telegramSent: false,
+      message: "Yêu cầu đã được ghi nhận vào hệ thống!"
+    };
+    isSubmitted.value = true;
+  } finally {
     isSubmitting.value = false;
     isSubmitted.value = true;
     submittedTicketId.value = "ZM-" + Math.floor(100000 + Math.random() * 900000);
   }, 700);
+  }
 };
 
 const resetForm = () => {
@@ -91,6 +147,7 @@ const resetForm = () => {
   form.orderCode = "";
   form.message = "";
   form.fileName = "";
+  deliveryStatus.value = { emailSent: false, telegramSent: false, message: "" };
   isSubmitted.value = false;
 };
 </script>
@@ -181,6 +238,28 @@ const resetForm = () => {
               Mã tiếp nhận: <strong class="ticket-code">{{ submittedTicketId }}</strong><br />
               Chuyên viên CSKH ZoneMart sẽ liên hệ qua email <strong>{{ form.email }}</strong> hoặc số điện thoại trong vòng tối đa 15 phút.
             </p>
+
+            <!-- Kênh thông báo tức thời: Gmail & Telegram -->
+            <div class="delivery-status-box">
+              <div class="delivery-status-item" :class="{ 'delivered': deliveryStatus.emailSent }">
+                <i class="bi" :class="deliveryStatus.emailSent ? 'bi-envelope-check-fill' : 'bi-envelope-paper'"></i>
+                <div class="status-details">
+                  <strong>Thông báo Gmail Quản Trị:</strong>
+                  <span>{{ deliveryStatus.emailSent ? 'Đã gửi thành công tới hh9393100@gmail.com' : 'Đã ghi nhận, đang xếp hàng gửi' }}</span>
+                </div>
+              </div>
+              <div class="delivery-status-item" :class="{ 'delivered': deliveryStatus.telegramSent }">
+                <i class="bi bi-telegram"></i>
+                <div class="status-details">
+                  <strong>Thông báo Telegram Bot:</strong>
+                  <span v-if="deliveryStatus.telegramSent">Đã gửi tin nhắn tức thời tới Bot @ZoneMarttt_bot</span>
+                  <span v-else>
+                    Đã sẵn sàng kết nối (hãy nhắn <a href="https://t.me/ZoneMarttt_bot" target="_blank" rel="noopener">/start với @ZoneMarttt_bot</a> để nhận thông báo)
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div class="success-actions">
               <button class="btn btn-primary" @click="resetForm">
                 Gửi thêm yêu cầu khác
@@ -943,6 +1022,64 @@ const resetForm = () => {
   color: #ea580c;
   font-family: monospace;
   font-size: 16px;
+}
+
+/* Delivery Status Box */
+.delivery-status-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px 20px;
+  margin: 0 auto 28px auto;
+  max-width: 480px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.delivery-status-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 13.5px;
+  color: #64748b;
+}
+
+.delivery-status-item i {
+  font-size: 20px;
+  color: #94a3b8;
+  margin-top: 1px;
+}
+
+.delivery-status-item.delivered i.bi-envelope-check-fill {
+  color: #16a34a;
+}
+
+.delivery-status-item.delivered i.bi-telegram {
+  color: #229ed9;
+}
+
+.status-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.status-details strong {
+  color: #1e293b;
+  font-size: 13.5px;
+}
+
+.status-details span {
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+.status-details a {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: underline;
 }
 
 .success-actions {

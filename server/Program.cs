@@ -9,7 +9,20 @@ builder.Services.Configure<MongoDBSettings>(
 );
 builder.Services.AddSingleton<MongoDbService>();
 
-// 2. Cấu hình CORS cho phép Vue 3 Frontend (localhost:5173) gọi API
+// 2. Cấu hình Email & Telegram Settings
+builder.Services.Configure<EmailSettings>(
+    builder.Configuration.GetSection("EmailSettings")
+);
+builder.Services.Configure<TelegramSettings>(
+    builder.Configuration.GetSection("TelegramSettings")
+);
+
+// 3. Đăng ký Services & HttpClient
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<ITelegramService, TelegramService>();
+
+// 4. Cấu hình CORS cho phép Vue 3 Frontend (localhost:5173) gọi API
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowVueClient", policy =>
@@ -31,16 +44,19 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+else
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseCors("AllowVueClient");
-
-app.UseHttpsRedirection();
 
 app.UseAuthorization();
 
 app.MapControllers();
 
 Console.WriteLine("🚀 ZoneMart C# ASP.NET Core Web API đang khởi động...");
-Console.WriteLine("📦 Kết nối Database: MongoDB Atlas (Cluster0)");
+Console.WriteLine("📧 Đã nạp cấu hình gửi thư Gmail: hh9393100@gmail.com");
+Console.WriteLine("🤖 Đã nạp cấu hình Bot Telegram: @ZoneMarttt_bot");
 
 app.Run();
