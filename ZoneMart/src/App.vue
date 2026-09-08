@@ -370,10 +370,7 @@ const handleLogout = () => {
               <i class="bi bi-facebook"></i>
             </a>
             <a href="https://zalo.me" target="_blank" rel="noopener noreferrer" class="social-icon social-zalo" title="Zalo ZoneMart">
-              <svg viewBox="0 0 32 32" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M16 2C8.268 2 2 7.747 2 14.836c0 4.14 2.146 7.828 5.485 10.22-.246 2.05-.986 4.14-1.01 4.21a.7.7 0 0 0 .65.934c2.463 0 4.708-1.127 6.035-1.928 1.05.258 2.155.398 3.3.398 7.732 0 14-5.747 14-12.834C30 7.747 23.732 2 16 2z" fill="#0068FF"/>
-                <path d="M9.5 19.5v-1.5l3.8-4.8H9.7v-1.8h5.9v1.5l-3.8 4.8h3.8v1.8H9.5zm7.7-8.1h2.2v8.1h-2.2v-8.1zm4.5 3h2.1v.8c.5-.6 1.2-1 2-1 1.5 0 2.6 1.2 2.6 3v4.3h-2.2v-4c0-.7-.4-1.1-1.1-1.1-.6 0-1.1.4-1.1 1.1v4h-2.3v-6.3z" fill="#ffffff"/>
-              </svg>
+              <span class="zalo-speech-bubble">Zalo</span>
             </a>
             <a href="https://youtube.com" target="_blank" rel="noopener noreferrer" class="social-icon social-youtube" title="YouTube ZoneMart">
               <i class="bi bi-youtube"></i>
@@ -961,11 +958,46 @@ body {
   box-shadow: 0 4px 14px rgba(24, 119, 242, 0.45);
 }
 
-/* Zalo: Nền xanh Zalo đặc trưng */
+/* Zalo: Bong bóng chat xanh Zalo đặc trưng */
+.zalo-speech-bubble {
+  position: relative;
+  background: #0068ff;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 800;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3.5px 5.5px;
+  border-radius: 5px;
+  letter-spacing: -0.2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+.zalo-speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -3px;
+  left: 5px;
+  width: 0;
+  height: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+  border-top: 4px solid #0068ff;
+  transition: border-top-color 0.2s ease;
+}
 .social-icon.social-zalo:hover {
   background: #0068ff;
   border-color: #0068ff;
   box-shadow: 0 4px 14px rgba(0, 104, 255, 0.45);
+}
+.social-icon.social-zalo:hover .zalo-speech-bubble {
+  background: #ffffff;
+  color: #0068ff;
+}
+.social-icon.social-zalo:hover .zalo-speech-bubble::after {
+  border-top-color: #ffffff;
 }
 
 /* YouTube: Đỏ tươi đặc trưng */
