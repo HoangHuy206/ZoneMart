@@ -15,19 +15,6 @@ const goProducts = () => {
 <template>
   <div class="not-found-page">
     <div class="not-found-container">
-      <!-- Top Decor: Orange Apple & Circle Dot (Exactly as in mockup) -->
-      <div class="top-brand-decor">
-        <router-link to="/" class="decor-link" title="ZoneMart - Quay về trang chủ">
-          <svg class="apple-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <!-- Stem / Leaf -->
-            <path d="M16 4C16.5 7.5 19 8.5 20.5 8C20 5 18 3.5 16 4Z" fill="#ea580c" />
-            <!-- Apple Body -->
-            <path d="M16 9C13.5 6.5 9 6.8 6.5 10C3.8 13.5 4 19.5 7.5 24C9.5 26.5 12 28.5 14.5 28.5C15.5 28.5 16 28 16.5 28C17 28 17.5 28.5 18.5 28.5C21 28.5 23.5 26.5 25.5 24C29 19.5 29.2 13.5 26.5 10C24 6.8 19.5 6.5 16 9Z" fill="#ea580c" />
-          </svg>
-          <span class="decor-dot"></span>
-        </router-link>
-      </div>
-
       <!-- Center Gate & Padlock Vector Illustration -->
       <div class="illustration-wrapper">
         <svg 
@@ -133,16 +120,16 @@ const goProducts = () => {
 </template>
 
 <style scoped>
-/* Page Layout: Warm cream eggshell background */
+/* Page Layout: Warm cream eggshell background full screen */
 .not-found-page {
-  min-height: calc(100vh - 72px);
+  min-height: 100vh;
   background-color: #faf8f5;
   background-image: radial-gradient(#e2e8f0 0.8px, transparent 0.8px);
   background-size: 24px 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 48px 24px 72px 24px;
+  padding: 40px 24px;
 }
 
 .not-found-container {
@@ -152,46 +139,6 @@ const goProducts = () => {
   flex-direction: column;
   align-items: center;
   position: relative;
-}
-
-/* Top-Left Brand Decor: Apple + Dot */
-.top-brand-decor {
-  align-self: flex-start;
-  margin-bottom: 24px;
-}
-
-.decor-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  text-decoration: none;
-  padding: 6px 12px;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(234, 88, 12, 0.15);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.decor-link:hover {
-  transform: translateY(-1px);
-  background: #ffffff;
-  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.12);
-}
-
-.apple-icon {
-  width: 22px;
-  height: 22px;
-  display: block;
-  filter: drop-shadow(0 2px 4px rgba(234, 88, 12, 0.25));
-}
-
-.decor-dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background-color: #ea580c;
-  display: inline-block;
 }
 
 /* Illustration Wrapper */

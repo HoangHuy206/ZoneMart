@@ -11,7 +11,7 @@ const toggleMobileMenu = () => {
 <template>
   <div class="app-wrapper">
     <!-- Header ZoneMart: Chỉ gồm Trang Chủ, Sản Phẩm, Giỏ Hàng, Đăng Nhập -->
-    <header class="navbar">
+    <header v-if="!$route.meta.hideHeader" class="navbar">
       <div class="nav-container">
         <!-- 1. Brand Logo -->
         <router-link to="/" class="brand-logo">
@@ -61,7 +61,7 @@ const toggleMobileMenu = () => {
     </main>
 
     <!-- Footer ZoneMart Chuẩn SEO Quốc Tế & Schema.org -->
-    <footer class="app-footer" role="contentinfo" itemscope itemtype="https://schema.org/Organization">
+    <footer v-if="!$route.meta.hideFooter" class="app-footer" role="contentinfo" itemscope itemtype="https://schema.org/Organization">
       <div class="footer-container">
         <!-- Main 4-Column Grid -->
         <div class="footer-main-grid">

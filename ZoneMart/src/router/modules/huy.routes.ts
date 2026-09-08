@@ -43,12 +43,12 @@ export const huyRoutes: RouteRecordRaw[] = [
     path: "/404",
     name: "NotFound",
     component: () => import("../../views/not-found/NotFoundView.vue"),
-    meta: { title: "404 - ACCESS DENIED" }
+    meta: { title: "404 - ACCESS DENIED", hideHeader: true, hideFooter: true }
   },
   {
     path: "/:pathMatch(.*)*",
     name: "NotFoundCatchAll",
     component: () => import("../../views/not-found/NotFoundView.vue"),
-    meta: { title: "404 - ACCESS DENIED" }
+    meta: { title: "404 - ACCESS DENIED", hideHeader: true, hideFooter: true }
   }
 ];
