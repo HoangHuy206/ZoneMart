@@ -1,159 +1,1390 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * ================================================================
- * CỔNG TÀI XẾ (SHIPPER DASHBOARD) - Phụ trách: Bình
+ * CỔNG TRANG CHỦ TÀI XẾ (DRIVER DASHBOARD WITH LIVE MAP) - Phụ trách: Bình
+ * Tính năng chính:
+ * 1. Nút gạt BẬT / TẮT hoạt động (Active/Inactive Toggle)
+ * 2. Bản đồ tương tác Leaflet hiển thị vị trí Shipper, Shop, Khách hàng & Tuyến đường 10km
+ * 3. Luồng nhận đơn hàng hỏa tốc, xác nhận lấy hàng và hoàn tất đơn
+ * 4. Thống kê thu nhập ca làm việc hôm nay
  * ================================================================
  */
-import { ref } from "vue";
+import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
+// 1. Trạng thái hoạt động (Active / Inactive)
 const isOnline = ref(true);
+
+// 2. Trạng thái đơn hàng: "idle" (đang chờ) | "accepted" (đi lấy) | "picked" (đi giao) | "delivered" (xong)
 const currentStep = ref<"idle" | "accepted" | "picked" | "delivered">("accepted");
 
-const activeOrder = ref({
-  subOrderId: "SUB_7749",
-  deliveryType: "express",
-  store: {
-    name: "ZoneMart Cầu Giấy",
-    address: "245 Cầu Giấy, Hà Nội",
-    phone: "024 1234 5678"
-  },
-  customer: {
-    name: "Hoàng Huy",
-    address: "165 Cầu Giấy, Dịch Vọng, Hà Nội",
-    phone: "0912 345 678"
-  },
-  shippingFee: 33750,
-  distanceKm: 2.2,
-  items: "Thịt Bò Mỹ (x2), Gạo ST25 (x1)"
+// 3. Tọa độ thực tế (Khu vực Cầu Giấy, Hà Nội)
+const driverLocation = ref({
+  lat: 21.0333,
+  lng: 105.7944,
+  name: "Vị trí của bạn"
 });
 
+const activeOrder = ref({
+  orderId: "ZM-7749",
+  deliveryType: "express",
+  shippingFee: 38500,
+  distanceKm: 2.2,
+  items: "2x Thịt Ba Chỉ Bò Mỹ, 1x Gạo ST25 (5kg), 1x Nấm Kim Châm",
+  notes: "Gọi trước khi đến 5 phút, giao lên tầng 5 phòng 502",
+  store: {
+    name: "ZoneMart Bách Hóa Cầu Giấy",
+    address: "245 Cầu Giấy, P. Dịch Vọng, Hà Nội",
+    phone: "024 1234 5678",
+    lat: 21.0360,
+    lng: 105.7985
+  },
+  customer: {
+    name: "Anh Hoàng Huy",
+    address: "Số 165 Cầu Giấy, P. Dịch Vọng, Hà Nội",
+    phone: "0912 345 678",
+    lat: 21.0315,
+    lng: 105.7910
+  }
+});
+
+// Thống kê hôm nay của tài xế
+const shiftStats = ref({
+  todayEarnings: 425000,
+  completedOrders: 11,
+  onlineHours: "4h 30m",
+  totalKm: 26.8
+});
+
+// Toast thông báo
+const toastMsg = ref("");
+const showToast = ref(false);
+const triggerToast = (msg: string) => {
+  toastMsg.value = msg;
+  showToast.value = true;
+  setTimeout(() => showToast.value = false, 2800);
+};
+
+// 4. Biến quản lý bản đồ Leaflet
+let map: L.Map | null = null;
+let driverMarker: L.Marker | null = null;
+let storeMarker: L.Marker | null = null;
+let customerMarker: L.Marker | null = null;
+let radiusCircle: L.Circle | null = null;
+let routeLine: L.Polyline | null = null;
+
+// Tạo icon tùy biến
+const driverIcon = L.divIcon({
+  className: "custom-map-icon",
+  html: `<div class="marker-driver"><span class="driver-wave"></span><span class="icon-char">🛵</span></div>`,
+  iconSize: [44, 44],
+  iconAnchor: [22, 22]
+});
+
+const storeIcon = L.divIcon({
+  className: "custom-map-icon",
+  html: `<div class="marker-store"><span class="icon-char">🏪</span></div>`,
+  iconSize: [38, 38],
+  iconAnchor: [19, 19]
+});
+
+const customerIcon = L.divIcon({
+  className: "custom-map-icon",
+  html: `<div class="marker-customer"><span class="icon-char">📍</span></div>`,
+  iconSize: [38, 38],
+  iconAnchor: [19, 19]
+});
+
+// Khởi tạo bản đồ
+const initMap = () => {
+  const container = document.getElementById("shipperMap");
+  if (!container || map) return;
+
+  map = L.map("shipperMap", {
+    center: [driverLocation.value.lat, driverLocation.value.lng],
+    zoom: 14,
+    zoomControl: false
+  });
+
+  L.control.zoom({ position: "bottomright" }).addTo(map);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap contributors | ZoneMart Driver",
+    maxZoom: 19
+  }).addTo(map);
+
+  // Vòng bán kính 10km
+  radiusCircle = L.circle([driverLocation.value.lat, driverLocation.value.lng], {
+    radius: 3000, // Hiển thị 3km vùng nhận đơn hỏa tốc gần
+    color: "#ea580c",
+    fillColor: "#ea580c",
+    fillOpacity: 0.08,
+    weight: 2,
+    dashArray: "6, 6"
+  }).addTo(map);
+
+  // Ghim tài xế
+  driverMarker = L.marker([driverLocation.value.lat, driverLocation.value.lng], {
+    icon: driverIcon,
+    title: "Vị trí của bạn"
+  }).addTo(map).bindPopup("<b>🛵 Vị trí hiện tại của bạn</b><br>Đang trực tuyến sẵn sàng nhận đơn.");
+
+  renderOrderOnMap();
+};
+
+// Vẽ đơn hàng lên bản đồ
+const renderOrderOnMap = () => {
+  if (!map) return;
+
+  // Xóa marker cũ
+  if (storeMarker) map.removeLayer(storeMarker);
+  if (customerMarker) map.removeLayer(customerMarker);
+  if (routeLine) map.removeLayer(routeLine);
+
+  if (isOnline.value && currentStep.value !== "idle" && currentStep.value !== "delivered") {
+    // Ghim Shop
+    storeMarker = L.marker([activeOrder.value.store.lat, activeOrder.value.store.lng], {
+      icon: storeIcon
+    }).addTo(map).bindPopup(`<b>🏪 ${activeOrder.value.store.name}</b><br>${activeOrder.value.store.address}`);
+
+    // Ghim Khách
+    customerMarker = L.marker([activeOrder.value.customer.lat, activeOrder.value.customer.lng], {
+      icon: customerIcon
+    }).addTo(map).bindPopup(`<b>👤 ${activeOrder.value.customer.name}</b><br>${activeOrder.value.customer.address}`);
+
+    // Vẽ đường đi
+    const waypoints: [number, number][] = currentStep.value === "accepted"
+      ? [
+          [driverLocation.value.lat, driverLocation.value.lng],
+          [activeOrder.value.store.lat, activeOrder.value.store.lng]
+        ]
+      : [
+          [activeOrder.value.store.lat, activeOrder.value.store.lng],
+          [activeOrder.value.customer.lat, activeOrder.value.customer.lng]
+        ];
+
+    routeLine = L.polyline(waypoints, {
+      color: currentStep.value === "accepted" ? "#2563eb" : "#16a34a",
+      weight: 5,
+      opacity: 0.85,
+      dashArray: "8, 10"
+    }).addTo(map);
+
+    // Fit view
+    const bounds = L.latLngBounds(waypoints);
+    map.fitBounds(bounds, { padding: [50, 50] });
+  }
+};
+
+// Điều hướng tâm bản đồ về tài xế
+const recenterMap = () => {
+  if (map) {
+    map.setView([driverLocation.value.lat, driverLocation.value.lng], 15);
+    driverMarker?.openPopup();
+    triggerToast("Đã định vị lại vị trí của bạn");
+  }
+};
+
+// Xử lý bật/tắt online
+const toggleOnline = () => {
+  isOnline.value = !isOnline.value;
+  if (isOnline.value) {
+    triggerToast("🟢 Đã BẬT nhận đơn! Hệ thống đang quét đơn hàng 10km quanh bạn.");
+    if (radiusCircle) {
+      radiusCircle.setStyle({ color: "#ea580c", fillColor: "#ea580c" });
+    }
+  } else {
+    triggerToast("🔴 Đã TẮT nhận đơn. Bạn đang ở trạng thái tạm nghỉ.");
+    if (radiusCircle) {
+      radiusCircle.setStyle({ color: "#94a3b8", fillColor: "#94a3b8" });
+    }
+  }
+  nextTick(() => {
+    map?.invalidateSize();
+    renderOrderOnMap();
+  });
+};
+
+// Xử lý luồng đơn hàng
 const handleConfirmPicked = () => {
   currentStep.value = "picked";
-  alert("✅ Đã lấy hàng thành công! Hãy di chuyển tới địa chỉ khách hàng.");
+  triggerToast("📦 Đã lấy hàng tại Shop! Hãy di chuyển tới địa chỉ khách.");
+  renderOrderOnMap();
 };
 
 const handleConfirmDelivered = () => {
   currentStep.value = "delivered";
-  alert("🎉 Đã giao hàng tới khách! Đang chờ khách xác nhận đơn.");
+  shiftStats.value.todayEarnings += activeOrder.value.shippingFee;
+  shiftStats.value.completedOrders += 1;
+  triggerToast(`🎉 Đã giao hàng thành công! +${activeOrder.value.shippingFee.toLocaleString('vi-VN')} ₫ vào ví.`);
+  renderOrderOnMap();
 };
 
-const handleReportBoom = () => {
-  const reason = prompt("Lý do khách không nhận hàng:");
+const handleAcceptNewOrder = () => {
+  currentStep.value = "accepted";
+  triggerToast("⚡ Đã nhận đơn hàng mới! Hãy di chuyển đến quán.");
+  renderOrderOnMap();
+};
+
+const handleReportIssue = () => {
+  const reason = prompt("Nhập lý do báo cáo sự cố (Khách không nhận / Shop đóng cửa):");
   if (reason) {
-    alert(`Đã báo cáo Boom hàng: "${reason}". Seller sẽ duyệt nhận lại hàng.`);
+    alert(`Đã ghi nhận báo cáo: "${reason}". Tổng đài CSKH 1900 6868 sẽ hỗ trợ bạn ngay.`);
     currentStep.value = "idle";
+    renderOrderOnMap();
   }
 };
+
+watch(isOnline, () => {
+  renderOrderOnMap();
+});
+
+onMounted(() => {
+  initMap();
+});
+
+onUnmounted(() => {
+  if (map) {
+    map.remove();
+    map = null;
+  }
+});
 </script>
 
 <template>
-  <div class="shipper-container">
-    <div class="header-box">
-      <div class="s-profile">
-        <div class="avatar">🛵</div>
-        <div>
-          <h2>Tài Xế ZoneMart Express</h2>
-          <p>Biển số: <strong>29M1-9999</strong> • Honda Airblade</p>
-        </div>
-      </div>
-
-      <div class="toggle-online">
-        <label class="switch">
-          <input type="checkbox" v-model="isOnline" />
-          <span class="slider round"></span>
-        </label>
-        <span class="status-text" :class="{ on: isOnline }">
-          {{ isOnline ? "🟢 Đang BẬT nhận đơn" : "🔴 Đang TẮT nhận đơn" }}
-        </span>
-      </div>
+  <div class="shipper-dashboard">
+    <!-- Toast Popup -->
+    <div v-if="showToast" class="toast-bar">
+      <i class="bi bi-info-circle-fill"></i>
+      <span>{{ toastMsg }}</span>
     </div>
 
-    <div v-if="isOnline" class="main-card">
-      <div v-if="currentStep !== 'idle'" class="order-flow">
-        <div class="badge-row">
-          <span class="b-exp" v-if="activeOrder.deliveryType === 'express'">⚡ Hỏa Tốc (Thu nhập: {{ activeOrder.shippingFee.toLocaleString('vi-VN') }} ₫)</span>
-          <span class="b-dist">Cự ly: {{ activeOrder.distanceKm }} km</span>
-        </div>
+    <div class="dashboard-container">
+      <!-- 1. Top Driver Status Bar -->
+      <header class="driver-header-card">
+        <div class="driver-profile-info">
+          <div class="driver-avatar-box">
+            <span class="avatar-emoji">🛵</span>
+            <span class="online-indicator" :class="{ 'is-active': isOnline }"></span>
+          </div>
 
-        <div class="steps-nav">
-          <span :class="{ active: currentStep === 'accepted' || currentStep === 'picked' || currentStep === 'delivered' }">1. Lấy hàng tại Shop</span>
-          <span>➜</span>
-          <span :class="{ active: currentStep === 'picked' || currentStep === 'delivered' }">2. Giao cho Khách</span>
-          <span>➜</span>
-          <span :class="{ active: currentStep === 'delivered' }">3. Hoàn tất</span>
-        </div>
-
-        <div v-if="currentStep === 'accepted'" class="point-box">
-          <h4>Chặng 1: Dẫn đường tới Cửa Hàng</h4>
-          <p class="target">🏪 {{ activeOrder.store.name }}</p>
-          <p class="addr">📍 {{ activeOrder.store.address }} • ☎️ {{ activeOrder.store.phone }}</p>
-          <p class="items">Món cần lấy: {{ activeOrder.items }}</p>
-          <button class="btn btn-primary" @click="handleConfirmPicked">📦 ĐÃ LẤY HÀNG TẠI SHOP ➜</button>
-        </div>
-
-        <div v-else-if="currentStep === 'picked'" class="point-box destination">
-          <h4>Chặng 2: Dẫn đường tới Khách Hàng</h4>
-          <p class="target">👤 {{ activeOrder.customer.name }}</p>
-          <p class="addr">📍 {{ activeOrder.customer.address }} • ☎️ {{ activeOrder.customer.phone }}</p>
-          <div class="action-row">
-            <button class="btn btn-success" @click="handleConfirmDelivered">🎉 ĐÃ GIAO CHO KHÁCH</button>
-            <button class="btn btn-danger" @click="handleReportBoom">⚠️ Báo Cáo Boom Hàng</button>
+          <div class="driver-text-meta">
+            <div class="name-badge-row">
+              <h1 class="driver-name">Trần Văn Bình</h1>
+              <span class="rating-pill">⭐ 4.98 (520 cuốc)</span>
+            </div>
+            <p class="vehicle-info">
+              <span>Honda Airblade 150</span>
+              <span class="dot-sep">•</span>
+              <span class="license-plate">29M1-9999</span>
+              <span class="dot-sep">•</span>
+              <span class="hub-text">Khu vực: Cầu Giấy (10km)</span>
+            </p>
           </div>
         </div>
 
-        <div v-else class="done-box">
-          <h3>✅ Đã giao xong đơn hàng!</h3>
-          <p>Thù lao <strong>{{ activeOrder.shippingFee.toLocaleString('vi-VN') }} ₫</strong> sẽ được cộng vào ví của bạn.</p>
-          <button class="btn btn-primary" @click="currentStep = 'idle'">Nhận chuyến tiếp theo</button>
-        </div>
-      </div>
+        <!-- BIG TACTILE TOGGLE SWITCH (BẬT / TẮT HOẠT ĐỘNG) -->
+        <div class="toggle-action-wrapper">
+          <div class="toggle-status-desc">
+            <span class="status-title">{{ isOnline ? "Đang BẬT Nhận Đơn" : "Đang TẠM NGHỈ" }}</span>
+            <small class="status-subtitle">{{ isOnline ? "Sẵn sàng nhận cuốc hỏa tốc" : "Tắt sóng quét đơn hàng" }}</small>
+          </div>
 
-      <div v-else class="waiting-box">
-        <h3>Đang quét đơn hàng xung quanh bạn (10km)...</h3>
-        <p>Hệ thống sẽ tự động thông báo khi có khách đặt hàng gần bạn.</p>
+          <button
+            class="active-toggle-btn"
+            :class="{ 'online': isOnline, 'offline': !isOnline }"
+            @click="toggleOnline"
+            :title="isOnline ? 'Nhấn để tạm nghỉ' : 'Nhấn để bật hoạt động'"
+          >
+            <span class="toggle-thumb">
+              <i class="bi" :class="isOnline ? 'bi-lightning-charge-fill' : 'bi-power'"></i>
+            </span>
+            <span class="toggle-label">{{ isOnline ? "BẬT HOẠT ĐỘNG" : "TẮT HOẠT ĐỘNG" }}</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- 2. Shift Quick Summary (4 Stats) -->
+      <section class="shift-stats-row">
+        <div class="stat-card">
+          <div class="stat-icon-wrap bg-green">
+            <i class="bi bi-cash-stack"></i>
+          </div>
+          <div>
+            <span class="stat-caption">Thu nhập hôm nay</span>
+            <strong class="stat-figure text-green">{{ shiftStats.todayEarnings.toLocaleString('vi-VN') }} ₫</strong>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon-wrap bg-blue">
+            <i class="bi bi-box-seam-fill"></i>
+          </div>
+          <div>
+            <span class="stat-caption">Số cuốc hoàn tất</span>
+            <strong class="stat-figure">{{ shiftStats.completedOrders }} đơn</strong>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon-wrap bg-orange">
+            <i class="bi bi-clock-history"></i>
+          </div>
+          <div>
+            <span class="stat-caption">Thời gian Online</span>
+            <strong class="stat-figure">{{ shiftStats.onlineHours }}</strong>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon-wrap bg-purple">
+            <i class="bi bi-speedometer2"></i>
+          </div>
+          <div>
+            <span class="stat-caption">Quãng đường đã chạy</span>
+            <strong class="stat-figure">{{ shiftStats.totalKm }} km</strong>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Main Operational View: Map + Mission Panel -->
+      <div class="operational-grid">
+        <!-- MAP SECTION -->
+        <section class="map-card-wrapper">
+          <div class="map-top-overlay">
+            <div class="map-tag">
+              <i class="bi bi-broadcast"></i>
+              <span>{{ isOnline ? "Bán kính quét đơn: 10km" : "Chế độ: Ngoại tuyến" }}</span>
+            </div>
+            <button class="map-btn-gps" @click="recenterMap" title="Về vị trí của tôi">
+              <i class="bi bi-crosshair"></i>
+            </button>
+          </div>
+
+          <!-- Leaflet Map Element -->
+          <div id="shipperMap" class="leaflet-map-element" :class="{ 'map-offline': !isOnline }"></div>
+
+          <!-- Offline Dim Overlay -->
+          <div v-if="!isOnline" class="offline-map-overlay">
+            <div class="offline-prompt-box">
+              <i class="bi bi-moon-stars-fill prompt-icon"></i>
+              <h3>Bạn đang tạm nghỉ</h3>
+              <p>Gạt nút "BẬT HOẠT ĐỘNG" phía trên để hệ thống quét đơn hàng hỏa tốc gần bạn nhất.</p>
+              <button class="btn btn-primary" @click="toggleOnline">
+                <i class="bi bi-power"></i> Bật Hoạt Động Ngay
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- MISSION / ORDER CONTROLLER PANEL -->
+        <aside class="mission-panel">
+          <!-- CASE 1: ĐANG TRỰC TUYẾN & CÓ ĐƠN HÀNG HOẠT ĐỘNG -->
+          <div v-if="isOnline && currentStep !== 'idle' && currentStep !== 'delivered'" class="active-mission-card">
+            <div class="mission-header-row">
+              <span class="badge-express">
+                <i class="bi bi-lightning-charge-fill"></i>
+                HỎA TỐC 10KM
+              </span>
+              <span class="fee-tag">Thù lao: <strong>{{ activeOrder.shippingFee.toLocaleString('vi-VN') }} ₫</strong></span>
+            </div>
+
+            <!-- Steps tracker -->
+            <div class="delivery-steps-bar">
+              <div class="step-item" :class="{ 'done': currentStep === 'accepted' || currentStep === 'picked', 'current': currentStep === 'accepted' }">
+                <span class="step-circle">1</span>
+                <span class="step-name">Lấy hàng tại Shop</span>
+              </div>
+              <div class="step-line" :class="{ 'active': currentStep === 'picked' }"></div>
+              <div class="step-item" :class="{ 'done': currentStep === 'picked', 'current': currentStep === 'picked' }">
+                <span class="step-circle">2</span>
+                <span class="step-name">Giao cho Khách</span>
+              </div>
+            </div>
+
+            <!-- Step 1: Đi lấy hàng tại Shop -->
+            <div v-if="currentStep === 'accepted'" class="checkpoint-box shop-checkpoint">
+              <div class="cp-header">
+                <i class="bi bi-shop-window cp-icon"></i>
+                <div>
+                  <span class="cp-caption">ĐIỂM LẤY HÀNG (CÁCH 1.2 KM)</span>
+                  <h3 class="cp-title">{{ activeOrder.store.name }}</h3>
+                </div>
+              </div>
+
+              <p class="cp-address">
+                <i class="bi bi-geo-alt-fill"></i> {{ activeOrder.store.address }}
+              </p>
+
+              <div class="cp-items-list">
+                <strong>Món cần lấy:</strong> {{ activeOrder.items }}
+              </div>
+
+              <div class="cp-action-row">
+                <a :href="'tel:' + activeOrder.store.phone" class="btn btn-call">
+                  <i class="bi bi-telephone-fill"></i> Gọi Quán
+                </a>
+                <button class="btn btn-primary flex-1" @click="handleConfirmPicked">
+                  📦 ĐÃ LẤY ĐỦ HÀNG ➜
+                </button>
+              </div>
+            </div>
+
+            <!-- Step 2: Giao hàng tới Khách -->
+            <div v-else-if="currentStep === 'picked'" class="checkpoint-box customer-checkpoint">
+              <div class="cp-header">
+                <i class="bi bi-person-check-fill cp-icon text-green"></i>
+                <div>
+                  <span class="cp-caption">ĐIỂM GIAO HÀNG (CÁCH 1.0 KM)</span>
+                  <h3 class="cp-title">{{ activeOrder.customer.name }}</h3>
+                </div>
+              </div>
+
+              <p class="cp-address">
+                <i class="bi bi-geo-alt-fill"></i> {{ activeOrder.customer.address }}
+              </p>
+
+              <div class="cp-notes" v-if="activeOrder.notes">
+                <i class="bi bi-chat-left-text"></i> Ghi chú khách: <em>"{{ activeOrder.notes }}"</em>
+              </div>
+
+              <div class="cp-action-row">
+                <a :href="'tel:' + activeOrder.customer.phone" class="btn btn-call">
+                  <i class="bi bi-telephone-fill"></i> Gọi Khách
+                </a>
+                <button class="btn btn-success flex-1" @click="handleConfirmDelivered">
+                  🎉 XÁC NHẬN ĐÃ GIAO XONG
+                </button>
+              </div>
+
+              <button class="btn-report-link" @click="handleReportIssue">
+                ⚠️ Khách không nhận / Báo cáo sự cố
+              </button>
+            </div>
+          </div>
+
+          <!-- CASE 2: ĐƠN HÀNG VỪA GIAO XONG -->
+          <div v-else-if="isOnline && currentStep === 'delivered'" class="mission-status-card finished-card">
+            <div class="status-icon-circle bg-green">
+              <i class="bi bi-check-lg"></i>
+            </div>
+            <h3>Giao Hàng Thành Công!</h3>
+            <p>Thù lao <strong>+{{ activeOrder.shippingFee.toLocaleString('vi-VN') }} ₫</strong> đã được chuyển trực tiếp vào ví tài xế của bạn.</p>
+            <button class="btn btn-primary w-100" @click="currentStep = 'idle'">
+              Tiếp tục tìm đơn mới
+            </button>
+          </div>
+
+          <!-- CASE 3: ĐANG QUÉT ĐƠN TRONG BÁN KÍNH 10KM -->
+          <div v-else-if="isOnline && currentStep === 'idle'" class="mission-status-card scanning-card">
+            <div class="radar-scan-anim">
+              <div class="radar-circle-1"></div>
+              <div class="radar-circle-2"></div>
+              <i class="bi bi-radar radar-icon"></i>
+            </div>
+            <h3>Đang quét đơn hàng gần bạn...</h3>
+            <p>Hệ thống tự động tìm đơn thực phẩm & đồ ăn nóng trong bán kính 10km khu vực Cầu Giấy.</p>
+            <div class="demo-trigger-box">
+              <small>Thử nghiệm nhận đơn:</small>
+              <button class="btn btn-outline-primary" @click="handleAcceptNewOrder">
+                ⚡ Nhận Đơn Hỏa Tốc Mới (Demo)
+              </button>
+            </div>
+          </div>
+
+          <!-- CASE 4: OFFLINE -->
+          <div v-else class="mission-status-card offline-card">
+            <div class="status-icon-circle bg-slate">
+              <i class="bi bi-cup-hot-fill"></i>
+            </div>
+            <h3>Ca làm việc đang tạm dừng</h3>
+            <p>Bật hoạt động để tiếp tục nhận cuốc giao hỏa tốc từ các đối tác siêu thị mini và quán ăn.</p>
+            <button class="btn btn-primary w-100" @click="toggleOnline">
+              Bật Hoạt Động Ngay
+            </button>
+          </div>
+        </aside>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.shipper-container { max-width: 900px; margin: 30px auto 60px auto; padding: 0 20px; }
-.header-box { background: #fff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 20px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
-.s-profile { display: flex; align-items: center; gap: 14px; }
-.avatar { font-size: 36px; background: #f3e8ff; padding: 10px; border-radius: 50%; }
-.s-profile h2 { margin: 0 0 4px 0; font-size: 18px; color: #0f172a; }
-.s-profile p { margin: 0; font-size: 13px; color: #64748b; }
+/* ==========================================================================
+   GLOBAL LAYOUT
+   ========================================================================== */
+.shipper-dashboard {
+  background-color: #f8fafc;
+  min-height: calc(100vh - 72px);
+  padding: 28px 24px 72px 24px;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #1e293b;
+}
 
-.toggle-online { display: flex; align-items: center; gap: 12px; }
-.status-text { font-size: 14px; font-weight: 700; color: #dc2626; }
-.status-text.on { color: #16a34a; }
+.dashboard-container {
+  max-width: 1320px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
 
-.switch { position: relative; display: inline-block; width: 48px; height: 26px; }
-.switch input { opacity: 0; width: 0; height: 0; }
-.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .4s; border-radius: 34px; }
-.slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
-input:checked + .slider { background-color: #16a34a; }
-input:checked + .slider:before { transform: translateX(22px); }
+/* Toast Bar */
+.toast-bar {
+  position: fixed;
+  top: 86px;
+  right: 28px;
+  background-color: #0f172a;
+  color: #ffffff;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 9999;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  animation: slideToast 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
-.main-card { background: #fff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 24px; }
-.badge-row { display: flex; justify-content: space-between; margin-bottom: 20px; }
-.b-exp { background: #fee2e2; color: #dc2626; font-size: 13px; font-weight: 700; padding: 6px 12px; border-radius: 6px; }
-.b-dist { background: #eff6ff; color: #1e40af; font-size: 13px; font-weight: 700; padding: 6px 12px; border-radius: 6px; }
+@keyframes slideToast {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
 
-.steps-nav { display: flex; justify-content: space-around; background: #f8fafc; padding: 12px; border-radius: 10px; margin-bottom: 20px; font-size: 13px; color: #94a3b8; font-weight: 600; }
-.steps-nav .active { color: #2563eb; font-weight: 800; }
+/* ==========================================================================
+   1. TOP DRIVER STATUS BAR
+   ========================================================================== */
+.driver-header-card {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 24px 28px;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.03);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+}
 
-.point-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 20px; }
-.point-box.destination { background: #eff6ff; border-color: #bfdbfe; }
-.point-box h4 { margin: 0 0 8px 0; color: #64748b; font-size: 13px; text-transform: uppercase; }
-.target { font-size: 18px; font-weight: 800; color: #0f172a; margin: 0 0 6px 0; }
-.addr { font-size: 14px; color: #334155; margin: 0 0 8px 0; }
-.items { font-size: 13px; color: #64748b; margin: 0 0 16px 0; }
-.action-row { display: flex; gap: 10px; }
+.driver-profile-info {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
 
-.done-box, .waiting-box { text-align: center; padding: 40px; }
-.btn { border: none; cursor: pointer; padding: 12px 20px; border-radius: 8px; font-weight: 700; font-size: 14px; }
-.btn-primary { background: #2563eb; color: #fff; }
-.btn-success { background: #16a34a; color: #fff; }
-.btn-danger { background: #dc2626; color: #fff; }
+.driver-avatar-box {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  background: #fff7ed;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar-emoji {
+  font-size: 30px;
+}
+
+.online-indicator {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2.5px solid #ffffff;
+}
+
+.online-indicator.is-active {
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25);
+  animation: pulseGreen 2s infinite;
+}
+
+@keyframes pulseGreen {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+.driver-text-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.name-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.driver-name {
+  font-size: 22px;
+  font-weight: 900;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.rating-pill {
+  font-size: 12px;
+  font-weight: 800;
+  background: #fefce8;
+  color: #d97706;
+  padding: 3px 8px;
+  border-radius: 20px;
+  border: 1px solid #fef08a;
+}
+
+.vehicle-info {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.license-plate {
+  font-weight: 800;
+  color: #0f172a;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.dot-sep {
+  color: #cbd5e1;
+}
+
+/* Big Toggle Button */
+.toggle-action-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.toggle-status-desc {
+  text-align: right;
+}
+
+.status-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.status-subtitle {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.active-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px 8px 10px;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 800;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.active-toggle-btn.online {
+  background: #22c55e;
+  color: #ffffff;
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.35);
+}
+
+.active-toggle-btn.online:hover {
+  background: #16a34a;
+  transform: scale(1.02);
+}
+
+.active-toggle-btn.offline {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.active-toggle-btn.offline:hover {
+  background: #cbd5e1;
+  color: #0f172a;
+}
+
+.toggle-thumb {
+  width: 32px;
+  height: 32px;
+  background: #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.active-toggle-btn.online .toggle-thumb {
+  color: #22c55e;
+}
+
+.active-toggle-btn.offline .toggle-thumb {
+  color: #64748b;
+}
+
+/* ==========================================================================
+   2. SHIFT STATS ROW (4 CARDS)
+   ========================================================================== */
+.shift-stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+}
+
+.stat-card {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 18px 20px;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 2px 12px -2px rgba(0, 0, 0, 0.03);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.stat-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  flex-shrink: 0;
+}
+
+.bg-green { background: #f0fdf4; color: #16a34a; }
+.bg-blue { background: #eff6ff; color: #2563eb; }
+.bg-orange { background: #fff7ed; color: #ea580c; }
+.bg-purple { background: #faf5ff; color: #9333ea; }
+.bg-slate { background: #f1f5f9; color: #64748b; }
+
+.stat-caption {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.stat-figure {
+  display: block;
+  font-size: 18px;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.text-green {
+  color: #16a34a !important;
+}
+
+/* ==========================================================================
+   3. OPERATIONAL GRID: MAP + CONTROLLER
+   ========================================================================== */
+.operational-grid {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+/* Map Card */
+.map-card-wrapper {
+  background: #ffffff;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.04);
+  position: relative;
+  height: 580px;
+}
+
+.leaflet-map-element {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  transition: filter 0.3s ease;
+}
+
+.leaflet-map-element.map-offline {
+  filter: grayscale(80%) opacity(0.65);
+}
+
+.map-top-overlay {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  right: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.map-tag {
+  pointer-events: auto;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(8px);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.map-btn-gps {
+  pointer-events: auto;
+  width: 38px;
+  height: 38px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  color: #0f172a;
+  font-size: 17px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.map-btn-gps:hover {
+  background: #ea580c;
+  color: #ffffff;
+  border-color: #ea580c;
+}
+
+/* Offline Map Overlay Prompt */
+.offline-map-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(248, 250, 252, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.offline-prompt-box {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 32px 28px;
+  text-align: center;
+  max-width: 380px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+  border: 1px solid #e2e8f0;
+}
+
+.prompt-icon {
+  font-size: 38px;
+  color: #64748b;
+  margin-bottom: 12px;
+  display: inline-block;
+}
+
+.offline-prompt-box h3 {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 8px 0;
+}
+
+.offline-prompt-box p {
+  font-size: 13.5px;
+  color: #64748b;
+  line-height: 1.55;
+  margin: 0 0 20px 0;
+}
+
+/* Mission Controller Panel */
+.mission-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.active-mission-card {
+  background: #ffffff;
+  border-radius: 22px;
+  padding: 28px;
+  border: 1px solid #fed7aa;
+  box-shadow: 0 4px 20px -4px rgba(234, 88, 12, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.mission-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.badge-express {
+  background: #fff7ed;
+  color: #ea580c;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #fdba74;
+}
+
+.fee-tag {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.fee-tag strong {
+  font-size: 16px;
+  color: #16a34a;
+}
+
+/* Delivery Steps Bar */
+.delivery-steps-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f8fafc;
+  padding: 12px 18px;
+  border-radius: 14px;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.step-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.step-item.current .step-circle {
+  background: #ea580c;
+}
+
+.step-item.current .step-name {
+  color: #ea580c;
+}
+
+.step-item.done .step-circle {
+  background: #16a34a;
+}
+
+.step-item.done .step-name {
+  color: #16a34a;
+}
+
+.step-line {
+  flex: 1;
+  height: 2px;
+  background: #e2e8f0;
+  margin: 0 10px;
+}
+
+.step-line.active {
+  background: #16a34a;
+}
+
+/* Checkpoint Box */
+.checkpoint-box {
+  background: #f8fafc;
+  border-radius: 16px;
+  padding: 20px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.customer-checkpoint {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.cp-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cp-icon {
+  font-size: 24px;
+  color: #ea580c;
+}
+
+.cp-caption {
+  font-size: 11px;
+  font-weight: 800;
+  color: #64748b;
+  letter-spacing: 0.5px;
+}
+
+.cp-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+
+.cp-address {
+  font-size: 13px;
+  color: #475569;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.cp-items-list {
+  font-size: 13px;
+  background: #ffffff;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+}
+
+.cp-notes {
+  font-size: 12.5px;
+  color: #15803d;
+  background: #dcfce7;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.cp-action-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.btn-call {
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.btn-call:hover {
+  border-color: #ea580c;
+  color: #ea580c;
+}
+
+.btn-report-link {
+  background: none;
+  border: none;
+  color: #ef4444;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  padding: 6px 0;
+}
+
+.btn-report-link:hover {
+  text-decoration: underline;
+}
+
+/* Status Cards (Finished / Scanning / Offline) */
+.mission-status-card {
+  background: #ffffff;
+  border-radius: 22px;
+  padding: 36px 28px;
+  text-align: center;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-icon-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+}
+
+.mission-status-card h3 {
+  font-size: 18px;
+  font-weight: 900;
+  color: #0f172a;
+  margin: 0;
+}
+
+.mission-status-card p {
+  font-size: 13.5px;
+  color: #64748b;
+  margin: 0 0 12px 0;
+  line-height: 1.55;
+}
+
+/* Radar scanning anim */
+.radar-scan-anim {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.radar-icon {
+  font-size: 28px;
+  color: #ea580c;
+  z-index: 2;
+}
+
+.radar-circle-1,
+.radar-circle-2 {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid #ea580c;
+  animation: radarWave 2s infinite cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.radar-circle-2 {
+  animation-delay: 0.8s;
+}
+
+@keyframes radarWave {
+  0% { width: 24px; height: 24px; opacity: 0.8; }
+  100% { width: 80px; height: 80px; opacity: 0; }
+}
+
+.demo-trigger-box {
+  width: 100%;
+  border-top: 1px dashed #e2e8f0;
+  padding-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.demo-trigger-box small {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+/* Standard Buttons */
+.btn {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  padding: 12px 20px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-primary {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background: #ea580c;
+  transform: translateY(-1px);
+}
+
+.btn-success {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.btn-success:hover {
+  background: #15803d;
+  transform: translateY(-1px);
+}
+
+.btn-outline-primary {
+  background: #fff7ed;
+  color: #ea580c;
+  border: 1px dashed #fdba74;
+}
+
+.btn-outline-primary:hover {
+  background: #ea580c;
+  color: #ffffff;
+}
+
+.w-100 {
+  width: 100%;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+/* ==========================================================================
+   LEAFLET CUSTOM MARKER STYLES
+   ========================================================================== */
+:deep(.custom-map-icon) {
+  background: none;
+  border: none;
+}
+
+:deep(.marker-driver) {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  background: #ea580c;
+  color: #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.4);
+  border: 3px solid #ffffff;
+}
+
+:deep(.driver-wave) {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  right: -6px;
+  bottom: -6px;
+  border-radius: 50%;
+  border: 2px solid #ea580c;
+  animation: pulseRadar 2s infinite;
+}
+
+@keyframes pulseRadar {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+:deep(.marker-store) {
+  width: 38px;
+  height: 38px;
+  background: #2563eb;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
+
+:deep(.marker-customer) {
+  width: 38px;
+  height: 38px;
+  background: #16a34a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35);
+}
+
+/* ==========================================================================
+   RESPONSIVE
+   ========================================================================== */
+@media (max-width: 1024px) {
+  .operational-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .shift-stats-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .map-card-wrapper {
+    height: 440px;
+  }
+}
+
+@media (max-width: 640px) {
+  .shipper-dashboard {
+    padding: 16px 14px 48px 14px;
+  }
+
+  .driver-header-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toggle-action-wrapper {
+    justify-content: space-between;
+  }
+
+  .shift-stats-row {
+    grid-template-columns: 1fr;
+  }
+}
 </style>
+
