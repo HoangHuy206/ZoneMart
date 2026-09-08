@@ -69,7 +69,6 @@ const handleLogout = () => {
 
         <!-- 2. Thanh tìm kiếm chính giữa -->
         <div class="header-search-wrap">
-          <span class="search-icon">🔍</span>
           <i class="bi bi-search search-icon" aria-hidden="true"></i>
           <input
             v-model="searchQuery"
@@ -147,7 +146,6 @@ const handleLogout = () => {
                   class="dropdown-item"
                   @click="closeDropdowns"
                 >
-                  👤 Hồ Sơ & Ví Tiền
                   <i class="bi bi-person-circle menu-icon" aria-hidden="true"></i>
                   <span>Hồ Sơ & Ví Tiền</span>
                 </router-link>
@@ -156,7 +154,6 @@ const handleLogout = () => {
                   class="dropdown-item"
                   @click="closeDropdowns"
                 >
-                  📦 Đơn Mua Của Bạn
                   <i class="bi bi-bag-check menu-icon" aria-hidden="true"></i>
                   <span>Đơn Mua Của Bạn</span>
                 </router-link>
@@ -166,7 +163,6 @@ const handleLogout = () => {
                   class="dropdown-item"
                   @click="closeDropdowns"
                 >
-                  🛵 Cổng Shipper
                   <i class="bi bi-bicycle menu-icon" aria-hidden="true"></i>
                   <span>Cổng Shipper</span>
                 </router-link>
@@ -175,7 +171,6 @@ const handleLogout = () => {
                   class="dropdown-item"
                   @click="closeDropdowns"
                 >
-                  🛡️ Bảng Điều Khiển Admin
                   <i class="bi bi-shield-check menu-icon" aria-hidden="true"></i>
                   <span>Bảng Điều Khiển Admin</span>
                 </router-link>
@@ -184,13 +179,11 @@ const handleLogout = () => {
                   class="dropdown-item"
                   @click="closeDropdowns"
                 >
-                  📞 Liên Hệ Hỗ Trợ
                   <i class="bi bi-headset menu-icon" aria-hidden="true"></i>
                   <span>Liên Hệ Hỗ Trợ</span>
                 </router-link>
                 <div class="dropdown-divider"></div>
                 <button class="dropdown-item logout-btn" @click="handleLogout">
-                  🚪 Đăng Xuất
                   <i class="bi bi-box-arrow-right menu-icon" aria-hidden="true"></i>
                   <span>Đăng Xuất</span>
                 </button>
@@ -198,7 +191,6 @@ const handleLogout = () => {
             </div>
 
             <!-- Icon Giỏ hàng kèm huy hiệu số lượng -->
-            <router-link to="/cart" class="icon-btn cart-btn" title="Giỏ hàng">
             <router-link to="/cart" class="icon-btn cart-btn" title="Giỏ hàng" aria-label="Xem giỏ hàng">
               <svg
                 viewBox="0 0 24 24"
@@ -222,8 +214,6 @@ const handleLogout = () => {
           </div>
 
           <!-- Mobile Toggle Button -->
-          <button class="mobile-toggle" @click.stop="toggleMobileMenu">
-            ☰
           <button
             class="mobile-toggle"
             :aria-label="isMobileMenuOpen ? 'Đóng Menu' : 'Mở Menu'"
@@ -236,10 +226,8 @@ const handleLogout = () => {
       </div>
 
       <!-- Menu trên điện thoại -->
-      <nav v-if="isMobileMenuOpen" class="mobile-menu">
       <nav v-if="isMobileMenuOpen" class="mobile-menu" aria-label="Menu điều hướng di động">
         <router-link to="/products" class="mobile-link" @click="closeDropdowns">
-          🛍️ Sản Phẩm
           <i class="bi bi-grid-fill menu-icon" aria-hidden="true"></i>
           <span>Sản Phẩm</span>
         </router-link>
@@ -252,7 +240,6 @@ const handleLogout = () => {
               class="btn-auth-outline mobile-btn"
               @click="closeDropdowns"
             >
-              Đăng Ký
               <i class="bi bi-person-plus-fill" aria-hidden="true"></i>
               <span>Đăng Ký</span>
             </router-link>
@@ -261,7 +248,6 @@ const handleLogout = () => {
               class="btn-auth-solid mobile-btn"
               @click="closeDropdowns"
             >
-              Đăng Nhập
               <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
               <span>Đăng Nhập</span>
             </router-link>
@@ -270,7 +256,6 @@ const handleLogout = () => {
 
         <template v-else>
           <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
-            🛒 Giỏ Hàng ({{ cartItemCount }})
             <i class="bi bi-cart3 menu-icon" aria-hidden="true"></i>
             <span>Giỏ Hàng ({{ cartItemCount }})</span>
           </router-link>
@@ -279,7 +264,6 @@ const handleLogout = () => {
             class="mobile-link"
             @click="closeDropdowns"
           >
-            📦 Đơn Mua
             <i class="bi bi-bag-check menu-icon" aria-hidden="true"></i>
             <span>Đơn Mua</span>
           </router-link>
@@ -288,7 +272,6 @@ const handleLogout = () => {
             class="mobile-link"
             @click="closeDropdowns"
           >
-            👤 Hồ Sơ/Ví
             <i class="bi bi-person-circle menu-icon" aria-hidden="true"></i>
             <span>Hồ Sơ & Ví</span>
           </router-link>
@@ -297,18 +280,15 @@ const handleLogout = () => {
             class="mobile-link"
             @click="closeDropdowns"
           >
-            🛵 Shipper
             <i class="bi bi-bicycle menu-icon" aria-hidden="true"></i>
             <span>Cổng Shipper</span>
           </router-link>
           <router-link to="/admin" class="mobile-link" @click="closeDropdowns">
-            🛡️ Admin
             <i class="bi bi-shield-check menu-icon" aria-hidden="true"></i>
             <span>Admin</span>
           </router-link>
           <div class="mobile-divider"></div>
           <button class="mobile-link logout-link" @click="handleLogout">
-            🚪 Đăng Xuất
             <i class="bi bi-box-arrow-right menu-icon" aria-hidden="true"></i>
             <span>Đăng Xuất</span>
           </button>
@@ -559,10 +539,8 @@ body {
   box-shadow: 0 0 0 3px rgba(216, 90, 42, 0.12);
 }
 .header-search-wrap .search-icon {
-  font-size: 14px;
   font-size: 15px;
   margin-right: 10px;
-  opacity: 0.55;
   color: #968379;
   flex-shrink: 0;
   transition: color 0.2s ease;
@@ -757,7 +735,6 @@ body {
   border-bottom: 1px solid #f3e7df;
 }
 .dropdown-item {
-  display: block;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -765,14 +742,12 @@ body {
   text-align: left;
   background: none;
   border: none;
-  padding: 9px 16px;
   padding: 10px 16px;
   font-size: 13px;
   font-weight: 500;
   color: #4a3830;
   text-decoration: none;
   cursor: pointer;
-  transition: background 0.2s;
   transition: all 0.2s;
 }
 .dropdown-item .menu-icon {

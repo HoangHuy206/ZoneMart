@@ -92,7 +92,6 @@ const handleSubmit = () => {
           </div>
         </div>
 
-        <button type="submit" class="btn btn-primary btn-block">🚀 NỘP HỒ SƠ ĐĂNG KÝ GIAN HÀNG</button>
         <button type="submit" class="btn btn-primary btn-block"><i class="bi bi-send-fill me-2" aria-hidden="true"></i> NỘP HỒ SƠ ĐĂNG KÝ GIAN HÀNG</button>
       </form>
     </div>

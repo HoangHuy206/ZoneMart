@@ -53,20 +53,17 @@ const handlePlaceOrder = () => {
       <!-- Cột trái: Thông tin nhận hàng -->
       <div class="left-col">
         <div class="card-box">
-          <h3>📍 1. Địa Chỉ Nhận Hàng</h3>
           <h3><i class="bi bi-geo-alt-fill text-danger me-2" aria-hidden="true"></i>1. Địa Chỉ Nhận Hàng</h3>
           <div class="addr-content">
             <div class="user-row">
               <strong>{{ buyerName }}</strong> ({{ buyerPhone }})
             </div>
             <p class="addr-text">{{ shippingAddress }}</p>
-            <span class="dist-badge">📏 Khoảng cách ước tính: {{ distanceKm }} km</span>
             <span class="dist-badge"><i class="bi bi-compass me-1" aria-hidden="true"></i> Khoảng cách ước tính: {{ distanceKm }} km</span>
           </div>
         </div>
 
         <div class="card-box">
-          <h3>🚚 2. Phương Thức Vận Chuyển</h3>
           <h3><i class="bi bi-truck text-primary me-2" aria-hidden="true"></i>2. Phương Thức Vận Chuyển</h3>
           <div class="shipping-options">
             <div 
@@ -76,7 +73,6 @@ const handlePlaceOrder = () => {
               @click="handleSelectExpress(true)"
             >
               <div class="opt-head">
-                <strong>⚡ Giao Hỏa Tốc Siêu Tốc (&le; 3km)</strong>
                 <strong><i class="bi bi-lightning-charge-fill text-warning me-1" aria-hidden="true"></i> Giao Hỏa Tốc Siêu Tốc (&le; 3km)</strong>
                 <span class="price">{{ (Math.round((15000 * shopCount) * 1.5)).toLocaleString('vi-VN') }} ₫</span>
               </div>
@@ -89,7 +85,6 @@ const handlePlaceOrder = () => {
               @click="handleSelectExpress(false)"
             >
               <div class="opt-head">
-                <strong>🛵 Giao Hàng Tiêu Chuẩn</strong>
                 <strong><i class="bi bi-bicycle text-success me-1" aria-hidden="true"></i> Giao Hàng Tiêu Chuẩn</strong>
                 <span class="price">{{ (15000 * shopCount).toLocaleString('vi-VN') }} ₫</span>
               </div>
@@ -99,7 +94,6 @@ const handlePlaceOrder = () => {
         </div>
 
         <div class="card-box">
-          <h3>💰 3. Phương Thức Thanh Toán</h3>
           <h3><i class="bi bi-credit-card-2-front text-warning me-2" aria-hidden="true"></i>3. Phương Thức Thanh Toán</h3>
           <div class="pay-options">
             <label class="pay-item" :class="{ active: paymentMethod === 'ONLINE_QR' }">
@@ -114,7 +108,6 @@ const handlePlaceOrder = () => {
               <input type="radio" value="COD" v-model="paymentMethod" :disabled="isExpressSelected" />
               <div>
                 <strong>Tiền Mặt Khi Nhận Hàng (COD)</strong>
-                <p v-if="isExpressSelected">⚠️ Không hỗ trợ COD khi chọn Giao Hỏa Tốc</p>
                 <p v-if="isExpressSelected"><i class="bi bi-exclamation-triangle-fill text-warning me-1" aria-hidden="true"></i> Không hỗ trợ COD khi chọn Giao Hỏa Tốc</p>
                 <p v-else>Thanh toán trực tiếp cho Shipper khi nhận món</p>
               </div>
@@ -151,7 +144,6 @@ const handlePlaceOrder = () => {
           </div>
 
           <button class="btn btn-primary btn-block" @click="handlePlaceOrder">
-            🚀 XÁC NHẬN ĐẶT HÀNG
             <i class="bi bi-bag-check-fill me-2" aria-hidden="true"></i> XÁC NHẬN ĐẶT HÀNG
           </button>
         </div>

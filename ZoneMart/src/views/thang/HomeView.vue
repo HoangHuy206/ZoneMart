@@ -150,28 +150,24 @@ const howItWorks = [
     step: '01',
     title: 'Định Vị Tự Động',
     desc: 'Hệ thống tự động quét và gợi ý các nhà vườn, cửa hàng uy tín trong bán kính 10km quanh bạn.',
-    icon: '📍',
     icon: 'bi-geo-alt-fill',
   },
   {
     step: '02',
     title: 'Chọn Nông Sản Tươi',
     desc: 'Thoải mái lựa chọn nông sản thu hoạch trong ngày, rõ ràng xuất xứ và kiểm định VietGAP.',
-    icon: '🥦',
     icon: 'bi-bag-check-fill',
   },
   {
     step: '03',
     title: 'Nhà Vườn Đóng Gói',
     desc: 'Chủ shop chuẩn bị đơn ngay lập tức, đóng gói kỹ lưỡng đảm bảo độ tươi mới tối đa.',
-    icon: '📦',
     icon: 'bi-box-seam-fill',
   },
   {
     step: '04',
     title: 'Shipper Giao Siêu Tốc',
     desc: 'Tài xế nhận đơn gần bạn, giao tận cửa nhà chỉ trong vòng 30 - 45 phút.',
-    icon: '🛵',
     icon: 'bi-bicycle',
   },
 ];
@@ -444,7 +440,6 @@ const goToRoute = (path: string) => {
     <section class="section-container">
       <div class="section-header">
         <div class="header-left">
-          <div class="badge-tag-hot">🔥 GIAO HỎA TỐC 10KM</div>
           <div class="badge-tag-hot"><i class="bi bi-fire me-1" aria-hidden="true"></i> GIAO HỎA TỐC 10KM</div>
           <h2 class="section-title">Nông Sản Tươi Mới Hôm Nay</h2>
           <p class="section-subtitle">
@@ -479,17 +474,13 @@ const goToRoute = (path: string) => {
           <!-- Thông tin sản phẩm -->
           <div class="product-body">
             <div class="product-location-row">
-              <span class="loc-badge">📍 {{ item.distance }}</span>
-              <span class="time-badge">⚡ {{ item.deliveryTime }}</span>
               <span class="loc-badge"><i class="bi bi-geo-alt-fill"></i> {{ item.distance }}</span>
               <span class="time-badge"><i class="bi bi-lightning-charge-fill"></i> {{ item.deliveryTime }}</span>
             </div>
             <h4 class="product-title">{{ item.name }}</h4>
-            <p class="product-farm">🏡 {{ item.farm }}</p>
             <p class="product-farm"><i class="bi bi-shop"></i> {{ item.farm }}</p>
 
             <div class="product-rating-row">
-              <span class="stars">⭐ {{ item.rating }}</span>
               <span class="stars"><i class="bi bi-star-fill text-warning"></i> {{ item.rating }}</span>
               <span class="sold-count">Đã bán {{ item.sold }}</span>
             </div>
@@ -501,8 +492,6 @@ const goToRoute = (path: string) => {
                   formatPrice(item.originalPrice)
                 }}</span>
               </div>
-              <button class="btn-add-cart" title="Xem chi tiết & Mua">
-                🛒 Chọn Mua
               <button class="btn-add-cart" title="Xem chi tiết & Mua" aria-label="Chọn mua sản phẩm">
                 <i class="bi bi-bag-plus-fill"></i> Chọn Mua
               </button>
@@ -530,7 +519,6 @@ const goToRoute = (path: string) => {
       <div class="how-steps-grid">
         <div v-for="step in howItWorks" :key="step.step" class="step-card">
           <div class="step-number">{{ step.step }}</div>
-          <div class="step-icon">{{ step.icon }}</div>
           <div class="step-icon">
             <i class="bi" :class="step.icon" aria-hidden="true"></i>
           </div>
@@ -553,7 +541,6 @@ const goToRoute = (path: string) => {
           </p>
         </div>
         <router-link to="/products" class="view-all-link">
-          Xem Tất Cả Gian Hàng ➔
           <span>Xem Tất Cả Gian Hàng</span>
           <i class="bi bi-arrow-right"></i>
         </router-link>
@@ -581,13 +568,9 @@ const goToRoute = (path: string) => {
             <h4 class="vendor-name">{{ v.name }}</h4>
             <p class="vendor-owner">{{ v.owner }}</p>
             <div class="vendor-meta-row">
-              <span>📍 Cách bạn {{ v.distance }}</span>
-              <span>⭐ {{ v.rating }}</span>
               <span><i class="bi bi-geo-alt-fill text-danger"></i> Cách bạn {{ v.distance }}</span>
               <span><i class="bi bi-star-fill text-warning"></i> {{ v.rating }}</span>
             </div>
-            <p class="vendor-stock">📦 {{ v.productsCount }}</p>
-            <button class="vendor-btn">Ghé Thăm Gian Hàng ➔</button>
             <p class="vendor-stock"><i class="bi bi-box-seam text-primary"></i> {{ v.productsCount }}</p>
             <button class="vendor-btn">
               <span>Ghé Thăm Gian Hàng</span>
@@ -614,7 +597,6 @@ const goToRoute = (path: string) => {
       <div class="testimonials-grid">
         <div v-for="t in testimonials" :key="t.id" class="testimonial-card">
           <div class="stars-row">
-            <span v-for="n in t.rating" :key="n">⭐</span>
             <i v-for="n in t.rating" :key="n" class="bi bi-star-fill text-warning"></i>
           </div>
           <p class="testimonial-quote">“{{ t.comment }}”</p>
@@ -648,11 +630,9 @@ const goToRoute = (path: string) => {
               class="btn-partner-seller"
               @click="goToRoute('/register-seller')"
             >
-              🏪 ĐĂNG KÝ BÁN HÀNG NGAY
               <i class="bi bi-shop me-2" aria-hidden="true"></i> ĐĂNG KÝ BÁN HÀNG NGAY
             </button>
             <button class="btn-partner-shipper" @click="goToRoute('/shipper')">
-              🛵 GIA NHẬP ĐỘI TÀI XẾ
               <i class="bi bi-bicycle me-2" aria-hidden="true"></i> GIA NHẬP ĐỘI TÀI XẾ
             </button>
           </div>

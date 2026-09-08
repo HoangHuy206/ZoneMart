@@ -19,7 +19,6 @@ const orders = ref([
         storeName: "ZoneMart Cầu Giấy",
         items: "Thịt Bò Mỹ Nhập Khẩu (x2), Gạo ST25 (x1)",
         status: "delivering",
-        statusText: "🛵 Shipper đang giao hàng tới bạn",
         statusText: "Shipper đang giao hàng tới bạn",
         shipperInfo: "Nguyễn Văn Nam (29M1-8888)",
         shipperPhone: "0987 654 321"
@@ -38,7 +37,6 @@ const orders = ref([
         storeName: "Siêu Thị Trái Cây Xanh",
         items: "Dâu Tây Đà Lạt (x1)",
         status: "completed",
-        statusText: "✅ Giao hàng thành công",
         statusText: "Giao hàng thành công",
         shipperInfo: "Trần Đình Trọng (29H2-4321)",
         shipperPhone: "0912 333 444"
@@ -59,7 +57,6 @@ const handleReportIssue = (subId: string) => {
 <template>
   <div class="buyer-orders-container">
     <div class="header">
-      <h2>📦 Đơn Mua Của Bạn</h2>
       <h2><i class="bi bi-box-seam me-2" aria-hidden="true"></i>Đơn Mua Của Bạn</h2>
       <p>Theo dõi trực tiếp trạng thái các đơn hàng đang giao và lịch sử mua sắm.</p>
     </div>
@@ -69,12 +66,7 @@ const handleReportIssue = (subId: string) => {
         <div class="order-top">
           <div>
             <strong>Đơn hàng: #{{ order.orderId }}</strong>
-            <span class="date">{{ order.date }}</span>
             <span class="order-date">{{ order.date }}</span>
-          </div>
-          <div class="badges">
-            <span class="badge express" v-if="order.deliveryType === 'express'">⚡ Hỏa Tốc</span>
-            <span class="badge pay">{{ order.paymentMethod === 'ONLINE_QR' ? 'Đã thanh toán QR' : 'COD (Tiền mặt)' }}</span>
           </div>
           <span class="delivery-badge" :class="order.deliveryType">
             {{ order.deliveryType === 'express' ? 'Hỏa tốc 10km' : 'Giao thường' }}
@@ -84,8 +76,6 @@ const handleReportIssue = (subId: string) => {
         <div class="sub-orders">
           <div v-for="sub in order.subOrders" :key="sub.subId" class="sub-card">
             <div class="sub-head">
-              <span class="store-name">🏪 {{ sub.storeName }}</span>
-              <span class="status-badge" :class="sub.status">{{ sub.statusText }}</span>
               <span class="store-name"><i class="bi bi-shop"></i> {{ sub.storeName }}</span>
               <span class="status-badge" :class="sub.status">
                 <i v-if="sub.status === 'delivering'" class="bi bi-bicycle me-1" aria-hidden="true"></i>
@@ -93,23 +83,18 @@ const handleReportIssue = (subId: string) => {
                 {{ sub.statusText }}
               </span>
             </div>
-            <p class="items-text">🛒 {{ sub.items }}</p>
             <p class="items-text"><i class="bi bi-bag-check"></i> {{ sub.items }}</p>
 
             <div v-if="sub.status === 'delivering'" class="shipper-bar">
               <div class="s-info">
-                <span>🛵 Tài xế: <strong>{{ sub.shipperInfo }}</strong></span>
-                <span>☎️ <strong>{{ sub.shipperPhone }}</strong></span>
                 <span><i class="bi bi-bicycle"></i> Tài xế: <strong>{{ sub.shipperInfo }}</strong></span>
                 <span><i class="bi bi-telephone-fill"></i> <strong>{{ sub.shipperPhone }}</strong></span>
               </div>
               <div class="actions">
                 <button class="btn btn-sm btn-success" @click="handleConfirmReceived(sub.subId)">
-                  ✅ Đã nhận được hàng
                   <i class="bi bi-check-circle-fill"></i> Đã nhận được hàng
                 </button>
                 <button class="btn btn-sm btn-danger" @click="handleReportIssue(sub.subId)">
-                  ⚠️ Báo cáo sự cố
                   <i class="bi bi-exclamation-triangle-fill"></i> Báo cáo sự cố
                 </button>
               </div>

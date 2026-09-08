@@ -35,7 +35,6 @@ const addToCart = () => {
 
 <template>
   <div class="detail-container">
-    <button class="back-link" @click="router.back()">⬅ Quay lại danh sách sản phẩm</button>
     <button class="back-link" @click="router.back()">
       <i class="bi bi-arrow-left"></i> Quay lại danh sách sản phẩm
     </button>
@@ -43,7 +42,6 @@ const addToCart = () => {
     <div class="product-layout">
       <div class="img-col">
         <img :src="product.image" :alt="product.name" class="main-img" />
-        <div class="ai-badge">✅ Đã kiểm duyệt nội dung & hình ảnh (Luồng 2)</div>
         <div class="ai-badge">
           <i class="bi bi-shield-check"></i> Đã kiểm duyệt nguồn gốc VietGAP & Vệ sinh ATTP
         </div>
@@ -55,15 +53,12 @@ const addToCart = () => {
 
         <div class="store-info-box">
           <div class="s-left">
-            <span class="icon">🏪</span>
             <span class="icon"><i class="bi bi-shop"></i></span>
             <div>
               <strong>{{ product.store.name }}</strong>
-              <p>📍 {{ product.store.address }} (Cách bạn {{ product.store.distanceKm }}km)</p>
               <p><i class="bi bi-geo-alt-fill"></i> {{ product.store.address }} (Cách bạn {{ product.store.distanceKm }}km)</p>
             </div>
           </div>
-          <span class="chip-express" v-if="product.store.distanceKm <= 3">⚡ Hỗ trợ Hỏa Tốc</span>
           <span class="chip-express" v-if="product.store.distanceKm <= 3">
             <i class="bi bi-lightning-charge-fill"></i> Hỗ trợ Hỏa Tốc
           </span>
@@ -77,7 +72,6 @@ const addToCart = () => {
         <div class="desc-content">
           <h3>Mô tả sản phẩm</h3>
           <p>{{ product.description }}</p>
-          <span class="weight">⚖️ Trọng lượng đóng gói: <strong>{{ product.weight }} kg</strong></span>
           <span class="weight">
             <i class="bi bi-box-seam"></i> Trọng lượng đóng gói: <strong>{{ product.weight }} kg</strong>
           </span>
@@ -86,11 +80,9 @@ const addToCart = () => {
         <div class="buy-actions">
           <div class="qty-btn-group">
             <button @click="quantity = Math.max(1, quantity - 1)">-</button>
-            <input type="number" v-model.number="quantity" min="1" />
             <input type="number" v-model.number="quantity" min="1" aria-label="Số lượng sản phẩm" />
             <button @click="quantity++">+</button>
           </div>
-          <button class="btn-cart" @click="addToCart">🛒 Thêm Vào Giỏ Hàng</button>
           <button class="btn-cart" @click="addToCart">
             <i class="bi bi-bag-plus-fill"></i> Thêm Vào Giỏ Hàng
           </button>
