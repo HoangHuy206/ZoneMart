@@ -648,6 +648,27 @@ onUnmounted(() => {
           <span class="action-label">{{ mapType === 'roadmap' ? 'Vệ tinh' : 'Bản đồ' }}</span>
         </button>
 
+        <!-- Thu nhập & Cuốc xe -->
+        <button
+          class="map-action-btn btn-wallet"
+          @click="switchTab('earnings')"
+          title="Xem Thu Nhập & Lịch Sử Cuốc Xe"
+        >
+          <i class="bi bi-wallet2 text-blue"></i>
+          <span class="action-label">Thu nhập</span>
+        </button>
+
+        <!-- Thử nhận đơn (Demo) -->
+        <button
+          v-if="isOnline && currentStep === 'idle'"
+          class="map-action-btn btn-demo"
+          @click="handleAcceptNewOrder"
+          title="Thử nghiệm nhận đơn hàng mới (Demo)"
+        >
+          <i class="bi bi-lightning-charge-fill text-orange"></i>
+          <span class="action-label">Đơn mẫu</span>
+        </button>
+
         <!-- GPS Recenter -->
         <button
           class="map-action-btn btn-gps"
@@ -803,6 +824,16 @@ onUnmounted(() => {
           <h2>
             {{ currentTab === 'earnings' ? 'Thu Nhập & Ví Tài Xế' : (currentTab === 'trips' ? 'Lịch Sử Cuốc Xe' : 'Hồ Sơ & Trợ Giúp') }}
           </h2>
+        <div class="panel-sub-tabs">
+          <button class="sub-tab-btn" :class="{ 'active': currentTab === 'earnings' }" @click="switchTab('earnings')">
+            <i class="bi bi-wallet2"></i> Thu Nhập
+          </button>
+          <button class="sub-tab-btn" :class="{ 'active': currentTab === 'trips' }" @click="switchTab('trips')">
+            <i class="bi bi-box-seam-fill"></i> Cuốc Xe <span class="tab-count-badge" v-if="tripHistory.length > 0">({{ tripHistory.length }})</span>
+          </button>
+          <button class="sub-tab-btn" :class="{ 'active': currentTab === 'profile' }" @click="switchTab('profile')">
+            <i class="bi bi-person-badge-fill"></i> Hồ Sơ
+          </button>
         </div>
         <button class="btn-close-panel" @click="switchTab('map')" title="Quay lại Bản đồ">
           <i class="bi bi-x-lg"></i>
@@ -1326,6 +1357,7 @@ onUnmounted(() => {
 .floating-mission-container {
   position: absolute;
   bottom: 165px;
+  bottom: 96px;
   left: 14px;
   right: 14px;
   z-index: 45;
@@ -1613,6 +1645,7 @@ onUnmounted(() => {
 .floating-toggle-bar {
   position: absolute;
   bottom: 84px;
+  bottom: 24px;
   left: 0;
   right: 0;
   z-index: 55;
@@ -1852,6 +1885,7 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   bottom: 70px;
+  bottom: 0;
   z-index: 58;
   background: #f8fafc;
   overflow-y: auto;
@@ -1867,25 +1901,63 @@ onUnmounted(() => {
   backdrop-filter: blur(12px);
   border-bottom: 1px solid #e2e8f0;
   padding: 14px 20px;
+  padding: 12px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   z-index: 10;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .panel-title-row {
+.panel-sub-tabs {
   display: flex;
   align-items: center;
   gap: 10px;
   font-size: 20px;
   color: #2563eb;
+  gap: 6px;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 12px;
 }
 
 .panel-title-row h2 {
   font-size: 17px;
   font-weight: 900;
   margin: 0;
+.sub-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sub-tab-btn:hover {
   color: #0f172a;
+}
+
+.sub-tab-btn.active {
+  background: #ffffff;
+  color: #2563eb;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.tab-count-badge {
+  font-size: 11px;
+  background: #eff6ff;
+  color: #2563eb;
+  padding: 1px 6px;
+  border-radius: 999px;
 }
 
 .btn-close-panel {
