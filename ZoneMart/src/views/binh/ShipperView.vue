@@ -13,17 +13,12 @@ import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// 1. Trạng thái hoạt động (Active / Inactive)
-const isOnline = ref(true);
 // 1. Trạng thái hoạt động (Mặc định: Tạm nghỉ)
 const isOnline = ref(false);
 
-// 2. Trạng thái đơn hàng: "idle" (đang chờ) | "accepted" (đi lấy) | "picked" (đi giao) | "delivered" (xong)
-const currentStep = ref<"idle" | "accepted" | "picked" | "delivered">("accepted");
 // 2. Trạng thái đơn hàng: "idle" (Mặc định: Chưa có đơn hàng, đang trống)
 const currentStep = ref<"idle" | "accepted" | "picked" | "delivered">("idle");
 
-// 3. Tọa độ thực tế (Khu vực Cầu Giấy, Hà Nội)
 // 3. Tọa độ khởi tạo mặc định (Cầu Giấy, Hà Nội)
 const driverLocation = ref({
   lat: 21.0333,
@@ -31,38 +26,11 @@ const driverLocation = ref({
   name: "Vị trí của bạn"
 });
 
-const activeOrder = ref({
-  orderId: "ZM-7749",
-  deliveryType: "express",
-  shippingFee: 38500,
-  distanceKm: 2.2,
-  items: "2x Thịt Ba Chỉ Bò Mỹ, 1x Gạo ST25 (5kg), 1x Nấm Kim Châm",
-  notes: "Gọi trước khi đến 5 phút, giao lên tầng 5 phòng 502",
-  store: {
-    name: "ZoneMart Bách Hóa Cầu Giấy",
-    address: "245 Cầu Giấy, P. Dịch Vọng, Hà Nội",
-    phone: "024 1234 5678",
-    lat: 21.0360,
-    lng: 105.7985
-  },
-  customer: {
-    name: "Anh Hoàng Huy",
-    address: "Số 165 Cầu Giấy, P. Dịch Vọng, Hà Nội",
-    phone: "0912 345 678",
-    lat: 21.0315,
-    lng: 105.7910
-  }
-});
 // Dữ liệu đơn hàng (Mặc định: null - không có dữ liệu gì)
 const activeOrder = ref<any>(null);
 
-// Thống kê hôm nay của tài xế
 // Thống kê hôm nay của tài xế (Mặc định: 0 hết)
 const shiftStats = ref({
-  todayEarnings: 425000,
-  completedOrders: 11,
-  onlineHours: "4h 30m",
-  totalKm: 26.8
   todayEarnings: 0,
   completedOrders: 0,
   onlineHours: "0h 00m",
@@ -96,7 +64,6 @@ const showTraffic = ref(false);
 const isFullscreen = ref(false);
 const isLocating = ref(false);
 const gpsAccuracy = ref<number | null>(null);
-const locationAddress = ref("Khu vực: Cầu Giấy, Hà Nội • Google Maps GPS");
 const locationAddress = ref("Chế độ tạm nghỉ • Gạt 'Bật Hoạt Động' để định vị GPS");
 
 // Tạo icon tùy biến chuẩn Google Maps
@@ -227,8 +194,6 @@ const initMap = () => {
   // Vòng bán kính quét đơn Google Style
   radiusCircle = L.circle([driverLocation.value.lat, driverLocation.value.lng], {
     radius: 3000,
-    color: "#1a73e8",
-    fillColor: "#4285f4",
     color: isOnline.value ? "#1a73e8" : "#94a3b8",
     fillColor: isOnline.value ? "#4285f4" : "#94a3b8",
     fillOpacity: 0.08,
@@ -244,8 +209,6 @@ const initMap = () => {
     <div class="gm-infowindow">
       <div class="gm-iw-tag text-primary">VỊ TRÍ CỦA BẠN</div>
       <h4 class="gm-iw-title">Tài xế ZoneMart Driver</h4>
-      <p class="gm-iw-desc">🟢 Đang trực tuyến sẵn sàng nhận đơn</p>
-      <div class="gm-iw-meta">Độ chính xác GPS: &lt; 5m • Cầu Giấy</div>
       <p class="gm-iw-desc">${isOnline.value ? "🟢 Đang trực tuyến sẵn sàng nhận đơn" : "⚪ Đang tạm nghỉ"}</p>
       <div class="gm-iw-meta">Gạt BẬT HOẠT ĐỘNG để định vị GPS chính xác</div>
     </div>
@@ -264,7 +227,6 @@ const renderOrderOnMap = () => {
   if (routeLineCasing) map.removeLayer(routeLineCasing);
   if (routeLine) map.removeLayer(routeLine);
 
-  if (isOnline.value && currentStep.value !== "idle" && currentStep.value !== "delivered") {
   if (isOnline.value && currentStep.value !== "idle" && currentStep.value !== "delivered" && activeOrder.value) {
     // Ghim Shop
     storeMarker = L.marker([activeOrder.value.store.lat, activeOrder.value.store.lng], {
@@ -557,9 +519,6 @@ const demoOrderTemplate = {
 
 const handleConfirmDelivered = () => {
   currentStep.value = "delivered";
-  shiftStats.value.todayEarnings += activeOrder.value.shippingFee;
-  shiftStats.value.completedOrders += 1;
-  triggerToast(`🎉 Đã giao hàng thành công! +${activeOrder.value.shippingFee.toLocaleString('vi-VN')} ₫ vào ví.`);
   if (activeOrder.value) {
     shiftStats.value.todayEarnings += activeOrder.value.shippingFee;
     shiftStats.value.completedOrders += 1;
@@ -634,7 +593,6 @@ onUnmounted(() => {
           <div class="driver-text-meta">
             <div class="name-badge-row">
               <h1 class="driver-name">Trần Văn Bình</h1>
-              <span class="rating-pill">⭐ 4.98 (520 cuốc)</span>
               <span class="rating-pill">⭐ 5.0 (0 cuốc)</span>
             </div>
             <p class="vehicle-info">
@@ -716,6 +674,7 @@ onUnmounted(() => {
         <!-- MAP SECTION (GOOGLE MAPS AUTHENTIC UI) -->
         <section class="map-card-wrapper" :class="{ 'is-fullscreen': isFullscreen }">
           <!-- 1. Google Maps Floating Search Bar & Status Chips (Top) -->
+          <!-- 1. Google Maps Status Chips (Top) -->
           <div class="gm-top-controls">
             <div class="gm-search-box">
               <div class="gm-search-icon">
@@ -842,7 +801,6 @@ onUnmounted(() => {
         <!-- MISSION / ORDER CONTROLLER PANEL -->
         <aside class="mission-panel">
           <!-- CASE 1: ĐANG TRỰC TUYẾN & CÓ ĐƠN HÀNG HOẠT ĐỘNG -->
-          <div v-if="isOnline && currentStep !== 'idle' && currentStep !== 'delivered'" class="active-mission-card">
           <div v-if="isOnline && currentStep !== 'idle' && currentStep !== 'delivered' && activeOrder" class="active-mission-card">
             <div class="mission-header-row">
               <span class="badge-express">
@@ -927,7 +885,6 @@ onUnmounted(() => {
           </div>
 
           <!-- CASE 2: ĐƠN HÀNG VỪA GIAO XONG -->
-          <div v-else-if="isOnline && currentStep === 'delivered'" class="mission-status-card finished-card">
           <div v-else-if="isOnline && currentStep === 'delivered' && activeOrder" class="mission-status-card finished-card">
             <div class="status-icon-circle bg-green">
               <i class="bi bi-check-lg"></i>
