@@ -29,6 +29,30 @@ const driverLocation = ref({
 // Dữ liệu đơn hàng (Mặc định: null - không có dữ liệu gì)
 const activeOrder = ref<any>(null);
 
+// Tab điều hướng: 'map' (Chính: Bản đồ & Bật tắt hoạt động) | 'earnings' (Phần khác: Tiền & Các cuốc xe)
+const currentTab = ref<'map' | 'earnings'>('map');
+
+interface CompletedTrip {
+  id: string;
+  time: string;
+  storeName: string;
+  customerName: string;
+  shippingFee: number;
+  distanceKm: number;
+  status: string;
+}
+
+const tripHistory = ref<CompletedTrip[]>([]);
+
+const switchTab = (tab: 'map' | 'earnings') => {
+  currentTab.value = tab;
+  if (tab === 'map') {
+    nextTick(() => {
+      map?.invalidateSize();
+    });
+  }
+};
+
 // Thống kê hôm nay của tài xế (Mặc định: 0 hết)
 const shiftStats = ref({
   todayEarnings: 0,
@@ -462,6 +486,7 @@ const recenterMap = () => {
 const toggleOnline = () => {
   isOnline.value = !isOnline.value;
   if (isOnline.value) {
+    currentTab.value = 'map';
     triggerToast("🟢 Đã BẬT nhận đơn! Đang quét GPS định vị vị trí của bạn...");
     if (radiusCircle) {
       radiusCircle.setStyle({ color: "#1a73e8", fillColor: "#4285f4" });
@@ -471,7 +496,6 @@ const toggleOnline = () => {
     startLocationWatch();
   } else {
     stopLocationWatch();
-    locationAddress.value = "Chế độ tạm nghỉ • GPS tạm dừng";
     triggerToast("🔴 Đã TẮT nhận đơn. Bạn đang ở trạng thái tạm nghỉ.");
     if (radiusCircle) {
       radiusCircle.setStyle({ color: "#94a3b8", fillColor: "#94a3b8" });
@@ -520,10 +544,25 @@ const demoOrderTemplate = {
 const handleConfirmDelivered = () => {
   currentStep.value = "delivered";
   if (activeOrder.value) {
-    shiftStats.value.todayEarnings += activeOrder.value.shippingFee;
+    const fee = activeOrder.value.shippingFee;
+    shiftStats.value.todayEarnings += fee;
     shiftStats.value.completedOrders += 1;
     shiftStats.value.totalKm = Number((shiftStats.value.totalKm + activeOrder.value.distanceKm).toFixed(1));
-    triggerToast(`🎉 Đã giao hàng thành công! +${activeOrder.value.shippingFee.toLocaleString('vi-VN')} ₫ vào ví.`);
+
+    // Ghi nhận vào lịch sử cuốc xe
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    tripHistory.value.unshift({
+      id: activeOrder.value.orderId,
+      time: timeStr,
+      storeName: activeOrder.value.store.name,
+      customerName: activeOrder.value.customer.name,
+      shippingFee: fee,
+      distanceKm: activeOrder.value.distanceKm,
+      status: "Giao thành công"
+    });
+
+    triggerToast(`🎉 Đã giao hàng thành công! +${fee.toLocaleString('vi-VN')} ₫ vào ví.`);
   }
   renderOrderOnMap();
 };
@@ -626,51 +665,38 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <!-- 2. Shift Quick Summary (4 Stats) -->
-      <section class="shift-stats-row">
-        <div class="stat-card">
-          <div class="stat-icon-wrap bg-green">
-            <i class="bi bi-cash-stack"></i>
-          </div>
-          <div>
-            <span class="stat-caption">Thu nhập hôm nay</span>
-            <strong class="stat-figure text-green">{{ shiftStats.todayEarnings.toLocaleString('vi-VN') }} ₫</strong>
-          </div>
+      <!-- Navigation Tabs (Tách biệt Bản Đồ & Bật Tắt Hoạt Động với Phần Thu Nhập / Cuốc Xe) -->
+      <nav class="shipper-tabs-bar">
+        <div class="tabs-group">
+          <button
+            class="tab-nav-btn"
+            :class="{ 'active': currentTab === 'map' }"
+            @click="switchTab('map')"
+          >
+            <i class="bi bi-geo-alt-fill"></i>
+            <span>Bản Đồ Hoạt Động</span>
+            <span class="active-badge" v-if="isOnline">ONLINE</span>
+          </button>
+
+          <button
+            class="tab-nav-btn"
+            :class="{ 'active': currentTab === 'earnings' }"
+            @click="switchTab('earnings')"
+          >
+            <i class="bi bi-wallet2"></i>
+            <span>Thu Nhập & Cuốc Xe</span>
+            <span class="count-pill" v-if="shiftStats.completedOrders > 0">{{ shiftStats.completedOrders }} đơn</span>
+          </button>
         </div>
 
-        <div class="stat-card">
-          <div class="stat-icon-wrap bg-blue">
-            <i class="bi bi-box-seam-fill"></i>
-          </div>
-          <div>
-            <span class="stat-caption">Số cuốc hoàn tất</span>
-            <strong class="stat-figure">{{ shiftStats.completedOrders }} đơn</strong>
-          </div>
+        <div class="quick-status-chip">
+          <span class="status-indicator-dot" :class="{ 'online': isOnline }"></span>
+          <span>{{ isOnline ? "Trực tuyến: Quét đơn 10km" : "Ngoại tuyến: Đang tạm nghỉ" }}</span>
         </div>
+      </nav>
 
-        <div class="stat-card">
-          <div class="stat-icon-wrap bg-orange">
-            <i class="bi bi-clock-history"></i>
-          </div>
-          <div>
-            <span class="stat-caption">Thời gian Online</span>
-            <strong class="stat-figure">{{ shiftStats.onlineHours }}</strong>
-          </div>
-        </div>
-
-        <div class="stat-card">
-          <div class="stat-icon-wrap bg-purple">
-            <i class="bi bi-speedometer2"></i>
-          </div>
-          <div>
-            <span class="stat-caption">Quãng đường đã chạy</span>
-            <strong class="stat-figure">{{ shiftStats.totalKm }} km</strong>
-          </div>
-        </div>
-      </section>
-
-      <!-- 3. Main Operational View: Map + Mission Panel -->
-      <div class="operational-grid">
+      <!-- 1. PHẦN CHÍNH: BẢN ĐỒ & BẬT TẮT HOẠT ĐỘNG -->
+      <div v-show="currentTab === 'map'" class="operational-grid">
         <!-- MAP SECTION (GOOGLE MAPS AUTHENTIC UI) -->
         <section class="map-card-wrapper" :class="{ 'is-fullscreen': isFullscreen }">
           <!-- 1. Google Maps Status Chips (Top) -->
@@ -905,6 +931,127 @@ onUnmounted(() => {
           </div>
         </aside>
       </div>
+
+      <!-- 2. PHẦN KHÁC: THU NHẬP & CÁC CUỐC XE -->
+      <section v-show="currentTab === 'earnings'" class="earnings-view-section">
+        <!-- Bốn Thẻ Thống Kê Nhanh -->
+        <div class="shift-stats-row">
+          <div class="stat-card">
+            <div class="stat-icon-wrap bg-green">
+              <i class="bi bi-cash-stack"></i>
+            </div>
+            <div>
+              <span class="stat-caption">Thu nhập hôm nay</span>
+              <strong class="stat-figure text-green">{{ shiftStats.todayEarnings.toLocaleString('vi-VN') }} ₫</strong>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-icon-wrap bg-blue">
+              <i class="bi bi-box-seam-fill"></i>
+            </div>
+            <div>
+              <span class="stat-caption">Số cuốc hoàn tất</span>
+              <strong class="stat-figure">{{ shiftStats.completedOrders }} đơn</strong>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-icon-wrap bg-orange">
+              <i class="bi bi-clock-history"></i>
+            </div>
+            <div>
+              <span class="stat-caption">Thời gian Online</span>
+              <strong class="stat-figure">{{ shiftStats.onlineHours }}</strong>
+            </div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-icon-wrap bg-purple">
+              <i class="bi bi-speedometer2"></i>
+            </div>
+            <div>
+              <span class="stat-caption">Quãng đường đã chạy</span>
+              <strong class="stat-figure">{{ shiftStats.totalKm }} km</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bảng Ví & Lịch sử chi tiết cuốc xe -->
+        <div class="earnings-details-grid">
+          <!-- Ví tài xế -->
+          <div class="wallet-card">
+            <div class="wallet-header">
+              <div>
+                <span class="wallet-subtitle">VÍ TÀI XẾ ZONEMART</span>
+                <h3 class="wallet-balance">{{ shiftStats.todayEarnings.toLocaleString('vi-VN') }} ₫</h3>
+              </div>
+              <div class="wallet-icon-box">
+                <i class="bi bi-credit-card-2-front-fill"></i>
+              </div>
+            </div>
+
+            <div class="wallet-meta">
+              <span>Số dư khả dụng: <strong>{{ shiftStats.todayEarnings.toLocaleString('vi-VN') }} ₫</strong></span>
+              <span>Hạn mức ký quỹ: <strong>100.000 ₫</strong></span>
+            </div>
+
+            <div class="wallet-actions">
+              <button class="btn btn-primary flex-1" @click="triggerToast('Yêu cầu rút tiền: Đã gửi lệnh chuyển tiền về tài khoản ngân hàng liên kết!')">
+                <i class="bi bi-bank"></i> Rút Về Ngân Hàng
+              </button>
+              <button class="btn btn-outline-primary" @click="triggerToast('Nạp ví: Mở mã QR ngân hàng để nạp tiền ký quỹ 24/7')">
+                <i class="bi bi-plus-circle"></i> Nạp Ví
+              </button>
+            </div>
+          </div>
+
+          <!-- Danh sách các cuốc xe đã giao -->
+          <div class="trips-history-card">
+            <div class="trips-header">
+              <h3><i class="bi bi-journal-text"></i> Danh Sách Cuốc Xe Trong Ngày</h3>
+              <span class="trips-count">{{ tripHistory.length }} cuốc</span>
+            </div>
+
+            <!-- Empty State -->
+            <div v-if="tripHistory.length === 0" class="empty-trips-box">
+              <div class="empty-icon-circle">
+                <i class="bi bi-inbox"></i>
+              </div>
+              <h4>Chưa có cuốc xe nào hôm nay</h4>
+              <p>Toàn bộ các đơn hàng bạn hoàn thành trong ca làm việc sẽ được lưu chi tiết tiền và lộ trình tại đây.</p>
+              <button class="btn btn-outline-primary" @click="switchTab('map')">
+                <i class="bi bi-geo-alt-fill"></i> Sang Bản Đồ Để Nhận Đơn
+              </button>
+            </div>
+
+            <!-- List -->
+            <div v-else class="trips-list">
+              <div v-for="trip in tripHistory" :key="trip.id" class="trip-log-item">
+                <div class="trip-time-col">
+                  <span class="trip-time">{{ trip.time }}</span>
+                  <span class="trip-id">{{ trip.id }}</span>
+                </div>
+                <div class="trip-route-col">
+                  <div class="trip-point">
+                    <span class="dot-shop"></span>
+                    <span class="point-name">{{ trip.storeName }}</span>
+                  </div>
+                  <div class="trip-point">
+                    <span class="dot-customer"></span>
+                    <span class="point-name">{{ trip.customerName }}</span>
+                  </div>
+                </div>
+                <div class="trip-meta-col">
+                  <span class="trip-dist">{{ trip.distanceKm }} km</span>
+                  <strong class="trip-fee">+{{ trip.shippingFee.toLocaleString('vi-VN') }} ₫</strong>
+                  <span class="trip-status-badge">{{ trip.status }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -1144,6 +1291,104 @@ onUnmounted(() => {
 }
 
 /* ==========================================================================
+   NAVIGATION TABS BAR (TÁCH BIỆT MAP VỚI THU NHẬP & CUỐC XE)
+   ========================================================================== */
+.shipper-tabs-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #ffffff;
+  padding: 8px 12px;
+  border-radius: 16px;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  flex-wrap: wrap;
+}
+
+.tabs-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tab-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tab-nav-btn:hover {
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+.tab-nav-btn.active {
+  color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 2px 8px -2px rgba(37, 99, 235, 0.12);
+}
+
+.tab-nav-btn i {
+  font-size: 16px;
+}
+
+.active-badge {
+  font-size: 10px;
+  font-weight: 800;
+  background: #22c55e;
+  color: #ffffff;
+  padding: 2px 7px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+}
+
+.count-pill {
+  font-size: 11px;
+  font-weight: 700;
+  background: #e0e7ff;
+  color: #3730a3;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.quick-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #475569;
+  background: #f8fafc;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+}
+
+.status-indicator-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+  transition: background 0.3s ease;
+}
+
+.status-indicator-dot.online {
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+  animation: pulseDot 2s infinite;
+}
+
+/* ==========================================================================
    2. SHIFT STATS ROW (4 CARDS)
    ========================================================================== */
 .shift-stats-row {
@@ -1197,6 +1442,288 @@ onUnmounted(() => {
 
 .text-green {
   color: #16a34a !important;
+}
+
+/* ==========================================================================
+   PHẦN RIÊNG: THU NHẬP & CÁC CUỐC XE
+   ========================================================================== */
+.earnings-view-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.earnings-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* Ví tài xế */
+.wallet-card {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  color: #ffffff;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.wallet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.wallet-subtitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.wallet-balance {
+  font-size: 30px;
+  font-weight: 900;
+  color: #38bdf8;
+  margin: 4px 0 0 0;
+  letter-spacing: -0.5px;
+}
+
+.wallet-icon-box {
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #38bdf8;
+  backdrop-filter: blur(8px);
+}
+
+.wallet-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+.wallet-meta strong {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.wallet-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.wallet-actions .btn-outline-primary {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.wallet-actions .btn-outline-primary:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: #ffffff;
+}
+
+/* Lịch sử cuốc xe */
+.trips-history-card {
+  background: #ffffff;
+  border-radius: 20px;
+  border: 1px solid #f1f5f9;
+  padding: 22px;
+  box-shadow: 0 2px 12px -2px rgba(0, 0, 0, 0.03);
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+}
+
+.trips-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.trips-header h3 {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trips-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.empty-trips-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 20px;
+  flex: 1;
+}
+
+.empty-icon-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #f8fafc;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  margin-bottom: 14px;
+}
+
+.empty-trips-box h4 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 6px 0;
+}
+
+.empty-trips-box p {
+  font-size: 13px;
+  color: #64748b;
+  max-width: 380px;
+  margin: 0 0 18px 0;
+  line-height: 1.5;
+}
+
+.trips-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trip-log-item {
+  display: grid;
+  grid-template-columns: 85px 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.trip-log-item:hover {
+  background: #f1f5f9;
+  transform: translateY(-1px);
+}
+
+.trip-time-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.trip-time {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.trip-id {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  font-family: monospace;
+}
+
+.trip-route-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.trip-point {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.dot-shop {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2563eb;
+  flex-shrink: 0;
+}
+
+.dot-customer {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #16a34a;
+  flex-shrink: 0;
+}
+
+.point-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trip-meta-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.trip-dist {
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.trip-fee {
+  font-size: 15px;
+  font-weight: 900;
+  color: #16a34a;
+}
+
+.trip-status-badge {
+  font-size: 10px;
+  font-weight: 700;
+  color: #16a34a;
+  background: #dcfce7;
+  padding: 2px 6px;
+  border-radius: 6px;
 }
 
 /* ==========================================================================
@@ -2140,6 +2667,10 @@ onUnmounted(() => {
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .earnings-details-grid {
+    grid-template-columns: 1fr;
+  }
+
   .map-card-wrapper {
     height: 440px;
   }
@@ -2159,8 +2690,34 @@ onUnmounted(() => {
     justify-content: space-between;
   }
 
+  .shipper-tabs-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .tabs-group {
+    width: 100%;
+  }
+
+  .tab-nav-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
   .shift-stats-row {
     grid-template-columns: 1fr;
+  }
+
+  .trip-log-item {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .trip-meta-col {
+    align-items: flex-start;
   }
 }
 </style>
