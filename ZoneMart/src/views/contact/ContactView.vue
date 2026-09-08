@@ -285,27 +285,6 @@ const resetForm = () => {
               Chuyên viên CSKH ZoneMart sẽ liên hệ qua email <strong>{{ form.email }}</strong> hoặc số điện thoại trong vòng tối đa 15 phút.
             </p>
 
-            <!-- Kênh thông báo tức thời: Gmail & Telegram -->
-            <div class="delivery-status-box">
-              <div class="delivery-status-item" :class="{ 'delivered': deliveryStatus.emailSent }">
-                <i class="bi" :class="deliveryStatus.emailSent ? 'bi-envelope-check-fill' : 'bi-envelope-paper'"></i>
-                <div class="status-details">
-                  <strong>Thông báo Gmail Quản Trị:</strong>
-                  <span>{{ deliveryStatus.emailSent ? 'Đã gửi thành công tới hh9393100@gmail.com' : 'Đã ghi nhận, đang xếp hàng gửi' }}</span>
-                </div>
-              </div>
-              <div class="delivery-status-item" :class="{ 'delivered': deliveryStatus.telegramSent }">
-                <i class="bi bi-telegram"></i>
-                <div class="status-details">
-                  <strong>Thông báo Telegram Bot:</strong>
-                  <span v-if="deliveryStatus.telegramSent">Đã gửi tin nhắn tức thời tới Bot @ZoneMarttt_bot</span>
-                  <span v-else>
-                    Đã sẵn sàng kết nối (hãy nhắn <a href="https://t.me/ZoneMarttt_bot" target="_blank" rel="noopener">/start với @ZoneMarttt_bot</a> để nhận thông báo)
-                  </span>
-                </div>
-              </div>
-            </div>
-
             <div class="success-actions">
               <button class="btn btn-primary" @click="resetForm">
                 Gửi thêm yêu cầu khác
@@ -1068,64 +1047,6 @@ const resetForm = () => {
   color: #ea580c;
   font-family: monospace;
   font-size: 16px;
-}
-
-/* Delivery Status Box */
-.delivery-status-box {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 16px 20px;
-  margin: 0 auto 28px auto;
-  max-width: 480px;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.delivery-status-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  font-size: 13.5px;
-  color: #64748b;
-}
-
-.delivery-status-item i {
-  font-size: 20px;
-  color: #94a3b8;
-  margin-top: 1px;
-}
-
-.delivery-status-item.delivered i.bi-envelope-check-fill {
-  color: #16a34a;
-}
-
-.delivery-status-item.delivered i.bi-telegram {
-  color: #229ed9;
-}
-
-.status-details {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.status-details strong {
-  color: #1e293b;
-  font-size: 13.5px;
-}
-
-.status-details span {
-  font-size: 12.5px;
-  color: #64748b;
-}
-
-.status-details a {
-  color: #2563eb;
-  font-weight: 700;
-  text-decoration: underline;
 }
 
 .success-actions {
