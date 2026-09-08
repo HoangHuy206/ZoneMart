@@ -254,20 +254,39 @@ const resetForm = () => {
           </div>
         </div>
 
-        <!-- Channel 3: Trụ Sở & Điểm Điều Phối -->
-        <div class="channel-card channel-location">
-          <div class="card-icon-wrap location-icon">
-            <i class="bi bi-geo-alt-fill"></i>
+        <!-- Channel 3: Trụ Sở & Điểm Điều Phối (Bản Đồ Google Maps Trực Tiếp) -->
+        <div class="channel-card channel-location channel-location-map">
+          <div class="location-card-header">
+            <div class="card-icon-wrap location-icon">
+              <i class="bi bi-geo-alt-fill"></i>
+            </div>
+            <div>
+              <div class="card-meta">Trụ sở & Hub Vận Hành</div>
+              <h3 class="card-headline-sm">CĐ Công nghệ Cao Hà Nội</h3>
+              <p class="card-desc-sm">P. Tây Mỗ, Q. Nam Từ Liêm, Hà Nội</p>
+            </div>
           </div>
-          <div class="card-body-wrap">
-            <div class="card-meta">Trụ sở & Hub Vận Hành</div>
-            <h3 class="card-headline">245 Cầu Giấy, Hà Nội</h3>
-            <p class="card-desc">Trung tâm điều phối hỏa tốc khu vực miền Bắc. Tiếp nhận khiếu nại trực tiếp tại văn phòng.</p>
+
+          <div class="embedded-map-container">
+            <iframe
+              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3724.296073305156!2d105.7475727747142!3d21.020836188051735!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3134549c574476c3%3A0xd3c6af79105ea6da!2zVHLGsOG7nW5nIENhbyDEkeG6s25nIEPDtG5nIG5naOG7hyBDYW8gSMOgIE7hu5lp!5e0!3m2!1svi!2s!4v1788840438490!5m2!1svi!2s"
+              class="google-map-iframe"
+              :allowfullscreen="true"
+              loading="lazy"
+              referrerpolicy="strict-origin-when-cross-origin"
+              title="Trụ sở ZoneMart - Trường Cao đẳng Công nghệ Cao Hà Nội"
+            ></iframe>
           </div>
-          <router-link to="/map" class="channel-action-btn secondary">
-            <span>Xem Hub trên bản đồ</span>
-            <i class="bi bi-compass"></i>
-          </router-link>
+
+          <a
+            href="https://maps.google.com/?q=Trường+Cao+đẳng+Công+nghệ+Cao+Hà+Nội"
+            target="_blank"
+            rel="noopener"
+            class="channel-action-btn secondary"
+          >
+            <span>Mở Google Maps chỉ đường</span>
+            <i class="bi bi-box-arrow-up-right"></i>
+          </a>
         </div>
       </section>
 
@@ -714,6 +733,57 @@ const resetForm = () => {
   background: #ea580c;
   color: #ffffff;
   border-color: #ea580c;
+}
+
+/* Embedded Google Maps in Channel Card */
+.channel-location-map {
+  padding: 22px;
+}
+
+.location-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.location-card-header .card-icon-wrap {
+  margin-bottom: 0;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+}
+
+.card-headline-sm {
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.card-desc-sm {
+  font-size: 12px;
+  color: #64748b;
+  margin: 2px 0 0 0;
+}
+
+.embedded-map-container {
+  width: 100%;
+  height: 145px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 12px;
+  background: #f1f5f9;
+}
+
+.google-map-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
 }
 
 .chat-actions {
