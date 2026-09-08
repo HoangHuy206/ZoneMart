@@ -29,8 +29,8 @@ const driverLocation = ref({
 // Dữ liệu đơn hàng (Mặc định: null - không có dữ liệu gì)
 const activeOrder = ref<any>(null);
 
-// Tab điều hướng: 'map' (Chính: Bản đồ & Bật tắt hoạt động) | 'earnings' (Phần khác: Tiền & Các cuốc xe)
-const currentTab = ref<'map' | 'earnings'>('map');
+// Tab điều hướng: 'map' (Bản đồ & Bật tắt hoạt động) | 'earnings' (Thu nhập) | 'trips' (Cuốc xe) | 'profile' (Tài khoản)
+const currentTab = ref<'map' | 'earnings' | 'trips' | 'profile'>('map');
 
 interface CompletedTrip {
   id: string;
@@ -44,7 +44,7 @@ interface CompletedTrip {
 
 const tripHistory = ref<CompletedTrip[]>([]);
 
-const switchTab = (tab: 'map' | 'earnings') => {
+const switchTab = (tab: 'map' | 'earnings' | 'trips' | 'profile') => {
   currentTab.value = tab;
   if (tab === 'map') {
     nextTick(() => {
@@ -85,7 +85,6 @@ let watchId: number | null = null;
 // Chế độ bản đồ Google Maps: 'roadmap' (Bản đồ chuẩn) hoặc 'satellite' (Vệ tinh hybrid)
 const mapType = ref<'roadmap' | 'satellite'>('roadmap');
 const showTraffic = ref(false);
-const isFullscreen = ref(false);
 const isLocating = ref(false);
 const gpsAccuracy = ref<number | null>(null);
 const locationAddress = ref("Chế độ tạm nghỉ • Gạt 'Bật Hoạt Động' để định vị GPS");
@@ -173,32 +172,6 @@ const toggleTraffic = () => {
   showTraffic.value = !showTraffic.value;
   updateMapLayers();
   triggerToast(showTraffic.value ? '🚦 Đã bật dữ liệu Giao thông trực tiếp Google' : '🚦 Đã tắt lớp dữ liệu Giao thông');
-};
-
-// Zoom Google Maps
-const zoomIn = () => {
-  map?.zoomIn();
-};
-
-const zoomOut = () => {
-  map?.zoomOut();
-};
-
-// Toàn màn hình
-const toggleFullscreen = () => {
-  const elem = document.querySelector('.map-card-wrapper') as HTMLElement | null;
-  if (!elem) return;
-  if (!document.fullscreenElement) {
-    elem.requestFullscreen?.().then(() => {
-      isFullscreen.value = true;
-      setTimeout(() => map?.invalidateSize(), 200);
-    });
-  } else {
-    document.exitFullscreen?.().then(() => {
-      isFullscreen.value = false;
-      setTimeout(() => map?.invalidateSize(), 200);
-    });
-  }
 };
 
 // Khởi tạo bản đồ Google Maps
@@ -587,14 +560,8 @@ watch(isOnline, () => {
   renderOrderOnMap();
 });
 
-const onFullscreenChange = () => {
-  isFullscreen.value = !!document.fullscreenElement;
-  setTimeout(() => map?.invalidateSize(), 200);
-};
-
 onMounted(() => {
   initMap();
-  document.addEventListener("fullscreenchange", onFullscreenChange);
   // Nếu đang mở hoạt động sẵn, tự động định vị vị trí người dùng
   if (isOnline.value) {
     locateAndTrackDriver(true);
@@ -604,7 +571,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopLocationWatch();
-  document.removeEventListener("fullscreenchange", onFullscreenChange);
   if (map) {
     map.remove();
     map = null;
@@ -613,372 +579,264 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="shipper-dashboard">
+  <div class="shipper-app-screen">
     <!-- Toast Popup -->
     <div v-if="showToast" class="toast-bar">
       <i class="bi bi-info-circle-fill"></i>
       <span>{{ toastMsg }}</span>
     </div>
 
-    <div class="dashboard-container">
-      <!-- 1. Top Driver Status Bar -->
-      <header class="driver-header-card">
-        <div class="driver-profile-info">
-          <div class="driver-avatar-box">
-            <span class="avatar-emoji">🛵</span>
-            <span class="online-indicator" :class="{ 'is-active': isOnline }"></span>
-          </div>
+    <!-- 1. FULLSCREEN LEAFLET MAP (TRÀN TOÀN BỘ MÀN HÌNH) -->
+    <div class="fullscreen-map-wrapper">
+      <div id="shipperMap" class="fullscreen-map" :class="{ 'map-dimmed': !isOnline }"></div>
 
-          <div class="driver-text-meta">
-            <div class="name-badge-row">
-              <h1 class="driver-name">Trần Văn Bình</h1>
-              <span class="rating-pill">⭐ 5.0 (0 cuốc)</span>
-            </div>
-            <p class="vehicle-info">
-              <span>Honda Airblade 150</span>
-              <span class="dot-sep">•</span>
-              <span class="license-plate">29M1-9999</span>
-              <span class="dot-sep">•</span>
-              <span class="hub-text">Khu vực: Cầu Giấy (10km)</span>
-            </p>
+      <!-- Offline Dim Overlay khi tạm dừng -->
+      <div v-if="!isOnline && currentTab === 'map'" class="offline-map-overlay">
+        <div class="offline-prompt-box">
+          <div class="offline-icon-pulse">
+            <i class="bi bi-power"></i>
           </div>
-        </div>
-
-        <!-- BIG TACTILE TOGGLE SWITCH (BẬT / TẮT HOẠT ĐỘNG) -->
-        <div class="toggle-action-wrapper">
-          <div class="toggle-status-desc">
-            <span class="status-title">{{ isOnline ? "Đang BẬT Nhận Đơn" : "Đang TẠM NGHỈ" }}</span>
-            <small class="status-subtitle">{{ isOnline ? "Sẵn sàng nhận cuốc hỏa tốc" : "Tắt sóng quét đơn hàng" }}</small>
-          </div>
-
-          <button
-            class="active-toggle-btn"
-            :class="{ 'online': isOnline, 'offline': !isOnline }"
-            @click="toggleOnline"
-            :title="isOnline ? 'Nhấn để tạm nghỉ' : 'Nhấn để bật hoạt động'"
-          >
-            <span class="toggle-thumb">
-              <i class="bi" :class="isOnline ? 'bi-lightning-charge-fill' : 'bi-power'"></i>
-            </span>
-            <span class="toggle-label">{{ isOnline ? "BẬT HOẠT ĐỘNG" : "TẮT HOẠT ĐỘNG" }}</span>
+          <h3>Bạn Đang Tạm Nghỉ</h3>
+          <p>Nhấn nút <strong>"BẬT HOẠT ĐỘNG"</strong> ở phía dưới để kích hoạt định vị GPS và nhận đơn hỏa tốc 10km.</p>
+          <button class="btn btn-primary btn-turn-online" @click="toggleOnline">
+            <i class="bi bi-lightning-charge-fill"></i> Bật Hoạt Động Ngay
           </button>
         </div>
-      </header>
+      </div>
+    </div>
 
-      <!-- Navigation Tabs (Tách biệt Bản Đồ & Bật Tắt Hoạt Động với Phần Thu Nhập / Cuốc Xe) -->
-      <nav class="shipper-tabs-bar">
-        <div class="tabs-group">
-          <button
-            class="tab-nav-btn"
-            :class="{ 'active': currentTab === 'map' }"
-            @click="switchTab('map')"
-          >
-            <i class="bi bi-geo-alt-fill"></i>
-            <span>Bản Đồ Hoạt Động</span>
-            <span class="active-badge" v-if="isOnline">ONLINE</span>
-          </button>
-
-          <button
-            class="tab-nav-btn"
-            :class="{ 'active': currentTab === 'earnings' }"
-            @click="switchTab('earnings')"
-          >
-            <i class="bi bi-wallet2"></i>
-            <span>Thu Nhập & Cuốc Xe</span>
-            <span class="count-pill" v-if="shiftStats.completedOrders > 0">{{ shiftStats.completedOrders }} đơn</span>
-          </button>
+    <!-- 2. TOP FLOATING BAR (TRÊN CÙNG BẢN ĐỒ) -->
+    <header class="top-floating-bar" v-show="currentTab === 'map'">
+      <!-- Left: Driver Mini Pill -->
+      <div class="driver-mini-pill" @click="switchTab('profile')" title="Xem chi tiết hồ sơ tài xế">
+        <div class="driver-pill-avatar">
+          <span>🛵</span>
+          <span class="pill-dot" :class="{ 'online': isOnline }"></span>
         </div>
-
-        <div class="quick-status-chip">
-          <span class="status-indicator-dot" :class="{ 'online': isOnline }"></span>
-          <span>{{ isOnline ? "Trực tuyến: Quét đơn 10km" : "Ngoại tuyến: Đang tạm nghỉ" }}</span>
+        <div class="driver-pill-info">
+          <div class="pill-name-row">
+            <strong class="pill-name">Trần Văn Bình</strong>
+            <span class="pill-rating">★ 5.0</span>
+          </div>
+          <span class="pill-status-text">
+            {{ isOnline ? "Trực tuyến • Bán kính 10km" : "Ngoại tuyến • Tạm nghỉ" }}
+          </span>
         </div>
-      </nav>
-
-      <!-- 1. PHẦN CHÍNH: BẢN ĐỒ & BẬT TẮT HOẠT ĐỘNG -->
-      <div v-show="currentTab === 'map'" class="operational-grid">
-        <!-- MAP SECTION (GOOGLE MAPS AUTHENTIC UI) -->
-        <section class="map-card-wrapper" :class="{ 'is-fullscreen': isFullscreen }">
-          <!-- 1. Google Maps Status Chips (Top) -->
-          <div class="gm-top-controls">
-
-            <div class="gm-status-chips">
-              <!-- Live Traffic Toggle Chip -->
-              <button
-                class="gm-chip gm-traffic-chip"
-                :class="{ 'chip-active': showTraffic }"
-                @click="toggleTraffic"
-                title="Bật/Tắt dữ liệu giao thông trực tiếp Google"
-              >
-                <span class="traffic-dots">
-                  <span class="dot dot-green"></span>
-                  <span class="dot dot-orange"></span>
-                  <span class="dot dot-red"></span>
-                </span>
-                <span>Giao thông</span>
-              </button>
-
-              <!-- Radar Radius Info Chip -->
-              <div class="gm-chip gm-radius-chip">
-                <i class="bi bi-broadcast"></i>
-                <span>{{ isOnline ? "Bán kính: 10km" : "Ngoại tuyến" }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 2. Google Maps Layer Switcher & Watermark (Bottom Left) -->
-          <div class="gm-bottom-left-controls">
-            <div
-              class="gm-layer-card"
-              @click="toggleMapType"
-              :title="mapType === 'roadmap' ? 'Xem chế độ vệ tinh Google' : 'Xem chế độ bản đồ Google'"
-            >
-              <div class="gm-layer-thumb" :class="mapType === 'roadmap' ? 'thumb-satellite' : 'thumb-roadmap'">
-                <span class="gm-layer-badge">{{ mapType === 'roadmap' ? 'Vệ tinh' : 'Bản đồ' }}</span>
-              </div>
-            </div>
-
-            <!-- Official Google Logo Watermark -->
-            <div class="gm-watermark-logo">
-              <span class="g-blue">G</span><span class="g-red">o</span><span class="g-yellow">o</span><span class="g-blue">g</span><span class="g-green">l</span><span class="g-red">e</span>
-            </div>
-          </div>
-
-          <!-- 3. Google Maps Floating Controls Stack (Bottom Right) -->
-          <div class="gm-bottom-right-controls">
-            <!-- Fullscreen Button -->
-            <button class="gm-ctrl-btn" @click="toggleFullscreen" :title="isFullscreen ? 'Thu nhỏ' : 'Toàn màn hình'">
-              <i class="bi" :class="isFullscreen ? 'bi-fullscreen-exit' : 'bi-arrows-fullscreen'"></i>
-            </button>
-
-            <!-- My Location Crosshair -->
-            <button
-              class="gm-ctrl-btn gm-my-location"
-              :class="{ 'is-locating': isLocating }"
-              @click="recenterMap"
-              title="Định vị vị trí GPS chính xác của bạn"
-            >
-              <svg viewBox="0 0 24 24" width="20" height="20" :fill="isLocating ? '#1a73e8' : '#5f6368'">
-                <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
-              </svg>
-            </button>
-
-            <!-- Street View Pegman (Yellow Man) -->
-            <button
-              class="gm-ctrl-btn gm-pegman"
-              @click="triggerToast('Chế độ xem phố Google Street View: Đang tải hình ảnh 360°...')"
-              title="Chế độ xem phố Street View"
-            >
-              <svg viewBox="0 0 24 24" width="20" height="20">
-                <path d="M12 2c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm4 7h-2.5v13h-3v-6h-1v6h-3V9H4c-.55 0-1-.45-1-1s.45-1 1-1h12c.55 0 1 .45 1 1s-.45 1-1 1z" fill="#f4b400"/>
-              </svg>
-            </button>
-
-            <!-- Google Maps Zoom Group -->
-            <div class="gm-zoom-group">
-              <button class="gm-zoom-btn" @click="zoomIn" title="Phóng to">+</button>
-              <div class="gm-zoom-divider"></div>
-              <button class="gm-zoom-btn" @click="zoomOut" title="Thu nhỏ">−</button>
-            </div>
-          </div>
-
-          <!-- 4. Google Maps Footer Legal Notice -->
-          <div class="gm-footer-legal">
-            <span>Dữ liệu bản đồ ©2026 Google • Điều khoản</span>
-          </div>
-
-          <!-- Leaflet Map Element -->
-          <div id="shipperMap" class="leaflet-map-element" :class="{ 'map-offline': !isOnline }"></div>
-
-          <!-- Offline Dim Overlay -->
-          <div v-if="!isOnline" class="offline-map-overlay">
-            <div class="offline-prompt-box">
-              <i class="bi bi-moon-stars-fill prompt-icon"></i>
-              <h3>Bạn đang tạm nghỉ</h3>
-              <p>Gạt nút "BẬT HOẠT ĐỘNG" phía trên để hệ thống quét đơn hàng hỏa tốc gần bạn nhất.</p>
-              <button class="btn btn-primary" @click="toggleOnline">
-                <i class="bi bi-power"></i> Bật Hoạt Động Ngay
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- MISSION / ORDER CONTROLLER PANEL -->
-        <aside class="mission-panel">
-          <!-- CASE 1: ĐANG TRỰC TUYẾN & CÓ ĐƠN HÀNG HOẠT ĐỘNG -->
-          <div v-if="isOnline && currentStep !== 'idle' && currentStep !== 'delivered' && activeOrder" class="active-mission-card">
-            <div class="mission-header-row">
-              <span class="badge-express">
-                <i class="bi bi-lightning-charge-fill"></i>
-                HỎA TỐC 10KM
-              </span>
-              <span class="fee-tag">Thù lao: <strong>{{ activeOrder.shippingFee.toLocaleString('vi-VN') }} ₫</strong></span>
-            </div>
-
-            <!-- Steps tracker -->
-            <div class="delivery-steps-bar">
-              <div class="step-item" :class="{ 'done': currentStep === 'accepted' || currentStep === 'picked', 'current': currentStep === 'accepted' }">
-                <span class="step-circle">1</span>
-                <span class="step-name">Lấy hàng tại Shop</span>
-              </div>
-              <div class="step-line" :class="{ 'active': currentStep === 'picked' }"></div>
-              <div class="step-item" :class="{ 'done': currentStep === 'picked', 'current': currentStep === 'picked' }">
-                <span class="step-circle">2</span>
-                <span class="step-name">Giao cho Khách</span>
-              </div>
-            </div>
-
-            <!-- Step 1: Đi lấy hàng tại Shop -->
-            <div v-if="currentStep === 'accepted'" class="checkpoint-box shop-checkpoint">
-              <div class="cp-header">
-                <i class="bi bi-shop-window cp-icon"></i>
-                <div>
-                  <span class="cp-caption">ĐIỂM LẤY HÀNG (CÁCH 1.2 KM)</span>
-                  <h3 class="cp-title">{{ activeOrder.store.name }}</h3>
-                </div>
-              </div>
-
-              <p class="cp-address">
-                <i class="bi bi-geo-alt-fill"></i> {{ activeOrder.store.address }}
-              </p>
-
-              <div class="cp-items-list">
-                <strong>Món cần lấy:</strong> {{ activeOrder.items }}
-              </div>
-
-              <div class="cp-action-row">
-                <a :href="'tel:' + activeOrder.store.phone" class="btn btn-call">
-                  <i class="bi bi-telephone-fill"></i> Gọi Quán
-                </a>
-                <button class="btn btn-primary flex-1" @click="handleConfirmPicked">
-                  📦 ĐÃ LẤY ĐỦ HÀNG ➜
-                </button>
-              </div>
-            </div>
-
-            <!-- Step 2: Giao hàng tới Khách -->
-            <div v-else-if="currentStep === 'picked'" class="checkpoint-box customer-checkpoint">
-              <div class="cp-header">
-                <i class="bi bi-person-check-fill cp-icon text-green"></i>
-                <div>
-                  <span class="cp-caption">ĐIỂM GIAO HÀNG (CÁCH 1.0 KM)</span>
-                  <h3 class="cp-title">{{ activeOrder.customer.name }}</h3>
-                </div>
-              </div>
-
-              <p class="cp-address">
-                <i class="bi bi-geo-alt-fill"></i> {{ activeOrder.customer.address }}
-              </p>
-
-              <div class="cp-notes" v-if="activeOrder.notes">
-                <i class="bi bi-chat-left-text"></i> Ghi chú khách: <em>"{{ activeOrder.notes }}"</em>
-              </div>
-
-              <div class="cp-action-row">
-                <a :href="'tel:' + activeOrder.customer.phone" class="btn btn-call">
-                  <i class="bi bi-telephone-fill"></i> Gọi Khách
-                </a>
-                <button class="btn btn-success flex-1" @click="handleConfirmDelivered">
-                  🎉 XÁC NHẬN ĐÃ GIAO XONG
-                </button>
-              </div>
-
-              <button class="btn-report-link" @click="handleReportIssue">
-                ⚠️ Khách không nhận / Báo cáo sự cố
-              </button>
-            </div>
-          </div>
-
-          <!-- CASE 2: ĐƠN HÀNG VỪA GIAO XONG -->
-          <div v-else-if="isOnline && currentStep === 'delivered' && activeOrder" class="mission-status-card finished-card">
-            <div class="status-icon-circle bg-green">
-              <i class="bi bi-check-lg"></i>
-            </div>
-            <h3>Giao Hàng Thành Công!</h3>
-            <p>Thù lao <strong>+{{ activeOrder.shippingFee.toLocaleString('vi-VN') }} ₫</strong> đã được chuyển trực tiếp vào ví tài xế của bạn.</p>
-            <button class="btn btn-primary w-100" @click="currentStep = 'idle'">
-              Tiếp tục tìm đơn mới
-            </button>
-          </div>
-
-          <!-- CASE 3: ĐANG QUÉT ĐƠN TRONG BÁN KÍNH 10KM -->
-          <div v-else-if="isOnline && currentStep === 'idle'" class="mission-status-card scanning-card">
-            <div class="radar-scan-anim">
-              <div class="radar-circle-1"></div>
-              <div class="radar-circle-2"></div>
-              <i class="bi bi-radar radar-icon"></i>
-            </div>
-            <h3>Đang quét đơn hàng gần bạn...</h3>
-            <p>Hệ thống tự động tìm đơn thực phẩm & đồ ăn nóng trong bán kính 10km khu vực Cầu Giấy.</p>
-            <div class="demo-trigger-box">
-              <small>Thử nghiệm nhận đơn:</small>
-              <button class="btn btn-outline-primary" @click="handleAcceptNewOrder">
-                ⚡ Nhận Đơn Hỏa Tốc Mới (Demo)
-              </button>
-            </div>
-          </div>
-
-          <!-- CASE 4: OFFLINE -->
-          <div v-else class="mission-status-card offline-card">
-            <div class="status-icon-circle bg-slate">
-              <i class="bi bi-cup-hot-fill"></i>
-            </div>
-            <h3>Ca làm việc đang tạm dừng</h3>
-            <p>Bật hoạt động để tiếp tục nhận cuốc giao hỏa tốc từ các đối tác siêu thị mini và quán ăn.</p>
-            <button class="btn btn-primary w-100" @click="toggleOnline">
-              Bật Hoạt Động Ngay
-            </button>
-          </div>
-        </aside>
       </div>
 
-      <!-- 2. PHẦN KHÁC: THU NHẬP & CÁC CUỐC XE -->
-      <section v-show="currentTab === 'earnings'" class="earnings-view-section">
-        <!-- Bốn Thẻ Thống Kê Nhanh -->
-        <div class="shift-stats-row">
-          <div class="stat-card">
-            <div class="stat-icon-wrap bg-green">
-              <i class="bi bi-cash-stack"></i>
-            </div>
-            <div>
-              <span class="stat-caption">Thu nhập hôm nay</span>
-              <strong class="stat-figure text-green">{{ shiftStats.todayEarnings.toLocaleString('vi-VN') }} ₫</strong>
-            </div>
-          </div>
+      <!-- Right: Map Controls Stack (Traffic, Satellite, GPS Recenter) -->
+      <div class="map-floating-actions">
+        <!-- Live Traffic Toggle -->
+        <button
+          class="map-action-btn"
+          :class="{ 'btn-active': showTraffic }"
+          @click="toggleTraffic"
+          title="Bật/Tắt dữ liệu Giao thông Google"
+        >
+          <i class="bi bi-stoplights-fill"></i>
+          <span class="action-label">Giao thông</span>
+        </button>
 
-          <div class="stat-card">
-            <div class="stat-icon-wrap bg-blue">
-              <i class="bi bi-box-seam-fill"></i>
-            </div>
-            <div>
-              <span class="stat-caption">Số cuốc hoàn tất</span>
-              <strong class="stat-figure">{{ shiftStats.completedOrders }} đơn</strong>
-            </div>
-          </div>
+        <!-- Satellite Toggle -->
+        <button
+          class="map-action-btn"
+          :class="{ 'btn-active': mapType === 'satellite' }"
+          @click="toggleMapType"
+          :title="mapType === 'roadmap' ? 'Xem Vệ tinh' : 'Xem Bản đồ'"
+        >
+          <i class="bi" :class="mapType === 'roadmap' ? 'bi-globe-asia-australia' : 'bi-map'"></i>
+          <span class="action-label">{{ mapType === 'roadmap' ? 'Vệ tinh' : 'Bản đồ' }}</span>
+        </button>
 
-          <div class="stat-card">
-            <div class="stat-icon-wrap bg-orange">
-              <i class="bi bi-clock-history"></i>
-            </div>
-            <div>
-              <span class="stat-caption">Thời gian Online</span>
-              <strong class="stat-figure">{{ shiftStats.onlineHours }}</strong>
-            </div>
-          </div>
+        <!-- GPS Recenter -->
+        <button
+          class="map-action-btn btn-gps"
+          :class="{ 'is-locating': isLocating }"
+          @click="recenterMap"
+          title="Định vị GPS chính xác của tôi"
+        >
+          <i class="bi bi-crosshair"></i>
+        </button>
+      </div>
+    </header>
 
-          <div class="stat-card">
-            <div class="stat-icon-wrap bg-purple">
-              <i class="bi bi-speedometer2"></i>
-            </div>
-            <div>
-              <span class="stat-caption">Quãng đường đã chạy</span>
-              <strong class="stat-figure">{{ shiftStats.totalKm }} km</strong>
-            </div>
+    <!-- 3. FLOATING ORDER / RADAR SCANNING CARD (NỔI TRÊN BẢN ĐỒ) -->
+    <div v-show="currentTab === 'map'" class="floating-mission-container">
+      <!-- Case A: Đang có đơn hàng hoạt động -->
+      <div v-if="isOnline && currentStep !== 'idle' && currentStep !== 'delivered' && activeOrder" class="floating-order-card">
+        <div class="f-order-header">
+          <span class="f-order-badge">
+            <i class="bi bi-lightning-charge-fill"></i> HỎA TỐC 10KM
+          </span>
+          <span class="f-order-fee">Thù lao: <strong>{{ activeOrder.shippingFee.toLocaleString('vi-VN') }} ₫</strong></span>
+        </div>
+
+        <!-- Step tracker -->
+        <div class="f-step-tracker">
+          <div class="f-step" :class="{ 'done': currentStep === 'accepted' || currentStep === 'picked', 'current': currentStep === 'accepted' }">
+            <span class="f-step-num">1</span>
+            <span class="f-step-txt">Lấy tại Shop</span>
+          </div>
+          <div class="f-step-arrow">➜</div>
+          <div class="f-step" :class="{ 'done': currentStep === 'picked', 'current': currentStep === 'picked' }">
+            <span class="f-step-num">2</span>
+            <span class="f-step-txt">Giao cho Khách</span>
           </div>
         </div>
 
-        <!-- Bảng Ví & Lịch sử chi tiết cuốc xe -->
-        <div class="earnings-details-grid">
+        <!-- Step 1: Đi lấy tại Shop -->
+        <div v-if="currentStep === 'accepted'" class="f-step-content">
+          <div class="f-location-title">
+            <i class="bi bi-shop-window text-blue"></i>
+            <div>
+              <strong>{{ activeOrder.store.name }}</strong>
+              <small class="f-addr">{{ activeOrder.store.address }}</small>
+            </div>
+          </div>
+          <div class="f-items-summary">
+            📦 <em>{{ activeOrder.items }}</em>
+          </div>
+          <div class="f-actions-row">
+            <a :href="'tel:' + activeOrder.store.phone" class="btn btn-call">
+              <i class="bi bi-telephone-fill"></i> Gọi Quán
+            </a>
+            <button class="btn btn-primary flex-1" @click="handleConfirmPicked">
+              📦 ĐÃ LẤY HÀNG ➜
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 2: Giao cho Khách -->
+        <div v-else-if="currentStep === 'picked'" class="f-step-content">
+          <div class="f-location-title">
+            <i class="bi bi-person-fill text-green"></i>
+            <div>
+              <strong>{{ activeOrder.customer.name }}</strong>
+              <small class="f-addr">{{ activeOrder.customer.address }}</small>
+            </div>
+          </div>
+          <div class="f-items-summary" v-if="activeOrder.notes">
+            💬 Ghi chú: <em>"{{ activeOrder.notes }}"</em>
+          </div>
+          <div class="f-actions-row">
+            <a :href="'tel:' + activeOrder.customer.phone" class="btn btn-call">
+              <i class="bi bi-telephone-fill"></i> Gọi Khách
+            </a>
+            <button class="btn btn-success flex-1" @click="handleConfirmDelivered">
+              🎉 ĐÃ GIAO XONG
+            </button>
+          </div>
+          <button class="btn-report-link" @click="handleReportIssue">
+            ⚠️ Báo cáo sự cố / Khách không nhận
+          </button>
+        </div>
+      </div>
+
+      <!-- Case B: Vừa giao xong -->
+      <div v-else-if="isOnline && currentStep === 'delivered' && activeOrder" class="floating-order-card delivered-card">
+        <div class="delivered-head">
+          <i class="bi bi-check-circle-fill"></i>
+          <div>
+            <strong>Giao Hàng Thành Công!</strong>
+            <p>Đã cộng <strong>+{{ activeOrder.shippingFee.toLocaleString('vi-VN') }} ₫</strong> vào ví tài xế.</p>
+          </div>
+        </div>
+        <button class="btn btn-primary w-100" @click="currentStep = 'idle'">
+          Tiếp tục quét đơn mới
+        </button>
+      </div>
+
+      <!-- Case C: Đang online quét đơn -->
+      <div v-else-if="isOnline && currentStep === 'idle'" class="floating-radar-chip">
+        <div class="radar-dot-pulse"></div>
+        <div class="radar-info">
+          <strong>Đang quét đơn gần bạn...</strong>
+          <small>Bán kính 10km khu vực Cầu Giấy</small>
+        </div>
+        <button class="btn-demo-order" @click="handleAcceptNewOrder" title="Thử nghiệm nhận đơn hỏa tốc">
+          ⚡ Thử Nhận Đơn
+        </button>
+      </div>
+    </div>
+
+    <!-- 4. NÚT BẬT / TẮT HOẠT ĐỘNG (Ở PHÍA DƯỚI - NGAY TRÊN THANH ĐIỀU HƯỚNG) -->
+    <div v-show="currentTab === 'map'" class="floating-toggle-bar">
+      <div class="active-toggle-container">
+        <button
+          class="bottom-master-toggle-btn"
+          :class="{ 'is-online': isOnline, 'is-offline': !isOnline }"
+          @click="toggleOnline"
+        >
+          <div class="toggle-state-visual">
+            <div class="toggle-switch-knob">
+              <i class="bi" :class="isOnline ? 'bi-lightning-charge-fill' : 'bi-power'"></i>
+            </div>
+            <div class="toggle-state-text">
+              <span class="state-title">{{ isOnline ? "ĐANG HOẠT ĐỘNG" : "ĐANG TẠM NGHỈ" }}</span>
+              <span class="state-sub">{{ isOnline ? "Chạm để Tắt hoạt động" : "Chạm để BẬT nhận đơn hỏa tốc" }}</span>
+            </div>
+          </div>
+          <div class="toggle-action-badge">
+            <span>{{ isOnline ? "TẮT" : "BẬT" }}</span>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- 5. SLIDING OVERLAY PANEL CHO CÁC PHẦN: THU NHẬP / CUỐC XE / HỒ SƠ -->
+    <div v-if="currentTab !== 'map'" class="sub-tab-panel-overlay">
+      <header class="panel-header">
+        <div class="panel-title-row">
+          <i class="bi" :class="{
+            'bi-wallet2': currentTab === 'earnings',
+            'bi-box-seam-fill': currentTab === 'trips',
+            'bi-person-badge-fill': currentTab === 'profile'
+          }"></i>
+          <h2>
+            {{ currentTab === 'earnings' ? 'Thu Nhập & Ví Tài Xế' : (currentTab === 'trips' ? 'Lịch Sử Cuốc Xe' : 'Hồ Sơ & Trợ Giúp') }}
+          </h2>
+        </div>
+        <button class="btn-close-panel" @click="switchTab('map')" title="Quay lại Bản đồ">
+          <i class="bi bi-x-lg"></i>
+          <span>Về Bản Đồ</span>
+        </button>
+      </header>
+
+      <div class="panel-body-content">
+        <!-- TAB 1: THU NHẬP -->
+        <div v-if="currentTab === 'earnings'" class="tab-earnings-wrapper">
+          <!-- 4 Thẻ Thống Kê -->
+          <div class="shift-stats-row">
+            <div class="stat-card">
+              <div class="stat-icon-wrap bg-green"><i class="bi bi-cash-stack"></i></div>
+              <div>
+                <span class="stat-caption">Thu nhập hôm nay</span>
+                <strong class="stat-figure text-green">{{ shiftStats.todayEarnings.toLocaleString('vi-VN') }} ₫</strong>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon-wrap bg-blue"><i class="bi bi-box-seam-fill"></i></div>
+              <div>
+                <span class="stat-caption">Số cuốc hoàn tất</span>
+                <strong class="stat-figure">{{ shiftStats.completedOrders }} đơn</strong>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon-wrap bg-orange"><i class="bi bi-clock-history"></i></div>
+              <div>
+                <span class="stat-caption">Thời gian Online</span>
+                <strong class="stat-figure">{{ shiftStats.onlineHours }}</strong>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon-wrap bg-purple"><i class="bi bi-speedometer2"></i></div>
+              <div>
+                <span class="stat-caption">Quãng đường đã chạy</span>
+                <strong class="stat-figure">{{ shiftStats.totalKm }} km</strong>
+              </div>
+            </div>
+          </div>
+
           <!-- Ví tài xế -->
           <div class="wallet-card">
             <div class="wallet-header">
@@ -1005,8 +863,10 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
+        </div>
 
-          <!-- Danh sách các cuốc xe đã giao -->
+        <!-- TAB 2: CUỐC XE -->
+        <div v-else-if="currentTab === 'trips'" class="tab-trips-wrapper">
           <div class="trips-history-card">
             <div class="trips-header">
               <h3><i class="bi bi-journal-text"></i> Danh Sách Cuốc Xe Trong Ngày</h3>
@@ -1015,17 +875,15 @@ onUnmounted(() => {
 
             <!-- Empty State -->
             <div v-if="tripHistory.length === 0" class="empty-trips-box">
-              <div class="empty-icon-circle">
-                <i class="bi bi-inbox"></i>
-              </div>
+              <div class="empty-icon-circle"><i class="bi bi-inbox"></i></div>
               <h4>Chưa có cuốc xe nào hôm nay</h4>
-              <p>Toàn bộ các đơn hàng bạn hoàn thành trong ca làm việc sẽ được lưu chi tiết tiền và lộ trình tại đây.</p>
+              <p>Toàn bộ đơn hoàn thành trong ca làm việc sẽ được lưu chi tiết tiền thù lao và địa chỉ tại đây.</p>
               <button class="btn btn-outline-primary" @click="switchTab('map')">
                 <i class="bi bi-geo-alt-fill"></i> Sang Bản Đồ Để Nhận Đơn
               </button>
             </div>
 
-            <!-- List -->
+            <!-- Trips list -->
             <div v-else class="trips-list">
               <div v-for="trip in tripHistory" :key="trip.id" class="trip-log-item">
                 <div class="trip-time-col">
@@ -1051,341 +909,1093 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-      </section>
+
+        <!-- TAB 3: HỒ SƠ TÀI XẾ -->
+        <div v-else-if="currentTab === 'profile'" class="tab-profile-wrapper">
+          <div class="profile-card">
+            <div class="profile-avatar-row">
+              <div class="p-avatar">🛵</div>
+              <div class="p-info">
+                <h3>Trần Văn Bình</h3>
+                <p>Tài xế Hỏa Tốc ZoneMart • ⭐ 5.0</p>
+                <span class="verified-badge">✔ Đã xác thực CCCD & Bằng lái</span>
+              </div>
+            </div>
+
+            <div class="profile-details-grid">
+              <div class="detail-item">
+                <span class="dt-label">Phương tiện:</span>
+                <strong>Honda Airblade 150</strong>
+              </div>
+              <div class="detail-item">
+                <span class="dt-label">Biển kiểm soát:</span>
+                <strong>29M1-9999</strong>
+              </div>
+              <div class="detail-item">
+                <span class="dt-label">Khu vực hoạt động:</span>
+                <strong>Cầu Giấy, Hà Nội (Bán kính 10km)</strong>
+              </div>
+              <div class="detail-item">
+                <span class="dt-label">Trạng thái tài xế:</span>
+                <strong class="text-green">Đang hoạt động chuẩn</strong>
+              </div>
+            </div>
+
+            <div class="profile-support-box">
+              <h4>Tổng Đài Hỗ Trợ Tài Xế 24/7</h4>
+              <p>Mọi sự cố giao hàng, khách không nhận, tai nạn trên đường hãy liên hệ ngay:</p>
+              <a href="tel:19006868" class="btn btn-call-support">
+                <i class="bi bi-telephone-fill"></i> Hotline: 1900 6868 (Miễn phí)
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <!-- 6. THANH ĐIỀU HƯỚNG Ở DƯỚI CÙNG (BOTTOM NAVIGATION BAR) -->
+    <nav class="bottom-navigation-bar">
+      <!-- 1. Map Tab -->
+      <button
+        class="nav-tab-item"
+        :class="{ 'active': currentTab === 'map' }"
+        @click="switchTab('map')"
+      >
+        <div class="tab-icon-wrap">
+          <i class="bi bi-geo-alt-fill"></i>
+          <span v-if="isOnline" class="nav-online-dot"></span>
+        </div>
+        <span class="nav-tab-label">Bản Đồ</span>
+      </button>
+
+      <!-- 2. Earnings Tab -->
+      <button
+        class="nav-tab-item"
+        :class="{ 'active': currentTab === 'earnings' }"
+        @click="switchTab('earnings')"
+      >
+        <div class="tab-icon-wrap">
+          <i class="bi bi-wallet2"></i>
+          <span v-if="shiftStats.todayEarnings > 0" class="nav-count-badge">₫</span>
+        </div>
+        <span class="nav-tab-label">Thu Nhập</span>
+      </button>
+
+      <!-- 3. Trips Tab -->
+      <button
+        class="nav-tab-item"
+        :class="{ 'active': currentTab === 'trips' }"
+        @click="switchTab('trips')"
+      >
+        <div class="tab-icon-wrap">
+          <i class="bi bi-box-seam-fill"></i>
+          <span v-if="tripHistory.length > 0" class="nav-count-badge">{{ tripHistory.length }}</span>
+        </div>
+        <span class="nav-tab-label">Cuốc Xe</span>
+      </button>
+
+      <!-- 4. Profile Tab -->
+      <button
+        class="nav-tab-item"
+        :class="{ 'active': currentTab === 'profile' }"
+        @click="switchTab('profile')"
+      >
+        <div class="tab-icon-wrap">
+          <i class="bi bi-person-fill"></i>
+        </div>
+        <span class="nav-tab-label">Tài Khoản</span>
+      </button>
+    </nav>
   </div>
 </template>
 
 <style scoped>
 /* ==========================================================================
-   GLOBAL LAYOUT
+   GLOBAL FULLSCREEN DRIVER APP LAYOUT
    ========================================================================== */
-.shipper-dashboard {
-  background-color: #f8fafc;
-  min-height: calc(100vh - 72px);
-  padding: 28px 24px 72px 24px;
+.shipper-app-screen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #e5e3df;
   font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  color: #1e293b;
-}
-
-.dashboard-container {
-  max-width: 1320px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+  color: #0f172a;
+  user-select: none;
+  z-index: 100;
 }
 
 /* Toast Bar */
 .toast-bar {
   position: fixed;
-  top: 86px;
-  right: 28px;
-  background-color: #0f172a;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(8px);
   color: #ffffff;
-  padding: 12px 20px;
-  border-radius: 12px;
-  font-size: 13.5px;
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-size: 13px;
   font-weight: 700;
   display: flex;
   align-items: center;
   gap: 8px;
-  z-index: 9999;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  z-index: 99999;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
   animation: slideToast 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
 }
 
 @keyframes slideToast {
-  from { transform: translateY(-20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from { transform: translate(-50%, -20px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
 }
 
 /* ==========================================================================
-   1. TOP DRIVER STATUS BAR
+   1. FULLSCREEN LEAFLET MAP
    ========================================================================== */
-.driver-header-card {
-  background: #ffffff;
-  border-radius: 20px;
-  padding: 24px 28px;
-  border: 1px solid #f1f5f9;
-  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.03);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 20px;
+.fullscreen-map-wrapper {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
 }
 
-.driver-profile-info {
-  display: flex;
-  align-items: center;
-  gap: 18px;
+.fullscreen-map {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  transition: filter 0.35s ease;
 }
 
-.driver-avatar-box {
-  position: relative;
-  width: 56px;
-  height: 56px;
-  background: #fff7ed;
-  border-radius: 16px;
+.fullscreen-map.map-dimmed {
+  filter: grayscale(70%) brightness(0.92);
+}
+
+/* Offline Dim Overlay */
+.offline-map-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px;
+  pointer-events: auto;
 }
 
-.avatar-emoji {
-  font-size: 30px;
-}
-
-.online-indicator {
-  position: absolute;
-  bottom: -2px;
-  right: -2px;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background: #ef4444;
-  border: 2.5px solid #ffffff;
-}
-
-.online-indicator.is-active {
-  background: #22c55e;
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25);
-  animation: pulseGreen 2s infinite;
-}
-
-@keyframes pulseGreen {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.15); }
-}
-
-.driver-text-meta {
+.offline-prompt-box {
+  background: #ffffff;
+  padding: 32px 28px;
+  border-radius: 26px;
+  max-width: 380px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 45px -10px rgba(0, 0, 0, 0.3);
+  animation: popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-
-.name-badge-row {
-  display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
-.driver-name {
-  font-size: 22px;
-  font-weight: 900;
-  color: #0f172a;
-  margin: 0;
-  letter-spacing: -0.02em;
+@keyframes popIn {
+  from { transform: scale(0.92); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 
-.rating-pill {
-  font-size: 12px;
-  font-weight: 800;
-  background: #fefce8;
-  color: #d97706;
-  padding: 3px 8px;
-  border-radius: 20px;
-  border: 1px solid #fef08a;
-}
-
-.vehicle-info {
-  font-size: 13px;
-  color: #64748b;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.license-plate {
-  font-weight: 800;
-  color: #0f172a;
-  background: #f1f5f9;
-  padding: 2px 6px;
-  border-radius: 6px;
-}
-
-.dot-sep {
-  color: #cbd5e1;
-}
-
-/* Big Toggle Button */
-.toggle-action-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.toggle-status-desc {
-  text-align: right;
-}
-
-.status-title {
-  display: block;
-  font-size: 14px;
-  font-weight: 800;
-  color: #0f172a;
-}
-
-.status-subtitle {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.active-toggle-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 18px 8px 10px;
-  border-radius: 9999px;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 13.5px;
-  font-weight: 800;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.active-toggle-btn.online {
-  background: #22c55e;
-  color: #ffffff;
-  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.35);
-}
-
-.active-toggle-btn.online:hover {
-  background: #16a34a;
-  transform: scale(1.02);
-}
-
-.active-toggle-btn.offline {
-  background: #e2e8f0;
-  color: #475569;
-}
-
-.active-toggle-btn.offline:hover {
-  background: #cbd5e1;
-  color: #0f172a;
-}
-
-.toggle-thumb {
-  width: 32px;
-  height: 32px;
-  background: #ffffff;
+.offline-icon-pulse {
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
+  background: #f1f5f9;
+  color: #64748b;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  font-size: 26px;
+  margin-bottom: 14px;
 }
 
-.active-toggle-btn.online .toggle-thumb {
-  color: #22c55e;
+.offline-prompt-box h3 {
+  font-size: 18px;
+  font-weight: 900;
+  color: #0f172a;
+  margin: 0 0 8px 0;
 }
 
-.active-toggle-btn.offline .toggle-thumb {
+.offline-prompt-box p {
+  font-size: 13px;
   color: #64748b;
+  line-height: 1.5;
+  margin: 0 0 20px 0;
+}
+
+.btn-turn-online {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 13px 20px;
+  border-radius: 14px;
+  background: #22c55e;
+  color: #ffffff;
+  font-size: 14.5px;
+  font-weight: 800;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.4);
+  transition: all 0.2s;
+}
+
+.btn-turn-online:hover {
+  background: #16a34a;
+  transform: translateY(-1px);
 }
 
 /* ==========================================================================
-   NAVIGATION TABS BAR (TÁCH BIỆT MAP VỚI THU NHẬP & CUỐC XE)
+   2. TOP FLOATING BAR (TRÊN CÙNG BẢN ĐỒ)
    ========================================================================== */
-.shipper-tabs-bar {
+.top-floating-bar {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  z-index: 50;
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  background: #ffffff;
-  padding: 8px 12px;
-  border-radius: 16px;
-  border: 1px solid #f1f5f9;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-  flex-wrap: wrap;
+  align-items: center;
+  pointer-events: none;
+  gap: 12px;
 }
 
-.tabs-group {
+/* Mini Driver Pill */
+.driver-mini-pill {
+  pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.tab-nav-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 10px 18px;
-  border-radius: 12px;
-  border: none;
-  background: transparent;
-  font-size: 14px;
-  font-weight: 700;
-  color: #64748b;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(12px);
+  padding: 6px 14px 6px 8px;
+  border-radius: 999px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.9);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.tab-nav-btn:hover {
+.driver-mini-pill:hover {
+  transform: scale(1.02);
+  background: #ffffff;
+}
+
+.driver-pill-avatar {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #fff7ed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.pill-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2px solid #ffffff;
+}
+
+.pill-dot.online {
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3);
+  animation: pulseDot 2s infinite;
+}
+
+.driver-pill-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.pill-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pill-name {
+  font-size: 13.5px;
+  font-weight: 800;
   color: #0f172a;
-  background: #f8fafc;
 }
 
-.tab-nav-btn.active {
-  color: #2563eb;
+.pill-rating {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #d97706;
+  background: #fefce8;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.pill-status-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+/* Right Map Actions */
+.map-floating-actions {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.map-action-btn:hover {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.map-action-btn.btn-active {
   background: #eff6ff;
-  box-shadow: 0 2px 8px -2px rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+  border-color: #bfdbfe;
 }
 
-.tab-nav-btn i {
+.map-action-btn.btn-gps {
+  width: 38px;
+  padding: 0;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.map-action-btn.btn-gps.is-locating {
+  color: #2563eb;
+  animation: spin 1s infinite linear;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ==========================================================================
+   3. FLOATING ORDER / RADAR SCANNING CARD (TRÊN BẢN ĐỒ)
+   ========================================================================== */
+.floating-mission-container {
+  position: absolute;
+  bottom: 165px;
+  left: 14px;
+  right: 14px;
+  z-index: 45;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.floating-order-card {
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(14px);
+  border-radius: 20px;
+  padding: 16px 18px;
+  max-width: 440px;
+  width: 100%;
+  box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.f-order-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.f-order-badge {
+  font-size: 11px;
+  font-weight: 800;
+  background: #fff7ed;
+  color: #ea580c;
+  padding: 3px 8px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.f-order-fee {
+  font-size: 12.5px;
+  color: #475569;
+}
+
+.f-order-fee strong {
+  color: #16a34a;
+  font-weight: 900;
   font-size: 16px;
 }
 
-.active-badge {
-  font-size: 10px;
-  font-weight: 800;
-  background: #22c55e;
-  color: #ffffff;
-  padding: 2px 7px;
-  border-radius: 999px;
-  letter-spacing: 0.5px;
-}
-
-.count-pill {
-  font-size: 11px;
-  font-weight: 700;
-  background: #e0e7ff;
-  color: #3730a3;
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-
-.quick-status-chip {
-  display: inline-flex;
+.f-step-tracker {
+  display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: #475569;
+  justify-content: space-between;
   background: #f8fafc;
-  padding: 6px 14px;
-  border-radius: 999px;
+  padding: 8px 12px;
+  border-radius: 12px;
   border: 1px solid #e2e8f0;
 }
 
-.status-indicator-dot {
+.f-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+
+.f-step.current {
+  color: #2563eb;
+}
+
+.f-step.done {
+  color: #16a34a;
+}
+
+.f-step-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.f-step.current .f-step-num {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.f-step.done .f-step-num {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.f-step-arrow {
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.f-location-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.f-location-title i {
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.f-location-title strong {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.f-addr {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.f-items-summary {
+  font-size: 12.5px;
+  color: #334155;
+  background: #f1f5f9;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+.f-actions-row {
+  display: flex;
+  gap: 8px;
+}
+
+.f-actions-row .btn-call {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 13px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.f-actions-row .btn-primary {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 13.5px;
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+}
+
+.f-actions-row .btn-success {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 13.5px;
+  background: #16a34a;
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+}
+
+/* Delivered Card */
+.delivered-card {
+  text-align: center;
+}
+
+.delivered-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+
+.delivered-head i {
+  font-size: 36px;
+  color: #16a34a;
+  flex-shrink: 0;
+}
+
+.delivered-head strong {
+  display: block;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.delivered-head p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+/* Floating Radar Chip */
+.floating-radar-chip {
+  pointer-events: auto;
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(12px);
+  color: #ffffff;
+  padding: 9px 14px 9px 12px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  max-width: 440px;
+  width: 100%;
+}
+
+.radar-dot-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.3);
+  animation: pulseDot 1.6s infinite;
+  flex-shrink: 0;
+}
+
+.radar-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.radar-info strong {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.radar-info small {
+  font-size: 10.5px;
+  color: #94a3b8;
+}
+
+.btn-demo-order {
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.btn-demo-order:hover {
+  background: #1d4ed8;
+}
+
+/* ==========================================================================
+   4. NÚT BẬT / TẮT HOẠT ĐỘNG (Ở PHÍA DƯỚI - NGAY TRÊN THANH ĐIỀU HƯỚNG)
+   ========================================================================== */
+.floating-toggle-bar {
+  position: absolute;
+  bottom: 84px;
+  left: 0;
+  right: 0;
+  z-index: 55;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+  pointer-events: none;
+}
+
+.active-toggle-container {
+  pointer-events: auto;
+  width: 100%;
+  max-width: 440px;
+}
+
+.bottom-master-toggle-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 10px 10px;
+  border-radius: 20px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bottom-master-toggle-btn:hover {
+  transform: translateY(-2px);
+}
+
+.bottom-master-toggle-btn.is-offline {
+  background: #1e293b;
+  color: #ffffff;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.bottom-master-toggle-btn.is-offline .toggle-switch-knob {
+  background: #334155;
+  color: #94a3b8;
+}
+
+.bottom-master-toggle-btn.is-offline .toggle-action-badge {
+  background: #22c55e;
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(34, 197, 94, 0.4);
+}
+
+.bottom-master-toggle-btn.is-online {
+  background: linear-gradient(135deg, #15803d 0%, #166534 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 30px rgba(22, 163, 74, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.bottom-master-toggle-btn.is-online .toggle-switch-knob {
+  background: #ffffff;
+  color: #16a34a;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.bottom-master-toggle-btn.is-online .toggle-action-badge {
+  background: rgba(0, 0, 0, 0.35);
+  color: #ffffff;
+}
+
+.toggle-state-visual {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toggle-switch-knob {
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+  transition: all 0.25s;
+}
+
+.toggle-state-text {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+}
+
+.state-title {
+  font-size: 15px;
+  font-weight: 900;
+  color: #ffffff;
+  letter-spacing: 0.3px;
+}
+
+.state-sub {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.toggle-action-badge {
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+}
+
+/* ==========================================================================
+   5. THANH ĐIỀU HƯỚNG Ở DƯỚI CÙNG (BOTTOM NAVIGATION BAR)
+   ========================================================================== */
+.bottom-navigation-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 70px;
+  z-index: 60;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 0 10px;
+}
+
+.nav-tab-item {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #64748b;
+  font-family: inherit;
+  transition: color 0.15s;
+}
+
+.nav-tab-item:hover {
+  color: #0f172a;
+}
+
+.nav-tab-item.active {
+  color: #2563eb;
+}
+
+.tab-icon-wrap {
+  position: relative;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.nav-online-dot {
+  position: absolute;
+  top: -1px;
+  right: -3px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #94a3b8;
-  transition: background 0.3s ease;
+  background: #22c55e;
+  border: 1.5px solid #ffffff;
+  animation: pulseDot 2s infinite;
 }
 
-.status-indicator-dot.online {
-  background: #22c55e;
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
-  animation: pulseDot 2s infinite;
+.nav-count-badge {
+  position: absolute;
+  top: -5px;
+  right: -8px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 999px;
+  line-height: 1.2;
+}
+
+.nav-tab-label {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   6. SUB-TAB SLIDING OVERLAY (THU NHẬP / CUỐC XE / HỒ SƠ)
+   ========================================================================== */
+.sub-tab-panel-overlay {
+  position: absolute;
+  inset: 0;
+  bottom: 70px;
+  z-index: 58;
+  background: #f8fafc;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.panel-header {
+  position: sticky;
+  top: 0;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid #e2e8f0;
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 10;
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  color: #2563eb;
+}
+
+.panel-title-row h2 {
+  font-size: 17px;
+  font-weight: 900;
+  margin: 0;
+  color: #0f172a;
+}
+
+.btn-close-panel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-close-panel:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.panel-body-content {
+  padding: 20px;
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.tab-earnings-wrapper,
+.tab-trips-wrapper,
+.tab-profile-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Profile Card */
+.profile-card {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 24px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.profile-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.p-avatar {
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  background: #eff6ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+}
+
+.p-info h3 {
+  font-size: 18px;
+  font-weight: 900;
+  margin: 0 0 4px 0;
+  color: #0f172a;
+}
+
+.p-info p {
+  font-size: 13px;
+  color: #64748b;
+  margin: 0 0 6px 0;
+}
+
+.verified-badge {
+  font-size: 11px;
+  font-weight: 800;
+  color: #16a34a;
+  background: #dcfce7;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.profile-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+.detail-item {
+  background: #f8fafc;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dt-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.detail-item strong {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.profile-support-box {
+  background: #eff6ff;
+  border-radius: 16px;
+  padding: 18px;
+  border: 1px solid #bfdbfe;
+}
+
+.profile-support-box h4 {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1e3a8a;
+  margin: 0 0 6px 0;
+}
+
+.profile-support-box p {
+  font-size: 12.5px;
+  color: #3b82f6;
+  margin: 0 0 12px 0;
+  line-height: 1.5;
+}
+
+.btn-call-support {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #2563eb;
+  color: #ffffff;
+  padding: 10px 18px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 800;
+  text-decoration: none;
+  transition: background 0.2s;
+}
+
+.btn-call-support:hover {
+  background: #1d4ed8;
 }
 
 /* ==========================================================================
@@ -2381,7 +2991,68 @@ onUnmounted(() => {
   line-height: 1.55;
 }
 
-/* Radar scanning anim */
+/* Utility buttons */
+.btn-outline-primary {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-outline-primary:hover {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.btn-primary {
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 13.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.2s;
+}
+
+.btn-primary:hover {
+  background: #1d4ed8;
+}
+
+.btn-success {
+  background: #16a34a;
+  color: #ffffff;
+  border: none;
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 13.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.2s;
+}
+
+.btn-success:hover {
+  background: #15803d;
+}
+
+.w-100 {
+  width: 100%;
+}
+
 .radar-scan-anim {
   position: relative;
   width: 72px;
@@ -2443,41 +3114,6 @@ onUnmounted(() => {
   justify-content: center;
   gap: 8px;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.btn-primary {
-  background: #0f172a;
-  color: #ffffff;
-}
-
-.btn-primary:hover {
-  background: #ea580c;
-  transform: translateY(-1px);
-}
-
-.btn-success {
-  background: #16a34a;
-  color: #ffffff;
-}
-
-.btn-success:hover {
-  background: #15803d;
-  transform: translateY(-1px);
-}
-
-.btn-outline-primary {
-  background: #fff7ed;
-  color: #ea580c;
-  border: 1px dashed #fdba74;
-}
-
-.btn-outline-primary:hover {
-  background: #ea580c;
-  color: #ffffff;
-}
-
-.w-100 {
-  width: 100%;
 }
 
 .flex-1 {
@@ -2658,62 +3294,61 @@ onUnmounted(() => {
 /* ==========================================================================
    RESPONSIVE
    ========================================================================== */
-@media (max-width: 1024px) {
-  .operational-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 768px) {
+  .top-floating-bar {
+    top: 10px;
+    left: 10px;
+    right: 10px;
   }
-  
+
+  .driver-mini-pill {
+    padding: 4px 10px 4px 6px;
+  }
+
+  .pill-name {
+    font-size: 12.5px;
+  }
+
+  .pill-status-text {
+    display: none;
+  }
+
+  .map-action-btn .action-label {
+    display: none;
+  }
+
+  .map-action-btn {
+    padding: 0 10px;
+  }
+
+  .floating-mission-container {
+    bottom: 155px;
+    left: 10px;
+    right: 10px;
+  }
+
+  .floating-toggle-bar {
+    bottom: 78px;
+    padding: 0 12px;
+  }
+
   .shift-stats-row {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .earnings-details-grid {
+  .profile-details-grid {
     grid-template-columns: 1fr;
-  }
-
-  .map-card-wrapper {
-    height: 440px;
   }
 }
 
-@media (max-width: 640px) {
-  .shipper-dashboard {
-    padding: 16px 14px 48px 14px;
-  }
-
-  .driver-header-card {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .toggle-action-wrapper {
-    justify-content: space-between;
-  }
-
-  .shipper-tabs-bar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-  }
-
-  .tabs-group {
-    width: 100%;
-  }
-
-  .tab-nav-btn {
-    flex: 1;
-    justify-content: center;
-    padding: 10px 12px;
-    font-size: 13px;
-  }
-
+@media (max-width: 480px) {
   .shift-stats-row {
     grid-template-columns: 1fr;
   }
 
   .trip-log-item {
     grid-template-columns: 1fr;
-    gap: 10px;
+    gap: 8px;
   }
 
   .trip-meta-col {
