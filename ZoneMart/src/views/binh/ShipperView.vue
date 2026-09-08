@@ -673,29 +673,8 @@ onUnmounted(() => {
       <div class="operational-grid">
         <!-- MAP SECTION (GOOGLE MAPS AUTHENTIC UI) -->
         <section class="map-card-wrapper" :class="{ 'is-fullscreen': isFullscreen }">
-          <!-- 1. Google Maps Floating Search Bar & Status Chips (Top) -->
           <!-- 1. Google Maps Status Chips (Top) -->
           <div class="gm-top-controls">
-            <div class="gm-search-box">
-              <div class="gm-search-icon">
-                <i class="bi bi-geo-alt-fill text-danger"></i>
-              </div>
-              <input
-                type="text"
-                class="gm-search-input"
-                :value="locationAddress"
-                readonly
-              />
-              <div class="gm-search-actions">
-                <button class="gm-icon-btn" title="Định vị tâm bản đồ" @click="recenterMap">
-                  <i class="bi bi-cursor-fill text-primary"></i>
-                </button>
-                <div class="gm-search-divider"></div>
-                <button class="gm-icon-btn" title="Tìm kiếm trên Google Maps" @click="triggerToast('Đang kết nối cơ sở dữ liệu Google Maps...')">
-                  <i class="bi bi-search"></i>
-                </button>
-              </div>
-            </div>
 
             <div class="gm-status-chips">
               <!-- Live Traffic Toggle Chip -->
