@@ -161,12 +161,14 @@ const goProducts = () => {
 }
 
 .padlock-group {
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  transform-origin: 160px 165px;
+  transform-origin: 160px 111px;
+  transform-box: view-box;
+  animation: padlockWindSway 3.2s cubic-bezier(0.445, 0.05, 0.55, 0.95) infinite;
+  will-change: transform;
 }
 
 .gate-svg:hover .padlock-group {
-  transform: scale(1.06) rotate(-2deg);
+  animation-duration: 1.8s;
 }
 
 /* Content & Typography */
@@ -278,6 +280,25 @@ const goProducts = () => {
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+/* Padlock wind swaying animation like hanging from gate */
+@keyframes padlockWindSway {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(10deg) skewX(0.8deg);
+  }
+  50% {
+    transform: rotate(0deg);
+  }
+  75% {
+    transform: rotate(-10deg) skewX(-0.8deg);
+  }
+  100% {
+    transform: rotate(0deg);
   }
 }
 
