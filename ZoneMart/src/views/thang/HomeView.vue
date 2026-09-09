@@ -676,7 +676,10 @@ const goToRoute = (path: string) => {
   font-family:
     -apple-system, BlinkMacSystemFont, 'Plus Jakarta Sans', 'Segoe UI', Roboto,
     sans-serif;
+  font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: #2b1b14;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* SECTION CHUNG */
@@ -694,9 +697,13 @@ const goToRoute = (path: string) => {
   font-family: 'Georgia', 'Merriweather', 'Playfair Display', serif;
   font-size: clamp(22px, 2.3vw, 28px);
   font-weight: 700;
+  font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: clamp(22px, 2.3vw, 30px);
+  font-weight: 800;
   color: #2b1b14;
   margin: 0 0 4px 0;
   letter-spacing: -0.3px;
+  letter-spacing: -0.4px;
 }
 .section-subtitle {
   font-size: 13.5px;
@@ -776,8 +783,13 @@ const goToRoute = (path: string) => {
   font-size: clamp(22px, 2.6vw, 36px);
   font-weight: 700;
   line-height: 1.2;
+  font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: clamp(24px, 2.8vw, 38px);
+  font-weight: 850;
+  line-height: 1.25;
   margin: 0 0 10px 0;
   letter-spacing: -0.4px;
+  letter-spacing: -0.5px;
   color: #fff9f5;
 }
 .hero-description {
@@ -1221,6 +1233,7 @@ const goToRoute = (path: string) => {
   top: 10px;
   right: 14px;
   font-family: 'Georgia', serif;
+  font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', sans-serif;
   font-size: 18px;
   font-weight: 800;
   color: #e8d0c2;
@@ -1418,8 +1431,10 @@ const goToRoute = (path: string) => {
 }
 .cta-title {
   font-family: 'Georgia', 'Merriweather', serif;
+  font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: clamp(20px, 2.2vw, 28px);
   font-weight: 700;
+  font-weight: 800;
   color: #fff9f5;
   margin: 0 0 12px 0;
   line-height: 1.3;
@@ -1486,6 +1501,9 @@ const goToRoute = (path: string) => {
   font-family: 'Georgia', serif;
   font-size: 20px;
   font-weight: 700;
+  font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', sans-serif;
+  font-size: 18px;
+  font-weight: 800;
   color: #d85a2a;
   background: #fbeee7;
   width: 38px;
