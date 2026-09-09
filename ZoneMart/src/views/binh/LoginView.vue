@@ -56,6 +56,29 @@ const fillDemoAccount = (role: 'seller' | 'buyer' | 'shipper' | 'admin') => {
   }
 };
 
+// Đăng nhập nhanh vai trò
+const quickLogin = (role: 'buyer' | 'seller' | 'shipper' | 'admin') => {
+  const user = DEMO_USERS[role];
+  auth.login(user);
+  localStorage.setItem('isLoggedIn', 'true');
+  localStorage.setItem('userRole', role);
+  if (user) {
+    localStorage.setItem('currentUser', JSON.stringify(user));
+  }
+  successMessage.value = `Đăng nhập nhanh vai trò ${user.role} thành công! Đang chuyển hướng...`;
+  setTimeout(() => {
+    if (role === 'seller') {
+      router.push('/seller');
+    } else if (role === 'admin') {
+      router.push('/admin');
+    } else if (role === 'shipper') {
+      router.push('/shipper');
+    } else {
+      router.push('/');
+    }
+  }, 500);
+};
+
 // Xử lý Đăng Nhập
 const handleLogin = async () => {
   errorMessage.value = '';
@@ -85,24 +108,6 @@ const handleLogin = async () => {
     if (res) {
       const data = await res.json();
       if (res.ok && data.success) {
-<<<<<<< HEAD
-        successMessage.value = data.message || "Đăng nhập thành công! Đang chuyển hướng...";
-        const detectedRole = data.user?.role || "buyer";
-        localStorage.setItem("isLoggedIn", "true");
-        localStorage.setItem("userRole", detectedRole);
-        if (data.user) {
-          localStorage.setItem("currentUser", JSON.stringify(data.user));
-        }
-        localStorage.removeItem("sellerRegisteredEmail");
-        localStorage.removeItem("sellerRegisteredPassword");
-        setTimeout(() => {
-          if (detectedRole === "seller") {
-            router.push("/seller");
-          } else if (detectedRole === "admin") {
-            router.push("/admin");
-          } else if (detectedRole === "shipper") {
-            router.push("/shipper");
-=======
         successMessage.value =
           data.message || 'Đăng nhập thành công! Đang chuyển hướng...';
         const detectedRole = (data.user?.role as UserRole) || 'buyer';
@@ -118,12 +123,21 @@ const handleLogin = async () => {
           storeName: data.user?.storeName,
         });
 
+        localStorage.setItem("isLoggedIn", "true");
+        localStorage.setItem("userRole", detectedRole);
+        if (data.user) {
+          localStorage.setItem("currentUser", JSON.stringify(data.user));
+        }
+        localStorage.removeItem("sellerRegisteredEmail");
+        localStorage.removeItem("sellerRegisteredPassword");
+
         setTimeout(() => {
-          if (detectedRole === 'seller' || detectedRole === 'admin') {
+          if (detectedRole === 'seller') {
+            router.push('/seller');
+          } else if (detectedRole === 'admin') {
             router.push('/admin');
           } else if (detectedRole === 'shipper') {
             router.push('/shipper');
->>>>>>> 251ba0b0f53e7ccc451866f9fdb7a0da5163f5ec
           } else {
             router.push('/');
           }
@@ -143,7 +157,7 @@ const handleLogin = async () => {
     } else {
       // 2. Fallback ngoại tuyến: Khi chưa bật server Backend, tự động khớp tài khoản demo hoặc tạo phiên buyer
       const acc = form.account.trim().toLowerCase();
-      let matchedRole: UserRole = 'buyer';
+      let matchedRole: 'buyer' | 'seller' | 'shipper' | 'admin' = 'buyer';
       if (acc.includes('seller') || acc.includes('mai') || acc.includes('shop'))
         matchedRole = 'seller';
       else if (

@@ -105,8 +105,8 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                 class="quick-link"
                 active-class="active"
               >
-                <i class="bi bi-geo-alt menu-mini-icon"></i>
-                <span>Bản Đồ 10km</span>
+                <i class="bi bi-headset menu-mini-icon"></i>
+                <span>Liên Hệ</span>
               </router-link>
             </template>
 
@@ -149,7 +149,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             <!-- 3. Seller Links (Chủ gian hàng) -->
             <template v-else-if="auth.currentRole.value === 'seller'">
               <router-link
-                to="/admin"
+                to="/seller"
                 class="quick-link highlight-pill seller-pill"
                 active-class="active"
               >
@@ -673,8 +673,8 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             class="mobile-link"
             @click="closeDropdowns"
           >
-            <i class="bi bi-geo-alt-fill menu-icon" aria-hidden="true"></i>
-            <span>Bản Đồ 10km</span>
+            <i class="bi bi-headset menu-icon" aria-hidden="true"></i>
+            <span>Liên Hệ</span>
           </router-link>
           <div class="mobile-divider"></div>
           <div class="mobile-auth-grid">
@@ -742,7 +742,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
           <!-- Seller Mobile -->
           <template v-else-if="auth.currentRole.value === 'seller'">
             <router-link
-              to="/admin"
+              to="/seller"
               class="mobile-link highlight-mobile-link"
               @click="closeDropdowns"
             >
