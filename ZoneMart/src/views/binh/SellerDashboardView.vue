@@ -1,17 +1,76 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from "vue";
+/**
+ * ================================================================
+ * KÊNH QUẢN LÝ NGƯỜI BÁN ZONEMART (SELLER DASHBOARD)
+ * Thiết kế giao diện hiện đại chuẩn Dashboard theo mẫu tham chiếu
+ * Giữ nguyên bảng màu thương hiệu ZoneMart & đầy đủ tính năng thực tiễn:
+ * - Sidebar Menu đầy đủ (Overview, Products, Customer, Orders, Shipment, Store Setting, Partner, Feedback, Help)
+ * - Upgrade Pro Card góc trái
+ * - Top Bar: Search input bo tròn + Mic, Switch Chế độ mua hàng, Toggle mở tiệm, User Profile
+ * - 3 KPI Cards (AVG Order Value dark card, Total Orders, Lifetime Value)
+ * - Sales Overtime Dual-line SVG Chart
+ * - Top Selling Product List
+ * - Latest Orders Data Table & Order Workflow (Hỏa tốc 10km)
+ * ================================================================
+ */
+import { ref, reactive, computed, onMounted } from "vue";
+import { useRouter } from "vue-router";
+
+const router = useRouter();
+
+// Điều hướng Tab chính trong Sidebar
+type NavKey =
+  | "overview"
+  | "products"
+  | "customers"
+  | "orders"
+  | "shipment"
+  | "settings"
+  | "partner"
+  | "feedback"
+  | "support";
+
+const activeNav = ref<NavKey>("overview");
+
+// Thông tin người dùng đăng nhập
+const currentUser = reactive({
+  name: "Bác Ba (Vườn Rau Ba Vì)",
+  email: "seller@zonemart.vn",
+  avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80"
+});
+
+onMounted(() => {
+  const savedUser = localStorage.getItem("currentUser");
+  if (savedUser) {
+    try {
+      const parsed = JSON.parse(savedUser);
+      if (parsed.fullName) currentUser.name = parsed.fullName;
+      if (parsed.phoneEmail) currentUser.email = parsed.phoneEmail;
+      if (parsed.avatarUrl) currentUser.avatar = parsed.avatarUrl;
+    } catch { }
+  }
+});
+
+// Tên hiển thị chào mừng lịch sự
+const greetingName = computed(() => {
+  if (!currentUser.name) return "Bác Ba";
+  const clean = currentUser.name.split("(")[0].trim();
+  return clean || currentUser.name;
+});
 
 // Trạng thái mở cửa / nhận đơn hỏa tốc
 const isStoreOpen = ref(true);
 const toastMessage = ref("");
 const showToast = ref(false);
+const isUserMenuOpen = ref(false);
+const searchQuery = ref("");
 
 const triggerToast = (msg: string) => {
   toastMessage.value = msg;
   showToast.value = true;
   setTimeout(() => {
     showToast.value = false;
-  }, 3000);
+  }, 3200);
 };
 
 const toggleStoreOpen = () => {
@@ -19,12 +78,23 @@ const toggleStoreOpen = () => {
   triggerToast(
     isStoreOpen.value
       ? "Đã mở cửa gian hàng! Sẵn sàng nhận đơn hỏa tốc 10km."
-      : "Đã tạm đóng cửa gian hàng. Khách hàng sẽ không thể đặt món mới lúc này."
+      : "Đã tạm đóng cửa gian hàng. Khách hàng sẽ không thể đặt đơn mới lúc này."
   );
 };
 
-// Tab hiện tại trong dashboard: 'orders' | 'products' | 'settings'
-const activeTab = ref<"orders" | "products" | "settings">("orders");
+// Chuyển nhanh sang chế độ người mua
+const switchToBuyerMode = () => {
+  localStorage.setItem("userRole", "buyer");
+  router.push("/");
+};
+
+// Đăng xuất
+const handleLogout = () => {
+  localStorage.removeItem("isLoggedIn");
+  localStorage.removeItem("userRole");
+  localStorage.removeItem("currentUser");
+  router.push("/login");
+};
 
 // Dữ liệu gian hàng
 const storeInfo = reactive({
@@ -38,12 +108,12 @@ const storeInfo = reactive({
   bankAccount: "1029384756",
   accountHolder: "NGUYEN VAN BA",
   radiusKm: 10,
-  todayRevenue: 1850000,
-  rating: 4.9,
-  reviewsCount: 186
+  avgOrderValue: "77.210 đ",
+  totalOrders: "2,107",
+  lifetimeValue: "54.800.000 đ"
 });
 
-// Danh sách đơn hàng cần xử lý
+// Danh sách đơn hàng
 interface OrderItem {
   name: string;
   qty: number;
@@ -53,17 +123,15 @@ interface OrderItem {
 interface SellerOrder {
   id: string;
   orderCode: string;
+  productSummary: string;
   customerName: string;
   customerPhone: string;
   customerAddress: string;
-  distanceKm: number;
-  timeAgo: string;
-  paymentMethod: "ONLINE_QR" | "COD";
-  isPaid: boolean;
-  deliveryType: "express" | "standard";
+  orderDate: string;
+  priceFormatted: string;
+  paymentMethod: "Chuyển khoản QR" | "Thẻ ngân hàng" | "Tiền mặt COD";
+  status: "Đang xử lý" | "Hoàn thành" | "Chờ xác nhận" | "Đang giao hàng";
   items: OrderItem[];
-  totalAmount: number;
-  status: "pending" | "preparing" | "delivering" | "completed" | "cancelled";
   shipperInfo?: {
     name: string;
     phone: string;
@@ -74,40 +142,36 @@ interface SellerOrder {
 const orders = ref<SellerOrder[]>([
   {
     id: "ord-01",
-    orderCode: "ORD-98214",
+    orderCode: "#2456JL",
+    productSummary: "Rau muống hữu cơ Ba Vì (x2)",
     customerName: "Chị Mai Lan",
     customerPhone: "0912 345 678",
     customerAddress: "P.502 Chung cư Dịch Vọng, Cầu Giấy, Hà Nội",
-    distanceKm: 1.2,
-    timeAgo: "5 phút trước",
-    paymentMethod: "ONLINE_QR",
-    isPaid: true,
-    deliveryType: "express",
+    orderDate: "12 Thg 1, 12:23",
+    priceFormatted: "134.000 đ",
+    paymentMethod: "Chuyển khoản QR",
+    status: "Đang xử lý",
     items: [
       { name: "Rau muống hữu cơ Ba Vì", qty: 2, price: 18000 },
       { name: "Cà chua bi Đà Lạt", qty: 1, price: 35000 },
-      { name: "Trứng gà ta thảo mộc (Vỉ 10 quả)", qty: 1, price: 45000 }
-    ],
-    totalAmount: 116000,
-    status: "pending"
+      { name: "Trứng gà ta thảo mộc", qty: 1, price: 45000 }
+    ]
   },
   {
     id: "ord-02",
-    orderCode: "ORD-98215",
+    orderCode: "#5435DF",
+    productSummary: "Thịt ba chỉ tươi sạch (x2)",
     customerName: "Anh Hoàng Minh",
     customerPhone: "0987 654 321",
-    customerAddress: "Số 18 ngõ 20 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy",
-    distanceKm: 2.5,
-    timeAgo: "15 phút trước",
-    paymentMethod: "ONLINE_QR",
-    isPaid: true,
-    deliveryType: "express",
+    customerAddress: "Số 18 ngõ 20 Hồ Tùng Mậu, Cầu Giấy",
+    orderDate: "01 Thg 5, 13:13",
+    priceFormatted: "152.000 đ",
+    paymentMethod: "Thẻ ngân hàng",
+    status: "Hoàn thành",
     items: [
       { name: "Thịt ba chỉ heo tươi sạch", qty: 2, price: 65000 },
       { name: "Xà lách mỡ thủy canh", qty: 1, price: 22000 }
     ],
-    totalAmount: 152000,
-    status: "preparing",
     shipperInfo: {
       name: "Trần Văn Bình",
       phone: "0934 888 999",
@@ -116,90 +180,92 @@ const orders = ref<SellerOrder[]>([
   },
   {
     id: "ord-03",
-    orderCode: "ORD-98209",
+    orderCode: "#9876XC",
+    productSummary: "Dưa leo baby & Khoai tây Đà Lạt",
     customerName: "Cô Thu Hà",
     customerPhone: "0903 111 222",
     customerAddress: "Số 92 đường Trần Thái Tông, Cầu Giấy",
-    distanceKm: 0.8,
-    timeAgo: "32 phút trước",
-    paymentMethod: "COD",
-    isPaid: false,
-    deliveryType: "express",
+    orderDate: "20 Thg 9, 09:08",
+    priceFormatted: "441.000 đ",
+    paymentMethod: "Chuyển khoản QR",
+    status: "Hoàn thành",
     items: [
-      { name: "Dưa leo baby giòn ngọt", qty: 1, price: 25000 },
-      { name: "Khoai tây vàng Đà Lạt", qty: 1, price: 30000 }
-    ],
-    totalAmount: 55000,
-    status: "delivering",
-    shipperInfo: {
-      name: "Nguyễn Văn Nam",
-      phone: "0987 654 321",
-      licensePlate: "29M1-8888"
-    }
+      { name: "Dưa leo baby giòn ngọt", qty: 2, price: 25000 },
+      { name: "Khoai tây vàng Đà Lạt", qty: 3, price: 30000 },
+      { name: "Nấm đùi gà hữu cơ", qty: 2, price: 45000 }
+    ]
   },
   {
     id: "ord-04",
-    orderCode: "ORD-98188",
+    orderCode: "#7721AQ",
+    productSummary: "Cam sành Hàm Yên (2kg)",
     customerName: "Bác Tuấn Hưng",
     customerPhone: "0977 444 555",
     customerAddress: "Số 104 Xuân Thủy, Cầu Giấy, Hà Nội",
-    distanceKm: 1.6,
-    timeAgo: "1 giờ trước",
-    paymentMethod: "ONLINE_QR",
-    isPaid: true,
-    deliveryType: "standard",
+    orderDate: "15 Thg 10, 15:45",
+    priceFormatted: "84.000 đ",
+    paymentMethod: "Tiền mặt COD",
+    status: "Đang xử lý",
     items: [
       { name: "Cam sành Hàm Yên (1kg)", qty: 2, price: 42000 }
-    ],
-    totalAmount: 84000,
-    status: "completed"
+    ]
+  },
+  {
+    id: "ord-05",
+    orderCode: "#1189MN",
+    productSummary: "Táo Envy Mỹ & Dâu tây Mộc Châu",
+    customerName: "Nguyễn Thị Ngọc",
+    customerPhone: "0966 888 222",
+    customerAddress: "Toà Keangnam Landmark 72, Nam Từ Liêm",
+    orderDate: "02 Thg 11, 10:15",
+    priceFormatted: "295.000 đ",
+    paymentMethod: "Chuyển khoản QR",
+    status: "Đang xử lý",
+    items: [
+      { name: "Táo Envy Mỹ nhập khẩu", qty: 1, price: 125000 },
+      { name: "Dâu tây Mộc Châu Sơn La", qty: 1, price: 170000 }
+    ]
   }
 ]);
 
-// Bộ lọc đơn hàng
-const orderFilter = ref<"all" | "pending" | "preparing" | "delivering" | "completed">("all");
+// Danh sách sản phẩm bán chạy (Top Selling Products)
+interface TopProduct {
+  id: string;
+  name: string;
+  salesText: string;
+  statusText: string;
+  stockText: string;
+  image: string;
+}
 
-const filteredOrders = computed(() => {
-  if (orderFilter.value === "all") return orders.value;
-  return orders.value.filter(o => o.status === orderFilter.value);
-});
-
-const pendingCount = computed(() => orders.value.filter(o => o.status === "pending").length);
-const preparingCount = computed(() => orders.value.filter(o => o.status === "preparing").length);
-
-// Xử lý đơn hàng
-const handleAcceptOrder = (orderId: string) => {
-  const ord = orders.value.find(o => o.id === orderId);
-  if (ord) {
-    ord.status = "preparing";
-    ord.shipperInfo = {
-      name: "Trần Văn Bình",
-      phone: "0934 888 999",
-      licensePlate: "29M1-9999"
-    };
-    triggerToast(`Đã xác nhận đơn #${ord.orderCode}! Hệ thống đã điều phối Shipper hỏa tốc gần nhất.`);
+const topProducts = ref<TopProduct[]>([
+  {
+    id: "tp-1",
+    name: "Rau muống hữu cơ Ba Vì VietGAP",
+    salesText: "12,429 Đã bán",
+    statusText: "Còn hàng",
+    stockText: "Còn 135 tồn kho",
+    image: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=150&q=80"
+  },
+  {
+    id: "tp-2",
+    name: "Thịt ba chỉ heo sạch chuẩn CP",
+    salesText: "1,543 Đã bán",
+    statusText: "Còn hàng",
+    stockText: "Còn 78 tồn kho",
+    image: "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=150&q=80"
+  },
+  {
+    id: "tp-3",
+    name: "Cà chua bi Đà Lạt mọng nước",
+    salesText: "7,222 Đã bán",
+    statusText: "Còn hàng",
+    stockText: "Còn 465 tồn kho",
+    image: "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=150&q=80"
   }
-};
+]);
 
-const handleHandoverShipper = (orderId: string) => {
-  const ord = orders.value.find(o => o.id === orderId);
-  if (ord) {
-    ord.status = "delivering";
-    triggerToast(`Đã bàn giao đơn #${ord.orderCode} cho tài xế ${ord.shipperInfo?.name}! Đang giao tới khách.`);
-  }
-};
-
-const handleCancelOrder = (orderId: string) => {
-  if (confirm("Bạn có chắc chắn muốn từ chối / hủy đơn hàng này?")) {
-    const ord = orders.value.find(o => o.id === orderId);
-    if (ord) {
-      ord.status = "cancelled";
-      triggerToast(`Đã hủy đơn hàng #${ord.orderCode}.`);
-    }
-  }
-};
-
-// Quản lý sản phẩm của gian hàng
+// Quản lý sản phẩm (Tab Products)
 interface SellerProduct {
   id: string;
   name: string;
@@ -248,1572 +314,2641 @@ const products = ref<SellerProduct[]>([
     category: "Thực phẩm bổ dưỡng",
     price: 45000,
     unit: "Vỉ 10 quả",
-    stock: 50,
+    stock: 60,
     image: "https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?auto=format&fit=crop&w=400&q=80",
     isAvailable: true
   },
   {
     id: "p-05",
-    name: "Xà lách mỡ thủy canh tươi giòn",
-    category: "Rau củ quả",
-    price: 22000,
-    unit: "Túi 400g",
-    stock: 5,
-    image: "https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?auto=format&fit=crop&w=400&q=80",
-    isAvailable: true
-  },
-  {
-    id: "p-06",
     name: "Cam sành Hàm Yên mọng nước",
     category: "Trái cây tươi",
     price: 42000,
-    unit: "1 kg",
-    stock: 0,
+    unit: "Kg",
+    stock: 35,
     image: "https://images.unsplash.com/photo-1582979512210-99b6a53386f9?auto=format&fit=crop&w=400&q=80",
-    isAvailable: false
+    isAvailable: true
   }
 ]);
 
-const productSearch = ref("");
-const filteredProducts = computed(() => {
-  if (!productSearch.value.trim()) return products.value;
-  const q = productSearch.value.toLowerCase().trim();
-  return products.value.filter(p => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
-});
-
-const toggleProductAvailability = (prodId: string) => {
-  const p = products.value.find(item => item.id === prodId);
-  if (p) {
-    p.isAvailable = !p.isAvailable;
-    triggerToast(
-      p.isAvailable
-        ? `Đã bật hiển thị bán món: "${p.name}".`
-        : `Đã tạm ẩn món: "${p.name}" (Hết hàng).`
-    );
-  }
-};
-
-const handleDeleteProduct = (prodId: string) => {
-  const p = products.value.find(item => item.id === prodId);
-  if (p && confirm(`Bạn có chắc muốn xóa sản phẩm "${p.name}"?`)) {
-    products.value = products.value.filter(item => item.id !== prodId);
-    triggerToast(`Đã xóa sản phẩm "${p.name}".`);
-  }
-};
-
-// Modal Thêm Món Mới
-const isAddModalOpen = ref(false);
-const newProduct = reactive({
+// Modal thêm sản phẩm mới
+const showAddProductModal = ref(false);
+const newProductForm = reactive({
   name: "",
   category: "Rau củ quả",
-  price: 25000,
-  unit: "Kg",
+  price: 0,
+  unit: "Bó 500g",
   stock: 20,
   image: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80"
 });
 
-const handleCreateProduct = () => {
-  if (!newProduct.name.trim()) {
-    alert("Vui lòng nhập tên sản phẩm!");
+const handleSaveProduct = () => {
+  if (!newProductForm.name.trim() || newProductForm.price <= 0) {
+    triggerToast("Vui lòng nhập tên và giá bán hợp lệ!");
     return;
   }
-  if (newProduct.price <= 0) {
-    alert("Vui lòng nhập giá hợp lệ!");
-    return;
-  }
-
   products.value.unshift({
     id: `p-${Date.now()}`,
-    name: newProduct.name.trim(),
-    category: newProduct.category,
-    price: Number(newProduct.price),
-    unit: newProduct.unit,
-    stock: Number(newProduct.stock),
-    image: newProduct.image || "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80",
+    name: newProductForm.name.trim(),
+    category: newProductForm.category,
+    price: newProductForm.price,
+    unit: newProductForm.unit,
+    stock: newProductForm.stock,
+    image: newProductForm.image,
     isAvailable: true
   });
-
-  isAddModalOpen.value = false;
-  // Reset form
-  newProduct.name = "";
-  newProduct.price = 25000;
-  newProduct.stock = 20;
-
-  triggerToast("Đã thêm sản phẩm mới thành công lên gian hàng!");
+  showAddProductModal.value = false;
+  newProductForm.name = "";
+  newProductForm.price = 0;
+  triggerToast("Đã thêm sản phẩm mới vào gian hàng thành công!");
 };
 
-// Lưu cài đặt gian hàng
-const handleSaveSettings = () => {
-  triggerToast("Đã lưu thông tin cài đặt gian hàng thành công!");
+// Xử lý đơn hàng
+const handleActionOrder = (order: SellerOrder) => {
+  if (order.status === "Đang xử lý") {
+    order.status = "Hoàn thành";
+    triggerToast(`Đơn hàng ${order.orderCode} đã hoàn tất và bàn giao thành công!`);
+  } else {
+    triggerToast(`Đang xem chi tiết đơn hàng ${order.orderCode}`);
+  }
 };
+
+// Filtered orders for table
+const displayedOrders = computed(() => {
+  if (!searchQuery.value.trim()) return orders.value;
+  const q = searchQuery.value.toLowerCase().trim();
+  return orders.value.filter(
+    o =>
+      o.orderCode.toLowerCase().includes(q) ||
+      o.customerName.toLowerCase().includes(q) ||
+      o.productSummary.toLowerCase().includes(q)
+  );
+});
 </script>
 
 <template>
-  <div class="seller-dashboard-container">
-    <!-- Toast thông báo nổi -->
-    <transition name="toast-fade">
-      <div v-if="showToast" class="toast-popup" role="alert">
-        <i class="bi bi-check-circle-fill me-2 text-success"></i>
-        <span>{{ toastMessage }}</span>
-      </div>
-    </transition>
-
-    <!-- 1. BANNER CHUYỂN NHANH CHẾ ĐỘ MUA HÀNG DÀNH CHO SELLER (ĐÁP ỨNG YÊU CẦU NGƯỜI BÁN VẪN MUA ĐƯỢC HÀNG) -->
-    <div class="buyer-mode-banner">
-      <div class="bmb-left">
-        <div class="bmb-icon-box">
-          <i class="bi bi-bag-heart-fill"></i>
-        </div>
-        <div class="bmb-text">
-          <div class="bmb-title-row">
-            <h3 class="bmb-title">Kênh Bán Hàng ZoneMart • Bác Ba</h3>
-            <span class="role-pill"><i class="bi bi-shop me-1"></i> Đối Tác Bán Hàng</span>
+  <div class="seller-app-layout">
+    <!-- ==================== 1. SIDEBAR TRÁI HIỆN ĐẠI ==================== -->
+    <aside class="seller-sidebar">
+      <!-- Logo thương hiệu -->
+      <div class="sidebar-brand-container">
+        <router-link to="/seller" class="brand-link">
+          <div class="brand-logo-badge">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D94E15" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <path d="M16 10a4 4 0 0 1-8 0"></path>
+            </svg>
           </div>
-          <p class="bmb-sub">
-            Là Người Bán, bạn hoàn toàn có thể mua hàng từ các gian hàng khác với giao hỏa tốc 10km như khách hàng bình thường!
-          </p>
-        </div>
-      </div>
-      <div class="bmb-actions">
-        <router-link to="/products" class="btn btn-shop-action">
-          <i class="bi bi-basket2-fill me-1"></i> Khám Phá Chợ Mua Sắm
-        </router-link>
-        <router-link to="/cart" class="btn btn-cart-action">
-          <i class="bi bi-cart3 me-1"></i> Giỏ Hàng
-        </router-link>
-        <router-link to="/buyer-orders" class="btn btn-my-orders-action">
-          <i class="bi bi-bag-check me-1"></i> Đơn Đã Mua
+          <div class="brand-text-block">
+            <span class="brand-title">ZoneMart</span>
+            <span class="brand-role-tag">Kênh Người Bán</span>
+          </div>
         </router-link>
       </div>
-    </div>
 
-    <!-- 2. STORE HEADER & LIVE TOGGLE BAR -->
-    <div class="store-overview-card">
-      <div class="store-brand-left">
-        <div class="store-avatar-box">
-          <i class="bi bi-shop-window"></i>
-        </div>
-        <div class="store-meta-info">
-          <div class="store-title-row">
-            <h2>{{ storeInfo.name }}</h2>
-            <span class="badge-partner-id">Mã: {{ storeInfo.id }}</span>
-            <span class="badge-rating"><i class="bi bi-star-fill text-warning me-1"></i>{{ storeInfo.rating }} ({{ storeInfo.reviewsCount }} đánh giá)</span>
-          </div>
-          <p class="store-address-text">
-            <i class="bi bi-geo-alt-fill text-danger me-1"></i> {{ storeInfo.address }}
-          </p>
-          <div class="store-badges-row">
-            <span class="s-tag"><i class="bi bi-clock-fill me-1"></i> Giờ mở cửa: {{ storeInfo.openHours }}</span>
-            <span class="s-tag"><i class="bi bi-lightning-charge-fill text-warning me-1"></i> Giao hỏa tốc bán kính ≤ {{ storeInfo.radiusKm }}km</span>
-            <span class="s-tag"><i class="bi bi-telephone-fill me-1"></i> Hotline: {{ storeInfo.phone }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Toggle trạng thái mở cửa gian hàng -->
-      <div class="store-status-toggle">
-        <div class="status-indicator" :class="{ 'is-open': isStoreOpen }">
-          <span class="pulse-dot"></span>
-          <strong>{{ isStoreOpen ? "Đang Mở Cửa Nhận Đơn" : "Tạm Đóng Cửa" }}</strong>
-        </div>
-        <button 
-          class="btn btn-toggle-state" 
-          :class="isStoreOpen ? 'btn-danger-outline' : 'btn-success-outline'" 
-          @click="toggleStoreOpen"
+      <!-- Navigation Menu -->
+      <nav class="sidebar-nav">
+        <!-- 1. Overview -->
+        <button
+          type="button"
+          class="nav-item-btn"
+          :class="{ active: activeNav === 'overview' }"
+          @click="activeNav = 'overview'"
         >
-          <i :class="isStoreOpen ? 'bi bi-pause-circle-fill me-1' : 'bi bi-play-circle-fill me-1'"></i>
-          {{ isStoreOpen ? "Tạm Dừng Nhận Đơn" : "Bật Nhận Đơn Ngay" }}
+          <i class="bi bi-grid-fill nav-icon"></i>
+          <span class="nav-label">Tổng quan</span>
         </button>
-      </div>
-    </div>
 
-    <!-- 3. KPI STATS METRIC CARDS -->
-    <div class="metrics-grid">
-      <div class="metric-card">
-        <div class="metric-icon-box bg-emerald">
-          <i class="bi bi-cash-stack"></i>
-        </div>
-        <div class="metric-body">
-          <span class="metric-label">Doanh Thu Hôm Nay</span>
-          <h3 class="metric-value">{{ storeInfo.todayRevenue.toLocaleString("vi-VN") }} ₫</h3>
-          <span class="metric-trend text-success"><i class="bi bi-arrow-up-right me-1"></i>+14.2% so với hôm qua</span>
-        </div>
-      </div>
+        <!-- 2. Products -->
+        <button
+          type="button"
+          class="nav-item-btn"
+          :class="{ active: activeNav === 'products' }"
+          @click="activeNav = 'products'"
+        >
+          <i class="bi bi-box-seam nav-icon"></i>
+          <span class="nav-label">Sản phẩm</span>
+        </button>
 
-      <div class="metric-card">
-        <div class="metric-icon-box bg-orange">
-          <i class="bi bi-box-seam-fill"></i>
-        </div>
-        <div class="metric-body">
-          <span class="metric-label">Đơn Hàng Hôm Nay</span>
-          <h3 class="metric-value">{{ orders.length }} Đơn</h3>
-          <span class="metric-trend text-warning" v-if="pendingCount > 0">
-            <i class="bi bi-exclamation-circle-fill me-1"></i>{{ pendingCount }} đơn cần chuẩn bị
-          </span>
-          <span class="metric-trend text-muted" v-else>Đã xử lý tất cả</span>
-        </div>
-      </div>
+        <!-- 3. Customer -->
+        <button
+          type="button"
+          class="nav-item-btn"
+          :class="{ active: activeNav === 'customers' }"
+          @click="activeNav = 'customers'"
+        >
+          <i class="bi bi-people nav-icon"></i>
+          <span class="nav-label">Khách hàng</span>
+        </button>
 
-      <div class="metric-card">
-        <div class="metric-icon-box bg-blue">
-          <i class="bi bi-grid-3x3-gap-fill"></i>
-        </div>
-        <div class="metric-body">
-          <span class="metric-label">Sản Phẩm Đang Bán</span>
-          <h3 class="metric-value">{{ products.length }} Món</h3>
-          <span class="metric-trend text-primary"><i class="bi bi-check2-all me-1"></i>Sẵn sàng giao 10km</span>
-        </div>
-      </div>
+        <!-- 4. Orders -->
+        <button
+          type="button"
+          class="nav-item-btn"
+          :class="{ active: activeNav === 'orders' }"
+          @click="activeNav = 'orders'"
+        >
+          <i class="bi bi-bag-check nav-icon"></i>
+          <span class="nav-label">Đơn hàng</span>
+          <span v-if="orders.length" class="nav-badge-pill">{{ orders.length }}</span>
+        </button>
 
-      <div class="metric-card">
-        <div class="metric-icon-box bg-purple">
-          <i class="bi bi-star-fill"></i>
-        </div>
-        <div class="metric-body">
-          <span class="metric-label">Uy Tín Gian Hàng</span>
-          <h3 class="metric-value">4.9 / 5.0</h3>
-          <span class="metric-trend text-success"><i class="bi bi-patch-check-fill me-1"></i>Đối tác chuẩn VietGAP</span>
-        </div>
-      </div>
-    </div>
+        <!-- 5. Shipment -->
+        <button
+          type="button"
+          class="nav-item-btn"
+          :class="{ active: activeNav === 'shipment' }"
+          @click="activeNav = 'shipment'"
+        >
+          <i class="bi bi-truck nav-icon"></i>
+          <span class="nav-label">Vận chuyển</span>
+        </button>
 
-    <!-- 4. DASHBOARD TABS NAVIGATION -->
-    <div class="dashboard-tabs-bar">
-      <button 
-        class="tab-btn" 
-        :class="{ active: activeTab === 'orders' }" 
-        @click="activeTab = 'orders'"
-      >
-        <i class="bi bi-receipt-cutoff me-2"></i>
-        <span>Quản Lý Đơn Hàng</span>
-        <span v-if="pendingCount > 0" class="tab-badge">{{ pendingCount }}</span>
-      </button>
+        <!-- 6. Store Setting -->
+        <button
+          type="button"
+          class="nav-item-btn"
+          :class="{ active: activeNav === 'settings' }"
+          @click="activeNav = 'settings'"
+        >
+          <i class="bi bi-shop nav-icon"></i>
+          <span class="nav-label">Cài đặt gian hàng</span>
+        </button>
 
-      <button 
-        class="tab-btn" 
-        :class="{ active: activeTab === 'products' }" 
-        @click="activeTab = 'products'"
-      >
-        <i class="bi bi-egg-fried me-2"></i>
-        <span>Sản Phẩm & Tồn Kho</span>
-        <span class="tab-count">({{ products.length }})</span>
-      </button>
+        <!-- 7. Platform Partner -->
+        <button
+          type="button"
+          class="nav-item-btn"
+          :class="{ active: activeNav === 'partner' }"
+          @click="activeNav = 'partner'"
+        >
+          <i class="bi bi-share nav-icon"></i>
+          <span class="nav-label">Đối tác nền tảng</span>
+        </button>
 
-      <button 
-        class="tab-btn" 
-        :class="{ active: activeTab === 'settings' }" 
-        @click="activeTab = 'settings'"
-      >
-        <i class="bi bi-sliders me-2"></i>
-        <span>Cài Đặt Gian Hàng & 10km</span>
-      </button>
-    </div>
+        <!-- 8. Feedback -->
+        <button
+          type="button"
+          class="nav-item-btn"
+          :class="{ active: activeNav === 'feedback' }"
+          @click="activeNav = 'feedback'"
+        >
+          <i class="bi bi-chat-square-text nav-icon"></i>
+          <span class="nav-label">Đánh giá & Phản hồi</span>
+        </button>
 
-    <!-- TAB 1: QUẢN LÝ ĐƠN HÀNG -->
-    <div v-if="activeTab === 'orders'" class="tab-content-wrapper">
-      <div class="orders-filter-bar">
-        <div class="filter-pills">
-          <button 
-            class="pill-btn" 
-            :class="{ active: orderFilter === 'all' }" 
-            @click="orderFilter = 'all'"
-          >
-            Tất cả ({{ orders.length }})
-          </button>
-          <button 
-            class="pill-btn" 
-            :class="{ active: orderFilter === 'pending' }" 
-            @click="orderFilter = 'pending'"
-          >
-            Chờ xác nhận ({{ pendingCount }})
-          </button>
-          <button 
-            class="pill-btn" 
-            :class="{ active: orderFilter === 'preparing' }" 
-            @click="orderFilter = 'preparing'"
-          >
-            Đang chuẩn bị ({{ preparingCount }})
-          </button>
-          <button 
-            class="pill-btn" 
-            :class="{ active: orderFilter === 'delivering' }" 
-            @click="orderFilter = 'delivering'"
-          >
-            Đang giao hỏa tốc
-          </button>
-          <button 
-            class="pill-btn" 
-            :class="{ active: orderFilter === 'completed' }" 
-            @click="orderFilter = 'completed'"
-          >
-            Đã hoàn thành
+        <!-- 9. Help & Support -->
+        <button
+          type="button"
+          class="nav-item-btn"
+          :class="{ active: activeNav === 'support' }"
+          @click="activeNav = 'support'"
+        >
+          <i class="bi bi-question-circle nav-icon"></i>
+          <span class="nav-label">Trợ giúp & Hỗ trợ</span>
+        </button>
+      </nav>
+
+    
+    </aside>
+
+    <!-- ==================== 2. MAIN CONTAINER ==================== -->
+    <div class="seller-main-wrapper">
+      <!-- TOP NAVIGATION BAR -->
+      <header class="seller-top-bar">
+        <!-- Search Input tròn với Mic -->
+        <div class="search-box-pill">
+          <i class="bi bi-search search-icon"></i>
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Tìm kiếm đơn hàng, sản phẩm, khách hàng..."
+            class="search-input-field"
+          />
+          <button type="button" class="mic-btn" title="Tìm kiếm giọng nói">
+            <i class="bi bi-mic"></i>
           </button>
         </div>
-      </div>
 
-      <!-- Danh sách thẻ đơn hàng -->
-      <div v-if="filteredOrders.length > 0" class="orders-list">
-        <div v-for="ord in filteredOrders" :key="ord.id" class="order-card" :class="'border-' + ord.status">
-          <div class="order-card-header">
-            <div class="order-id-group">
-              <span class="order-code">#{{ ord.orderCode }}</span>
-              <span class="order-time"><i class="bi bi-clock me-1"></i>{{ ord.timeAgo }}</span>
-              <span class="delivery-badge" :class="ord.deliveryType">
-                <i class="bi bi-lightning-charge-fill me-1"></i> Hỏa tốc {{ ord.distanceKm }}km
-              </span>
-            </div>
-            <div class="order-status-badge" :class="ord.status">
-              <span v-if="ord.status === 'pending'">Chờ xác nhận</span>
-              <span v-else-if="ord.status === 'preparing'">Đang đóng gói</span>
-              <span v-else-if="ord.status === 'delivering'">Shipper đang giao</span>
-              <span v-else-if="ord.status === 'completed'">Giao thành công</span>
-              <span v-else-if="ord.status === 'cancelled'">Đã hủy</span>
-            </div>
+        <!-- Right action cluster -->
+        <div class="top-bar-right">
+          <!-- Chuyển sang chế độ mua hàng -->
+          <button
+            type="button"
+            class="btn-buyer-switch"
+            @click="switchToBuyerMode"
+            title="Chuyển sang giao diện Mua hàng ZoneMart"
+          >
+            <i class="bi bi-bag-check me-1"></i>
+            <span>Chế độ Người Mua</span>
+          </button>
+
+          <!-- Toggle mở/đóng cửa hàng -->
+          <div class="store-status-toggle" :class="{ 'is-open': isStoreOpen }" @click="toggleStoreOpen">
+            <span class="status-indicator-dot"></span>
+            <span class="status-text">{{ isStoreOpen ? "Mở tiệm nhận đơn" : "Tạm đóng" }}</span>
           </div>
 
-          <!-- Thông tin khách hàng & địa chỉ -->
-          <div class="order-customer-box">
-            <div class="customer-info-line">
-              <strong><i class="bi bi-person-fill text-primary me-1"></i> {{ ord.customerName }}</strong>
-              <a :href="'tel:' + ord.customerPhone" class="customer-phone-link">
-                <i class="bi bi-telephone-fill me-1"></i> {{ ord.customerPhone }}
-              </a>
+          <!-- User Profile Dropdown Capsule -->
+          <div class="user-profile-capsule" @click="isUserMenuOpen = !isUserMenuOpen">
+            <img :src="currentUser.avatar" alt="User Avatar" class="profile-avatar-img" />
+            <div class="profile-info-text">
+              <span class="profile-name">{{ currentUser.name }}</span>
+              <span class="profile-email">{{ currentUser.email }}</span>
             </div>
-            <p class="customer-addr">
-              <i class="bi bi-geo-alt-fill text-danger me-1"></i> {{ ord.customerAddress }}
-            </p>
-          </div>
+            <i class="bi bi-chevron-down chevron-icon" :class="{ rotated: isUserMenuOpen }"></i>
 
-          <!-- Danh sách món đặt -->
-          <div class="order-items-list">
-            <div v-for="(it, idx) in ord.items" :key="idx" class="order-item-row">
-              <span class="item-name"><i class="bi bi-check2 text-success me-1"></i> {{ it.name }}</span>
-              <span class="item-qty">x{{ it.qty }}</span>
-              <span class="item-price">{{ (it.price * it.qty).toLocaleString("vi-VN") }} ₫</span>
-            </div>
-          </div>
-
-          <!-- Shipper phụ trách nếu có -->
-          <div v-if="ord.shipperInfo" class="shipper-assigned-bar">
-            <i class="bi bi-bicycle text-success me-2 fs-5"></i>
-            <div>
-              <span>Tài xế nhận đơn: <strong>{{ ord.shipperInfo.name }}</strong> ({{ ord.shipperInfo.licensePlate }})</span>
-              <a :href="'tel:' + ord.shipperInfo.phone" class="shipper-tel">
-                <i class="bi bi-telephone-outbound-fill me-1"></i> {{ ord.shipperInfo.phone }}
-              </a>
+            <!-- Dropdown Menu -->
+            <div v-if="isUserMenuOpen" class="user-dropdown-popup" @click.stop>
+              <div class="dropdown-header">
+                <b>{{ currentUser.name }}</b>
+                <small>{{ storeInfo.name }}</small>
+              </div>
+              <button type="button" class="dropdown-link" @click="activeNav = 'settings'; isUserMenuOpen = false">
+                <i class="bi bi-gear me-2"></i> Cài đặt gian hàng
+              </button>
+              <button type="button" class="dropdown-link" @click="switchToBuyerMode">
+                <i class="bi bi-cart3 me-2"></i> Vào trang mua sắm
+              </button>
+              <div class="dropdown-divider"></div>
+              <button type="button" class="dropdown-link text-danger" @click="handleLogout">
+                <i class="bi bi-box-arrow-right me-2"></i> Đăng xuất
+              </button>
             </div>
           </div>
+        </div>
+      </header>
 
-          <!-- Tổng kết & Nút thao tác -->
-          <div class="order-card-footer">
-            <div class="order-pay-info">
-              <span class="pay-method">
-                <i :class="ord.paymentMethod === 'ONLINE_QR' ? 'bi bi-qr-code text-primary' : 'bi bi-cash-coin text-warning'"></i>
-                {{ ord.paymentMethod === 'ONLINE_QR' ? 'Đã thanh toán Online QR' : 'Thu tiền mặt COD' }}
-              </span>
-              <div class="total-wrap">
-                <span class="total-label">Tổng tiền hàng:</span>
-                <strong class="total-val">{{ ord.totalAmount.toLocaleString("vi-VN") }} ₫</strong>
+      <!-- BODY CONTENT THEO TAB -->
+      <main class="seller-content-body">
+        <!-- ==================== TAB 1: OVERVIEW ==================== -->
+        <section v-if="activeNav === 'overview'" class="overview-view-container">
+          <!-- Heading Welcome -->
+          <div class="welcome-heading-section anim-welcome">
+            <h1 class="welcome-title">
+              Chào mừng trở lại, <span class="bold-name">{{ greetingName }} !</span>
+            </h1>
+            <p class="welcome-subtitle">Tổng quan hiệu suất bán hàng & doanh thu hôm nay của gian hàng</p>
+          </div>
+
+          <!-- TOP 3 KPI STAT CARDS -->
+          <div class="kpi-cards-grid">
+            <!-- Card 1: AVG . Order Value (Dark Card nổi bật) -->
+            <div class="kpi-card dark-kpi-card anim-kpi-1">
+              <div class="kpi-card-header">
+                <span class="kpi-label">Giá Trị Đơn Trung Bình</span>
+                <div class="kpi-icon-badge dark-badge">
+                  <i class="bi bi-stack"></i>
+                </div>
+              </div>
+              <div class="kpi-value-row">
+                <span class="kpi-number">{{ storeInfo.avgOrderValue }}</span>
+              </div>
+              <div class="kpi-trend-row green-trend">
+                <span class="trend-pct">+ 3.16%</span>
+                <span class="trend-sub">So với tháng trước</span>
               </div>
             </div>
 
-            <div class="order-action-btns">
-              <!-- Nút khi đơn mới pending -->
-              <template v-if="ord.status === 'pending'">
-                <button class="btn btn-sm btn-danger" @click="handleCancelOrder(ord.id)">
-                  <i class="bi bi-x-circle me-1"></i> Từ Chối
-                </button>
-                <button class="btn btn-sm btn-primary-warm" @click="handleAcceptOrder(ord.id)">
-                  <i class="bi bi-box-seam me-1"></i> Xác Nhận & Gọi Shipper
-                </button>
-              </template>
+            <!-- Card 2: Total Orders -->
+            <div class="kpi-card white-kpi-card anim-kpi-2">
+              <div class="kpi-card-header">
+                <span class="kpi-label">Tổng Đơn Hàng</span>
+                <div class="kpi-icon-badge white-badge">
+                  <i class="bi bi-clipboard-data"></i>
+                </div>
+              </div>
+              <div class="kpi-value-row">
+                <span class="kpi-number">{{ storeInfo.totalOrders }}</span>
+              </div>
+              <div class="kpi-trend-row red-trend">
+                <span class="trend-pct">- 1.18%</span>
+                <span class="trend-sub">So với tháng trước</span>
+              </div>
+            </div>
 
-              <!-- Nút khi đang chuẩn bị -->
-              <template v-else-if="ord.status === 'preparing'">
-                <button class="btn btn-sm btn-success" @click="handleHandoverShipper(ord.id)">
-                  <i class="bi bi-bicycle me-1"></i> Bàn Giao Cho Shipper
-                </button>
-              </template>
-
-              <!-- Khi đang giao -->
-              <template v-else-if="ord.status === 'delivering'">
-                <span class="text-delivering">
-                  <i class="bi bi-clock-history me-1"></i> Shipper đang giao tới khách...
-                </span>
-              </template>
-
-              <!-- Khi đã hoàn thành -->
-              <template v-else-if="ord.status === 'completed'">
-                <span class="text-completed">
-                  <i class="bi bi-check-circle-fill text-success me-1"></i> Đơn hoàn tất • Đã cộng tiền vào ví
-                </span>
-              </template>
+            <!-- Card 3: Lifetime Value -->
+            <div class="kpi-card white-kpi-card anim-kpi-3">
+              <div class="kpi-card-header">
+                <span class="kpi-label">Doanh Thu Tích Lũy</span>
+                <div class="kpi-icon-badge white-badge">
+                  <i class="bi bi-pie-chart"></i>
+                </div>
+              </div>
+              <div class="kpi-value-row">
+                <span class="kpi-number">{{ storeInfo.lifetimeValue }}</span>
+              </div>
+              <div class="kpi-trend-row green-trend">
+                <span class="trend-pct">+ 2.24%</span>
+                <span class="trend-sub">So với tháng trước</span>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div v-else class="empty-state-box">
-        <i class="bi bi-inbox fs-1 text-muted mb-2"></i>
-        <h4>Không có đơn hàng nào</h4>
-        <p>Hiện không có đơn hàng nào trong mục này. Khi khách đặt món trong bán kính 10km, đơn sẽ xuất hiện ngay lập tức.</p>
-      </div>
-    </div>
-
-    <!-- TAB 2: QUẢN LÝ SẢN PHẨM & TỒN KHO -->
-    <div v-if="activeTab === 'products'" class="tab-content-wrapper">
-      <div class="products-top-toolbar">
-        <div class="search-input-box">
-          <i class="bi bi-search"></i>
-          <input 
-            v-model="productSearch" 
-            type="text" 
-            placeholder="Tìm theo tên sản phẩm, danh mục..." 
-          />
-        </div>
-
-        <button class="btn btn-primary-warm" @click="isAddModalOpen = true">
-          <i class="bi bi-plus-lg me-1"></i> Thêm Sản Phẩm Mới
-        </button>
-      </div>
-
-      <!-- Bảng danh sách sản phẩm -->
-      <div class="products-table-card">
-        <table class="seller-table">
-          <thead>
-            <tr>
-              <th>Hình ảnh</th>
-              <th>Tên sản phẩm</th>
-              <th>Danh mục</th>
-              <th>Đơn giá</th>
-              <th>Đơn vị</th>
-              <th>Tồn kho</th>
-              <th>Trạng thái bán</th>
-              <th>Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="prod in filteredProducts" :key="prod.id">
-              <td>
-                <img :src="prod.image" :alt="prod.name" class="prod-thumb" />
-              </td>
-              <td>
-                <strong class="prod-title">{{ prod.name }}</strong>
-              </td>
-              <td>
-                <span class="cat-pill">{{ prod.category }}</span>
-              </td>
-              <td>
-                <strong class="price-text">{{ prod.price.toLocaleString("vi-VN") }} ₫</strong>
-              </td>
-              <td>
-                <span class="text-muted">{{ prod.unit }}</span>
-              </td>
-              <td>
-                <span class="stock-pill" :class="{ 'low-stock': prod.stock <= 5 }">
-                  {{ prod.stock }} {{ prod.unit }}
-                </span>
-              </td>
-              <td>
-                <button 
-                  class="status-toggle-badge" 
-                  :class="prod.isAvailable ? 'available' : 'unavailable'"
-                  @click="toggleProductAvailability(prod.id)"
-                  :title="prod.isAvailable ? 'Bấm để chuyển sang Hết hàng' : 'Bấm để bật Còn hàng'"
-                >
-                  <i :class="prod.isAvailable ? 'bi bi-check-circle-fill me-1' : 'bi bi-dash-circle-fill me-1'"></i>
-                  {{ prod.isAvailable ? 'Đang Bán' : 'Tạm Ẩn' }}
-                </button>
-              </td>
-              <td>
-                <div class="action-icons-wrap">
-                  <button 
-                    class="btn-icon-action text-danger" 
-                    title="Xóa sản phẩm"
-                    @click="handleDeleteProduct(prod.id)"
-                  >
-                    <i class="bi bi-trash3-fill"></i>
+          <!-- MIDDLE SECTION: SALES OVERTIME CHART & TOP SELLING PRODUCT -->
+          <div class="middle-dashboard-grid">
+            <!-- 1. CỘT TRÁI: SALES OVERTIME CHART -->
+            <div class="dashboard-panel-card chart-panel anim-chart">
+              <div class="panel-header-row">
+                <h3 class="panel-title">Doanh Thu Theo Thời Gian</h3>
+                <div class="chart-legend-group">
+                  <div class="legend-item purple-legend">
+                    <span class="legend-dot purple-dot"></span>
+                    <span>Doanh thu</span>
+                  </div>
+                  <div class="legend-item blue-legend">
+                    <span class="legend-dot blue-dot"></span>
+                    <span>Đơn hàng</span>
+                  </div>
+                  <button type="button" class="chart-menu-btn" title="Tùy chọn hiển thị">
+                    <i class="bi bi-list"></i>
                   </button>
                 </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+              </div>
 
-    <!-- TAB 3: CÀI ĐẶT GIAN HÀNG & 10KM -->
-    <div v-if="activeTab === 'settings'" class="tab-content-wrapper">
-      <div class="settings-grid">
-        <!-- Thông tin cơ bản -->
-        <div class="settings-card">
-          <h3 class="card-heading"><i class="bi bi-shop me-2 text-primary"></i> Thông Tin Gian Hàng</h3>
-          <div class="form-group">
-            <label>Tên Gian Hàng / Cửa Hàng:</label>
-            <input v-model="storeInfo.name" type="text" class="form-control" />
-          </div>
+              <!-- SVG Interactive Dual Line Chart -->
+              <div class="chart-canvas-container">
+                <svg viewBox="0 0 650 240" class="smooth-line-svg" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="purpleGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stop-color="#A855F7" stop-opacity="0.28" />
+                      <stop offset="100%" stop-color="#A855F7" stop-opacity="0.0" />
+                    </linearGradient>
+                    <linearGradient id="blueGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.18" />
+                      <stop offset="100%" stop-color="#3B82F6" stop-opacity="0.0" />
+                    </linearGradient>
+                  </defs>
 
-          <div class="form-group">
-            <label>Địa Chỉ Nhà Vườn / Gian Hàng (Định Vị GPS):</label>
-            <input v-model="storeInfo.address" type="text" class="form-control" />
-          </div>
+                  <!-- Grid lines -->
+                  <line x1="50" y1="30" x2="630" y2="30" stroke="#F1F5F9" stroke-width="1" />
+                  <line x1="50" y1="80" x2="630" y2="80" stroke="#F1F5F9" stroke-width="1" />
+                  <line x1="50" y1="130" x2="630" y2="130" stroke="#F1F5F9" stroke-width="1" />
+                  <line x1="50" y1="180" x2="630" y2="180" stroke="#F1F5F9" stroke-width="1" />
+                  <line x1="50" y1="210" x2="630" y2="210" stroke="#E2E8F0" stroke-width="1" />
 
-          <div class="form-row-2">
-            <div class="form-group">
-              <label>Số Điện Thoại Quán:</label>
-              <input v-model="storeInfo.phone" type="text" class="form-control" />
-            </div>
-            <div class="form-group">
-              <label>Khung Giờ Mở Cửa:</label>
-              <input v-model="storeInfo.openHours" type="text" class="form-control" />
-            </div>
-          </div>
+                  <!-- Y-Axis labels -->
+                  <text x="15" y="34" class="axis-label">20 tr</text>
+                  <text x="15" y="84" class="axis-label">15 tr</text>
+                  <text x="15" y="134" class="axis-label">10 tr</text>
+                  <text x="15" y="184" class="axis-label">5 tr</text>
+                  <text x="25" y="214" class="axis-label">0 đ</text>
 
-          <div class="form-group">
-            <label class="d-flex justify-content-between">
-              <span>Bán Kính Giao Hàng Hỏa Tốc:</span>
-              <strong class="text-primary">{{ storeInfo.radiusKm }} km (Tối đa 10km)</strong>
-            </label>
-            <input 
-              v-model.number="storeInfo.radiusKm" 
-              type="range" 
-              min="1" 
-              max="10" 
-              step="0.5" 
-              class="radius-range-slider" 
-            />
-            <small class="text-muted">Shipper ZoneMart sẽ chỉ nhận đơn từ khách hàng trong bán kính này để đảm bảo giao tươi trong 30-45 phút.</small>
-          </div>
-        </div>
+                  <!-- Area under purple curve -->
+                  <path
+                    class="chart-area-path"
+                    d="M 60 170 C 110 130, 140 120, 180 150 C 220 180, 260 160, 310 140 C 350 120, 390 160, 440 140 C 490 120, 520 135, 570 155 C 600 170, 620 145, 630 140 L 630 210 L 60 210 Z"
+                    fill="url(#purpleGradient)"
+                  />
 
-        <!-- Tài khoản thanh toán nhận tiền -->
-        <div class="settings-card">
-          <h3 class="card-heading"><i class="bi bi-bank me-2 text-success"></i> Tài Khoản Nhận Doanh Thu VietQR</h3>
-          
-          <div class="form-group">
-            <label>Ngân Hàng Nhận Tiền:</label>
-            <input v-model="storeInfo.bankName" type="text" class="form-control" />
-          </div>
+                  <!-- Purple curve (Revenue) -->
+                  <path
+                    class="chart-line-revenue"
+                    d="M 60 170 C 110 130, 140 120, 180 150 C 220 180, 260 160, 310 140 C 350 120, 390 160, 440 140 C 490 120, 520 135, 570 155 C 600 170, 620 145, 630 140"
+                    fill="none"
+                    stroke="#A855F7"
+                    stroke-width="2.8"
+                    stroke-linecap="round"
+                  />
 
-          <div class="form-group">
-            <label>Số Tài Khoản Ngân Hàng:</label>
-            <input v-model="storeInfo.bankAccount" type="text" class="form-control" />
-          </div>
+                  <!-- Blue curve (Orders) -->
+                  <path
+                    class="chart-line-order"
+                    d="M 60 190 C 110 180, 140 170, 180 180 C 220 190, 260 175, 310 165 C 350 155, 390 175, 440 160 C 490 150, 520 160, 570 180 C 600 190, 620 165, 630 150"
+                    fill="none"
+                    stroke="#3B82F6"
+                    stroke-width="2.4"
+                    stroke-linecap="round"
+                  />
 
-          <div class="form-group">
-            <label>Chủ Tài Khoản (In hoa không dấu):</label>
-            <input v-model="storeInfo.accountHolder" type="text" class="form-control" />
-          </div>
+                  <!-- Dotted Indicator at Aug (x=310) -->
+                  <line class="chart-guide-line" x1="310" y1="120" x2="310" y2="210" stroke="#CBD5E1" stroke-dasharray="3,3" stroke-width="1.5" />
+                  <circle class="chart-pulse-dot dot-purple" cx="310" cy="140" r="5" fill="#A855F7" stroke="#FFFFFF" stroke-width="2" />
+                  <circle class="chart-pulse-dot dot-blue" cx="310" cy="165" r="5" fill="#3B82F6" stroke="#FFFFFF" stroke-width="2" />
+                </svg>
 
-          <div class="vietqr-preview-box">
-            <p class="qr-preview-desc">Mã QR nhận chuyển khoản trực tiếp từ khách hàng:</p>
-            <img 
-              src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=ZONEMART_SELLER_PAYOUT" 
-              alt="VietQR Payout" 
-              class="qr-img" 
-            />
-            <span class="qr-sub">{{ storeInfo.bankName }} • {{ storeInfo.bankAccount }}</span>
-          </div>
+                <!-- Floating Average Tooltip Overlay -->
+                <div class="chart-floating-tooltip animated-tooltip">
+                  <span class="tooltip-title">Trung bình</span>
+                  <div class="tooltip-line">
+                    <span class="dot p-dot"></span>
+                    <span class="date">Thg 8, 2026</span>
+                    <span class="val">18.5 tr</span>
+                  </div>
+                  <div class="tooltip-line">
+                    <span class="dot b-dot"></span>
+                    <span class="date">Thg 8, 2026</span>
+                    <span class="val">142 đơn</span>
+                  </div>
+                </div>
 
-          <button class="btn btn-primary-warm w-100 mt-3" @click="handleSaveSettings">
-            <i class="bi bi-check2-circle me-1"></i> Lưu Cấu Hình Gian Hàng
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- MODAL THÊM SẢN PHẨM MỚI -->
-    <div v-if="isAddModalOpen" class="modal-backdrop" @click="isAddModalOpen = false">
-      <div class="modal-dialog-box" @click.stop>
-        <div class="modal-header">
-          <h3><i class="bi bi-plus-circle-fill text-primary me-2"></i> Thêm Sản Phẩm Mới</h3>
-          <button class="modal-close-btn" @click="isAddModalOpen = false">
-            <i class="bi bi-x-lg"></i>
-          </button>
-        </div>
-
-        <form @submit.prevent="handleCreateProduct" class="modal-body">
-          <div class="form-group">
-            <label>Tên nông sản / món hàng (*):</label>
-            <input 
-              v-model="newProduct.name" 
-              type="text" 
-              class="form-control" 
-              placeholder="VD: Rau xà lách thủy canh, Cà chua bi..." 
-              required 
-            />
-          </div>
-
-          <div class="form-row-2">
-            <div class="form-group">
-              <label>Danh mục:</label>
-              <select v-model="newProduct.category" class="form-control">
-                <option value="Rau củ quả">Rau củ quả</option>
-                <option value="Trái cây tươi">Trái cây tươi</option>
-                <option value="Thịt cá tươi">Thịt cá tươi sống</option>
-                <option value="Thực phẩm bổ dưỡng">Thực phẩm dinh dưỡng</option>
-                <option value="Gia vị & Đồ khô">Gia vị & Đồ khô</option>
-              </select>
+                <!-- X-Axis Month labels -->
+                <div class="x-axis-row">
+                  <span>Thg 6</span>
+                  <span>Thg 7</span>
+                  <span class="active-month">Thg 8</span>
+                  <span>Thg 9</span>
+                  <span>Thg 10</span>
+                  <span>Thg 11</span>
+                  <span>Thg 12</span>
+                  <span>Thg 1</span>
+                </div>
+              </div>
             </div>
 
-            <div class="form-group">
-              <label>Đơn vị tính:</label>
-              <input 
-                v-model="newProduct.unit" 
-                type="text" 
-                class="form-control" 
-                placeholder="VD: Kg, Bó 500g, Hộp..." 
-                required 
-              />
+            <!-- 2. CỘT PHẢI: TOP SELLING PRODUCT -->
+            <div class="dashboard-panel-card top-product-panel anim-top-product">
+              <div class="panel-header-row">
+                <h3 class="panel-title">Sản Phẩm Bán Chạy Nhất</h3>
+                <button type="button" class="btn-see-all" @click="activeNav = 'products'">
+                  Xem Tất Cả
+                </button>
+              </div>
+
+              <!-- Product items list -->
+              <div class="top-products-list">
+                <div v-for="item in topProducts" :key="item.id" class="top-product-item">
+                  <img :src="item.image" :alt="item.name" class="top-product-thumb" />
+                  <div class="top-product-info">
+                    <h5 class="product-name-title">{{ item.name }}</h5>
+                    <span class="product-sales-count">{{ item.salesText }}</span>
+                  </div>
+                  <div class="top-product-status-col">
+                    <span class="status-available-badge">
+                      <span class="mini-dot"></span> {{ item.statusText }}
+                    </span>
+                    <span class="stock-remaining-text">{{ item.stockText }}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="form-row-2">
-            <div class="form-group">
-              <label>Đơn giá bán (₫) (*):</label>
-              <input 
-                v-model.number="newProduct.price" 
-                type="number" 
-                min="1000" 
-                step="1000" 
-                class="form-control" 
-                required 
-              />
+          <!-- BOTTOM SECTION: LATEST ORDERS TABLE -->
+          <div class="dashboard-panel-card table-panel anim-table">
+            <div class="panel-header-row">
+              <h3 class="panel-title">Đơn Hàng Gần Đây</h3>
+              <div class="table-actions-group">
+                <button type="button" class="table-tool-btn" @click="triggerToast('Tùy chỉnh cột hiển thị')">
+                  <i class="bi bi-sliders me-1"></i> Tùy biến
+                </button>
+                <button type="button" class="table-tool-btn" @click="triggerToast('Bộ lọc đơn hàng')">
+                  <i class="bi bi-funnel me-1"></i> Bộ lọc
+                </button>
+                <button type="button" class="table-tool-btn" @click="triggerToast('Đã xuất danh sách đơn hàng ra file Excel!')">
+                  <i class="bi bi-download me-1"></i> Xuất file
+                </button>
+              </div>
             </div>
 
-            <div class="form-group">
-              <label>Số lượng tồn kho ban đầu:</label>
-              <input 
-                v-model.number="newProduct.stock" 
-                type="number" 
-                min="0" 
-                class="form-control" 
-                required 
-              />
+            <!-- Clean Modern Data Table -->
+            <div class="table-responsive-box">
+              <table class="modern-data-table">
+                <thead>
+                  <tr>
+                    <th>Mã đơn</th>
+                    <th>Sản phẩm</th>
+                    <th>Thời gian đặt</th>
+                    <th>Tổng tiền</th>
+                    <th>Thanh toán</th>
+                    <th>Trạng thái</th>
+                    <th class="text-center">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="ord in displayedOrders" :key="ord.id">
+                    <td class="order-id-cell">{{ ord.orderCode }}</td>
+                    <td class="product-cell">
+                      <b>{{ ord.productSummary }}</b>
+                      <small class="customer-sub">{{ ord.customerName }} ({{ ord.customerPhone }})</small>
+                    </td>
+                    <td class="date-cell">{{ ord.orderDate }}</td>
+                    <td class="price-cell">{{ ord.priceFormatted }}</td>
+                    <td class="payment-cell">{{ ord.paymentMethod }}</td>
+                    <td class="status-cell">
+                      <span
+                        class="order-badge"
+                        :class="{
+                          'badge-processing': ord.status === 'Đang xử lý',
+                          'badge-completed': ord.status === 'Hoàn thành',
+                          'badge-pending': ord.status === 'Chờ xác nhận'
+                        }"
+                      >
+                        {{ ord.status }}
+                      </span>
+                    </td>
+                    <td class="action-cell text-center">
+                      <button
+                        type="button"
+                        class="btn-row-action"
+                        @click="handleActionOrder(ord)"
+                        title="Thao tác xử lý"
+                      >
+                        <i class="bi bi-three-dots"></i>
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
+        </section>
 
-          <div class="form-group">
-            <label>URL Hình ảnh sản phẩm:</label>
-            <input 
-              v-model="newProduct.image" 
-              type="url" 
-              class="form-control" 
-              placeholder="https://..." 
-            />
-          </div>
-
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" @click="isAddModalOpen = false">
-              Hủy
+        <!-- ==================== TAB 2: PRODUCTS ==================== -->
+        <section v-else-if="activeNav === 'products'" class="tab-page-container">
+          <div class="tab-header-flex">
+            <div>
+              <h2 class="tab-heading">Quản Lý Sản Phẩm Gian Hàng</h2>
+              <p class="tab-subheading">Xem, thêm mới, sửa giá và quản lý tồn kho nông sản VietGAP</p>
+            </div>
+            <button type="button" class="btn-brand-primary" @click="showAddProductModal = true">
+              <i class="bi bi-plus-lg me-1"></i> Thêm Sản Phẩm Mới
             </button>
-            <button type="submit" class="btn btn-primary-warm">
-              <i class="bi bi-cloud-arrow-up-fill me-1"></i> Đăng Bán Sản Phẩm
-            </button>
           </div>
-        </form>
+
+          <div class="dashboard-panel-card">
+            <div class="table-responsive-box">
+              <table class="modern-data-table">
+                <thead>
+                  <tr>
+                    <th>Hình ảnh</th>
+                    <th>Tên sản phẩm</th>
+                    <th>Danh mục</th>
+                    <th>Đơn vị</th>
+                    <th>Giá niêm yết</th>
+                    <th>Tồn kho</th>
+                    <th>Trạng thái</th>
+                    <th class="text-center">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="prod in products" :key="prod.id">
+                    <td>
+                      <img :src="prod.image" :alt="prod.name" class="table-prod-img" />
+                    </td>
+                    <td><b>{{ prod.name }}</b></td>
+                    <td>{{ prod.category }}</td>
+                    <td>{{ prod.unit }}</td>
+                    <td class="price-cell">{{ prod.price.toLocaleString('vi-VN') }} đ</td>
+                    <td>{{ prod.stock }}</td>
+                    <td>
+                      <span class="badge-status-pill" :class="prod.isAvailable ? 'available' : 'out-of-stock'">
+                        {{ prod.isAvailable ? 'Đang bán' : 'Hết hàng' }}
+                      </span>
+                    </td>
+                    <td class="text-center">
+                      <button
+                        type="button"
+                        class="btn-action-pill"
+                        @click="prod.isAvailable = !prod.isAvailable; triggerToast('Đã cập nhật trạng thái sản phẩm!')"
+                      >
+                        {{ prod.isAvailable ? 'Tạm ngưng' : 'Bật bán' }}
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== TAB 3: CUSTOMERS ==================== -->
+        <section v-else-if="activeNav === 'customers'" class="tab-page-container">
+          <div class="tab-header-flex">
+            <div>
+              <h2 class="tab-heading">Khách Hàng Thân Thiết</h2>
+              <p class="tab-subheading">Danh sách khách hàng quen trong bán kính 10km của gian hàng</p>
+            </div>
+          </div>
+
+          <div class="dashboard-panel-card">
+            <div class="customer-cards-grid">
+              <div class="customer-item-card">
+                <div class="customer-avatar-badge">ML</div>
+                <div class="customer-details">
+                  <h4>Chị Mai Lan</h4>
+                  <p>0912 345 678 • Cầu Giấy, Hà Nội</p>
+                  <span class="customer-tag">Khách VIP • 18 đơn hàng</span>
+                </div>
+              </div>
+              <div class="customer-item-card">
+                <div class="customer-avatar-badge">HM</div>
+                <div class="customer-details">
+                  <h4>Anh Hoàng Minh</h4>
+                  <p>0987 654 321 • Mai Dịch, Hà Nội</p>
+                  <span class="customer-tag">Khách quen • 12 đơn hàng</span>
+                </div>
+              </div>
+              <div class="customer-item-card">
+                <div class="customer-avatar-badge">TH</div>
+                <div class="customer-details">
+                  <h4>Cô Thu Hà</h4>
+                  <p>0903 111 222 • Dịch Vọng, Hà Nội</p>
+                  <span class="customer-tag">Khách quen • 9 đơn hàng</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== TAB 4: ORDERS ==================== -->
+        <section v-else-if="activeNav === 'orders'" class="tab-page-container">
+          <div class="tab-header-flex">
+            <div>
+              <h2 class="tab-heading">Quy Trình Xử Lý Đơn Hàng</h2>
+              <p class="tab-subheading">Xác nhận đóng gói và điều phối tài xế giao hỏa tốc 10km</p>
+            </div>
+          </div>
+
+          <div class="orders-flow-grid">
+            <div v-for="ord in orders" :key="ord.id" class="order-flow-card">
+              <div class="order-flow-header">
+                <span class="order-flow-code">{{ ord.orderCode }}</span>
+                <span class="order-badge" :class="ord.status === 'Hoàn thành' ? 'badge-completed' : 'badge-processing'">
+                  {{ ord.status }}
+                </span>
+              </div>
+              <p class="order-customer-info">
+                <b>{{ ord.customerName }}</b> — {{ ord.customerPhone }}<br />
+                <span class="address-text">{{ ord.customerAddress }}</span>
+              </p>
+              <div class="order-items-preview">
+                <div v-for="(it, idx) in ord.items" :key="idx" class="item-line">
+                  <span>{{ it.name }} (x{{ it.qty }})</span>
+                  <b>{{ (it.price * it.qty).toLocaleString('vi-VN') }} đ</b>
+                </div>
+              </div>
+              <div class="order-total-footer">
+                <span>Tổng tiền: <b>{{ ord.priceFormatted }}</b> ({{ ord.paymentMethod }})</span>
+                <button
+                  type="button"
+                  class="btn-order-next"
+                  @click="handleActionOrder(ord)"
+                >
+                  {{ ord.status === 'Hoàn thành' ? 'Đã hoàn tất' : 'Xác nhận & Giao shipper' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== TAB 5: SHIPMENT ==================== -->
+        <section v-else-if="activeNav === 'shipment'" class="tab-page-container">
+          <div class="tab-header-flex">
+            <div>
+              <h2 class="tab-heading">Vận Chuyển Hỏa Tốc ZoneMart 10km</h2>
+              <p class="tab-subheading">Mạng lưới tài xế đối tác giao hàng siêu tốc trong 30-45 phút</p>
+            </div>
+          </div>
+
+          <div class="dashboard-panel-card">
+            <div class="shipment-status-box">
+              <div class="shipment-stat-item">
+                <i class="bi bi-geo-alt-fill text-danger stat-icon"></i>
+                <div>
+                  <h4>Bán kính giao hàng</h4>
+                  <p>10 km quanh vị trí tiệm (Cầu Giấy)</p>
+                </div>
+              </div>
+              <div class="shipment-stat-item">
+                <i class="bi bi-lightning-charge-fill text-warning stat-icon"></i>
+                <div>
+                  <h4>Thời gian cam kết</h4>
+                  <p>30 - 45 phút kể từ lúc đóng gói</p>
+                </div>
+              </div>
+              <div class="shipment-stat-item">
+                <i class="bi bi-shield-check text-success stat-icon"></i>
+                <div>
+                  <h4>Đối tác Shipper</h4>
+                  <p>Tài xế đã xác minh CCCD & bằng lái</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== TAB 6: STORE SETTING ==================== -->
+        <section v-else-if="activeNav === 'settings'" class="tab-page-container">
+          <div class="tab-header-flex">
+            <div>
+              <h2 class="tab-heading">Cài Đặt Gian Hàng</h2>
+              <p class="tab-subheading">Quản lý địa chỉ cửa hàng, giờ hoạt động và tài khoản VietQR nhận tiền</p>
+            </div>
+          </div>
+
+          <div class="settings-two-cols">
+            <div class="dashboard-panel-card">
+              <h4 class="settings-card-title">Thông Tin Cửa Hàng</h4>
+              <div class="settings-field">
+                <label>Tên gian hàng</label>
+                <input v-model="storeInfo.name" type="text" class="settings-input" />
+              </div>
+              <div class="settings-field">
+                <label>Địa chỉ đón khách & lấy hàng</label>
+                <input v-model="storeInfo.address" type="text" class="settings-input" />
+              </div>
+              <div class="settings-field">
+                <label>Khung giờ mở cửa</label>
+                <input v-model="storeInfo.openHours" type="text" class="settings-input" />
+              </div>
+            </div>
+
+            <div class="dashboard-panel-card">
+              <h4 class="settings-card-title">Tài Khoản Nhận Tiền VietQR</h4>
+              <div class="settings-field">
+                <label>Ngân hàng nhận thanh toán</label>
+                <input v-model="storeInfo.bankName" type="text" class="settings-input" />
+              </div>
+              <div class="settings-field">
+                <label>Số tài khoản ngân hàng</label>
+                <input v-model="storeInfo.bankAccount" type="text" class="settings-input" />
+              </div>
+              <div class="settings-field">
+                <label>Tên chủ thẻ thụ hưởng</label>
+                <input v-model="storeInfo.accountHolder" type="text" class="settings-input" />
+              </div>
+              <button type="button" class="btn-brand-primary mt-3" @click="triggerToast('Đã lưu thông tin cài đặt thành công!')">
+                Lưu Thay Đổi
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== TAB 7: PLATFORM PARTNER ==================== -->
+        <section v-else-if="activeNav === 'partner'" class="tab-page-container">
+          <div class="dashboard-panel-card text-center p-5">
+            <i class="bi bi-award-fill text-warning fs-1 mb-3"></i>
+            <h3 class="mb-2">Đối Tác Bán Lẻ Chính Thức ZoneMart</h3>
+            <p class="text-muted max-w-md mx-auto">
+              Gian hàng của bạn được hưởng mức chiết khấu 0% phí nền tảng trong 12 tháng đầu tiên dành cho nông sản địa phương.
+            </p>
+          </div>
+        </section>
+
+        <!-- ==================== TAB 8: FEEDBACK ==================== -->
+        <section v-else-if="activeNav === 'feedback'" class="tab-page-container">
+          <div class="dashboard-panel-card">
+            <h3 class="panel-title mb-3">Đánh Giá & Nhận Xét Của Khách Hàng (4.9 / 5 ⭐)</h3>
+            <div class="feedback-list">
+              <div class="feedback-item">
+                <div class="feedback-header">
+                  <b>Chị Lan Hương</b>
+                  <span class="stars">⭐⭐⭐⭐⭐</span>
+                </div>
+                <p>Rau muống rất tươi ngon, giao hỏa tốc 20 phút là tới nơi!</p>
+              </div>
+              <div class="feedback-item">
+                <div class="feedback-header">
+                  <b>Anh Minh Quân</b>
+                  <span class="stars">⭐⭐⭐⭐⭐</span>
+                </div>
+                <p>Thịt ba chỉ đóng khay sạch sẽ, tem VietGAP rõ ràng. Sẽ ủng hộ shop dài lâu.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== TAB 9: HELP & SUPPORT ==================== -->
+        <section v-else-if="activeNav === 'support'" class="tab-page-container">
+          <div class="dashboard-panel-card">
+            <h3 class="panel-title mb-3">Trung Tâm Hỗ Trợ Kênh Người Bán</h3>
+            <div class="support-channels-grid">
+              <div class="support-channel-item">
+                <i class="bi bi-telephone-fill text-primary"></i>
+                <h5>Hotline Hỗ Trợ Kỹ Thuật</h5>
+                <p>1900 8888 (24/7)</p>
+              </div>
+              <div class="support-channel-item">
+                <i class="bi bi-chat-dots-fill text-success"></i>
+                <h5>Trò Chuyện Trực Tuyến</h5>
+                <p>Zalo OA: ZoneMart Partner</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- ==================== MODAL THÊM SẢN PHẨM ==================== -->
+    <div v-if="showAddProductModal" class="modal-backdrop-overlay" @click.self="showAddProductModal = false">
+      <div class="modal-card-box">
+        <div class="modal-header-row">
+          <h4>Thêm Sản Phẩm Mới</h4>
+          <button type="button" class="btn-close-modal" @click="showAddProductModal = false">✕</button>
+        </div>
+        <div class="modal-body-fields">
+          <div class="field-item">
+            <label>Tên sản phẩm</label>
+            <input v-model="newProductForm.name" type="text" class="field-input" placeholder="VD: Bắp cải hữu cơ Đà Lạt" />
+          </div>
+          <div class="field-grid-2">
+            <div class="field-item">
+              <label>Giá bán (VNĐ)</label>
+              <input v-model.number="newProductForm.price" type="number" class="field-input" placeholder="25000" />
+            </div>
+            <div class="field-item">
+              <label>Đơn vị tính</label>
+              <input v-model="newProductForm.unit" type="text" class="field-input" placeholder="Bó 500g" />
+            </div>
+          </div>
+          <div class="field-item">
+            <label>Số lượng tồn kho</label>
+            <input v-model.number="newProductForm.stock" type="number" class="field-input" placeholder="50" />
+          </div>
+          <div class="field-item">
+            <label>URL Hình ảnh</label>
+            <input v-model="newProductForm.image" type="text" class="field-input" />
+          </div>
+        </div>
+        <div class="modal-footer-row">
+          <button type="button" class="btn-cancel-gray" @click="showAddProductModal = false">Hủy</button>
+          <button type="button" class="btn-brand-primary" @click="handleSaveProduct">Lưu Sản Phẩm</button>
+        </div>
       </div>
     </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <Transition name="fade-toast">
+      <div v-if="showToast" class="seller-toast-notification">
+        <i class="bi bi-check-circle-fill text-success me-2"></i>
+        <span>{{ toastMessage }}</span>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <style scoped>
-.seller-dashboard-container {
-  max-width: 1200px;
-  margin: 20px auto 60px auto;
-  padding: 0 16px;
-  font-family: inherit;
-  color: #2b1b14;
+/* ==================== GLOBAL FONT & HIGH-CONTRAST RESET ==================== */
+*, input, button, select, textarea, label {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+  box-sizing: border-box;
 }
 
-/* Toast Popup */
-.toast-popup {
-  position: fixed;
-  top: 80px;
-  right: 24px;
-  background: #ffffff;
-  border: 1px solid #10b981;
-  border-left: 5px solid #10b981;
-  padding: 12px 20px;
-  border-radius: 8px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
-  z-index: 9999;
+/* Ép buộc màu chữ và nền cho input luôn rõ ràng, chống lỗi Dark Mode hệ điều hành */
+input, select, textarea {
+  color-scheme: light !important;
+  color: #0F172A !important;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: #0F172A !important;
+}
+
+.seller-app-layout {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  background-color: #F8F9FA;
+  color: #0F172A;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+/* ==================== 1. SIDEBAR TRÁI ==================== */
+.seller-sidebar {
+  width: 250px;
+  min-width: 250px;
+  height: 100vh;
+  background-color: #FFFFFF;
+  border-right: 1px solid #F1F5F9;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 18px 20px 18px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.sidebar-brand-container {
+  margin-bottom: 28px;
+  padding-left: 6px;
+}
+
+.brand-link {
   display: flex;
   align-items: center;
-  font-size: 14px;
-  font-weight: 600;
-  color: #0f172a;
-}
-.toast-fade-enter-active,
-.toast-fade-leave-active {
-  transition: all 0.3s ease;
-}
-.toast-fade-enter-from,
-.toast-fade-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
+  gap: 10px;
+  text-decoration: none;
 }
 
-/* 1. BUYER MODE BANNER */
-.buyer-mode-banner {
-  background: linear-gradient(135deg, #fff5eb 0%, #ffedd5 100%);
-  border: 1.5px solid #fdba74;
-  border-radius: 16px;
-  padding: 16px 20px;
+.brand-logo-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #FFF7ED;
+  border: 1px solid #FED7AA;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-text-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-title {
+  font-size: 19px;
+  font-weight: 900;
+  color: #0F172A !important;
+  letter-spacing: -0.3px;
+  line-height: 1.1;
+}
+
+.brand-role-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: #D94E15 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: #E2E8F0;
+  border-radius: 4px;
+}
+
+.nav-item-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 12px;
+  color: #334155 !important;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  text-align: left;
+  position: relative;
+}
+
+.nav-icon {
+  font-size: 17px;
+  color: #64748B;
+  transition: all 0.2s ease;
+}
+
+.nav-item-btn:hover {
+  background: #F1F5F9;
+  color: #0F172A !important;
+  transform: translateX(3px);
+}
+
+.nav-item-btn:hover .nav-icon {
+  color: #0F172A;
+}
+
+.nav-item-btn.active {
+  background: #0F172A !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
+}
+
+.nav-item-btn.active .nav-label,
+.nav-item-btn.active .nav-icon {
+  color: #FFFFFF !important;
+}
+
+.nav-badge-pill {
+  margin-left: auto;
+  background: #D94E15;
+  color: #FFFFFF !important;
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 12px;
+}
+
+/* Upgrade Pro Card góc dưới */
+.sidebar-upgrade-card {
+  background: #0F172A;
+  border-radius: 18px;
+  padding: 18px 16px;
+  color: #FFFFFF !important;
+  margin-top: 14px;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.25);
+  transition: transform 0.3s ease;
+}
+
+.sidebar-upgrade-card:hover {
+  transform: translateY(-2px);
+}
+
+.upgrade-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.upgrade-icon-box {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.upgrade-title {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 0;
+  color: #FFFFFF !important;
+}
+
+.upgrade-desc {
+  font-size: 11.5px;
+  color: #CBD5E1 !important;
+  line-height: 1.45;
+  margin: 0 0 14px 0;
+}
+
+.btn-upgrade-action {
+  width: 100%;
+  padding: 9px;
+  background: #FFFFFF;
+  color: #0F172A !important;
+  border: none;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-upgrade-action:hover {
+  background: #F8FAFC;
+  transform: translateY(-1px);
+}
+
+/* ==================== 2. MAIN WRAPPER & TOP BAR ==================== */
+.seller-main-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: calc(100% - 250px);
+  max-width: calc(100% - 250px);
+  overflow-x: hidden;
+}
+
+.seller-top-bar {
+  height: 76px;
+  padding: 0 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
-  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.06);
+  background: transparent;
+  gap: 20px;
 }
-@media (max-width: 850px) {
-  .buyer-mode-banner {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+
+/* Search Box bo tròn viên nang */
+.search-box-pill {
+  width: 340px;
+  height: 44px;
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 30px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  transition: all 0.25s ease;
 }
-.bmb-left {
+
+.search-box-pill:focus-within {
+  border-color: #0F172A;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08);
+}
+
+.search-icon {
+  font-size: 15px;
+  color: #64748B;
+}
+
+.search-input-field {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: #0F172A !important;
+  font-weight: 500;
+}
+
+.search-input-field::placeholder {
+  color: #94A3B8 !important;
+}
+
+.mic-btn {
+  background: none;
+  border: none;
+  color: #64748B;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s;
+}
+
+.mic-btn:hover {
+  color: #0F172A;
+}
+
+.top-bar-right {
   display: flex;
   align-items: center;
   gap: 14px;
 }
-.bmb-icon-box {
-  width: 44px;
-  height: 44px;
-  background: #ea580c;
-  color: #ffffff;
-  border-radius: 12px;
+
+.btn-buyer-switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 15px;
+  background: #FFF7ED;
+  color: #D94E15 !important;
+  border: 1.5px solid #FED7AA;
+  border-radius: 20px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-buyer-switch:hover {
+  background: #FFEDD5;
+  transform: translateY(-1px);
+}
+
+.store-status-toggle {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 22px;
-  flex-shrink: 0;
+  gap: 8px;
+  padding: 7px 14px;
+  background: #F1F5F9;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748B !important;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  user-select: none;
+  border: 1px solid #E2E8F0;
 }
-.bmb-title-row {
+
+.status-indicator-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94A3B8;
+  transition: all 0.2s;
+}
+
+.store-status-toggle.is-open {
+  background: #DCFCE7;
+  color: #15803D !important;
+  border-color: #BBF7D0;
+}
+
+.store-status-toggle.is-open .status-indicator-dot {
+  background: #22C55E;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.25);
+  animation: pulseStoreDot 2s infinite;
+}
+
+.user-profile-capsule {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
-}
-.bmb-title {
-  font-size: 16px;
-  font-weight: 800;
-  color: #9a3412;
-  margin: 0;
-}
-.role-pill {
-  background: #fed7aa;
-  color: #7c2d12;
-  font-size: 11.5px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 12px;
-}
-.bmb-sub {
-  font-size: 13px;
-  color: #7c2d12;
-  margin: 3px 0 0 0;
-}
-.bmb-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  flex-shrink: 0;
-}
-.btn-shop-action {
-  background: #ea580c;
-  color: #ffffff;
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 700;
-  padding: 8px 14px;
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  transition: all 0.2s;
-}
-.btn-shop-action:hover {
-  background: #c2410c;
-  transform: translateY(-1px);
-}
-.btn-cart-action,
-.btn-my-orders-action {
-  background: #ffffff;
-  color: #9a3412;
-  border: 1px solid #fdba74;
-  text-decoration: none;
-  font-size: 13px;
-  font-weight: 700;
-  padding: 8px 12px;
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  transition: all 0.2s;
-}
-.btn-cart-action:hover,
-.btn-my-orders-action:hover {
-  background: #fffaf0;
-  border-color: #ea580c;
+  cursor: pointer;
+  position: relative;
+  user-select: none;
+  padding: 4px 8px;
+  border-radius: 24px;
+  transition: background 0.2s;
 }
 
-/* 2. STORE OVERVIEW CARD */
-.store-overview-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 20px 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  margin-bottom: 20px;
+.user-profile-capsule:hover {
+  background: #FFFFFF;
 }
-@media (max-width: 850px) {
-  .store-overview-card {
-    flex-direction: column;
-    align-items: flex-start;
+
+.profile-avatar-img {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid #E2E8F0;
+}
+
+.profile-info-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-name {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #0F172A !important;
+  line-height: 1.2;
+}
+
+.profile-email {
+  font-size: 10.5px;
+  color: #64748B !important;
+  line-height: 1.2;
+}
+
+.chevron-icon {
+  font-size: 11px;
+  color: #64748B;
+  transition: transform 0.2s ease;
+}
+
+.chevron-icon.rotated {
+  transform: rotate(180deg);
+}
+
+.user-dropdown-popup {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 220px;
+  background: #FFFFFF;
+  border-radius: 14px;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+  padding: 8px;
+  z-index: 999;
+}
+
+.dropdown-header {
+  padding: 8px 10px;
+  border-bottom: 1px solid #F1F5F9;
+  margin-bottom: 6px;
+}
+
+.dropdown-header b {
+  display: block;
+  font-size: 12.5px;
+  color: #0F172A !important;
+}
+
+.dropdown-header small {
+  font-size: 11px;
+  color: #64748B !important;
+}
+
+.dropdown-link {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155 !important;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.dropdown-link:hover {
+  background: #F8FAFC;
+  color: #0F172A !important;
+}
+
+.dropdown-link.text-danger {
+  color: #EF4444 !important;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: #F1F5F9;
+  margin: 6px 0;
+}
+
+/* ==================== 3. CONTENT BODY & OVERVIEW ANIMATIONS ==================== */
+.seller-content-body {
+  flex: 1;
+  padding: 0 36px 40px 36px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100%;
+}
+
+.overview-view-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* ==================== KEYFRAMES CHO TỔNG QUAN ==================== */
+@keyframes sellerFadeInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
-.store-brand-left {
+
+@keyframes drawChartLine {
+  0% {
+    stroke-dashoffset: 1000;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes fadeInArea {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes pulsePoint {
+  0% {
+    r: 4.5;
+    stroke-width: 2;
+  }
+  50% {
+    r: 6.5;
+    stroke-width: 3.5;
+  }
+  100% {
+    r: 4.5;
+    stroke-width: 2;
+  }
+}
+
+@keyframes floatTooltip {
+  0% {
+    transform: translateY(0px);
+  }
+  100% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes pulseStoreDot {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+/* Staggered entrance animations */
+.anim-welcome {
+  animation: sellerFadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.anim-kpi-1 {
+  animation: sellerFadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.08s both;
+}
+
+.anim-kpi-2 {
+  animation: sellerFadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.16s both;
+}
+
+.anim-kpi-3 {
+  animation: sellerFadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.24s both;
+}
+
+.anim-chart {
+  animation: sellerFadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.32s both;
+}
+
+.anim-top-product {
+  animation: sellerFadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both;
+}
+
+.anim-table {
+  animation: sellerFadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.48s both;
+}
+
+/* Welcome Header */
+.welcome-heading-section {
+  margin-top: 4px;
+}
+
+.welcome-title {
+  font-size: 29px;
+  font-weight: 600;
+  color: #0F172A !important;
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+
+.welcome-title .bold-name {
+  font-weight: 900;
+  color: #0F172A !important;
+}
+
+.welcome-subtitle {
+  font-size: 13.5px;
+  color: #475569 !important;
+  font-weight: 500;
+  margin: 4px 0 0 0;
+}
+
+/* ==================== 3 KPI CARDS ==================== */
+.kpi-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.kpi-card {
+  border-radius: 20px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.03);
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.kpi-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 16px 32px -4px rgba(15, 23, 42, 0.08);
+}
+
+.kpi-card:hover .kpi-icon-badge {
+  transform: scale(1.1) rotate(4deg);
+}
+
+/* Dark Card (AVG Order Value) */
+.dark-kpi-card {
+  background: #0F172A;
+  color: #FFFFFF !important;
+}
+
+.dark-kpi-card:hover {
+  box-shadow: 0 16px 36px -4px rgba(15, 23, 42, 0.35);
+}
+
+.dark-kpi-card .kpi-label {
+  color: #94A3B8 !important;
+}
+
+.dark-kpi-card .kpi-number {
+  color: #FFFFFF !important;
+}
+
+.white-kpi-card {
+  background: #FFFFFF;
+  border: 1.5px solid #F1F5F9;
+  color: #0F172A !important;
+}
+
+.white-kpi-card .kpi-label {
+  color: #475569 !important;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.white-kpi-card .kpi-number {
+  color: #0F172A !important;
+}
+
+.kpi-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.kpi-label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.kpi-icon-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark-badge {
+  background: rgba(255, 255, 255, 0.14);
+  color: #FFFFFF !important;
+}
+
+.white-badge {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  color: #0F172A !important;
+}
+
+.kpi-value-row {
+  margin-bottom: 8px;
+}
+
+.kpi-number {
+  font-size: 32px;
+  font-weight: 900;
+  letter-spacing: -0.8px;
+}
+
+.kpi-trend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.green-trend .trend-pct {
+  color: #16A34A !important;
+  font-weight: 800;
+}
+
+.red-trend .trend-pct {
+  color: #EF4444 !important;
+  font-weight: 800;
+}
+
+.trend-sub {
+  color: #64748B !important;
+  font-weight: 600;
+}
+
+.dark-kpi-card .trend-sub {
+  color: #94A3B8 !important;
+}
+
+/* ==================== MIDDLE ROW: CHART & TOP PRODUCT ==================== */
+.middle-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 20px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.dashboard-panel-card {
+  background: #FFFFFF;
+  border: 1.5px solid #F1F5F9;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.03);
+  transition: box-shadow 0.3s ease;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.panel-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.panel-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #0F172A !important;
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+.chart-legend-group {
   display: flex;
   align-items: center;
   gap: 16px;
 }
-.store-avatar-box {
-  width: 56px;
-  height: 56px;
-  background: #fff7ed;
-  border: 1.5px solid #fed7aa;
-  color: #ea580c;
-  border-radius: 14px;
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155 !important;
+}
+
+.legend-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.purple-dot { background: #A855F7; }
+.blue-dot { background: #3B82F6; }
+
+.chart-menu-btn {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
-  flex-shrink: 0;
-}
-.store-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 4px;
-}
-.store-title-row h2 {
-  font-size: 19px;
-  font-weight: 850;
-  color: #0f172a;
-  margin: 0;
-}
-.badge-partner-id {
-  background: #f1f5f9;
   color: #475569;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 6px;
-}
-.badge-rating {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #475569;
-}
-.store-address-text {
-  font-size: 13px;
-  color: #64748b;
-  margin: 0 0 6px 0;
-}
-.store-badges-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.s-tag {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  color: #475569;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-/* Status toggle */
-.store-status-toggle {
+.chart-menu-btn:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+}
+
+.chart-canvas-container {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+
+.smooth-line-svg {
+  width: 100%;
+  max-width: 100%;
+  height: 190px;
+  overflow: hidden;
+}
+
+/* Đường vẽ biểu đồ có animation vẽ lượn sóng */
+.chart-line-revenue {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: drawChartLine 1.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s forwards;
+}
+
+.chart-line-order {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: drawChartLine 1.8s cubic-bezier(0.16, 1, 0.3, 1) 0.35s forwards;
+}
+
+.chart-area-path {
+  animation: fadeInArea 1.4s ease 0.6s forwards;
+  opacity: 0;
+}
+
+.chart-pulse-dot {
+  animation: pulsePoint 2.4s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.axis-label {
+  font-size: 11px;
+  font-weight: 700;
+  fill: #64748B !important;
+}
+
+.x-axis-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 20px 0 50px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #64748B !important;
+}
+
+.x-axis-row span {
+  transition: all 0.2s ease;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.x-axis-row span:hover,
+.x-axis-row .active-month {
+  color: #0F172A !important;
+  font-weight: 900;
+  background: #F1F5F9;
+}
+
+/* Tooltip nổi trên biểu đồ có animation lơ lửng */
+.chart-floating-tooltip {
+  position: absolute;
+  top: 38px;
+  left: 45%;
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.15);
+  border-radius: 12px;
+  padding: 8px 14px;
+  pointer-events: none;
+}
+
+.animated-tooltip {
+  animation: floatTooltip 3.2s ease-in-out infinite alternate;
+}
+
+.tooltip-title {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #475569 !important;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.tooltip-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #0F172A !important;
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.tooltip-line .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.tooltip-line .dot.p-dot { background: #A855F7; }
+.tooltip-line .dot.b-dot { background: #3B82F6; }
+
+.tooltip-line .date {
+  color: #475569 !important;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.tooltip-line .val {
+  font-weight: 900;
+  margin-left: auto;
+  color: #0F172A !important;
+}
+
+/* TOP SELLING PRODUCT PANEL */
+.btn-see-all {
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #1E293B !important;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-see-all:hover {
+  background: #F1F5F9;
+  color: #0F172A !important;
+  border-color: #94A3B8;
+}
+
+.top-products-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.top-product-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  transition: all 0.25s ease;
+}
+
+.top-product-item:hover {
+  background: #F8FAFC;
+  transform: translateX(4px);
+}
+
+.top-product-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #F1F5F9;
+  transition: transform 0.25s ease;
+}
+
+.top-product-item:hover .top-product-thumb {
+  transform: scale(1.08);
+}
+
+.top-product-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.product-name-title {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #0F172A !important;
+  margin: 0 0 3px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.product-sales-count {
+  font-size: 11.5px;
+  color: #64748B !important;
+  font-weight: 600;
+}
+
+.top-product-status-col {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 8px;
-}
-@media (max-width: 850px) {
-  .store-status-toggle {
-    align-items: flex-start;
-  }
-}
-.status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #64748b;
-}
-.status-indicator.is-open {
-  color: #16a34a;
-}
-.pulse-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #94a3b8;
-}
-.status-indicator.is-open .pulse-dot {
-  background: #16a34a;
-  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.2);
-}
-.btn-toggle-state {
-  border: 1.5px solid;
-  background: transparent;
-  font-size: 12.5px;
-  font-weight: 700;
-  padding: 6px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-danger-outline {
-  color: #dc2626;
-  border-color: #fca5a5;
-}
-.btn-danger-outline:hover {
-  background: #fef2f2;
-}
-.btn-success-outline {
-  color: #16a34a;
-  border-color: #86efac;
-}
-.btn-success-outline:hover {
-  background: #f0fdf4;
+  gap: 3px;
 }
 
-/* 3. METRICS GRID */
-.metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
-}
-@media (max-width: 992px) {
-  .metrics-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-@media (max-width: 540px) {
-  .metrics-grid {
-    grid-template-columns: 1fr;
-  }
-}
-.metric-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 16px;
+.status-available-badge {
   display: flex;
   align-items: center;
-  gap: 14px;
-}
-.metric-icon-box {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  color: #ffffff;
-  flex-shrink: 0;
-}
-.bg-emerald { background: #10b981; }
-.bg-orange { background: #f97316; }
-.bg-blue { background: #2563eb; }
-.bg-purple { background: #8b5cf6; }
-
-.metric-body {
-  display: flex;
-  flex-direction: column;
-}
-.metric-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #64748b;
-  margin-bottom: 2px;
-}
-.metric-value {
-  font-size: 18px;
-  font-weight: 850;
-  color: #0f172a;
-  margin: 0 0 2px 0;
-}
-.metric-trend {
+  gap: 5px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
+  color: #16A34A !important;
 }
 
-/* 4. DASHBOARD TABS BAR */
-.dashboard-tabs-bar {
+.status-available-badge .mini-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #16A34A;
+}
+
+.stock-remaining-text {
+  font-size: 10.5px;
+  color: #64748B !important;
+  font-weight: 600;
+}
+
+/* ==================== BOTTOM SECTION: LATEST ORDERS TABLE ==================== */
+.table-panel {
+  padding: 24px;
+}
+
+.table-actions-group {
   display: flex;
+  align-items: center;
   gap: 8px;
-  border-bottom: 2px solid #e2e8f0;
-  margin-bottom: 20px;
+}
+
+.table-tool-btn {
+  background: #FFFFFF;
+  border: 1.5px solid #CBD5E1;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155 !important;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.table-tool-btn:hover {
+  background: #F8FAFC;
+  color: #0F172A !important;
+  border-color: #0F172A;
+}
+
+.table-responsive-box {
+  width: 100%;
   overflow-x: auto;
 }
-.tab-btn {
-  background: transparent;
-  border: none;
-  border-bottom: 3px solid transparent;
-  margin-bottom: -2px;
-  padding: 12px 18px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #64748b;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
-  transition: all 0.2s;
-}
-.tab-btn:hover {
-  color: #ea580c;
-}
-.tab-btn.active {
-  color: #ea580c;
-  border-bottom-color: #ea580c;
-}
-.tab-badge {
-  background: #ef4444;
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 800;
-  padding: 1px 7px;
-  border-radius: 12px;
-  margin-left: 6px;
-}
-.tab-count {
-  font-size: 12px;
-  color: #94a3b8;
-  margin-left: 4px;
+
+.modern-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
 }
 
-/* ORDERS FILTER */
-.orders-filter-bar {
-  margin-bottom: 16px;
-}
-.filter-pills {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.pill-btn {
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  padding: 6px 14px;
-  border-radius: 20px;
+.modern-data-table th {
+  padding: 12px 14px;
   font-size: 12.5px;
   font-weight: 700;
-  color: #475569;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.pill-btn:hover {
-  background: #e2e8f0;
-}
-.pill-btn.active {
-  background: #ea580c;
-  border-color: #ea580c;
-  color: #ffffff;
+  color: #475569 !important;
+  border-bottom: 1.5px solid #E2E8F0;
 }
 
-/* ORDER CARDS */
-.orders-list {
+.modern-data-table td {
+  padding: 16px 14px;
+  font-size: 13px;
+  color: #0F172A !important;
+  border-bottom: 1px solid #F1F5F9;
+  vertical-align: middle;
+}
+
+.modern-data-table tbody tr {
+  transition: all 0.2s ease;
+}
+
+.modern-data-table tbody tr:hover {
+  background: #F8FAFC;
+}
+
+.order-id-cell {
+  font-weight: 800;
+  color: #0F172A !important;
+}
+
+.product-cell {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-.order-card {
-  background: #ffffff;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 18px 20px;
-  transition: all 0.2s;
-}
-.order-card:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
-}
-.order-card.border-pending {
-  border-left: 4px solid #f59e0b;
-}
-.order-card.border-preparing {
-  border-left: 4px solid #3b82f6;
-}
-.order-card.border-delivering {
-  border-left: 4px solid #10b981;
 }
 
-.order-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.order-id-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.order-code {
-  font-size: 15px;
-  font-weight: 850;
-  color: #0f172a;
-}
-.order-time {
-  font-size: 12px;
-  color: #64748b;
-}
-.delivery-badge {
-  font-size: 11px;
-  font-weight: 800;
-  padding: 2px 8px;
-  border-radius: 6px;
-}
-.delivery-badge.express {
-  background: #fef3c7;
-  color: #b45309;
-}
-.delivery-badge.standard {
-  background: #f1f5f9;
-  color: #475569;
+.product-cell b {
+  font-weight: 700;
+  color: #0F172A !important;
 }
 
-.order-status-badge {
-  font-size: 12px;
-  font-weight: 800;
-  padding: 3px 10px;
-  border-radius: 20px;
+.customer-sub {
+  font-size: 11.5px;
+  color: #64748B !important;
+  font-weight: 500;
+  margin-top: 2px;
 }
-.order-status-badge.pending { background: #fef3c7; color: #b45309; }
-.order-status-badge.preparing { background: #dbeafe; color: #1d4ed8; }
-.order-status-badge.delivering { background: #dcfce7; color: #15803d; }
-.order-status-badge.completed { background: #f1f5f9; color: #475569; }
-.order-status-badge.cancelled { background: #fee2e2; color: #b91c1c; }
 
-.order-customer-box {
-  background: #f8fafc;
-  border-radius: 10px;
-  padding: 10px 14px;
-  margin-bottom: 12px;
+.date-cell {
+  color: #475569 !important;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
 }
-.customer-info-line {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 4px;
-  font-size: 13px;
+
+.price-cell {
+  font-weight: 900;
+  color: #0F172A !important;
+  white-space: nowrap;
 }
-.customer-phone-link {
-  color: #2563eb;
-  text-decoration: none;
+
+.payment-cell {
+  color: #334155 !important;
+  font-weight: 600;
+}
+
+.order-badge {
+  display: inline-block;
+  padding: 4px 11px;
+  border-radius: 12px;
+  font-size: 11.5px;
   font-weight: 700;
 }
-.customer-addr {
-  font-size: 12.5px;
-  color: #475569;
+
+.badge-processing {
+  color: #1D4ED8 !important;
+  background: #DBEAFE;
+}
+
+.badge-completed {
+  color: #15803D !important;
+  background: #DCFCE7;
+}
+
+.badge-pending {
+  color: #B45309 !important;
+  background: #FEF3C7;
+}
+
+.btn-row-action {
+  background: none;
+  border: none;
+  color: #64748B;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.btn-row-action:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+/* ==================== SUB-TABS (PRODUCTS, ORDERS, SETTINGS...) ==================== */
+.tab-page-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: sellerFadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.tab-header-flex {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tab-heading {
+  font-size: 24px;
+  font-weight: 800;
+  color: #0F172A !important;
   margin: 0;
 }
 
-.order-items-list {
-  border-top: 1px dashed #e2e8f0;
-  border-bottom: 1px dashed #e2e8f0;
-  padding: 10px 0;
-  margin-bottom: 12px;
-}
-.order-item-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  padding: 3px 0;
-}
-.item-name {
-  color: #1e293b;
-  font-weight: 600;
-}
-.item-qty {
-  color: #64748b;
-  font-weight: 700;
-}
-.item-price {
-  color: #0f172a;
-  font-weight: 700;
-}
-
-.shipper-assigned-bar {
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  border-radius: 8px;
-  padding: 8px 12px;
-  display: flex;
-  align-items: center;
-  margin-bottom: 12px;
-  font-size: 12.5px;
-  color: #166534;
-}
-.shipper-tel {
-  margin-left: 10px;
-  color: #15803d;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.order-card-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.order-pay-info {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-.pay-method {
-  font-size: 12px;
-  color: #64748b;
-  font-weight: 600;
-}
-.total-wrap {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.total-label {
-  font-size: 12px;
-  color: #64748b;
-}
-.total-val {
-  font-size: 16px;
-  font-weight: 850;
-  color: #ea580c;
-}
-
-.order-action-btns {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.btn-primary-warm {
-  background: #ea580c;
-  color: #ffffff;
-  border: none;
-  font-size: 13px;
-  font-weight: 700;
-  padding: 8px 16px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.btn-primary-warm:hover {
-  background: #c2410c;
-}
-.text-delivering {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #16a34a;
-}
-.text-completed {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #475569;
-}
-
-/* EMPTY STATE */
-.empty-state-box {
-  background: #ffffff;
-  border: 1px dashed #cbd5e1;
-  border-radius: 14px;
-  padding: 48px 24px;
-  text-align: center;
-  color: #64748b;
-}
-.empty-state-box h4 {
-  color: #0f172a;
-  margin: 6px 0;
-}
-.empty-state-box p {
+.tab-subheading {
   font-size: 13.5px;
-  max-width: 420px;
-  margin: 0 auto;
+  color: #475569 !important;
+  font-weight: 500;
+  margin: 4px 0 0 0;
 }
 
-/* TAB 2: PRODUCTS TOOLBAR */
-.products-top-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-.search-input-box {
-  display: flex;
-  align-items: center;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 8px 14px;
-  min-width: 280px;
-}
-.search-input-box i {
-  color: #94a3b8;
-  margin-right: 8px;
-}
-.search-input-box input {
+.btn-brand-primary {
+  padding: 10px 18px;
+  background: #D94E15;
+  color: #FFFFFF !important;
   border: none;
-  outline: none;
-  width: 100%;
-  font-size: 13px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.products-table-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  overflow-x: auto;
+.btn-brand-primary:hover {
+  background: #C8451F;
+  transform: translateY(-1px);
 }
-.seller-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.seller-table th {
-  background: #f8fafc;
-  color: #475569;
-  font-weight: 700;
-  text-align: left;
-  padding: 12px 16px;
-  border-bottom: 1px solid #e2e8f0;
-  white-space: nowrap;
-}
-.seller-table td {
-  padding: 12px 16px;
-  border-bottom: 1px solid #f1f5f9;
-  vertical-align: middle;
-}
-.prod-thumb {
+
+.table-prod-img {
   width: 44px;
   height: 44px;
   border-radius: 8px;
   object-fit: cover;
 }
-.prod-title {
-  color: #0f172a;
+
+.badge-status-pill {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
   font-weight: 700;
-}
-.cat-pill {
-  background: #f1f5f9;
-  color: #475569;
-  font-size: 11.5px;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 6px;
-}
-.price-text {
-  color: #ea580c;
-  font-weight: 800;
-}
-.stock-pill {
-  font-weight: 700;
-  color: #16a34a;
-}
-.stock-pill.low-stock {
-  color: #dc2626;
 }
 
-.status-toggle-badge {
-  border: none;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 12px;
+.badge-status-pill.available {
+  background: #DCFCE7;
+  color: #15803D !important;
+}
+
+.badge-status-pill.out-of-stock {
+  background: #FEE2E2;
+  color: #B91C1C !important;
+}
+
+.btn-action-pill {
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  font-size: 11.5px;
   font-weight: 700;
+  color: #1E293B !important;
   cursor: pointer;
   transition: all 0.2s;
 }
-.status-toggle-badge.available {
-  background: #dcfce7;
-  color: #15803d;
-}
-.status-toggle-badge.unavailable {
-  background: #fee2e2;
-  color: #b91c1c;
-}
-.btn-icon-action {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  font-size: 15px;
-  padding: 6px;
-  border-radius: 6px;
-  transition: background 0.2s;
-}
-.btn-icon-action:hover {
-  background: #fee2e2;
+
+.btn-action-pill:hover {
+  background: #F1F5F9;
+  color: #0F172A !important;
 }
 
-/* TAB 3: SETTINGS */
-.settings-grid {
+/* SETTINGS FORM - HIGH CONTRAST */
+.settings-two-cols {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 20px;
 }
-@media (max-width: 850px) {
-  .settings-grid {
-    grid-template-columns: 1fr;
-  }
-}
-.settings-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 24px;
-}
-.card-heading {
-  font-size: 16px;
+
+.settings-card-title {
+  font-size: 17px;
   font-weight: 800;
-  color: #0f172a;
-  margin: 0 0 18px 0;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #f1f5f9;
+  color: #0F172A !important;
+  margin: 0 0 16px 0;
 }
-.form-group {
-  margin-bottom: 16px;
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
 }
-.form-group label {
-  display: block;
-  font-size: 12.5px;
+
+.settings-field label {
+  font-size: 13px;
   font-weight: 700;
-  color: #334155;
+  color: #1E293B !important;
+}
+
+.settings-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1.5px solid #CBD5E1;
+  background: #FFFFFF !important;
+  color: #0F172A !important;
+  font-size: 13.5px;
+  font-weight: 600;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.settings-input:focus {
+  background: #FFFFFF !important;
+  border-color: #D94E15;
+  box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.12);
+}
+
+/* CUSTOMER CARDS */
+.customer-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.customer-item-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  transition: all 0.25s ease;
+}
+
+.customer-item-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
+}
+
+.customer-avatar-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #0F172A;
+  color: #FFFFFF !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.customer-details h4 {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #0F172A !important;
+}
+
+.customer-details p {
+  margin: 2px 0 6px 0;
+  font-size: 12px;
+  color: #475569 !important;
+  font-weight: 500;
+}
+
+.customer-tag {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #D94E15 !important;
+  background: #FFF7ED;
+  border: 1px solid #FED7AA;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+/* ORDERS FLOW GRID */
+.orders-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+
+.order-flow-card {
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+  transition: all 0.25s ease;
+}
+
+.order-flow-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
+}
+
+.order-flow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.order-flow-code {
+  font-size: 15px;
+  font-weight: 900;
+  color: #0F172A !important;
+}
+
+.order-customer-info {
+  font-size: 12.5px;
+  color: #334155 !important;
+  margin: 0 0 12px 0;
+}
+
+.order-customer-info b {
+  color: #0F172A !important;
+}
+
+.address-text {
+  color: #475569 !important;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.order-items-preview {
+  background: #F8FAFC;
+  border: 1px solid #F1F5F9;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.item-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.item-line span {
+  color: #334155 !important;
+  font-weight: 600;
+}
+
+.item-line b {
+  color: #0F172A !important;
+  font-weight: 800;
+}
+
+.order-total-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: #334155 !important;
+  font-weight: 600;
+}
+
+.btn-order-next {
+  padding: 8px 16px;
+  background: #0F172A;
+  color: #FFFFFF !important;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-order-next:hover {
+  background: #1E293B;
+  transform: translateY(-1px);
+}
+
+/* SHIPMENT STATUS BOX - HIGH CONTRAST FIX */
+.shipment-status-box {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+.shipment-stat-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 18px;
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  transition: all 0.25s ease;
+}
+
+.shipment-stat-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
+}
+
+.shipment-stat-item .stat-icon {
+  font-size: 26px;
+}
+
+.shipment-stat-item h4 {
+  margin: 0 0 4px 0;
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #0F172A !important;
+}
+
+.shipment-stat-item p {
+  margin: 0;
+  font-size: 13px;
+  color: #475569 !important;
+  font-weight: 500;
+}
+
+/* SUPPORT CHANNELS */
+.support-channels-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+
+.support-channel-item {
+  padding: 22px;
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  text-align: center;
+  transition: all 0.25s ease;
+}
+
+.support-channel-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.04);
+}
+
+.support-channel-item i {
+  font-size: 32px;
+  margin-bottom: 10px;
+  display: block;
+}
+
+.support-channel-item h5 {
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #0F172A !important;
+  margin: 0 0 6px 0;
+}
+
+.support-channel-item p {
+  font-size: 13px;
+  color: #475569 !important;
+  font-weight: 500;
+  margin: 0;
+}
+
+/* FEEDBACK LIST */
+.feedback-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.feedback-item {
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 16px;
+  transition: all 0.2s ease;
+}
+
+.feedback-item:hover {
+  background: #F8FAFC;
+}
+
+.feedback-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 6px;
 }
-.form-control {
+
+.feedback-header b {
+  color: #0F172A !important;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.feedback-item p {
+  color: #334155 !important;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ==================== MODAL DIALOG ==================== */
+.modal-backdrop-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   width: 100%;
-  padding: 9px 12px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  padding: 20px;
+}
+
+.modal-card-box {
+  background: #FFFFFF;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 480px;
+  padding: 24px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  animation: sellerFadeInUp 0.3s ease both;
+}
+
+.modal-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.modal-header-row h4 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #0F172A !important;
+}
+
+.btn-close-modal {
+  background: none;
+  border: none;
+  font-size: 18px;
+  color: #64748B;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.btn-close-modal:hover {
+  color: #0F172A;
+}
+
+.modal-body-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.field-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-item label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #1E293B !important;
+}
+
+.field-input {
+  width: 100%;
+  padding: 10px 13px;
+  border: 1.5px solid #CBD5E1;
+  border-radius: 10px;
+  background: #FFFFFF !important;
+  color: #0F172A !important;
   font-size: 13.5px;
-  box-sizing: border-box;
-}
-.form-control:focus {
+  font-weight: 600;
   outline: none;
-  border-color: #ea580c;
+  transition: all 0.2s ease;
 }
-.form-row-2 {
+
+.field-input:focus {
+  background: #FFFFFF !important;
+  border-color: #D94E15;
+  box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.12);
+}
+
+.field-grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.radius-range-slider {
-  width: 100%;
-  accent-color: #ea580c;
-}
 
-.vietqr-preview-box {
-  background: #f8fafc;
-  border: 1px dashed #cbd5e1;
-  border-radius: 10px;
-  padding: 16px;
-  text-align: center;
-  margin-top: 14px;
-}
-.qr-preview-desc {
-  font-size: 12px;
-  color: #64748b;
-  margin: 0 0 10px 0;
-}
-.qr-img {
-  width: 130px;
-  height: 130px;
-  border-radius: 8px;
-  background: #ffffff;
-  padding: 6px;
-  border: 1px solid #e2e8f0;
-}
-.qr-sub {
-  display: block;
-  font-size: 12px;
-  font-weight: 700;
-  color: #0f172a;
-  margin-top: 8px;
-}
-
-/* MODAL */
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+.modal-footer-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  padding: 16px;
-}
-.modal-dialog-box {
-  background: #ffffff;
-  width: 100%;
-  max-width: 520px;
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
-}
-.modal-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid #e2e8f0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.modal-header h3 {
-  font-size: 16px;
-  font-weight: 800;
-  color: #0f172a;
-  margin: 0;
-}
-.modal-close-btn {
-  background: transparent;
-  border: none;
-  font-size: 16px;
-  cursor: pointer;
-  color: #64748b;
-}
-.modal-body {
-  padding: 20px;
-}
-.modal-footer {
-  display: flex;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid #f1f5f9;
 }
-.btn-secondary {
-  background: #f1f5f9;
-  color: #475569;
-  border: 1px solid #cbd5e1;
+
+.btn-cancel-gray {
+  padding: 9px 16px;
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  border-radius: 10px;
   font-size: 13px;
   font-weight: 700;
-  padding: 8px 16px;
-  border-radius: 8px;
+  color: #334155 !important;
   cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-cancel-gray:hover {
+  background: #E2E8F0;
+  color: #0F172A !important;
+}
+
+/* ==================== TOAST NOTIFICATION ==================== */
+.seller-toast-notification {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  background: #0F172A;
+  color: #FFFFFF !important;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  z-index: 999999;
+}
+
+.fade-toast-enter-active,
+.fade-toast-leave-active {
+  transition: all 0.3s ease;
+}
+
+.fade-toast-enter-from,
+.fade-toast-leave-to {
+  opacity: 0;
+  transform: translateY(15px);
+}
+
+/* ==================== RESPONSIVE ==================== */
+@media (max-width: 1100px) {
+  .kpi-cards-grid {
+    grid-template-columns: 1fr;
+  }
+  .middle-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .settings-two-cols {
+    grid-template-columns: 1fr;
+  }
+  .customer-cards-grid {
+    grid-template-columns: 1fr;
+  }
+  .shipment-status-box {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

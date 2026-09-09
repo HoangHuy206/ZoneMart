@@ -87,6 +87,8 @@ const handleLogin = async () => {
         if (data.user) {
           localStorage.setItem("currentUser", JSON.stringify(data.user));
         }
+        localStorage.removeItem("sellerRegisteredEmail");
+        localStorage.removeItem("sellerRegisteredPassword");
         setTimeout(() => {
           if (detectedRole === "seller") {
             router.push("/seller");
