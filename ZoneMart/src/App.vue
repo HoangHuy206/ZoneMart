@@ -92,11 +92,19 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
           <nav class="desktop-links">
             <!-- 1. Guest Links (Khách ghé thăm) -->
             <template v-if="!auth.isLoggedIn.value">
-              <router-link to="/products" class="quick-link" active-class="active">
+              <router-link
+                to="/products"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-grid menu-mini-icon"></i>
                 <span>Sản Phẩm</span>
               </router-link>
-              <router-link to="/contact" class="quick-link" active-class="active">
+              <router-link
+                to="/contact"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-geo-alt menu-mini-icon"></i>
                 <span>Bản Đồ 10km</span>
               </router-link>
@@ -104,19 +112,35 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
             <!-- 2. Buyer Links (Khách hàng) -->
             <template v-else-if="auth.currentRole.value === 'buyer'">
-              <router-link to="/products" class="quick-link" active-class="active">
+              <router-link
+                to="/products"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-grid menu-mini-icon"></i>
                 <span>Sản Phẩm</span>
               </router-link>
-              <router-link to="/buyer-orders" class="quick-link" active-class="active">
+              <router-link
+                to="/buyer-orders"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-bag-check menu-mini-icon"></i>
                 <span>Đơn Mua</span>
               </router-link>
-              <router-link to="/profile" class="quick-link" active-class="active">
+              <router-link
+                to="/profile"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-wallet2 menu-mini-icon"></i>
                 <span>Ví Tiền</span>
               </router-link>
-              <router-link to="/contact" class="quick-link" active-class="active">
+              <router-link
+                to="/contact"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-headset menu-mini-icon"></i>
                 <span>Hỗ Trợ</span>
               </router-link>
@@ -124,19 +148,35 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
             <!-- 3. Seller Links (Chủ gian hàng) -->
             <template v-else-if="auth.currentRole.value === 'seller'">
-              <router-link to="/admin" class="quick-link highlight-pill seller-pill" active-class="active">
+              <router-link
+                to="/admin"
+                class="quick-link highlight-pill seller-pill"
+                active-class="active"
+              >
                 <i class="bi bi-shop menu-mini-icon"></i>
                 <span>Kênh Bán Hàng</span>
               </router-link>
-              <router-link to="/products" class="quick-link" active-class="active">
+              <router-link
+                to="/products"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-box-seam menu-mini-icon"></i>
                 <span>Sản Phẩm Sàn</span>
               </router-link>
-              <router-link to="/profile" class="quick-link" active-class="active">
+              <router-link
+                to="/profile"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-cash-stack menu-mini-icon"></i>
                 <span>Ví Doanh Thu</span>
               </router-link>
-              <router-link to="/contact" class="quick-link" active-class="active">
+              <router-link
+                to="/contact"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-patch-question menu-mini-icon"></i>
                 <span>Hỗ Trợ Shop</span>
               </router-link>
@@ -144,15 +184,27 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
             <!-- 4. Shipper Links (Tài xế giao hàng) -->
             <template v-else-if="auth.currentRole.value === 'shipper'">
-              <router-link to="/shipper" class="quick-link highlight-pill shipper-pill" active-class="active">
+              <router-link
+                to="/shipper"
+                class="quick-link highlight-pill shipper-pill"
+                active-class="active"
+              >
                 <i class="bi bi-bicycle menu-mini-icon"></i>
                 <span>Nhận Đơn 10km</span>
               </router-link>
-              <router-link to="/profile" class="quick-link" active-class="active">
+              <router-link
+                to="/profile"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-cash-coin menu-mini-icon"></i>
                 <span>Ví Thu Nhập</span>
               </router-link>
-              <router-link to="/contact" class="quick-link" active-class="active">
+              <router-link
+                to="/contact"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-telephone-outbound menu-mini-icon"></i>
                 <span>Cứu Hộ / Trợ Giúp</span>
               </router-link>
@@ -160,15 +212,27 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
             <!-- 5. Admin Links (Quản trị viên) -->
             <template v-else-if="auth.currentRole.value === 'admin'">
-              <router-link to="/admin" class="quick-link highlight-pill admin-pill" active-class="active">
+              <router-link
+                to="/admin"
+                class="quick-link highlight-pill admin-pill"
+                active-class="active"
+              >
                 <i class="bi bi-shield-check menu-mini-icon"></i>
                 <span>Dashboard Admin</span>
               </router-link>
-              <router-link to="/products" class="quick-link" active-class="active">
+              <router-link
+                to="/products"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-eye menu-mini-icon"></i>
                 <span>Giám Sát Sàn</span>
               </router-link>
-              <router-link to="/profile" class="quick-link" active-class="active">
+              <router-link
+                to="/profile"
+                class="quick-link"
+                active-class="active"
+              >
                 <i class="bi bi-gear menu-mini-icon"></i>
                 <span>Hệ Thống</span>
               </router-link>
@@ -189,7 +253,10 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
           <div v-else class="logged-in-actions">
             <!-- Icon Giỏ hàng (Buyer & Seller) -->
             <router-link
-              v-if="auth.currentRole.value === 'buyer' || auth.currentRole.value === 'seller'"
+              v-if="
+                auth.currentRole.value === 'buyer' ||
+                auth.currentRole.value === 'seller'
+              "
               to="/cart"
               class="icon-btn cart-btn"
               title="Giỏ hàng của bạn"
@@ -208,7 +275,9 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
               >
                 <circle cx="9" cy="21" r="1"></circle>
                 <circle cx="20" cy="21" r="1"></circle>
-                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+                <path
+                  d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
+                ></path>
               </svg>
               <span class="cart-badge">{{ cartItemCount }}</span>
             </router-link>
@@ -244,7 +313,9 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                 </span>
 
                 <div class="user-chip-info">
-                  <span class="user-chip-name">{{ auth.currentUser.value?.fullName }}</span>
+                  <span class="user-chip-name">{{
+                    auth.currentUser.value?.fullName
+                  }}</span>
                   <span class="user-chip-role-badge">
                     {{ auth.roleLabel.value }}
                   </span>
@@ -255,7 +326,10 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
               <!-- Dropdown Menu -->
               <div v-if="isUserDropdownOpen" class="user-dropdown">
                 <!-- Dropdown Header Card -->
-                <div class="dropdown-header-card" :class="auth.roleBadgeClass.value">
+                <div
+                  class="dropdown-header-card"
+                  :class="auth.roleBadgeClass.value"
+                >
                   <div class="dropdown-header-top">
                     <img
                       v-if="auth.currentUser.value?.avatarUrl"
@@ -267,21 +341,35 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                       {{ auth.currentUser.value?.fullName?.charAt(0) || 'U' }}
                     </span>
                     <div class="dropdown-user-details">
-                      <strong class="dropdown-user-name">{{ auth.currentUser.value?.fullName }}</strong>
-                      <span class="dropdown-badge-pill">{{ auth.roleLabel.value }}</span>
+                      <strong class="dropdown-user-name">{{
+                        auth.currentUser.value?.fullName
+                      }}</strong>
+                      <span class="dropdown-badge-pill">{{
+                        auth.roleLabel.value
+                      }}</span>
                     </div>
                   </div>
                   <div class="dropdown-header-sub">
-                    <span class="dropdown-email-text">{{ auth.currentUser.value?.phoneEmail }}</span>
-                    <span v-if="auth.currentUser.value?.storeName" class="dropdown-store-text">
+                    <span class="dropdown-email-text">{{
+                      auth.currentUser.value?.phoneEmail
+                    }}</span>
+                    <span
+                      v-if="auth.currentUser.value?.storeName"
+                      class="dropdown-store-text"
+                    >
                       🏪 {{ auth.currentUser.value.storeName }}
                     </span>
-                    <span v-if="auth.currentUser.value?.vehiclePlate" class="dropdown-vehicle-text">
+                    <span
+                      v-if="auth.currentUser.value?.vehiclePlate"
+                      class="dropdown-vehicle-text"
+                    >
                       🛵 {{ auth.currentUser.value.vehiclePlate }}
                     </span>
                     <div class="dropdown-wallet-row">
                       <span class="wallet-lbl">Số dư ví:</span>
-                      <strong class="wallet-val">{{ auth.formatVND(auth.currentUser.value?.walletBalance) }}</strong>
+                      <strong class="wallet-val">{{
+                        auth.formatVND(auth.currentUser.value?.walletBalance)
+                      }}</strong>
                     </div>
                   </div>
                 </div>
@@ -290,19 +378,35 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                 <div class="dropdown-body-links">
                   <!-- 1. BUYER ITEMS -->
                   <template v-if="auth.currentRole.value === 'buyer'">
-                    <router-link to="/profile" class="dropdown-item" @click="closeDropdowns">
+                    <router-link
+                      to="/profile"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-person-circle menu-icon"></i>
                       <span>Hồ Sơ & Ví Cá Nhân</span>
                     </router-link>
-                    <router-link to="/buyer-orders" class="dropdown-item" @click="closeDropdowns">
+                    <router-link
+                      to="/buyer-orders"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-bag-check menu-icon"></i>
                       <span>Đơn Mua Của Bạn</span>
                     </router-link>
-                    <router-link to="/cart" class="dropdown-item" @click="closeDropdowns">
+                    <router-link
+                      to="/cart"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-cart3 menu-icon"></i>
                       <span>Giỏ Hàng ({{ cartItemCount }})</span>
                     </router-link>
-                    <router-link to="/contact" class="dropdown-item" @click="closeDropdowns">
+                    <router-link
+                      to="/contact"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-headset menu-icon"></i>
                       <span>Trung Tâm Hỗ Trợ 24/7</span>
                     </router-link>
@@ -310,19 +414,35 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
                   <!-- 2. SELLER ITEMS -->
                   <template v-else-if="auth.currentRole.value === 'seller'">
-                    <router-link to="/admin" class="dropdown-item highlight-item" @click="closeDropdowns">
+                    <router-link
+                      to="/admin"
+                      class="dropdown-item highlight-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-shop menu-icon"></i>
                       <span>Kênh Bán Hàng & Đơn Shop</span>
                     </router-link>
-                    <router-link to="/profile" class="dropdown-item" @click="closeDropdowns">
+                    <router-link
+                      to="/profile"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-cash-stack menu-icon"></i>
                       <span>Ví Doanh Thu & Rút Tiền</span>
                     </router-link>
-                    <router-link to="/products" class="dropdown-item" @click="closeDropdowns">
+                    <router-link
+                      to="/products"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-box-seam menu-icon"></i>
                       <span>Xem Mặt Hàng Trên Sàn</span>
                     </router-link>
-                    <router-link to="/contact" class="dropdown-item" @click="closeDropdowns">
+                    <router-link
+                      to="/contact"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-patch-question menu-icon"></i>
                       <span>Hỗ Trợ Đối Tác Bán Hàng</span>
                     </router-link>
@@ -330,15 +450,27 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
                   <!-- 3. SHIPPER ITEMS -->
                   <template v-else-if="auth.currentRole.value === 'shipper'">
-                    <router-link to="/shipper" class="dropdown-item highlight-item" @click="closeDropdowns">
+                    <router-link
+                      to="/shipper"
+                      class="dropdown-item highlight-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-bicycle menu-icon"></i>
                       <span>Bảng Nhận Đơn Hỏa Tốc</span>
                     </router-link>
-                    <router-link to="/profile" class="dropdown-item" @click="closeDropdowns">
+                    <router-link
+                      to="/profile"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-cash-coin menu-icon"></i>
                       <span>Ví Thu Nhập & Chuyến Đi</span>
                     </router-link>
-                    <router-link to="/contact" class="dropdown-item" @click="closeDropdowns">
+                    <router-link
+                      to="/contact"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-telephone-outbound menu-icon"></i>
                       <span>Tổng Đài Hỗ Trợ Sự Cố</span>
                     </router-link>
@@ -346,15 +478,27 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
                   <!-- 4. ADMIN ITEMS -->
                   <template v-else-if="auth.currentRole.value === 'admin'">
-                    <router-link to="/admin" class="dropdown-item highlight-item" @click="closeDropdowns">
+                    <router-link
+                      to="/admin"
+                      class="dropdown-item highlight-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-shield-check menu-icon"></i>
                       <span>Bảng Điều Khiển Quản Trị</span>
                     </router-link>
-                    <router-link to="/products" class="dropdown-item" @click="closeDropdowns">
+                    <router-link
+                      to="/products"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-eye menu-icon"></i>
                       <span>Kiểm Duyệt Sản Phẩm Sàn</span>
                     </router-link>
-                    <router-link to="/profile" class="dropdown-item" @click="closeDropdowns">
+                    <router-link
+                      to="/profile"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
                       <i class="bi bi-gear menu-icon"></i>
                       <span>Cài Đặt Hệ Thống</span>
                     </router-link>
@@ -423,30 +567,54 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             :aria-expanded="isMobileMenuOpen"
             @click.stop="toggleMobileMenu"
           >
-            <i class="bi" :class="isMobileMenuOpen ? 'bi-x-lg' : 'bi-list'" aria-hidden="true"></i>
+            <i
+              class="bi"
+              :class="isMobileMenuOpen ? 'bi-x-lg' : 'bi-list'"
+              aria-hidden="true"
+            ></i>
           </button>
         </div>
       </div>
 
       <!-- Menu trên điện thoại -->
-      <nav v-if="isMobileMenuOpen" class="mobile-menu" aria-label="Menu điều hướng di động">
+      <nav
+        v-if="isMobileMenuOpen"
+        class="mobile-menu"
+        aria-label="Menu điều hướng di động"
+      >
         <!-- Guest Mobile Links -->
         <template v-if="!auth.isLoggedIn.value">
-          <router-link to="/products" class="mobile-link" @click="closeDropdowns">
+          <router-link
+            to="/products"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
             <i class="bi bi-grid-fill menu-icon" aria-hidden="true"></i>
             <span>Sản Phẩm</span>
           </router-link>
-          <router-link to="/contact" class="mobile-link" @click="closeDropdowns">
+          <router-link
+            to="/contact"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
             <i class="bi bi-geo-alt-fill menu-icon" aria-hidden="true"></i>
             <span>Bản Đồ 10km</span>
           </router-link>
           <div class="mobile-divider"></div>
           <div class="mobile-auth-grid">
-            <router-link to="/register" class="btn-auth-outline mobile-btn" @click="closeDropdowns">
+            <router-link
+              to="/register"
+              class="btn-auth-outline mobile-btn"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-person-plus-fill"></i>
               <span>Đăng Ký</span>
             </router-link>
-            <router-link to="/login" class="btn-auth-solid mobile-btn" @click="closeDropdowns">
+            <router-link
+              to="/login"
+              class="btn-auth-solid mobile-btn"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-box-arrow-in-right"></i>
               <span>Đăng Nhập</span>
             </router-link>
@@ -457,13 +625,19 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
         <template v-else>
           <!-- User info card on mobile -->
           <div class="mobile-user-card" :class="auth.roleBadgeClass.value">
-            <div class="mobile-user-name">{{ auth.currentUser.value?.fullName }}</div>
+            <div class="mobile-user-name">
+              {{ auth.currentUser.value?.fullName }}
+            </div>
             <span class="mobile-role-tag">{{ auth.roleLabel.value }}</span>
           </div>
 
           <!-- Buyer Mobile -->
           <template v-if="auth.currentRole.value === 'buyer'">
-            <router-link to="/products" class="mobile-link" @click="closeDropdowns">
+            <router-link
+              to="/products"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-grid-fill menu-icon"></i>
               <span>Sản Phẩm</span>
             </router-link>
@@ -471,11 +645,19 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
               <i class="bi bi-cart3 menu-icon"></i>
               <span>Giỏ Hàng ({{ cartItemCount }})</span>
             </router-link>
-            <router-link to="/buyer-orders" class="mobile-link" @click="closeDropdowns">
+            <router-link
+              to="/buyer-orders"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-bag-check menu-icon"></i>
               <span>Đơn Mua</span>
             </router-link>
-            <router-link to="/profile" class="mobile-link" @click="closeDropdowns">
+            <router-link
+              to="/profile"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-person-circle menu-icon"></i>
               <span>Hồ Sơ & Ví</span>
             </router-link>
@@ -483,15 +665,27 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
           <!-- Seller Mobile -->
           <template v-else-if="auth.currentRole.value === 'seller'">
-            <router-link to="/admin" class="mobile-link highlight-mobile-link" @click="closeDropdowns">
+            <router-link
+              to="/admin"
+              class="mobile-link highlight-mobile-link"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-shop menu-icon"></i>
               <span>Kênh Bán Hàng & Đơn</span>
             </router-link>
-            <router-link to="/products" class="mobile-link" @click="closeDropdowns">
+            <router-link
+              to="/products"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-box-seam menu-icon"></i>
               <span>Sản Phẩm Sàn</span>
             </router-link>
-            <router-link to="/profile" class="mobile-link" @click="closeDropdowns">
+            <router-link
+              to="/profile"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-cash-stack menu-icon"></i>
               <span>Ví Doanh Thu</span>
             </router-link>
@@ -499,11 +693,19 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
           <!-- Shipper Mobile -->
           <template v-else-if="auth.currentRole.value === 'shipper'">
-            <router-link to="/shipper" class="mobile-link highlight-mobile-link" @click="closeDropdowns">
+            <router-link
+              to="/shipper"
+              class="mobile-link highlight-mobile-link"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-bicycle menu-icon"></i>
               <span>Nhận Đơn Hỏa Tốc</span>
             </router-link>
-            <router-link to="/profile" class="mobile-link" @click="closeDropdowns">
+            <router-link
+              to="/profile"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-cash-coin menu-icon"></i>
               <span>Ví Thu Nhập</span>
             </router-link>
@@ -511,21 +713,37 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
           <!-- Admin Mobile -->
           <template v-else-if="auth.currentRole.value === 'admin'">
-            <router-link to="/admin" class="mobile-link highlight-mobile-link" @click="closeDropdowns">
+            <router-link
+              to="/admin"
+              class="mobile-link highlight-mobile-link"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-shield-check menu-icon"></i>
               <span>Bảng Điều Khiển Admin</span>
             </router-link>
-            <router-link to="/products" class="mobile-link" @click="closeDropdowns">
+            <router-link
+              to="/products"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-eye menu-icon"></i>
               <span>Giám Sát Sàn</span>
             </router-link>
-            <router-link to="/profile" class="mobile-link" @click="closeDropdowns">
+            <router-link
+              to="/profile"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
               <i class="bi bi-gear menu-icon"></i>
               <span>Hệ Thống</span>
             </router-link>
           </template>
 
-          <router-link to="/contact" class="mobile-link" @click="closeDropdowns">
+          <router-link
+            to="/contact"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
             <i class="bi bi-headset menu-icon"></i>
             <span>Hỗ Trợ</span>
           </router-link>
@@ -598,11 +816,17 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
           <ul class="footer-contact-list">
             <li>
               <i class="bi bi-geo-alt-fill footer-info-icon"></i>
-              <span><strong>Trụ sở:</strong> Tòa nhà ZoneMart, Khu Công Nghệ Cao, TP. Hà Nội</span>
+              <span
+                ><strong>Trụ sở:</strong> Tòa nhà ZoneMart, Khu Công Nghệ Cao,
+                TP. Hà Nội</span
+              >
             </li>
             <li>
               <i class="bi bi-telephone-fill footer-info-icon"></i>
-              <span><strong>Tổng đài hỗ trợ:</strong> 1900 6868 (8:00 - 21:00 hàng ngày)</span>
+              <span
+                ><strong>Tổng đài hỗ trợ:</strong> 1900 6868 (8:00 - 21:00 hàng
+                ngày)</span
+              >
             </li>
             <li>
               <i class="bi bi-envelope-fill footer-info-icon"></i>
@@ -610,7 +834,10 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             </li>
             <li>
               <i class="bi bi-clock-fill footer-info-icon"></i>
-              <span><strong>Thời gian hoạt động:</strong> 06:00 - 22:00 (Cả Thứ 7, CN)</span>
+              <span
+                ><strong>Thời gian hoạt động:</strong> 06:00 - 22:00 (Cả Thứ 7,
+                CN)</span
+              >
             </li>
           </ul>
         </div>
@@ -677,16 +904,40 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             KẾT NỐI VỚI CHÚNG TÔI
           </h5>
           <div class="social-links">
-            <a href="https://facebook.com" target="_blank" rel="noopener noreferrer" class="social-icon social-facebook" title="Facebook ZoneMart">
+            <a
+              href="https://facebook.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="social-icon social-facebook"
+              title="Facebook ZoneMart"
+            >
               <i class="bi bi-facebook"></i>
             </a>
-            <a href="https://zalo.me" target="_blank" rel="noopener noreferrer" class="social-icon social-zalo" title="Zalo ZoneMart">
+            <a
+              href="https://zalo.me"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="social-icon social-zalo"
+              title="Zalo ZoneMart"
+            >
               <span class="zalo-speech-bubble">Zalo</span>
             </a>
-            <a href="https://youtube.com" target="_blank" rel="noopener noreferrer" class="social-icon social-youtube" title="YouTube ZoneMart">
+            <a
+              href="https://youtube.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="social-icon social-youtube"
+              title="YouTube ZoneMart"
+            >
               <i class="bi bi-youtube"></i>
             </a>
-            <a href="https://tiktok.com" target="_blank" rel="noopener noreferrer" class="social-icon social-tiktok" title="TikTok ZoneMart">
+            <a
+              href="https://tiktok.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="social-icon social-tiktok"
+              title="TikTok ZoneMart"
+            >
               <i class="bi bi-tiktok"></i>
             </a>
           </div>
@@ -696,8 +947,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
       <!-- Dòng Bản quyền & Ghi chú thành viên dưới cùng -->
       <div class="footer-bottom-bar">
         <div class="footer-bottom-container">
-          <div class="member-credits">
-          </div>
+          <div class="member-credits"></div>
           <p class="copyright">
             © 2026 ZoneMart E-Commerce Platform. Nền tảng thương mại điện tử
             giao hàng siêu tốc 10km.
@@ -996,7 +1246,8 @@ body {
   color: #c2410c !important;
   border-color: #ffedd5;
 }
-.seller-pill:hover, .seller-pill.active {
+.seller-pill:hover,
+.seller-pill.active {
   background: #ffedd5;
   color: #9a3412 !important;
   border-color: #fdba74;
@@ -1006,7 +1257,8 @@ body {
   color: #15803d !important;
   border-color: #dcfce7;
 }
-.shipper-pill:hover, .shipper-pill.active {
+.shipper-pill:hover,
+.shipper-pill.active {
   background: #dcfce7;
   color: #166534 !important;
   border-color: #86efac;
@@ -1016,7 +1268,8 @@ body {
   color: #7e22ce !important;
   border-color: #f3e8ff;
 }
-.admin-pill:hover, .admin-pill.active {
+.admin-pill:hover,
+.admin-pill.active {
   background: #f3e8ff;
   color: #6b21a8 !important;
   border-color: #d8b4fe;
@@ -1050,9 +1303,18 @@ body {
   animation: pulseGreen 1.8s infinite;
 }
 @keyframes pulseGreen {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
-  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
 }
 
 /* USER PROFILE CHIP (BUTTON HEADER) */
@@ -1156,8 +1418,14 @@ body {
   animation: fadeIn 0.18s ease-out;
 }
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .dropdown-header-card {
@@ -1190,7 +1458,7 @@ body {
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid #ffffff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 .dropdown-avatar-placeholder {
   width: 42px;
@@ -1223,10 +1491,22 @@ body {
   margin-top: 3px;
   width: fit-content;
 }
-.badge-role-buyer .dropdown-badge-pill { background: #dbeafe; color: #1d4ed8; }
-.badge-role-seller .dropdown-badge-pill { background: #ffedd5; color: #c2410c; }
-.badge-role-shipper .dropdown-badge-pill { background: #dcfce7; color: #15803d; }
-.badge-role-admin .dropdown-badge-pill { background: #f3e8ff; color: #7e22ce; }
+.badge-role-buyer .dropdown-badge-pill {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.badge-role-seller .dropdown-badge-pill {
+  background: #ffedd5;
+  color: #c2410c;
+}
+.badge-role-shipper .dropdown-badge-pill {
+  background: #dcfce7;
+  color: #15803d;
+}
+.badge-role-admin .dropdown-badge-pill {
+  background: #f3e8ff;
+  color: #7e22ce;
+}
 
 .dropdown-header-sub {
   font-size: 11.5px;
@@ -1238,14 +1518,15 @@ body {
 .dropdown-email-text {
   word-break: break-all;
 }
-.dropdown-store-text, .dropdown-vehicle-text {
+.dropdown-store-text,
+.dropdown-vehicle-text {
   color: #4b5563;
   font-weight: 600;
 }
 .dropdown-wallet-row {
   margin-top: 4px;
   padding-top: 4px;
-  border-top: 1px dashed rgba(0,0,0,0.08);
+  border-top: 1px dashed rgba(0, 0, 0, 0.08);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1682,7 +1963,8 @@ body {
   position: relative;
   background: #0068ff;
   color: #ffffff;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-weight: 800;
   font-size: 10px;
   line-height: 1;
