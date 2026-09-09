@@ -5,8 +5,7 @@ import type { RouteRecordRaw } from "vue-router";
  * 1. Profile (Thông tin cá nhân & ví tiền)
  * 2. 404 (Trang không tìm thấy)
  * 3. Liên Hệ (Contact & Support)
- * 4. Map (Bản đồ & bán kính 10km)
- * 5. Trang SP (Danh sách & Chi tiết sản phẩm)
+ * 4. Trang SP (Danh sách & Chi tiết sản phẩm)
  */
 export const huyRoutes: RouteRecordRaw[] = [
   {
@@ -14,12 +13,6 @@ export const huyRoutes: RouteRecordRaw[] = [
     name: "Profile",
     component: () => import("../../views/profile/ProfileView.vue"),
     meta: { title: "Hồ Sơ Cá Nhân - ZoneMart" }
-  },
-  {
-    path: "/map",
-    name: "Map",
-    component: () => import("../../views/map/MapView.vue"),
-    meta: { title: "Bản Đồ ZoneMart" }
   },
   {
     path: "/products",

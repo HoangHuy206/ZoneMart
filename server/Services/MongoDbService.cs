@@ -26,4 +26,5 @@ public class MongoDbService
     public IMongoCollection<SubOrder> SubOrders => _database.GetCollection<SubOrder>("suborders");
     public IMongoCollection<OrderItem> OrderItems => _database.GetCollection<OrderItem>("orderitems");
     public IMongoCollection<WalletTransaction> WalletTransactions => _database.GetCollection<WalletTransaction>("wallettransactions");
+    public IMongoCollection<SupportTicket> SupportTickets => _database.GetCollection<SupportTicket>("support_tickets");
 }

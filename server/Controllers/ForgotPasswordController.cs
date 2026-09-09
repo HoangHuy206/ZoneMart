@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using System.Net;
-using System.Net.Mail;
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using ZoneMart.Server.Models;
 using ZoneMart.Server.Services;
+using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
 
 namespace ZoneMart.Server.Controllers;
 
@@ -60,105 +62,77 @@ public class ForgotPasswordController : ControllerBase
                 ExpireTime = expireTime
             };
 
-            // 3. Gửi Email Mã Xác Thực thực tế thông qua Gmail SMTP của tài khoản dobinh225599@gmail.com
+            // 3. Gửi Email Mã Xác Thực thực tế thông qua MailKit (Chủ động gửi + Tự động chọn tài khoản dự phòng nếu có sự cố)
             _ = Task.Run(async () =>
             {
-                try
-                {
-                    string appPassword = "pihz fkra ulkr rccz".Replace(" ", "");
+                string subject = $"[{otpCode}] Mã Xác Thực Khôi Phục Mật Khẩu ZoneMart";
+                string htmlBody = $@"
+                    <div style='background-color: #FAF5EF; padding: 24px 10px; font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, Helvetica, Arial, sans-serif;'>
+                        <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 520px; background-color: #FFFFFF; border-radius: 20px; border: 1px solid #F0E6DC; overflow: hidden; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.05);'>
+                            
+                            <!-- LOGO & BRAND HEADER -->
+                            <tr>
+                                <td align='center' style='padding: 28px 24px 16px 24px;'>
+                                    <table border='0' cellpadding='0' cellspacing='0'>
+                                        <tr>
+                                            <td align='center' style='background-color: #FFF7ED; border: 1px solid #FED7AA; border-radius: 16px; padding: 8px 22px;'>
+                                                <span style='color: #D94E15 !important; font-size: 26px; font-weight: 900; letter-spacing: 1px; display: block;'>ZoneMart</span>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                    <p style='color: #64748B !important; font-size: 12.5px; font-weight: 600; margin: 8px 0 0 0;'>Trung Tâm Khôi Phục Mật Khẩu Tài Khoản</p>
+                                </td>
+                            </tr>
 
-                    using var smtpClient = new SmtpClient("smtp.gmail.com")
-                    {
-                        Port = 587,
-                        UseDefaultCredentials = false,
-                        Credentials = new NetworkCredential("dobinh225599@gmail.com", appPassword),
-                        EnableSsl = true,
-                        DeliveryMethod = SmtpDeliveryMethod.Network,
-                        Timeout = 20000
-                    };
+                            <!-- DIVIDER -->
+                            <tr>
+                                <td style='padding: 0 24px;'>
+                                    <div style='height: 1px; background-color: #F1F5F9;'></div>
+                                </td>
+                            </tr>
 
-                    using var mailMessage = new MailMessage
-                    {
-                        From = new MailAddress("dobinh225599@gmail.com", "ZoneMart Hỗ Trợ Khách Hàng"),
-                        Subject = $"[{otpCode}] Mã Xác Thực Khôi Phục Mật Khẩu ZoneMart",
-                        SubjectEncoding = System.Text.Encoding.UTF8,
-                        BodyEncoding = System.Text.Encoding.UTF8,
-                        Body = $@"
-                            <div style='background-color: #FAF5EF; padding: 24px 10px; font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, Helvetica, Arial, sans-serif;'>
-                                <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 520px; background-color: #FFFFFF; border-radius: 20px; border: 1px solid #F0E6DC; overflow: hidden; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.05);'>
-                                    
-                                    <!-- LOGO & BRAND HEADER -->
-                                    <tr>
-                                        <td align='center' style='padding: 28px 24px 16px 24px;'>
-                                            <table border='0' cellpadding='0' cellspacing='0'>
-                                                <tr>
-                                                    <td align='center' style='background-color: #FFF7ED; border: 1px solid #FED7AA; border-radius: 16px; padding: 8px 22px;'>
-                                                        <span style='color: #D94E15 !important; font-size: 26px; font-weight: 900; letter-spacing: 1px; display: block;'>ZoneMart</span>
-                                                    </td>
-                                                </tr>
-                                            </table>
-                                            <p style='color: #64748B !important; font-size: 12.5px; font-weight: 600; margin: 8px 0 0 0;'>Trung Tâm Khôi Phục Mật Khẩu Tài Khoản</p>
-                                        </td>
-                                    </tr>
+                            <!-- TIÊU ĐỀ KHÔI PHỤC MẬT KHẨU -->
+                            <tr>
+                                <td align='center' style='padding: 20px 24px 12px 24px;'>
+                                    <h2 style='color: #D94E15 !important; font-size: 19px; font-weight: 900; margin: 0 0 6px 0;'>🔑 MÃ XÁC THỰC KHÔI PHỤC MẬT KHẨU</h2>
+                                    <p style='color: #475569 !important; font-size: 13.5px; margin: 0;'>Chào bạn, dưới đây là mã xác thực để đặt lại mật khẩu mới cho tài khoản <b style='color: #2563EB !important;'>{email}</b></p>
+                                </td>
+                            </tr>
 
-                                    <!-- DIVIDER -->
-                                    <tr>
-                                        <td style='padding: 0 24px;'>
-                                            <div style='height: 1px; background-color: #F1F5F9;'></div>
-                                        </td>
-                                    </tr>
+                            <!-- BOX MÃ XÁC THỰC -->
+                            <tr>
+                                <td align='center' style='padding: 12px 24px 16px 24px;'>
+                                    <table border='0' cellpadding='0' cellspacing='0' width='100%' style='background-color: #FFF7ED; border: 1.5px dashed #D94E15; border-radius: 16px; padding: 20px;'>
+                                        <tr>
+                                            <td align='center'>
+                                                <span style='color: #D94E15 !important; font-size: 38px; font-weight: 900; letter-spacing: 8px; display: block;'>{otpCode}</span>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </td>
+                            </tr>
 
-                                    <!-- TIÊU ĐỀ KHÔI PHỤC MẬT KHẨU -->
-                                    <tr>
-                                        <td align='center' style='padding: 20px 24px 12px 24px;'>
-                                            <h2 style='color: #D94E15 !important; font-size: 19px; font-weight: 900; margin: 0 0 6px 0;'>🔑 MÃ XÁC THỰC KHÔI PHỤC MẬT KHẨU</h2>
-                                            <p style='color: #475569 !important; font-size: 13.5px; margin: 0;'>Chào bạn, dưới đây là mã xác thực để đặt lại mật khẩu mới cho tài khoản <b style='color: #2563EB !important;'>{email}</b></p>
-                                        </td>
-                                    </tr>
+                            <tr>
+                                <td style='padding: 0 24px 20px 24px;'>
+                                    <p style='color: #EF4444 !important; font-size: 13px; text-align: center; margin: 0;'>
+                                        <b>⚡ Lưu ý:</b> Mã này có hiệu lực trong <b>2 phút (120 giây)</b>. Vui lòng tuyệt đối không cung cấp mã này cho bất kỳ ai.
+                                    </p>
+                                </td>
+                            </tr>
 
-                                    <!-- BOX MÃ XÁC THỰC -->
-                                    <tr>
-                                        <td align='center' style='padding: 12px 24px 16px 24px;'>
-                                            <table border='0' cellpadding='0' cellspacing='0' width='100%' style='background-color: #FFF7ED; border: 1.5px dashed #D94E15; border-radius: 16px; padding: 20px;'>
-                                                <tr>
-                                                    <td align='center'>
-                                                        <span style='color: #D94E15 !important; font-size: 38px; font-weight: 900; letter-spacing: 8px; display: block;'>{otpCode}</span>
-                                                    </td>
-                                                </tr>
-                                            </table>
-                                        </td>
-                                    </tr>
+                            <!-- FOOTER -->
+                            <tr>
+                                <td style='padding: 0 24px 24px 24px;'>
+                                    <div style='height: 1px; background-color: #F1F5F9; margin-bottom: 16px;'></div>
+                                    <p style='color: #94A3B8 !important; font-size: 12px; text-align: center; margin: 0;'>
+                                        © 2026 ZoneMart E-Commerce Platform. Thư tự động không cần phản hồi.
+                                    </p>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>";
 
-                                    <tr>
-                                        <td style='padding: 0 24px 20px 24px;'>
-                                            <p style='color: #EF4444 !important; font-size: 13px; text-align: center; margin: 0;'>
-                                                <b>⚡ Lưu ý:</b> Mã này có hiệu lực trong <b>2 phút (120 giây)</b>. Vui lòng tuyệt đối không cung cấp mã này cho bất kỳ ai.
-                                            </p>
-                                        </td>
-                                    </tr>
-
-                                    <!-- FOOTER -->
-                                    <tr>
-                                        <td style='padding: 0 24px 24px 24px;'>
-                                            <div style='height: 1px; background-color: #F1F5F9; margin-bottom: 16px;'></div>
-                                            <p style='color: #94A3B8 !important; font-size: 12px; text-align: center; margin: 0;'>
-                                                © 2026 ZoneMart E-Commerce Platform. Thư tự động không cần phản hồi.
-                                            </p>
-                                        </td>
-                                    </tr>
-                                </table>
-                            </div>",
-                        IsBodyHtml = true,
-                    };
-                    mailMessage.To.Add(email);
-
-                    await smtpClient.SendMailAsync(mailMessage);
-                    Console.WriteLine($"📧 [Gmail SMTP] Đã gửi thành công mã xác thực {otpCode} tới {email}");
-                }
-                catch (Exception mailEx)
-                {
-                    Console.WriteLine($"❌ [Gmail SMTP Error] {mailEx.Message}");
-                }
+                await SendEmailViaMailKitAsync(email, subject, htmlBody, "ZoneMart Hỗ Trợ Khách Hàng");
             });
 
             return Ok(new
@@ -281,18 +255,6 @@ public class ForgotPasswordController : ControllerBase
     {
         try
         {
-            string appPassword = "pihz fkra ulkr rccz".Replace(" ", "");
-
-            using var smtpClient = new SmtpClient("smtp.gmail.com")
-            {
-                Port = 587,
-                UseDefaultCredentials = false,
-                Credentials = new NetworkCredential("dobinh225599@gmail.com", appPassword),
-                EnableSsl = true,
-                DeliveryMethod = SmtpDeliveryMethod.Network,
-                Timeout = 20000
-            };
-
             string currentTimeStr = DateTime.Now.ToString("HH:mm:ss dd/MM/yyyy");
 
             // Xử lý IP & Vị trí ước tính (Tương đối)
@@ -323,13 +285,8 @@ public class ForgotPasswordController : ControllerBase
                 }
             }
 
-            using var mailMessage = new MailMessage
-            {
-                From = new MailAddress("dobinh225599@gmail.com", "ZoneMart Security"),
-                Subject = "[ZoneMart] Cảnh Báo An Toàn: Mật Khẩu Tài Khoản Của Bạn Đã Được Thay Đổi",
-                SubjectEncoding = System.Text.Encoding.UTF8,
-                BodyEncoding = System.Text.Encoding.UTF8,
-                Body = $@"
+            string subject = "[ZoneMart] Cảnh Báo An Toàn: Mật Khẩu Tài Khoản Của Bạn Đã Được Thay Đổi";
+            string htmlBody = $@"
                     <div style='background-color: #FAF5EF; padding: 24px 10px; font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, Helvetica, Arial, sans-serif;'>
                         <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 520px; background-color: #FFFFFF; border-radius: 20px; border: 1px solid #F0E6DC; overflow: hidden; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.05);'>
                             
@@ -438,18 +395,60 @@ public class ForgotPasswordController : ControllerBase
                                 </td>
                             </tr>
                         </table>
-                    </div>",
-                IsBodyHtml = true,
-            };
-            mailMessage.To.Add(toEmail);
+                    </div>";
 
-            await smtpClient.SendMailAsync(mailMessage);
+            await SendEmailViaMailKitAsync(toEmail, subject, htmlBody, "ZoneMart Security");
             Console.WriteLine($"📧 [Gmail SMTP] Đã gửi thành công THƯ CẢNH BÁO THAY ĐỔI MẬT KHẨU (IP: {displayIp}, Vị trí: {locationStr}) tới {toEmail}");
         }
         catch (Exception mailEx)
         {
             Console.WriteLine($"❌ [Gmail SMTP Error] Lỗi gửi thư cảnh báo mật khẩu tới {toEmail}: {mailEx.Message}");
         }
+    }
+
+    /// <summary>
+    /// Hàm dùng chung gửi Email thông qua MailKit (hỗ trợ tự động thử lại với tài khoản dự phòng nếu tài khoản chính gặp sự cố)
+    /// </summary>
+    private static async Task<bool> SendEmailViaMailKitAsync(string toEmail, string subject, string htmlBody, string senderName = "ZoneMart Security")
+    {
+        var accounts = new (string Email, string Password)[]
+        {
+            ("dobinh225599@gmail.com", "pihzfkraulkrrccz"),
+            ("hh9393100@gmail.com", "bjgiqgdpcozzfqip")
+        };
+
+        foreach (var account in accounts)
+        {
+            try
+            {
+                var message = new MimeMessage();
+                message.From.Add(new MailboxAddress(senderName, account.Email));
+                message.To.Add(new MailboxAddress("", toEmail));
+                message.Subject = subject;
+
+                var bodyBuilder = new BodyBuilder
+                {
+                    HtmlBody = htmlBody
+                };
+                message.Body = bodyBuilder.ToMessageBody();
+
+                using var client = new SmtpClient();
+                await client.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.StartTls);
+                await client.AuthenticateAsync(account.Email, account.Password);
+                await client.SendAsync(message);
+                await client.DisconnectAsync(true);
+
+                Console.WriteLine($"📧 [MailKit SMTP Success] Đã gửi thành công email tới {toEmail} qua tài khoản {account.Email}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [MailKit SMTP Warning] Không thể gửi qua {account.Email}: {ex.Message}. Đang thử tài khoản dự phòng...");
+            }
+        }
+
+        Console.WriteLine($"❌ [MailKit SMTP Error] Tất cả tài khoản gửi email tới {toEmail} đều thất bại.");
+        return false;
     }
 }
 

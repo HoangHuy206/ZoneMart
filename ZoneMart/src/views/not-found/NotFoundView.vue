@@ -103,10 +103,10 @@ const goProducts = () => {
         <!-- Navigation Actions -->
         <div class="actions-row">
           <button class="btn btn-primary" @click="goHome">
-            <span class="btn-arrow">←</span> Quay Về Trang Chủ
+            <i class="bi bi-arrow-left me-2" aria-hidden="true"></i> Quay Về Trang Chủ
           </button>
           <button class="btn btn-secondary" @click="goProducts">
-            🛍️ Khám Phá Sản Phẩm
+            <i class="bi bi-bag-fill me-2" aria-hidden="true"></i> Khám Phá Sản Phẩm
           </button>
         </div>
 

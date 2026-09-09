@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using System.Net;
-using System.Net.Mail;
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using ZoneMart.Server.Models;
 using ZoneMart.Server.Services;
+using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
 
 namespace ZoneMart.Server.Controllers;
 
@@ -237,32 +239,15 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// HÀM GỬI THƯ CẢM ƠN ĐĂNG KÝ TÀI KHOẢN QUA GMAIL SMTP (dobinh225599@gmail.com)
+    /// HÀM GỬI THƯ CẢM ƠN ĐĂNG KÝ TÀI KHOẢN QUA GMAIL SMTP
     /// </summary>
     private static async Task SendThankYouEmailAsync(string toEmail, string fullName)
     {
         try
         {
-            Console.WriteLine($"📧 [Gmail SMTP] Đang chuẩn bị gửi thư cảm ơn tới Gmail: {toEmail}...");
-            string appPassword = "pihz fkra ulkr rccz".Replace(" ", "");
-
-            using var smtpClient = new SmtpClient("smtp.gmail.com")
-            {
-                Port = 587,
-                UseDefaultCredentials = false,
-                Credentials = new NetworkCredential("dobinh225599@gmail.com", appPassword),
-                EnableSsl = true,
-                DeliveryMethod = SmtpDeliveryMethod.Network,
-                Timeout = 20000
-            };
-
-            using var mailMessage = new MailMessage
-            {
-                From = new MailAddress("dobinh225599@gmail.com", "ZoneMart E-Commerce"),
-                Subject = "[ZoneMart] Thư Cảm Ơn & Xác Nhận Đăng Ký Tài Khoản Thành Công",
-                SubjectEncoding = System.Text.Encoding.UTF8,
-                BodyEncoding = System.Text.Encoding.UTF8,
-                Body = $@"
+            Console.WriteLine($"📧 [MailKit SMTP] Đang chuẩn bị gửi thư cảm ơn tới Gmail: {toEmail}...");
+            string subject = "[ZoneMart] Thư Cảm Ơn & Xác Nhận Đăng Ký Tài Khoản Thành Công";
+            string htmlBody = $@"
                     <div style='background-color: #FAF5EF; padding: 24px 10px; font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, Helvetica, Arial, sans-serif;'>
                         <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 520px; background-color: #FFFFFF; border-radius: 20px; border: 1px solid #F0E6DC; overflow: hidden; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.05);'>
                             
@@ -369,13 +354,40 @@ public class AuthController : ControllerBase
                                 </td>
                             </tr>
                         </table>
-                    </div>",
-                IsBodyHtml = true,
-            };
-            mailMessage.To.Add(toEmail);
+                    </div>";
 
-            await smtpClient.SendMailAsync(mailMessage);
-            Console.WriteLine($"💌 [Gmail SMTP] Đã gửi thành công THƯ CẢM ƠN tới Gmail: {toEmail}");
+            var accounts = new (string Email, string Password)[]
+            {
+                ("dobinh225599@gmail.com", "pihzfkraulkrrccz"),
+                ("hh9393100@gmail.com", "bjgiqgdpcozzfqip")
+            };
+
+            foreach (var account in accounts)
+            {
+                try
+                {
+                    var message = new MimeMessage();
+                    message.From.Add(new MailboxAddress("ZoneMart E-Commerce", account.Email));
+                    message.To.Add(new MailboxAddress("", toEmail));
+                    message.Subject = subject;
+
+                    var bodyBuilder = new BodyBuilder { HtmlBody = htmlBody };
+                    message.Body = bodyBuilder.ToMessageBody();
+
+                    using var client = new SmtpClient();
+                    await client.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.StartTls);
+                    await client.AuthenticateAsync(account.Email, account.Password);
+                    await client.SendAsync(message);
+                    await client.DisconnectAsync(true);
+
+                    Console.WriteLine($"💌 [MailKit SMTP Success] Đã gửi thành công THƯ CẢM ƠN tới Gmail: {toEmail} qua {account.Email}");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ [MailKit SMTP Warning] Không thể gửi qua {account.Email}: {ex.Message}");
+                }
+            }
         }
         catch (Exception mailEx)
         {

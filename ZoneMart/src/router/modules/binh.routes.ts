@@ -39,7 +39,11 @@ export const binhRoutes: RouteRecordRaw[] = [
     path: "/shipper",
     name: "Shipper",
     component: () => import("../../views/binh/ShipperView.vue"),
-    meta: { title: "Cổng Tài Xế Shipper - ZoneMart" }
+    meta: {
+      title: "Cổng Tài Xế Shipper - ZoneMart",
+      hideHeader: true,
+      hideFooter: true
+    }
   },
   {
     path: "/admin",

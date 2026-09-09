@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * ================================================================
  * GIỎ HÀNG (CART) - Phụ trách: Thắng
@@ -83,7 +83,7 @@ const proceedToCheckout = () => {
 <template>
   <div class="cart-container">
     <div class="cart-header">
-      <h2>🛒 Giỏ Hàng Của Bạn</h2>
+      <h2><i class="bi bi-cart3"></i> Giỏ Hàng Của Bạn</h2>
       <p>Các món hàng được gom nhóm theo từng Cửa Hàng (Sub-Order) theo thiết kế ZoneMart.</p>
     </div>
 
@@ -92,7 +92,7 @@ const proceedToCheckout = () => {
       <div class="cart-list">
         <div v-for="(store, sIdx) in cartStores" :key="store.storeId" class="store-group-card">
           <div class="store-head">
-            <span class="store-title">🏪 {{ store.storeName }}</span>
+            <span class="store-title"><i class="bi bi-shop"></i> {{ store.storeName }}</span>
             <span class="store-dist">Cách bạn {{ store.distanceKm }} km • Hỗ trợ Hỏa Tốc</span>
           </div>
 
@@ -114,7 +114,9 @@ const proceedToCheckout = () => {
                 {{ (item.price * item.quantity).toLocaleString("vi-VN") }} ₫
               </div>
 
-              <button class="btn-del" @click="removeItem(sIdx, iIdx)" title="Xóa">✕</button>
+              <button class="btn-del" @click="removeItem(sIdx, iIdx)" title="Xóa món" aria-label="Xóa món khỏi giỏ">
+                <i class="bi bi-trash3"></i>
+              </button>
             </div>
           </div>
         </div>
@@ -143,11 +145,12 @@ const proceedToCheckout = () => {
           </div>
 
           <p class="note">
-            💡 <em>Khoảng cách &le; 3km bạn có thể chọn giao Hỏa Tốc ở bước thanh toán.</em>
+            <i class="bi bi-lightbulb-fill text-warning"></i> <em>Khoảng cách &le; 3km bạn có thể chọn giao Hỏa Tốc ở bước thanh toán.</em>
           </p>
 
           <button class="btn btn-primary btn-block" @click="proceedToCheckout">
-            Chốt Thông Tin Đặt Hàng ➜
+            <span>Chốt Thông Tin Đặt Hàng</span>
+            <i class="bi bi-arrow-right"></i>
           </button>
         </div>
       </div>
@@ -155,10 +158,12 @@ const proceedToCheckout = () => {
 
     <!-- Giỏ hàng rỗng -->
     <div v-else class="empty-cart">
-      <div class="empty-icon">🛒</div>
+      <div class="empty-icon"><i class="bi bi-cart-x"></i></div>
       <h3>Giỏ hàng đang trống!</h3>
       <p>Hãy dạo quanh một vòng và chọn cho mình những món đồ ưng ý nhé.</p>
-      <button class="btn btn-primary" @click="router.push('/products')">Xem Sản Phẩm Ngay</button>
+      <button class="btn btn-primary" @click="router.push('/products')">
+        <i class="bi bi-bag"></i> Xem Sản Phẩm Ngay
+      </button>
     </div>
   </div>
 </template>

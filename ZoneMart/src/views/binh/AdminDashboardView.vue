@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * ================================================================
  * TRANG QUẢN TRỊ ADMIN & MANAGER - Phụ trách: Bình
@@ -53,30 +53,30 @@ const disputes = ref([
 
 const handleApprovePartner = (id: string) => {
   pendingPartners.value = pendingPartners.value.filter(p => p.id !== id);
-  alert("✅ Đã DUYỆT đối tác! Tài khoản đã được kích hoạt.");
+  alert("Đã DUYỆT đối tác! Tài khoản đã được kích hoạt.");
 };
 
 const handleRejectPartner = (id: string) => {
   pendingPartners.value = pendingPartners.value.filter(p => p.id !== id);
-  alert("❌ Đã TỪ CHỐI hồ sơ và gửi email yêu cầu bổ sung.");
+  alert("Đã TỪ CHỐI hồ sơ và gửi email yêu cầu bổ sung.");
 };
 
 const handleApproveProduct = (id: string) => {
   suspiciousProducts.value = suspiciousProducts.value.filter(p => p.id !== id);
-  alert("✅ Cho phép sản phẩm hiển thị trên sàn!");
+  alert("Cho phép sản phẩm hiển thị trên sàn!");
 };
 
 const handleRejectProduct = (id: string) => {
   suspiciousProducts.value = suspiciousProducts.value.filter(p => p.id !== id);
-  alert("🚫 Đã ẩn món hàng!");
+  alert("Đã ẨN sản phẩm khỏi danh mục hiển thị!");
 };
 
 const handleResolveRefund = () => {
-  alert("Đã phán quyết hoàn tiền cho khách!");
+  alert("Đã phán quyết hoàn tiền vào ví người mua.");
 };
 
 const handleResolveShop = () => {
-  alert("Đã phán quyết hoàn hàng về Shop!");
+  alert("Đã hủy đơn và hoàn hàng về phía Shop.");
 };
 </script>
 
@@ -84,7 +84,7 @@ const handleResolveShop = () => {
   <div class="admin-container">
     <div class="admin-header">
       <div>
-        <h2>🛡️ Bảng Điều Khiển Admin & Manager</h2>
+        <h2><i class="bi bi-shield-check text-primary me-2" aria-hidden="true"></i>Bảng Điều Khiển Admin & Manager</h2>
         <p>Giám sát duyệt đối tác, kiểm duyệt bài đăng AI và xử lý khiếu nại sàn ZoneMart.</p>
       </div>
       <div class="admin-badge">Super Admin</div>
@@ -92,13 +92,13 @@ const handleResolveShop = () => {
 
     <div class="admin-tabs">
       <button class="tab-btn" :class="{ active: activeTab === 'partners' }" @click="activeTab = 'partners'">
-        👥 Duyệt Đối Tác ({{ pendingPartners.length }})
+        <i class="bi bi-people-fill me-1" aria-hidden="true"></i> Duyệt Đối Tác ({{ pendingPartners.length }})
       </button>
       <button class="tab-btn" :class="{ active: activeTab === 'products' }" @click="activeTab = 'products'">
-        🤖 Duyệt Sản Phẩm AI ({{ suspiciousProducts.length }})
+        <i class="bi bi-robot me-1" aria-hidden="true"></i> Duyệt Sản Phẩm AI ({{ suspiciousProducts.length }})
       </button>
       <button class="tab-btn" :class="{ active: activeTab === 'disputes' }" @click="activeTab = 'disputes'">
-        ⚖️ Tranh Chấp Đơn ({{ disputes.length }})
+        <i class="bi bi-shield-exclamation me-1" aria-hidden="true"></i> Tranh Chấp Đơn ({{ disputes.length }})
       </button>
     </div>
 
@@ -106,7 +106,11 @@ const handleResolveShop = () => {
     <div v-if="activeTab === 'partners'" class="tab-grid">
       <div v-for="item in pendingPartners" :key="item.id" class="item-card">
         <div class="top-row">
-          <span class="tag" :class="item.type">{{ item.type === 'seller' ? '🏪 Cửa hàng' : '🛵 Shipper' }}</span>
+          <span class="tag" :class="item.type">
+            <i v-if="item.type === 'seller'" class="bi bi-shop me-1" aria-hidden="true"></i>
+            <i v-else class="bi bi-bicycle me-1" aria-hidden="true"></i>
+            {{ item.type === 'seller' ? 'Cửa hàng' : 'Shipper' }}
+          </span>
           <span class="date">{{ item.date }}</span>
         </div>
         <h4>{{ item.name }}</h4>
@@ -114,8 +118,12 @@ const handleResolveShop = () => {
         <p>CCCD: <strong>{{ item.cccd }}</strong></p>
         <p>{{ item.address }}</p>
         <div class="actions">
-          <button class="btn btn-sm btn-success" @click="handleApprovePartner(item.id)">✓ Phê Duyệt</button>
-          <button class="btn btn-sm btn-danger" @click="handleRejectPartner(item.id)">✕ Từ Chối</button>
+          <button class="btn btn-sm btn-success" @click="handleApprovePartner(item.id)">
+            <i class="bi bi-check-lg me-1" aria-hidden="true"></i> Phê Duyệt
+          </button>
+          <button class="btn btn-sm btn-danger" @click="handleRejectPartner(item.id)">
+            <i class="bi bi-x-lg me-1" aria-hidden="true"></i> Từ Chối
+          </button>
         </div>
       </div>
     </div>
@@ -125,12 +133,16 @@ const handleResolveShop = () => {
       <div v-for="prod in suspiciousProducts" :key="prod.id" class="prod-item-card">
         <img :src="prod.image" :alt="prod.productName" />
         <div>
-          <span class="flag">⚠️ {{ prod.aiFlag }}</span>
+          <span class="flag"><i class="bi bi-exclamation-triangle-fill text-warning me-1" aria-hidden="true"></i> {{ prod.aiFlag }}</span>
           <h4>{{ prod.productName }}</h4>
           <p>{{ prod.storeName }} • <strong>{{ prod.price.toLocaleString('vi-VN') }} ₫</strong></p>
           <div class="actions">
-            <button class="btn btn-sm btn-success" @click="handleApproveProduct(prod.id)">✓ Cho Phép Bán</button>
-            <button class="btn btn-sm btn-danger" @click="handleRejectProduct(prod.id)">🚫 Ẩn Món</button>
+            <button class="btn btn-sm btn-success" @click="handleApproveProduct(prod.id)">
+              <i class="bi bi-check-lg me-1" aria-hidden="true"></i> Cho Phép Bán
+            </button>
+            <button class="btn btn-sm btn-danger" @click="handleRejectProduct(prod.id)">
+              <i class="bi bi-eye-slash-fill me-1" aria-hidden="true"></i> Ẩn Món
+            </button>
           </div>
         </div>
       </div>
