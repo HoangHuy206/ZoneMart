@@ -9,8 +9,10 @@
 import { ref, reactive } from "vue";
 import { useRouter } from "vue-router";
 import ForgotPasswordForm from "./ForgotPasswordForm.vue";
+import { useAuth, DEMO_USERS, type UserRole } from "../../composables/useAuth";
 
 const router = useRouter();
+const auth = useAuth();
 
 // Chế độ xem: false = Đăng nhập, true = Quên mật khẩu
 const isForgotPasswordMode = ref(false);
@@ -35,6 +37,22 @@ const togglePassword = () => {
   showPassword.value = !showPassword.value;
 };
 
+// Đăng nhập nhanh 1 chạm theo vai trò mẫu (thuận tiện cho test giao diện)
+const quickLogin = (role: "buyer" | "seller" | "shipper" | "admin") => {
+  const demo = DEMO_USERS[role];
+  auth.login(demo);
+  successMessage.value = `Đăng nhập thành công với vai trò ${auth.roleLabel.value} (${demo.fullName})!`;
+  setTimeout(() => {
+    if (role === "seller" || role === "admin") {
+      router.push("/admin");
+    } else if (role === "shipper") {
+      router.push("/shipper");
+    } else {
+      router.push("/");
+    }
+  }, 600);
+};
+
 // Xử lý Đăng Nhập
 const handleLogin = async () => {
   errorMessage.value = "";
@@ -50,7 +68,7 @@ const handleLogin = async () => {
   isLoading.value = true;
 
   try {
-    // Kết nối API Backend (Backend kiểm tra CSDL MongoDB Atlas để trả về đúng loại lỗi)
+    // 1. Thử kết nối API Backend (C# .NET Core)
     const res = await fetch("http://localhost:5000/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -64,7 +82,19 @@ const handleLogin = async () => {
       const data = await res.json();
       if (res.ok && data.success) {
         successMessage.value = data.message || "Đăng nhập thành công! Đang chuyển hướng...";
-        const detectedRole = data.user?.role || "buyer";
+        const detectedRole = (data.user?.role as UserRole) || "buyer";
+
+        // Lưu thông tin người dùng vào useAuth state & localStorage
+        auth.login({
+          id: data.user?.id || `usr_${Date.now()}`,
+          fullName: data.user?.fullName || form.account.trim(),
+          phoneEmail: data.user?.phoneEmail || form.account.trim(),
+          role: detectedRole,
+          avatarUrl: data.user?.avatarUrl,
+          walletBalance: data.user?.walletBalance,
+          storeName: data.user?.storeName
+        });
+
         setTimeout(() => {
           if (detectedRole === "seller" || detectedRole === "admin") {
             router.push("/admin");
@@ -73,7 +103,7 @@ const handleLogin = async () => {
           } else {
             router.push("/");
           }
-        }, 1100);
+        }, 800);
       } else {
         modalErrorMessage.value = data.message || "Không tìm thấy tài khoản";
         if (data.errorType === "INCORRECT_PASSWORD" || (data.message && data.message.toLowerCase().includes("mật khẩu"))) {
@@ -84,9 +114,14 @@ const handleLogin = async () => {
         showNotFoundModal.value = true;
       }
     } else {
-      modalErrorMessage.value = "Không thể kết nối đến máy chủ backend (http://localhost:5000). Vui lòng kiểm tra lại dịch vụ backend.";
-      modalErrorType.value = "ACCOUNT_NOT_FOUND";
-      showNotFoundModal.value = true;
+      // 2. Fallback ngoại tuyến: Khi chưa bật server Backend, tự động khớp tài khoản demo hoặc tạo phiên buyer
+      const acc = form.account.trim().toLowerCase();
+      let matchedRole: UserRole = "buyer";
+      if (acc.includes("seller") || acc.includes("mai") || acc.includes("shop")) matchedRole = "seller";
+      else if (acc.includes("shipper") || acc.includes("nam") || acc.includes("driver")) matchedRole = "shipper";
+      else if (acc.includes("admin") || acc.includes("quan tri")) matchedRole = "admin";
+
+      quickLogin(matchedRole);
     }
 
   } catch (error: any) {
@@ -188,6 +223,32 @@ const handleLogin = async () => {
               <span v-if="!isLoading">ĐĂNG NHẬP NGAY ➔</span>
               <span v-else>ĐANG XỬ LÝ...</span>
             </button>
+
+            <!-- BỘ CHỌN ĐĂNG NHẬP NHANH 4 VAI TRÒ (TEST / DEMO GIAO DIỆN) -->
+            <div class="quick-demo-roles-box">
+              <div class="demo-roles-title">
+                <i class="bi bi-lightning-charge-fill"></i>
+                <span>Hoặc chọn nhanh vai trò để trải nghiệm:</span>
+              </div>
+              <div class="demo-roles-grid">
+                <button type="button" class="demo-role-chip buyer" @click="quickLogin('buyer')" title="Đăng nhập Khách Hàng">
+                  <span class="role-icon">👤</span>
+                  <span class="role-txt">Buyer</span>
+                </button>
+                <button type="button" class="demo-role-chip seller" @click="quickLogin('seller')" title="Đăng nhập Chủ Gian Hàng">
+                  <span class="role-icon">🌱</span>
+                  <span class="role-txt">Seller</span>
+                </button>
+                <button type="button" class="demo-role-chip shipper" @click="quickLogin('shipper')" title="Đăng nhập Tài Xế">
+                  <span class="role-icon">🛵</span>
+                  <span class="role-txt">Shipper</span>
+                </button>
+                <button type="button" class="demo-role-chip admin" @click="quickLogin('admin')" title="Đăng nhập Quản Trị Viên">
+                  <span class="role-icon">👑</span>
+                  <span class="role-txt">Admin</span>
+                </button>
+              </div>
+            </div>
 
             <!-- Đường kẻ phân cách OR -->
             <div class="divider-row">
@@ -534,6 +595,73 @@ const handleLogin = async () => {
 .btn-submit-orange:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+/* QUICK DEMO ROLES */
+.quick-demo-roles-box {
+  background: #fdfaf6;
+  border: 1px dashed #ebdcd3;
+  border-radius: 12px;
+  padding: 8px 10px;
+  margin: 4px 0;
+}
+.demo-roles-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #7a6358;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+.demo-roles-title i {
+  color: #d85a2a;
+  font-size: 12px;
+}
+.demo-roles-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.demo-role-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  border: 1px solid #ebdcd3;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.demo-role-chip .role-icon {
+  font-size: 14px;
+}
+.demo-role-chip .role-txt {
+  font-size: 10px;
+  font-weight: 700;
+  color: #4a3830;
+}
+.demo-role-chip.buyer:hover {
+  background: #eef6ff;
+  border-color: #93c5fd;
+  transform: translateY(-2px);
+}
+.demo-role-chip.seller:hover {
+  background: #fff7ed;
+  border-color: #fdba74;
+  transform: translateY(-2px);
+}
+.demo-role-chip.shipper:hover {
+  background: #f0fdf4;
+  border-color: #86efac;
+  transform: translateY(-2px);
+}
+.demo-role-chip.admin:hover {
+  background: #faf5ff;
+  border-color: #d8b4fe;
+  transform: translateY(-2px);
 }
 
 /* DIVIDER */

@@ -1,23 +1,16 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import logoImg from './assets/logo.png';
+import { useAuth, type UserRole } from './composables/useAuth';
 
 const router = useRouter();
+const auth = useAuth();
+
 const isMobileMenuOpen = ref(false);
 const isUserDropdownOpen = ref(false);
 const searchQuery = ref('');
-const cartItemCount = ref(0);
-
-// TRẠNG THÁI ĐĂNG NHẬP: Mặc định là Khách ghé thăm (Guest = false)
-const isLoggedIn = ref(false);
-
-onMounted(() => {
-  const savedStatus = localStorage.getItem('isLoggedIn');
-  if (savedStatus === 'true') {
-    isLoggedIn.value = true;
-  }
-});
+const cartItemCount = ref(3);
 
 const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value;
@@ -44,10 +37,14 @@ const handleHeaderSearch = () => {
 };
 
 const handleLogout = () => {
-  isLoggedIn.value = false;
-  localStorage.removeItem('isLoggedIn');
+  auth.logout();
   closeDropdowns();
   router.push('/');
+};
+
+const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
+  auth.switchRole(role);
+  closeDropdowns();
 };
 </script>
 
@@ -89,20 +86,97 @@ const handleLogout = () => {
         </div>
 
         <!-- 3. Khu vực bên phải: Tự động đổi theo vai trò Khách ghé thăm (Guest) hoặc Đã đăng nhập -->
+        <!-- 3. Khu vực bên phải: Tự động đổi theo từng vai trò -->
         <div class="nav-right-actions">
-          <!-- Liên kết cơ bản hiển thị: Sản Phẩm -->
+          <!-- A. Navigation links trên Desktop theo vai trò -->
           <nav class="desktop-links">
-            <router-link
-              to="/products"
-              class="quick-link"
-              active-class="active"
-            >
-              Sản Phẩm
-            </router-link>
+            <!-- 1. Guest Links (Khách ghé thăm) -->
+            <template v-if="!auth.isLoggedIn.value">
+              <router-link to="/products" class="quick-link" active-class="active">
+                <i class="bi bi-grid menu-mini-icon"></i>
+                <span>Sản Phẩm</span>
+              </router-link>
+              <router-link to="/contact" class="quick-link" active-class="active">
+                <i class="bi bi-geo-alt menu-mini-icon"></i>
+                <span>Bản Đồ 10km</span>
+              </router-link>
+            </template>
+
+            <!-- 2. Buyer Links (Khách hàng) -->
+            <template v-else-if="auth.currentRole.value === 'buyer'">
+              <router-link to="/products" class="quick-link" active-class="active">
+                <i class="bi bi-grid menu-mini-icon"></i>
+                <span>Sản Phẩm</span>
+              </router-link>
+              <router-link to="/buyer-orders" class="quick-link" active-class="active">
+                <i class="bi bi-bag-check menu-mini-icon"></i>
+                <span>Đơn Mua</span>
+              </router-link>
+              <router-link to="/profile" class="quick-link" active-class="active">
+                <i class="bi bi-wallet2 menu-mini-icon"></i>
+                <span>Ví Tiền</span>
+              </router-link>
+              <router-link to="/contact" class="quick-link" active-class="active">
+                <i class="bi bi-headset menu-mini-icon"></i>
+                <span>Hỗ Trợ</span>
+              </router-link>
+            </template>
+
+            <!-- 3. Seller Links (Chủ gian hàng) -->
+            <template v-else-if="auth.currentRole.value === 'seller'">
+              <router-link to="/admin" class="quick-link highlight-pill seller-pill" active-class="active">
+                <i class="bi bi-shop menu-mini-icon"></i>
+                <span>Kênh Bán Hàng</span>
+              </router-link>
+              <router-link to="/products" class="quick-link" active-class="active">
+                <i class="bi bi-box-seam menu-mini-icon"></i>
+                <span>Sản Phẩm Sàn</span>
+              </router-link>
+              <router-link to="/profile" class="quick-link" active-class="active">
+                <i class="bi bi-cash-stack menu-mini-icon"></i>
+                <span>Ví Doanh Thu</span>
+              </router-link>
+              <router-link to="/contact" class="quick-link" active-class="active">
+                <i class="bi bi-patch-question menu-mini-icon"></i>
+                <span>Hỗ Trợ Shop</span>
+              </router-link>
+            </template>
+
+            <!-- 4. Shipper Links (Tài xế giao hàng) -->
+            <template v-else-if="auth.currentRole.value === 'shipper'">
+              <router-link to="/shipper" class="quick-link highlight-pill shipper-pill" active-class="active">
+                <i class="bi bi-bicycle menu-mini-icon"></i>
+                <span>Nhận Đơn 10km</span>
+              </router-link>
+              <router-link to="/profile" class="quick-link" active-class="active">
+                <i class="bi bi-cash-coin menu-mini-icon"></i>
+                <span>Ví Thu Nhập</span>
+              </router-link>
+              <router-link to="/contact" class="quick-link" active-class="active">
+                <i class="bi bi-telephone-outbound menu-mini-icon"></i>
+                <span>Cứu Hộ / Trợ Giúp</span>
+              </router-link>
+            </template>
+
+            <!-- 5. Admin Links (Quản trị viên) -->
+            <template v-else-if="auth.currentRole.value === 'admin'">
+              <router-link to="/admin" class="quick-link highlight-pill admin-pill" active-class="active">
+                <i class="bi bi-shield-check menu-mini-icon"></i>
+                <span>Dashboard Admin</span>
+              </router-link>
+              <router-link to="/products" class="quick-link" active-class="active">
+                <i class="bi bi-eye menu-mini-icon"></i>
+                <span>Giám Sát Sàn</span>
+              </router-link>
+              <router-link to="/profile" class="quick-link" active-class="active">
+                <i class="bi bi-gear menu-mini-icon"></i>
+                <span>Hệ Thống</span>
+              </router-link>
+            </template>
           </nav>
 
-          <!-- A. KHI LÀ KHÁCH GHÉ THĂM (GUEST): 2 nút Đăng Ký và Đăng Nhập -->
-          <div v-if="!isLoggedIn" class="guest-auth-actions">
+          <!-- B. Khi là Guest: 2 nút Đăng Ký và Đăng Nhập -->
+          <div v-if="!auth.isLoggedIn.value" class="guest-auth-actions">
             <router-link to="/register" class="btn-auth-outline">
               Đăng Ký
             </router-link>
@@ -111,91 +185,20 @@ const handleLogout = () => {
             </router-link>
           </div>
 
-          <!-- B. KHI ĐÃ ĐĂNG NHẬP: Hiển thị Icon Hồ sơ / Ví và Icon Giỏ hàng -->
+          <!-- C. Khi đã đăng nhập: Action Buttons & User Menu -->
           <div v-else class="logged-in-actions">
-            <!-- Icon Tài khoản với Menu Dropdown -->
-            <div class="user-menu-wrapper" @click.stop>
-              <button
-                class="icon-btn user-btn"
-                title="Tài khoản của bạn"
-                aria-label="Tài khoản của bạn"
-                @click="toggleUserDropdown"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="22"
-                  height="22"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="12" cy="7" r="4"></circle>
-                </svg>
-              </button>
-
-              <div v-if="isUserDropdownOpen" class="user-dropdown">
-                <div class="dropdown-header">
-                  <strong>Tài Khoản ZoneMart</strong>
-                </div>
-                <router-link
-                  to="/profile"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
-                  <i class="bi bi-person-circle menu-icon" aria-hidden="true"></i>
-                  <span>Hồ Sơ & Ví Tiền</span>
-                </router-link>
-                <router-link
-                  to="/buyer-orders"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
-                  <i class="bi bi-bag-check menu-icon" aria-hidden="true"></i>
-                  <span>Đơn Mua Của Bạn</span>
-                </router-link>
-                <div class="dropdown-divider"></div>
-                <router-link
-                  to="/shipper"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
-                  <i class="bi bi-bicycle menu-icon" aria-hidden="true"></i>
-                  <span>Cổng Shipper</span>
-                </router-link>
-                <router-link
-                  to="/admin"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
-                  <i class="bi bi-shield-check menu-icon" aria-hidden="true"></i>
-                  <span>Bảng Điều Khiển Admin</span>
-                </router-link>
-                <router-link
-                  to="/contact"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
-                  <i class="bi bi-headset menu-icon" aria-hidden="true"></i>
-                  <span>Liên Hệ Hỗ Trợ</span>
-                </router-link>
-                <div class="dropdown-divider"></div>
-                <button class="dropdown-item logout-btn" @click="handleLogout">
-                  <i class="bi bi-box-arrow-right menu-icon" aria-hidden="true"></i>
-                  <span>Đăng Xuất</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Icon Giỏ hàng kèm huy hiệu số lượng -->
-            <router-link to="/cart" class="icon-btn cart-btn" title="Giỏ hàng" aria-label="Xem giỏ hàng">
+            <!-- Icon Giỏ hàng (Buyer & Seller) -->
+            <router-link
+              v-if="auth.currentRole.value === 'buyer' || auth.currentRole.value === 'seller'"
+              to="/cart"
+              class="icon-btn cart-btn"
+              title="Giỏ hàng của bạn"
+              aria-label="Xem giỏ hàng"
+            >
               <svg
                 viewBox="0 0 24 24"
-                width="22"
-                height="22"
+                width="20"
+                height="20"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="1.8"
@@ -205,12 +208,212 @@ const handleLogout = () => {
               >
                 <circle cx="9" cy="21" r="1"></circle>
                 <circle cx="20" cy="21" r="1"></circle>
-                <path
-                  d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
-                ></path>
+                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
               </svg>
               <span class="cart-badge">{{ cartItemCount }}</span>
             </router-link>
+
+            <!-- Lối tắt nhanh cho Shipper: Nút Trạng Thái Sẵn Sàng -->
+            <router-link
+              v-if="auth.currentRole.value === 'shipper'"
+              to="/shipper"
+              class="shipper-ready-tag"
+              title="Xem đơn hàng mới"
+            >
+              <span class="status-dot-pulse"></span>
+              <span>Sẵn Sàng</span>
+            </router-link>
+
+            <!-- User Menu Chip & Dropdown -->
+            <div class="user-menu-wrapper" @click.stop>
+              <button
+                class="user-profile-chip"
+                :class="auth.roleBadgeClass.value"
+                title="Tài khoản của bạn"
+                aria-label="Tài khoản của bạn"
+                @click="toggleUserDropdown"
+              >
+                <img
+                  v-if="auth.currentUser.value?.avatarUrl"
+                  :src="auth.currentUser.value.avatarUrl"
+                  :alt="auth.currentUser.value.fullName"
+                  class="user-chip-avatar"
+                />
+                <span v-else class="user-chip-avatar-placeholder">
+                  {{ auth.currentUser.value?.fullName?.charAt(0) || 'U' }}
+                </span>
+
+                <div class="user-chip-info">
+                  <span class="user-chip-name">{{ auth.currentUser.value?.fullName }}</span>
+                  <span class="user-chip-role-badge">
+                    {{ auth.roleLabel.value }}
+                  </span>
+                </div>
+                <i class="bi bi-chevron-down chip-arrow"></i>
+              </button>
+
+              <!-- Dropdown Menu -->
+              <div v-if="isUserDropdownOpen" class="user-dropdown">
+                <!-- Dropdown Header Card -->
+                <div class="dropdown-header-card" :class="auth.roleBadgeClass.value">
+                  <div class="dropdown-header-top">
+                    <img
+                      v-if="auth.currentUser.value?.avatarUrl"
+                      :src="auth.currentUser.value.avatarUrl"
+                      :alt="auth.currentUser.value.fullName"
+                      class="dropdown-avatar"
+                    />
+                    <span v-else class="dropdown-avatar-placeholder">
+                      {{ auth.currentUser.value?.fullName?.charAt(0) || 'U' }}
+                    </span>
+                    <div class="dropdown-user-details">
+                      <strong class="dropdown-user-name">{{ auth.currentUser.value?.fullName }}</strong>
+                      <span class="dropdown-badge-pill">{{ auth.roleLabel.value }}</span>
+                    </div>
+                  </div>
+                  <div class="dropdown-header-sub">
+                    <span class="dropdown-email-text">{{ auth.currentUser.value?.phoneEmail }}</span>
+                    <span v-if="auth.currentUser.value?.storeName" class="dropdown-store-text">
+                      🏪 {{ auth.currentUser.value.storeName }}
+                    </span>
+                    <span v-if="auth.currentUser.value?.vehiclePlate" class="dropdown-vehicle-text">
+                      🛵 {{ auth.currentUser.value.vehiclePlate }}
+                    </span>
+                    <div class="dropdown-wallet-row">
+                      <span class="wallet-lbl">Số dư ví:</span>
+                      <strong class="wallet-val">{{ auth.formatVND(auth.currentUser.value?.walletBalance) }}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Dropdown Items theo Vai Trò -->
+                <div class="dropdown-body-links">
+                  <!-- 1. BUYER ITEMS -->
+                  <template v-if="auth.currentRole.value === 'buyer'">
+                    <router-link to="/profile" class="dropdown-item" @click="closeDropdowns">
+                      <i class="bi bi-person-circle menu-icon"></i>
+                      <span>Hồ Sơ & Ví Cá Nhân</span>
+                    </router-link>
+                    <router-link to="/buyer-orders" class="dropdown-item" @click="closeDropdowns">
+                      <i class="bi bi-bag-check menu-icon"></i>
+                      <span>Đơn Mua Của Bạn</span>
+                    </router-link>
+                    <router-link to="/cart" class="dropdown-item" @click="closeDropdowns">
+                      <i class="bi bi-cart3 menu-icon"></i>
+                      <span>Giỏ Hàng ({{ cartItemCount }})</span>
+                    </router-link>
+                    <router-link to="/contact" class="dropdown-item" @click="closeDropdowns">
+                      <i class="bi bi-headset menu-icon"></i>
+                      <span>Trung Tâm Hỗ Trợ 24/7</span>
+                    </router-link>
+                  </template>
+
+                  <!-- 2. SELLER ITEMS -->
+                  <template v-else-if="auth.currentRole.value === 'seller'">
+                    <router-link to="/admin" class="dropdown-item highlight-item" @click="closeDropdowns">
+                      <i class="bi bi-shop menu-icon"></i>
+                      <span>Kênh Bán Hàng & Đơn Shop</span>
+                    </router-link>
+                    <router-link to="/profile" class="dropdown-item" @click="closeDropdowns">
+                      <i class="bi bi-cash-stack menu-icon"></i>
+                      <span>Ví Doanh Thu & Rút Tiền</span>
+                    </router-link>
+                    <router-link to="/products" class="dropdown-item" @click="closeDropdowns">
+                      <i class="bi bi-box-seam menu-icon"></i>
+                      <span>Xem Mặt Hàng Trên Sàn</span>
+                    </router-link>
+                    <router-link to="/contact" class="dropdown-item" @click="closeDropdowns">
+                      <i class="bi bi-patch-question menu-icon"></i>
+                      <span>Hỗ Trợ Đối Tác Bán Hàng</span>
+                    </router-link>
+                  </template>
+
+                  <!-- 3. SHIPPER ITEMS -->
+                  <template v-else-if="auth.currentRole.value === 'shipper'">
+                    <router-link to="/shipper" class="dropdown-item highlight-item" @click="closeDropdowns">
+                      <i class="bi bi-bicycle menu-icon"></i>
+                      <span>Bảng Nhận Đơn Hỏa Tốc</span>
+                    </router-link>
+                    <router-link to="/profile" class="dropdown-item" @click="closeDropdowns">
+                      <i class="bi bi-cash-coin menu-icon"></i>
+                      <span>Ví Thu Nhập & Chuyến Đi</span>
+                    </router-link>
+                    <router-link to="/contact" class="dropdown-item" @click="closeDropdowns">
+                      <i class="bi bi-telephone-outbound menu-icon"></i>
+                      <span>Tổng Đài Hỗ Trợ Sự Cố</span>
+                    </router-link>
+                  </template>
+
+                  <!-- 4. ADMIN ITEMS -->
+                  <template v-else-if="auth.currentRole.value === 'admin'">
+                    <router-link to="/admin" class="dropdown-item highlight-item" @click="closeDropdowns">
+                      <i class="bi bi-shield-check menu-icon"></i>
+                      <span>Bảng Điều Khiển Quản Trị</span>
+                    </router-link>
+                    <router-link to="/products" class="dropdown-item" @click="closeDropdowns">
+                      <i class="bi bi-eye menu-icon"></i>
+                      <span>Kiểm Duyệt Sản Phẩm Sàn</span>
+                    </router-link>
+                    <router-link to="/profile" class="dropdown-item" @click="closeDropdowns">
+                      <i class="bi bi-gear menu-icon"></i>
+                      <span>Cài Đặt Hệ Thống</span>
+                    </router-link>
+                  </template>
+                </div>
+
+                <!-- ROLE SWITCHER DÀNH CHO TEST TRỰC QUAN -->
+                <div class="dropdown-role-switcher">
+                  <div class="switcher-title">
+                    <i class="bi bi-arrow-repeat"></i>
+                    <span>Chuyển vai trò thử nghiệm:</span>
+                  </div>
+                  <div class="switcher-buttons">
+                    <button
+                      type="button"
+                      class="switch-btn"
+                      :class="{ active: auth.currentRole.value === 'buyer' }"
+                      @click="handleRoleSwitch('buyer')"
+                      title="Chuyển sang Khách Hàng"
+                    >
+                      👤 Buyer
+                    </button>
+                    <button
+                      type="button"
+                      class="switch-btn"
+                      :class="{ active: auth.currentRole.value === 'seller' }"
+                      @click="handleRoleSwitch('seller')"
+                      title="Chuyển sang Chủ Cửa Hàng"
+                    >
+                      🌱 Seller
+                    </button>
+                    <button
+                      type="button"
+                      class="switch-btn"
+                      :class="{ active: auth.currentRole.value === 'shipper' }"
+                      @click="handleRoleSwitch('shipper')"
+                      title="Chuyển sang Tài Xế"
+                    >
+                      🛵 Shipper
+                    </button>
+                    <button
+                      type="button"
+                      class="switch-btn"
+                      :class="{ active: auth.currentRole.value === 'admin' }"
+                      @click="handleRoleSwitch('admin')"
+                      title="Chuyển sang Admin"
+                    >
+                      👑 Admin
+                    </button>
+                  </div>
+                </div>
+
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item logout-btn" @click="handleLogout">
+                  <i class="bi bi-box-arrow-right menu-icon"></i>
+                  <span>Đăng Xuất</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- Mobile Toggle Button -->
@@ -227,66 +430,141 @@ const handleLogout = () => {
 
       <!-- Menu trên điện thoại -->
       <nav v-if="isMobileMenuOpen" class="mobile-menu" aria-label="Menu điều hướng di động">
-        <router-link to="/products" class="mobile-link" @click="closeDropdowns">
-          <i class="bi bi-grid-fill menu-icon" aria-hidden="true"></i>
-          <span>Sản Phẩm</span>
-        </router-link>
-
-        <template v-if="!isLoggedIn">
+        <!-- Guest Mobile Links -->
+        <template v-if="!auth.isLoggedIn.value">
+          <router-link to="/products" class="mobile-link" @click="closeDropdowns">
+            <i class="bi bi-grid-fill menu-icon" aria-hidden="true"></i>
+            <span>Sản Phẩm</span>
+          </router-link>
+          <router-link to="/contact" class="mobile-link" @click="closeDropdowns">
+            <i class="bi bi-geo-alt-fill menu-icon" aria-hidden="true"></i>
+            <span>Bản Đồ 10km</span>
+          </router-link>
           <div class="mobile-divider"></div>
           <div class="mobile-auth-grid">
-            <router-link
-              to="/register"
-              class="btn-auth-outline mobile-btn"
-              @click="closeDropdowns"
-            >
-              <i class="bi bi-person-plus-fill" aria-hidden="true"></i>
+            <router-link to="/register" class="btn-auth-outline mobile-btn" @click="closeDropdowns">
+              <i class="bi bi-person-plus-fill"></i>
               <span>Đăng Ký</span>
             </router-link>
-            <router-link
-              to="/login"
-              class="btn-auth-solid mobile-btn"
-              @click="closeDropdowns"
-            >
-              <i class="bi bi-box-arrow-in-right" aria-hidden="true"></i>
+            <router-link to="/login" class="btn-auth-solid mobile-btn" @click="closeDropdowns">
+              <i class="bi bi-box-arrow-in-right"></i>
               <span>Đăng Nhập</span>
             </router-link>
           </div>
         </template>
 
+        <!-- Logged-in Mobile Links -->
         <template v-else>
-          <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
-            <i class="bi bi-cart3 menu-icon" aria-hidden="true"></i>
-            <span>Giỏ Hàng ({{ cartItemCount }})</span>
+          <!-- User info card on mobile -->
+          <div class="mobile-user-card" :class="auth.roleBadgeClass.value">
+            <div class="mobile-user-name">{{ auth.currentUser.value?.fullName }}</div>
+            <span class="mobile-role-tag">{{ auth.roleLabel.value }}</span>
+          </div>
+
+          <!-- Buyer Mobile -->
+          <template v-if="auth.currentRole.value === 'buyer'">
+            <router-link to="/products" class="mobile-link" @click="closeDropdowns">
+              <i class="bi bi-grid-fill menu-icon"></i>
+              <span>Sản Phẩm</span>
+            </router-link>
+            <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
+              <i class="bi bi-cart3 menu-icon"></i>
+              <span>Giỏ Hàng ({{ cartItemCount }})</span>
+            </router-link>
+            <router-link to="/buyer-orders" class="mobile-link" @click="closeDropdowns">
+              <i class="bi bi-bag-check menu-icon"></i>
+              <span>Đơn Mua</span>
+            </router-link>
+            <router-link to="/profile" class="mobile-link" @click="closeDropdowns">
+              <i class="bi bi-person-circle menu-icon"></i>
+              <span>Hồ Sơ & Ví</span>
+            </router-link>
+          </template>
+
+          <!-- Seller Mobile -->
+          <template v-else-if="auth.currentRole.value === 'seller'">
+            <router-link to="/admin" class="mobile-link highlight-mobile-link" @click="closeDropdowns">
+              <i class="bi bi-shop menu-icon"></i>
+              <span>Kênh Bán Hàng & Đơn</span>
+            </router-link>
+            <router-link to="/products" class="mobile-link" @click="closeDropdowns">
+              <i class="bi bi-box-seam menu-icon"></i>
+              <span>Sản Phẩm Sàn</span>
+            </router-link>
+            <router-link to="/profile" class="mobile-link" @click="closeDropdowns">
+              <i class="bi bi-cash-stack menu-icon"></i>
+              <span>Ví Doanh Thu</span>
+            </router-link>
+          </template>
+
+          <!-- Shipper Mobile -->
+          <template v-else-if="auth.currentRole.value === 'shipper'">
+            <router-link to="/shipper" class="mobile-link highlight-mobile-link" @click="closeDropdowns">
+              <i class="bi bi-bicycle menu-icon"></i>
+              <span>Nhận Đơn Hỏa Tốc</span>
+            </router-link>
+            <router-link to="/profile" class="mobile-link" @click="closeDropdowns">
+              <i class="bi bi-cash-coin menu-icon"></i>
+              <span>Ví Thu Nhập</span>
+            </router-link>
+          </template>
+
+          <!-- Admin Mobile -->
+          <template v-else-if="auth.currentRole.value === 'admin'">
+            <router-link to="/admin" class="mobile-link highlight-mobile-link" @click="closeDropdowns">
+              <i class="bi bi-shield-check menu-icon"></i>
+              <span>Bảng Điều Khiển Admin</span>
+            </router-link>
+            <router-link to="/products" class="mobile-link" @click="closeDropdowns">
+              <i class="bi bi-eye menu-icon"></i>
+              <span>Giám Sát Sàn</span>
+            </router-link>
+            <router-link to="/profile" class="mobile-link" @click="closeDropdowns">
+              <i class="bi bi-gear menu-icon"></i>
+              <span>Hệ Thống</span>
+            </router-link>
+          </template>
+
+          <router-link to="/contact" class="mobile-link" @click="closeDropdowns">
+            <i class="bi bi-headset menu-icon"></i>
+            <span>Hỗ Trợ</span>
           </router-link>
-          <router-link
-            to="/buyer-orders"
-            class="mobile-link"
-            @click="closeDropdowns"
-          >
-            <i class="bi bi-bag-check menu-icon" aria-hidden="true"></i>
-            <span>Đơn Mua</span>
-          </router-link>
-          <router-link
-            to="/profile"
-            class="mobile-link"
-            @click="closeDropdowns"
-          >
-            <i class="bi bi-person-circle menu-icon" aria-hidden="true"></i>
-            <span>Hồ Sơ & Ví</span>
-          </router-link>
-          <router-link
-            to="/shipper"
-            class="mobile-link"
-            @click="closeDropdowns"
-          >
-            <i class="bi bi-bicycle menu-icon" aria-hidden="true"></i>
-            <span>Cổng Shipper</span>
-          </router-link>
-          <router-link to="/admin" class="mobile-link" @click="closeDropdowns">
-            <i class="bi bi-shield-check menu-icon" aria-hidden="true"></i>
-            <span>Admin</span>
-          </router-link>
+
+          <!-- Mobile Role Switcher -->
+          <div class="mobile-role-switcher">
+            <span class="switcher-lbl">Chuyển vai trò test:</span>
+            <div class="mobile-switch-btns">
+              <button
+                type="button"
+                :class="{ active: auth.currentRole.value === 'buyer' }"
+                @click="handleRoleSwitch('buyer')"
+              >
+                Buyer
+              </button>
+              <button
+                type="button"
+                :class="{ active: auth.currentRole.value === 'seller' }"
+                @click="handleRoleSwitch('seller')"
+              >
+                Seller
+              </button>
+              <button
+                type="button"
+                :class="{ active: auth.currentRole.value === 'shipper' }"
+                @click="handleRoleSwitch('shipper')"
+              >
+                Shipper
+              </button>
+              <button
+                type="button"
+                :class="{ active: auth.currentRole.value === 'admin' }"
+                @click="handleRoleSwitch('admin')"
+              >
+                Admin
+              </button>
+            </div>
+          </div>
+
           <div class="mobile-divider"></div>
           <button class="mobile-link logout-link" @click="handleLogout">
             <i class="bi bi-box-arrow-right menu-icon" aria-hidden="true"></i>
@@ -702,37 +980,287 @@ body {
   border: 2px solid #ffffff;
 }
 
+.menu-mini-icon {
+  font-size: 14px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+/* ROLE HIGHLIGHT PILLS ON DESKTOP NAV */
+.highlight-pill {
+  border: 1px solid transparent;
+  font-weight: 700;
+}
+.seller-pill {
+  background: #fff7ed;
+  color: #c2410c !important;
+  border-color: #ffedd5;
+}
+.seller-pill:hover, .seller-pill.active {
+  background: #ffedd5;
+  color: #9a3412 !important;
+  border-color: #fdba74;
+}
+.shipper-pill {
+  background: #f0fdf4;
+  color: #15803d !important;
+  border-color: #dcfce7;
+}
+.shipper-pill:hover, .shipper-pill.active {
+  background: #dcfce7;
+  color: #166534 !important;
+  border-color: #86efac;
+}
+.admin-pill {
+  background: #faf5ff;
+  color: #7e22ce !important;
+  border-color: #f3e8ff;
+}
+.admin-pill:hover, .admin-pill.active {
+  background: #f3e8ff;
+  color: #6b21a8 !important;
+  border-color: #d8b4fe;
+}
+
+/* SHIPPER READY STATUS TAG */
+.shipper-ready-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #15803d;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 50px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.shipper-ready-tag:hover {
+  background: #dcfce7;
+  transform: translateY(-1px);
+}
+.status-dot-pulse {
+  width: 8px;
+  height: 8px;
+  background: #22c55e;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  animation: pulseGreen 1.8s infinite;
+}
+@keyframes pulseGreen {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+/* USER PROFILE CHIP (BUTTON HEADER) */
 .user-menu-wrapper {
   position: relative;
 }
+.user-profile-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: 1.5px solid #ebdcd3;
+  padding: 4px 10px 4px 4px;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.user-profile-chip:hover {
+  border-color: #d85a2a;
+  background: #fdfaf6;
+  box-shadow: 0 4px 12px rgba(216, 90, 42, 0.08);
+}
+.user-chip-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid #ebdcd3;
+}
+.user-chip-avatar-placeholder {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #d85a2a;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+}
+.user-chip-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+.user-chip-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #2b1b14;
+  max-width: 110px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.user-chip-role-badge {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-top: 1px;
+}
+.badge-role-buyer .user-chip-role-badge {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.badge-role-seller .user-chip-role-badge {
+  background: #fff7ed;
+  color: #ea580c;
+}
+.badge-role-shipper .user-chip-role-badge {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+.badge-role-admin .user-chip-role-badge {
+  background: #faf5ff;
+  color: #9333ea;
+}
+.chip-arrow {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-left: 2px;
+  transition: transform 0.2s;
+}
+
+/* USER DROPDOWN CARD */
 .user-dropdown {
   position: absolute;
-  top: 48px;
+  top: 50px;
   right: 0;
-  width: 230px;
+  width: 290px;
   background: #ffffff;
-  border-radius: 12px;
+  border-radius: 16px;
   border: 1px solid #ebdcd3;
-  box-shadow: 0 10px 30px rgba(43, 27, 20, 0.12);
-  padding: 8px 0;
+  box-shadow: 0 16px 40px rgba(43, 27, 20, 0.14);
+  padding: 0;
+  overflow: hidden;
   z-index: 1001;
   animation: fadeIn 0.18s ease-out;
 }
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-.dropdown-header {
-  padding: 10px 16px 8px;
+
+.dropdown-header-card {
+  padding: 14px 16px;
+  border-bottom: 1px solid #f3e7df;
+  background: #faf7f2;
+}
+.dropdown-header-card.badge-role-buyer {
+  background: linear-gradient(135deg, #f8faff 0%, #edf4fe 100%);
+}
+.dropdown-header-card.badge-role-seller {
+  background: linear-gradient(135deg, #fffaf5 0%, #fff0e5 100%);
+}
+.dropdown-header-card.badge-role-shipper {
+  background: linear-gradient(135deg, #f7fdf9 0%, #edfcf1 100%);
+}
+.dropdown-header-card.badge-role-admin {
+  background: linear-gradient(135deg, #faf7fe 0%, #f3ebfc 100%);
+}
+
+.dropdown-header-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.dropdown-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.dropdown-avatar-placeholder {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #d85a2a;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  border: 2px solid #ffffff;
+}
+.dropdown-user-details {
+  display: flex;
+  flex-direction: column;
+}
+.dropdown-user-name {
+  font-size: 14px;
+  color: #2b1b14;
+  line-height: 1.2;
+}
+.dropdown-badge-pill {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-top: 3px;
+  width: fit-content;
+}
+.badge-role-buyer .dropdown-badge-pill { background: #dbeafe; color: #1d4ed8; }
+.badge-role-seller .dropdown-badge-pill { background: #ffedd5; color: #c2410c; }
+.badge-role-shipper .dropdown-badge-pill { background: #dcfce7; color: #15803d; }
+.badge-role-admin .dropdown-badge-pill { background: #f3e8ff; color: #7e22ce; }
+
+.dropdown-header-sub {
+  font-size: 11.5px;
+  color: #6b7280;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.dropdown-email-text {
+  word-break: break-all;
+}
+.dropdown-store-text, .dropdown-vehicle-text {
+  color: #4b5563;
+  font-weight: 600;
+}
+.dropdown-wallet-row {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed rgba(0,0,0,0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.dropdown-wallet-row .wallet-lbl {
+  font-size: 11px;
+  color: #71717a;
+}
+.dropdown-wallet-row .wallet-val {
   font-size: 13px;
   color: #d85a2a;
-  border-bottom: 1px solid #f3e7df;
+}
+
+.dropdown-body-links {
+  padding: 6px 0;
 }
 .dropdown-item {
   display: flex;
@@ -742,19 +1270,20 @@ body {
   text-align: left;
   background: none;
   border: none;
-  padding: 10px 16px;
+  padding: 9px 16px;
   font-size: 13px;
   font-weight: 500;
   color: #4a3830;
   text-decoration: none;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s;
 }
 .dropdown-item .menu-icon {
   font-size: 15px;
-  color: #a49187;
-  flex-shrink: 0;
-  transition: color 0.2s;
+  color: #9c887e;
+  width: 18px;
+  text-align: center;
+  transition: color 0.15s;
 }
 .dropdown-item:hover {
   background: #fdf5f0;
@@ -763,17 +1292,128 @@ body {
 .dropdown-item:hover .menu-icon {
   color: #d85a2a;
 }
+.dropdown-item.highlight-item {
+  font-weight: 600;
+  color: #d85a2a;
+}
+.dropdown-item.highlight-item .menu-icon {
+  color: #d85a2a;
+}
+
+/* DEV ROLE SWITCHER INSIDE DROPDOWN */
+.dropdown-role-switcher {
+  background: #fbf7f4;
+  border-top: 1px solid #f0e2d8;
+  border-bottom: 1px solid #f0e2d8;
+  padding: 8px 12px;
+}
+.switcher-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #7c685e;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.switcher-buttons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.switch-btn {
+  background: #ffffff;
+  border: 1px solid #ebdcd3;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 2px;
+  cursor: pointer;
+  color: #57463f;
+  transition: all 0.15s;
+}
+.switch-btn:hover {
+  background: #f3eae3;
+  border-color: #d85a2a;
+}
+.switch-btn.active {
+  background: #d85a2a;
+  color: #ffffff;
+  border-color: #d85a2a;
+}
+
 .dropdown-divider {
   height: 1px;
   background: #f3e7df;
-  margin: 6px 0;
+  margin: 4px 0;
 }
 .logout-btn {
-  color: #dc2626;
+  color: #dc2626 !important;
   font-weight: 600;
 }
 .logout-btn .menu-icon {
-  color: #dc2626;
+  color: #dc2626 !important;
+}
+
+/* MOBILE ROLE STYLES */
+.mobile-user-card {
+  background: #faf5ef;
+  border: 1px solid #ebdcd3;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.mobile-user-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #2b1b14;
+}
+.mobile-role-tag {
+  font-size: 11px;
+  font-weight: 700;
+  background: #d85a2a;
+  color: #ffffff;
+  padding: 2px 8px;
+  border-radius: 50px;
+}
+.highlight-mobile-link {
+  color: #d85a2a !important;
+  font-weight: 700;
+  background: #fff8f3;
+}
+.mobile-role-switcher {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e8d8ce;
+}
+.mobile-role-switcher .switcher-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  color: #8c776c;
+  display: block;
+  margin-bottom: 6px;
+}
+.mobile-switch-btns {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.mobile-switch-btns button {
+  padding: 6px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid #ebdcd3;
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+}
+.mobile-switch-btns button.active {
+  background: #d85a2a;
+  color: #ffffff;
+  border-color: #d85a2a;
 }
 
 /* Mobile Toggle */
