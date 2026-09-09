@@ -317,51 +317,7 @@ const handleLogin = async () => {
               <span v-else>ĐANG XỬ LÝ...</span>
             </button>
 
-            <!-- BỘ CHỌN ĐĂNG NHẬP NHANH 4 VAI TRÒ (TEST / DEMO GIAO DIỆN) -->
-            <div class="quick-demo-roles-box">
-              <div class="demo-roles-title">
-                <i class="bi bi-lightning-charge-fill"></i>
-                <span>Hoặc chọn nhanh vai trò để trải nghiệm:</span>
-              </div>
-              <div class="demo-roles-grid">
-                <button
-                  type="button"
-                  class="demo-role-chip buyer"
-                  @click="quickLogin('buyer')"
-                  title="Đăng nhập Khách Hàng"
-                >
-                  <span class="role-icon">👤</span>
-                  <span class="role-txt">Buyer</span>
-                </button>
-                <button
-                  type="button"
-                  class="demo-role-chip seller"
-                  @click="quickLogin('seller')"
-                  title="Đăng nhập Chủ Gian Hàng"
-                >
-                  <span class="role-icon">🌱</span>
-                  <span class="role-txt">Seller</span>
-                </button>
-                <button
-                  type="button"
-                  class="demo-role-chip shipper"
-                  @click="quickLogin('shipper')"
-                  title="Đăng nhập Tài Xế"
-                >
-                  <span class="role-icon">🛵</span>
-                  <span class="role-txt">Shipper</span>
-                </button>
-                <button
-                  type="button"
-                  class="demo-role-chip admin"
-                  @click="quickLogin('admin')"
-                  title="Đăng nhập Quản Trị Viên"
-                >
-                  <span class="role-icon">👑</span>
-                  <span class="role-txt">Admin</span>
-                </button>
-              </div>
-            </div>
+            
 
             <!-- Đường kẻ phân cách OR -->
             <div class="divider-row">
@@ -392,21 +348,7 @@ const handleLogin = async () => {
               </div>
             </div>
 
-            <!-- Thanh đăng nhập nhanh kiểm thử cho Giảng viên / User -->
-            <div class="demo-quick-bar">
-              <span class="demo-title"><i class="bi bi-shield-lock-fill me-1"></i> Tài khoản mẫu kiểm thử:</span>
-              <div class="demo-tags-wrap">
-                <button type="button" class="demo-btn seller" @click="fillDemoAccount('seller')">
-                  <i class="bi bi-shop me-1"></i> Người Bán (Seller)
-                </button>
-                <button type="button" class="demo-btn buyer" @click="fillDemoAccount('buyer')">
-                  <i class="bi bi-bag-check me-1"></i> Khách Hàng
-                </button>
-                <button type="button" class="demo-btn shipper" @click="fillDemoAccount('shipper')">
-                  <i class="bi bi-bicycle me-1"></i> Shipper
-                </button>
-              </div>
-            </div>
+           
           </form>
         </template>
 
