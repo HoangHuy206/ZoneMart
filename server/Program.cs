@@ -1,4 +1,4 @@
-﻿using ZoneMart.Server.Services;
+using ZoneMart.Server.Services;
 using ZoneMart.Server.Settings;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,19 +22,30 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddControllers();
+
+#if NET9_0_OR_GREATER
 builder.Services.AddOpenApi();
+#else
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+#endif
 
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
+#if NET9_0_OR_GREATER
     app.MapOpenApi();
+#else
+    app.UseSwagger();
+    app.UseSwaggerUI();
+#endif
 }
 
 app.UseCors("AllowVueClient");
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 
 app.UseAuthorization();
 
@@ -43,4 +54,4 @@ app.MapControllers();
 Console.WriteLine("🚀 ZoneMart C# ASP.NET Core Web API đang khởi động...");
 Console.WriteLine("📦 Kết nối Database: MongoDB Atlas (Cluster0)");
 
-app.Run();
+app.Run("http://localhost:5000");

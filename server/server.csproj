@@ -1,13 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <!-- Tự động chọn TargetFramework: SDK >= 9.0 dùng net9.0, SDK 8.0 tự động fallback net8.0 -->
+    <TargetFramework Condition="'$(NETCoreSdkVersion)' != '' and $([System.Version]::Parse($([System.Text.RegularExpressions.Regex]::Match($(NETCoreSdkVersion), '^\d+\.\d+').Value))) >= $([System.Version]::Parse('9.0'))">net9.0</TargetFramework>
+    <TargetFramework Condition="'$(TargetFramework)' == ''">net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
-  <ItemGroup>
+  <!-- Gói thư viện dành riêng cho .NET 9 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.9" />
+  </ItemGroup>
+
+  <!-- Gói thư viện dành riêng cho .NET 8 -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="MongoDB.Driver" Version="3.11.1" />
   </ItemGroup>
 

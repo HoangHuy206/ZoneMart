@@ -1,4 +1,4 @@
-﻿import type { RouteRecordRaw } from "vue-router";
+import type { RouteRecordRaw } from "vue-router";
 
 /**
  * ================================================================
@@ -15,19 +15,25 @@ export const binhRoutes: RouteRecordRaw[] = [
     path: "/login",
     name: "Login",
     component: () => import("../../views/binh/LoginView.vue"),
-    meta: { title: "Đăng Nhập - ZoneMart" }
+    meta: { title: "Đăng Nhập - ZoneMart", hideHeader: true, hideFooter: true }
   },
   {
     path: "/register",
     name: "RegisterBuyer",
     component: () => import("../../views/binh/RegisterBuyerView.vue"),
-    meta: { title: "Đăng Ký Người Mua - ZoneMart" }
+    meta: { title: "Đăng Ký Khách Hàng - ZoneMart", hideHeader: true, hideFooter: true }
   },
   {
     path: "/register-seller",
     name: "RegisterSeller",
     component: () => import("../../views/binh/RegisterSellerView.vue"),
-    meta: { title: "Đăng Ký Người Bán - ZoneMart" }
+    meta: { title: "Đăng Ký Người Bán - ZoneMart", hideHeader: true, hideFooter: true }
+  },
+  {
+    path: "/register-shipper",
+    name: "RegisterShipper",
+    component: () => import("../../views/binh/RegisterShipperView.vue"),
+    meta: { title: "Đăng Ký Tài Xế Shipper - ZoneMart", hideHeader: true, hideFooter: true }
   },
   {
     path: "/shipper",
