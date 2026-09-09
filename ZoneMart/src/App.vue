@@ -157,6 +157,14 @@ const handleLogout = () => {
                   <i class="bi bi-bag-check menu-icon" aria-hidden="true"></i>
                   <span>Đơn Mua Của Bạn</span>
                 </router-link>
+                <router-link
+                  to="/seller"
+                  class="dropdown-item"
+                  @click="closeDropdowns"
+                >
+                  <i class="bi bi-shop menu-icon" aria-hidden="true"></i>
+                  <span>Kênh Quản Lý Bán Hàng</span>
+                </router-link>
                 <div class="dropdown-divider"></div>
                 <router-link
                   to="/shipper"
@@ -274,6 +282,14 @@ const handleLogout = () => {
           >
             <i class="bi bi-person-circle menu-icon" aria-hidden="true"></i>
             <span>Hồ Sơ & Ví</span>
+          </router-link>
+          <router-link
+            to="/seller"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
+            <i class="bi bi-shop menu-icon" aria-hidden="true"></i>
+            <span>Kênh Bán Hàng</span>
           </router-link>
           <router-link
             to="/shipper"
@@ -438,9 +454,6 @@ const handleLogout = () => {
 body {
   margin: 0;
   padding: 0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Plus Jakarta Sans', 'Segoe UI', Roboto,
-    sans-serif;
   font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: #faf7f2;
   color: #2b1b14;

@@ -50,5 +50,11 @@ export const binhRoutes: RouteRecordRaw[] = [
     name: "Admin",
     component: () => import("../../views/binh/AdminDashboardView.vue"),
     meta: { title: "Bảng Điều Khiển Admin - ZoneMart" }
+  },
+  {
+    path: "/seller",
+    name: "SellerDashboard",
+    component: () => import("../../views/binh/SellerDashboardView.vue"),
+    meta: { title: "Kênh Quản Lý Bán Hàng - ZoneMart" }
   }
 ];

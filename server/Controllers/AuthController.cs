@@ -20,6 +20,44 @@ public class AuthController : ControllerBase
     // Lưu trữ tài khoản tạm thời song song để đảm bảo Đăng ký & Đăng nhập hoạt động 100% không bị gián đoạn
     private static readonly ConcurrentDictionary<string, User> InMemoryUsers = new(StringComparer.OrdinalIgnoreCase);
 
+    static AuthController()
+    {
+        var demoSeller = new User
+        {
+            Id = "seller_ba_vi_01",
+            PhoneEmail = "seller@zonemart.vn",
+            PasswordHash = "123456",
+            FullName = "Chủ Vườn Rau Ba Vì (Bác Ba)",
+            IsSeller = true,
+            IsBuyer = true,
+            AccountStatus = "active",
+            WalletBalance = 3850000
+        };
+        InMemoryUsers[demoSeller.PhoneEmail] = demoSeller;
+
+        var demoAdmin = new User
+        {
+            Id = "admin_zonemart_01",
+            PhoneEmail = "admin@zonemart.vn",
+            PasswordHash = "123456",
+            FullName = "Ban Quản Trị ZoneMart",
+            IsAdmin = true,
+            AccountStatus = "active"
+        };
+        InMemoryUsers[demoAdmin.PhoneEmail] = demoAdmin;
+
+        var demoShipper = new User
+        {
+            Id = "shipper_zonemart_01",
+            PhoneEmail = "shipper@zonemart.vn",
+            PasswordHash = "123456",
+            FullName = "Tài xế Trần Văn Bình",
+            IsShipper = true,
+            AccountStatus = "active"
+        };
+        InMemoryUsers[demoShipper.PhoneEmail] = demoShipper;
+    }
+
     public AuthController(MongoDbService mongoService)
     {
         _mongoService = mongoService;

@@ -35,6 +35,23 @@ const togglePassword = () => {
   showPassword.value = !showPassword.value;
 };
 
+// Đăng nhập nhanh kiểm thử các vai trò
+const fillDemoAccount = (role: 'seller' | 'buyer' | 'shipper' | 'admin') => {
+  if (role === 'seller') {
+    form.account = 'seller@zonemart.vn';
+    form.password = '123456';
+  } else if (role === 'shipper') {
+    form.account = 'shipper@zonemart.vn';
+    form.password = '123456';
+  } else if (role === 'admin') {
+    form.account = 'admin@zonemart.vn';
+    form.password = '123456';
+  } else {
+    form.account = 'buyer@zonemart.vn';
+    form.password = '123456';
+  }
+};
+
 // Xử lý Đăng Nhập
 const handleLogin = async () => {
   errorMessage.value = "";
@@ -65,8 +82,15 @@ const handleLogin = async () => {
       if (res.ok && data.success) {
         successMessage.value = data.message || "Đăng nhập thành công! Đang chuyển hướng...";
         const detectedRole = data.user?.role || "buyer";
+        localStorage.setItem("isLoggedIn", "true");
+        localStorage.setItem("userRole", detectedRole);
+        if (data.user) {
+          localStorage.setItem("currentUser", JSON.stringify(data.user));
+        }
         setTimeout(() => {
-          if (detectedRole === "seller" || detectedRole === "admin") {
+          if (detectedRole === "seller") {
+            router.push("/seller");
+          } else if (detectedRole === "admin") {
             router.push("/admin");
           } else if (detectedRole === "shipper") {
             router.push("/shipper");
@@ -209,6 +233,22 @@ const handleLogin = async () => {
               <div class="cta-sub-line" style="margin-top: 2px;">
                 <span>Đăng ký làm shipper? </span>
                 <router-link to="/register-shipper" class="link-secondary">Đăng ký đối tác giao hàng</router-link>
+              </div>
+            </div>
+
+            <!-- Thanh đăng nhập nhanh kiểm thử cho Giảng viên / User -->
+            <div class="demo-quick-bar">
+              <span class="demo-title"><i class="bi bi-shield-lock-fill me-1"></i> Tài khoản mẫu kiểm thử:</span>
+              <div class="demo-tags-wrap">
+                <button type="button" class="demo-btn seller" @click="fillDemoAccount('seller')">
+                  <i class="bi bi-shop me-1"></i> Người Bán (Seller)
+                </button>
+                <button type="button" class="demo-btn buyer" @click="fillDemoAccount('buyer')">
+                  <i class="bi bi-bag-check me-1"></i> Khách Hàng
+                </button>
+                <button type="button" class="demo-btn shipper" @click="fillDemoAccount('shipper')">
+                  <i class="bi bi-bicycle me-1"></i> Shipper
+                </button>
               </div>
             </div>
           </form>
@@ -583,6 +623,67 @@ const handleLogin = async () => {
 }
 .link-secondary:hover {
   text-decoration: underline;
+}
+
+/* DEMO QUICK BAR */
+.demo-quick-bar {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #E2E8F0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.demo-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #64748B;
+  text-align: center;
+}
+.demo-tags-wrap {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.demo-btn {
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+}
+.demo-btn.seller {
+  color: #C2410C;
+  background: #FFF7ED;
+  border-color: #FDBA74;
+}
+.demo-btn.seller:hover {
+  background: #EA580C;
+  color: #FFFFFF;
+}
+.demo-btn.buyer {
+  color: #15803D;
+  background: #F0FDF4;
+  border-color: #86EFAC;
+}
+.demo-btn.buyer:hover {
+  background: #16A34A;
+  color: #FFFFFF;
+}
+.demo-btn.shipper {
+  color: #1D4ED8;
+  background: #EFF6FF;
+  border-color: #93C5FD;
+}
+.demo-btn.shipper:hover {
+  background: #2563EB;
+  color: #FFFFFF;
 }
 
 /* MODAL THÔNG BÁO ĐÈ MÀN HÌNH VỚI BÓNG MỜ MỜ (CENTRED OVERLAY) */

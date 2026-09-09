@@ -81,9 +81,6 @@ body {
 }
 
 h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
 h2,
 h3,
 h4,
