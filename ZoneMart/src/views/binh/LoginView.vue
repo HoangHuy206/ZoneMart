@@ -117,6 +117,7 @@ const handleLogin = async () => {
           id: data.user?.id || `usr_${Date.now()}`,
           fullName: data.user?.fullName || form.account.trim(),
           phoneEmail: data.user?.phoneEmail || form.account.trim(),
+          phone: data.user?.phone || (!form.account.includes('@') ? form.account.trim() : undefined),
           role: detectedRole,
           avatarUrl: data.user?.avatarUrl,
           walletBalance: data.user?.walletBalance,
@@ -128,6 +129,7 @@ const handleLogin = async () => {
           id: data.user?.id || `usr_${Date.now()}`,
           fullName: data.user?.fullName || form.account.trim(),
           phoneEmail: data.user?.phoneEmail || form.account.trim(),
+          phone: data.user?.phone || (!form.account.includes('@') ? form.account.trim() : undefined),
           role: detectedRole,
           avatarUrl: data.user?.avatarUrl,
           walletBalance: data.user?.walletBalance,
@@ -242,12 +244,15 @@ const handleLogin = async () => {
           <form @submit.prevent="handleLogin" class="form-body">
             <!-- Số điện thoại / Email -->
             <div class="field-item">
-              <label class="field-label">Số điện thoại hoặc Email</label>
+              <div class="label-row-between">
+                <label class="field-label">Tài khoản đăng nhập</label>
+                <span class="zalo-hint-tag"><i class="bi bi-shield-check"></i> SĐT Zalo / Email</span>
+              </div>
               <input
                 v-model="form.account"
                 type="text"
                 class="field-input"
-                placeholder="VD: 0912345678 hoặc email@gmail.com"
+                placeholder="Nhập SĐT Zalo đã liên kết hoặc Email"
                 required
               />
             </div>
@@ -1060,5 +1065,18 @@ label {
 .fade-modal-enter-from,
 .fade-modal-leave-to {
   opacity: 0;
+}
+
+.zalo-hint-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #0068ff;
+  background: #f0f7ff;
+  border: 1px solid #c7e0ff;
+  padding: 2px 8px;
+  border-radius: 6px;
 }
 </style>

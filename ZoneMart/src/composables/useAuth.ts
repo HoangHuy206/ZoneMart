@@ -7,6 +7,7 @@ export interface UserProfile {
   fullName: string;
   phoneEmail: string;
   role: UserRole;
+  phone?: string;
   avatarUrl?: string;
   walletBalance?: number;
   storeName?: string;

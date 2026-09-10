@@ -1,4 +1,4 @@
-﻿using MongoDB.Bson;
+using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace ZoneMart.Server.Models;
@@ -11,6 +11,9 @@ public class User
 
     [BsonElement("phone_email")]
     public string PhoneEmail { get; set; } = string.Empty;
+
+    [BsonElement("phone")]
+    public string? Phone { get; set; }
 
     [BsonElement("password_hash")]
     public string PasswordHash { get; set; } = string.Empty;

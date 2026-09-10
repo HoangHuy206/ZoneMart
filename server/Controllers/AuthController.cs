@@ -22,6 +22,7 @@ public class AuthController : ControllerBase
     public static readonly ConcurrentDictionary<string, User> InMemoryUsers = new(StringComparer.OrdinalIgnoreCase);
     public static readonly ConcurrentDictionary<string, Store> InMemoryStores = new();
     public static readonly ConcurrentDictionary<string, Shipper> InMemoryShippers = new();
+    public static readonly ConcurrentDictionary<string, (string Otp, DateTime ExpiresAt)> ZaloOtps = new();
 
     static AuthController()
     {
@@ -119,7 +120,10 @@ public class AuthController : ControllerBase
         // 1. Kiểm tra từ CSDL MongoDB Atlas thực tế và bộ nhớ lưu trữ
         try
         {
-            var filter = Builders<User>.Filter.Eq(u => u.PhoneEmail, inputAccount);
+            var filter = Builders<User>.Filter.Or(
+                Builders<User>.Filter.Eq(u => u.PhoneEmail, inputAccount),
+                Builders<User>.Filter.Eq(u => u.Phone, inputAccount)
+            );
             existingUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
         }
         catch (Exception ex)
@@ -129,11 +133,21 @@ public class AuthController : ControllerBase
 
         if (existingUser == null)
         {
-            InMemoryUsers.TryGetValue(inputAccount, out existingUser);
+            if (!InMemoryUsers.TryGetValue(inputAccount, out existingUser))
+            {
+                existingUser = InMemoryUsers.Values.FirstOrDefault(u => 
+                    (!string.IsNullOrEmpty(u.Phone) && u.Phone.Equals(inputAccount, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(u.PhoneEmail) && u.PhoneEmail.Equals(inputAccount, StringComparison.OrdinalIgnoreCase))
+                );
+            }
         }
         else
         {
             InMemoryUsers[inputAccount] = existingUser;
+            if (!string.IsNullOrEmpty(existingUser.Phone))
+            {
+                InMemoryUsers[existingUser.Phone] = existingUser;
+            }
         }
 
         // 1.1 FALLBACK KIỂM TRA BẢN GHI GIAN HÀNG NẾU CHƯA CÓ USER
@@ -274,6 +288,7 @@ public class AuthController : ControllerBase
             {
                 id = existingUser.Id,
                 phoneEmail = existingUser.PhoneEmail,
+                phone = existingUser.Phone,
                 fullName = existingUser.FullName,
                 avatarUrl = existingUser.AvatarUrl,
                 role = determinedRole,
@@ -926,6 +941,138 @@ public class AuthController : ControllerBase
 
         return NotFound(new { success = false, message = "Không tìm thấy tài khoản người dùng!" });
     }
+
+    /// <summary>
+    /// API GỬI MÃ XÁC THỰC 6 SỐ QUA ZALO ĐỂ LIÊN KẾT SỐ ĐIỆN THOẠI
+    /// </summary>
+    [HttpPost("send-zalo-otp")]
+    public IActionResult SendZaloOtp([FromBody] SendZaloOtpRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PhoneNumber))
+        {
+            return BadRequest(new { success = false, message = "Vui lòng nhập số điện thoại cần liên kết!" });
+        }
+
+        string cleanPhone = Regex.Replace(request.PhoneNumber.Trim(), @"[^\d+]", "");
+        if (cleanPhone.Length < 9 || cleanPhone.Length > 12)
+        {
+            return BadRequest(new { success = false, message = "Số điện thoại không đúng định dạng (từ 9 đến 11 số)!" });
+        }
+
+        // Tạo mã ngẫu nhiên 6 chữ số
+        string otpCode = new Random().Next(100000, 999999).ToString();
+        ZaloOtps[cleanPhone] = (otpCode, DateTime.UtcNow.AddMinutes(5));
+
+        // In ra log console giả lập gửi Zalo ZNS
+        Console.WriteLine($"📱 [ZALO ZNS NOTIFICATION] Đã gửi mã OTP qua Zalo tới {cleanPhone}: {otpCode} (Hết hạn sau 5 phút)");
+
+        return Ok(new
+        {
+            success = true,
+            message = $"Mã xác thực 6 số đã được gửi qua Zalo tới số điện thoại {cleanPhone}!",
+            demoOtp = otpCode, // Trả về để UI hiển thị thông báo mô phỏng Zalo Popup trực quan
+            phone = cleanPhone,
+            expiresInSeconds = 300
+        });
+    }
+
+    /// <summary>
+    /// API XÁC MINH MÃ OTP ZALO VÀ LIÊN KẾT SỐ ĐIỆN THOẠI VÀO TÀI KHOẢN (CHO PHÉP DÙNG SĐT ĐĂNG NHẬP)
+    /// </summary>
+    [HttpPost("verify-link-phone")]
+    public async Task<IActionResult> VerifyLinkPhone([FromBody] VerifyLinkPhoneRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PhoneNumber) || string.IsNullOrWhiteSpace(request.Otp))
+        {
+            return BadRequest(new { success = false, message = "Vui lòng nhập số điện thoại và mã OTP!" });
+        }
+
+        string cleanPhone = Regex.Replace(request.PhoneNumber.Trim(), @"[^\d+]", "");
+        string inputOtp = request.Otp.Trim();
+
+        if (!ZaloOtps.TryGetValue(cleanPhone, out var otpData) || otpData.ExpiresAt < DateTime.UtcNow)
+        {
+            return BadRequest(new { success = false, message = "Mã OTP đã hết hạn hoặc không tồn tại. Vui lòng lấy mã mới!" });
+        }
+
+        if (otpData.Otp != inputOtp)
+        {
+            return BadRequest(new { success = false, message = "Mã OTP xác thực Zalo không chính xác!" });
+        }
+
+        // OTP hợp lệ -> Xóa mã đã dùng
+        ZaloOtps.TryRemove(cleanPhone, out _);
+
+        // Tìm tài khoản cần liên kết
+        string cleanEmail = (request.PhoneEmail ?? "").Trim().ToLower();
+        User? user = null;
+        if (!string.IsNullOrEmpty(cleanEmail) && InMemoryUsers.TryGetValue(cleanEmail, out var memUser))
+        {
+            user = memUser;
+        }
+        else if (!string.IsNullOrEmpty(request.Id))
+        {
+            user = InMemoryUsers.Values.FirstOrDefault(u => u.Id == request.Id);
+        }
+
+        try
+        {
+            var filter = !string.IsNullOrEmpty(request.Id)
+                ? Builders<User>.Filter.Eq(u => u.Id, request.Id)
+                : Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanEmail);
+
+            var dbUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+            if (dbUser != null) user = dbUser;
+
+            if (user != null)
+            {
+                user.Phone = cleanPhone;
+                await _mongoService.Users.UpdateOneAsync(filter, Builders<User>.Update.Set(u => u.Phone, cleanPhone));
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [MongoDB Atlas LinkPhone] {ex.Message}");
+        }
+
+        if (user != null)
+        {
+            user.Phone = cleanPhone;
+            InMemoryUsers[cleanPhone] = user;
+            if (!string.IsNullOrEmpty(cleanEmail)) InMemoryUsers[cleanEmail] = user;
+        }
+
+        return Ok(new
+        {
+            success = true,
+            message = $"Liên kết Zalo & Số điện thoại {cleanPhone} thành công! Giờ đây bạn có thể dùng SĐT này để đăng nhập vào tài khoản.",
+            phone = cleanPhone,
+            user = user != null ? new
+            {
+                id = user.Id,
+                phoneEmail = user.PhoneEmail,
+                phone = user.Phone,
+                fullName = user.FullName,
+                avatarUrl = user.AvatarUrl,
+                role = user.IsAdmin ? "admin" : (user.IsSeller ? "seller" : (user.IsShipper ? "shipper" : "buyer")),
+                walletBalance = user.WalletBalance
+            } : null
+        });
+    }
+}
+
+public class SendZaloOtpRequest
+{
+    public string PhoneNumber { get; set; } = string.Empty;
+    public string? PhoneEmail { get; set; }
+}
+
+public class VerifyLinkPhoneRequest
+{
+    public string? Id { get; set; }
+    public string PhoneEmail { get; set; } = string.Empty;
+    public string PhoneNumber { get; set; } = string.Empty;
+    public string Otp { get; set; } = string.Empty;
 }
 
 public class UpdateProfileRequest
