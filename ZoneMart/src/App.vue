@@ -252,7 +252,6 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
           <!-- C. Khi đã đăng nhập: Action Buttons & User Menu -->
           <div v-else class="logged-in-actions">
-
             <!-- Icon Giỏ hàng kèm huy hiệu số lượng -->
             <router-link
               to="/cart"
