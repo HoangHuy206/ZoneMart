@@ -3,14 +3,15 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import logoImg from './assets/logo.png';
 import { useAuth, type UserRole } from './composables/useAuth';
+import { useCart } from './composables/useCart';
 
 const router = useRouter();
 const auth = useAuth();
+const cart = useCart();
 
 const isMobileMenuOpen = ref(false);
 const isUserDropdownOpen = ref(false);
 const searchQuery = ref('');
-const cartItemCount = ref(3);
 
 const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value;
@@ -279,7 +280,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                   d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
                 ></path>
               </svg>
-              <span class="cart-badge">{{ cartItemCount }}</span>
+              <span class="cart-badge">{{ cart.totalCount.value }}</span>
             </router-link>
 
             <!-- Lối tắt nhanh cho Shipper: Nút Trạng Thái Sẵn Sàng -->
@@ -400,7 +401,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                       @click="closeDropdowns"
                     >
                       <i class="bi bi-cart3 menu-icon"></i>
-                      <span>Giỏ Hàng ({{ cartItemCount }})</span>
+                      <span>Giỏ Hàng ({{ cart.totalCount.value }})</span>
                     </router-link>
                     <router-link
                       to="/contact"
@@ -643,7 +644,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             </router-link>
             <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
               <i class="bi bi-cart3 menu-icon"></i>
-              <span>Giỏ Hàng ({{ cartItemCount }})</span>
+              <span>Giỏ Hàng ({{ cart.totalCount.value }})</span>
             </router-link>
             <router-link
               to="/buyer-orders"
