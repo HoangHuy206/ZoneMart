@@ -1008,22 +1008,22 @@ onMounted(() => {
                 Liên Hệ & Bảo Mật
               </h3>
 
-              <!-- Số điện thoại & Liên kết Zalo OTP -->
+              <!-- Số điện thoại & Thêm SĐT qua mã OTP Zalo -->
               <div class="form-group">
                 <div class="label-with-badge">
-                  <label class="form-label mb-0">Số điện thoại đăng nhập (Zalo)</label>
+                  <label class="form-label mb-0">Số điện thoại</label>
                   <span v-if="user.phone && user.phone !== 'Chưa có'" class="zalo-status-chip linked">
-                    <i class="bi bi-patch-check-fill"></i> Đã liên kết Zalo
+                    <i class="bi bi-patch-check-fill"></i> Đã xác thực OTP
                   </span>
                   <span v-else class="zalo-status-chip unlinked">
-                    <i class="bi bi-exclamation-circle-fill"></i> Chưa kích hoạt OTP Zalo
+                    <i class="bi bi-exclamation-circle-fill"></i> Chưa thêm số điện thoại
                   </span>
                 </div>
 
                 <div class="zalo-phone-display-card">
                   <div class="phone-info-left">
-                    <div class="zalo-logo-icon">
-                      <span>Zalo</span>
+                    <div class="phone-symbol-icon">
+                      <i class="bi bi-telephone-fill"></i>
                     </div>
                     <div>
                       <div class="phone-number-text font-mono">
@@ -1034,14 +1034,14 @@ onMounted(() => {
                           ✓ Dùng SĐT này và mật khẩu để đăng nhập trực tiếp (không cần Gmail)
                         </span>
                         <span v-else class="text-muted">
-                          Nhận mã 6 số qua Zalo để kích hoạt đăng nhập nhanh
+                          Thêm số điện thoại để đăng nhập nhanh không cần Gmail (xác thực mã qua Zalo)
                         </span>
                       </div>
                     </div>
                   </div>
                   <button type="button" class="btn-zalo-connect" @click="openLinkZaloModal">
-                    <i class="bi bi-shield-lock-fill me-1"></i>
-                    {{ user.phone ? "Đổi Số Zalo" : "Liên Kết Zalo Ngay" }}
+                    <i :class="user.phone ? 'bi bi-pencil-square me-1' : 'bi bi-plus-circle-fill me-1'"></i>
+                    {{ user.phone ? "Đổi Số Điện Thoại" : "Thêm Số Điện Thoại" }}
                   </button>
                 </div>
               </div>
@@ -1347,15 +1347,17 @@ onMounted(() => {
       </div>
     </transition>
 
-    <!-- MODAL LIÊN KẾT SỐ ĐIỆN THOẠI QUA ZALO OTP -->
+    <!-- MODAL THÊM / ĐỔI SỐ ĐIỆN THOẠI (XÁC THỰC MÃ QUA ZALO) -->
     <div v-if="isZaloModalOpen" class="modal-backdrop" @click="isZaloModalOpen = false">
       <div class="modal-card modal-zalo-card" @click.stop>
         <div class="modal-header zalo-modal-header">
           <div class="zalo-header-brand">
-            <div class="zalo-square-logo">Zalo</div>
+            <div class="phone-modal-icon">
+              <i class="bi bi-telephone-plus-fill"></i>
+            </div>
             <div>
-              <h3 class="modal-title mb-0">Liên Kết Số Điện Thoại (Zalo OTP)</h3>
-              <p class="zalo-header-sub mb-0">Nhận mã 6 số gửi vào Zalo để kích hoạt đăng nhập bằng SĐT</p>
+              <h3 class="modal-title mb-0">{{ user.phone && user.phone !== 'Chưa có' ? "Thay Đổi Số Điện Thoại" : "Thêm Số Điện Thoại" }}</h3>
+              <p class="zalo-header-sub mb-0">Hệ thống gửi mã xác thực 6 số vào Zalo của số này để đăng nhập không cần Gmail</p>
             </div>
           </div>
           <button class="modal-close-btn" @click="isZaloModalOpen = false">✕</button>
@@ -1366,12 +1368,12 @@ onMounted(() => {
           <div class="zalo-steps-guide">
             <div class="step-guide-item">
               <span class="step-badge">1</span>
-              <span>Nhập SĐT Zalo</span>
+              <span>Nhập số điện thoại</span>
             </div>
             <div class="step-guide-arrow">→</div>
             <div class="step-guide-item">
               <span class="step-badge">2</span>
-              <span>Mở Zalo nhận OTP 6 số</span>
+              <span>Mở Zalo nhận mã 6 số</span>
             </div>
             <div class="step-guide-arrow">→</div>
             <div class="step-guide-item">
@@ -1382,7 +1384,7 @@ onMounted(() => {
 
           <!-- Nhập số điện thoại -->
           <div class="form-group mb-3">
-            <label class="form-label font-bold">Số điện thoại đăng ký Zalo</label>
+            <label class="form-label font-bold">Số điện thoại của bạn</label>
             <div class="zalo-input-group">
               <div class="zalo-flag-prefix">
                 <span>🇻🇳 +84</span>
@@ -1402,18 +1404,18 @@ onMounted(() => {
               >
                 <span v-if="isSendingZaloOtp" class="spinner-small"></span>
                 <span v-else-if="zaloCountdown > 0">Gửi lại ({{ zaloCountdown }}s)</span>
-                <span v-else><i class="bi bi-send-fill me-1"></i> Gửi Mã Zalo</span>
+                <span v-else><i class="bi bi-send-fill me-1"></i> Gửi Mã Xác Thực</span>
               </button>
             </div>
             <small class="text-muted mt-1 d-block">
-              Hệ thống sẽ gửi thông báo tin nhắn kèm mã OTP 6 số đến Zalo của số điện thoại này.
+              Hệ thống sẽ gửi tin nhắn kèm mã xác thực 6 số đến Zalo của số điện thoại này.
             </small>
           </div>
 
           <!-- Nhập mã OTP 6 số -->
           <div class="form-group mb-4">
             <div class="d-flex justify-content-between align-items-center mb-1">
-              <label class="form-label font-bold mb-0">Mã xác thực 6 số (OTP Zalo)</label>
+              <label class="form-label font-bold mb-0">Mã xác thực 6 số (Gửi qua Zalo)</label>
               <button
                 v-if="simulatedZaloNotification.otp"
                 type="button"
@@ -1434,7 +1436,7 @@ onMounted(() => {
             </div>
             <div class="zalo-otp-hint">
               <i class="bi bi-shield-lock-fill me-1 text-primary"></i>
-              Mã OTP gồm 6 chữ số có hiệu lực trong 5 phút. Sau khi nhập mã thành công, bạn có thể dùng SĐT này và mật khẩu để đăng nhập trực tiếp vào ZoneMart.
+              Mã xác thực gồm 6 chữ số có hiệu lực trong 5 phút. Sau khi nhập mã thành công, số điện thoại sẽ được thêm vào tài khoản để bạn đăng nhập trực tiếp vào ZoneMart.
             </div>
           </div>
 
@@ -1442,11 +1444,11 @@ onMounted(() => {
           <div class="zalo-security-benefits">
             <div class="benefit-item">
               <i class="bi bi-check-circle-fill text-success"></i>
-              <span>Đăng nhập siêu tốc bằng Số điện thoại + Mật khẩu hiện tại</span>
+              <span>Đăng nhập siêu tốc bằng Số điện thoại + Mật khẩu hiện tại (không cần Gmail)</span>
             </div>
             <div class="benefit-item">
               <i class="bi bi-check-circle-fill text-success"></i>
-              <span>Nhận thông báo đơn hàng hỏa tốc 10km và trạng thái giao hàng qua Zalo</span>
+              <span>Nhận thông báo đơn hàng hỏa tốc 10km và trạng thái giao hàng</span>
             </div>
             <div class="benefit-item">
               <i class="bi bi-check-circle-fill text-success"></i>
@@ -1463,8 +1465,8 @@ onMounted(() => {
             @click="handleVerifyZaloOtp"
           >
             <span v-if="isVerifyingZaloOtp" class="spinner-small me-2"></span>
-            <i v-else class="bi bi-shield-check me-2"></i>
-            Xác Nhận & Hoàn Tất Liên Kết
+            <i v-else class="bi bi-check2-circle me-2"></i>
+            Xác Nhận & Thêm Số Điện Thoại
           </button>
         </div>
       </div>
@@ -2768,9 +2770,9 @@ onMounted(() => {
 }
 
 .zalo-status-chip.linked {
-  background: #eff6ff;
-  color: #0068ff;
-  border: 1px solid #bfdbfe;
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
 }
 
 .zalo-status-chip.unlinked {
@@ -2792,8 +2794,8 @@ onMounted(() => {
 }
 
 .zalo-phone-display-card:hover {
-  border-color: #0068ff;
-  box-shadow: 0 4px 12px rgba(0, 104, 255, 0.08);
+  border-color: #ea580c;
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.08);
 }
 
 .phone-info-left {
@@ -2802,19 +2804,17 @@ onMounted(() => {
   gap: 14px;
 }
 
-.zalo-logo-icon {
+.phone-symbol-icon {
   width: 44px;
   height: 44px;
-  background: linear-gradient(135deg, #0068ff, #0052cc);
+  background: linear-gradient(135deg, #ea580c, #f97316);
   border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #ffffff;
-  font-size: 13px;
-  font-weight: 900;
-  letter-spacing: -0.5px;
-  box-shadow: 0 4px 10px rgba(0, 104, 255, 0.25);
+  font-size: 18px;
+  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.25);
   flex-shrink: 0;
 }
 
@@ -2835,23 +2835,23 @@ onMounted(() => {
 }
 
 .btn-zalo-connect {
-  background: #0068ff;
+  background: #ea580c;
   color: #ffffff;
   border: none;
   font-size: 13px;
   font-weight: 700;
-  padding: 9px 16px;
+  padding: 9px 18px;
   border-radius: 10px;
   cursor: pointer;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(0, 104, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.2);
 }
 
 .btn-zalo-connect:hover {
-  background: #0055d4;
+  background: #c2410c;
   transform: translateY(-1px);
 }
 
@@ -3013,7 +3013,7 @@ onMounted(() => {
 }
 
 .zalo-modal-header {
-  background: linear-gradient(135deg, #0068ff, #0052cc);
+  background: linear-gradient(135deg, #0f172a, #1e293b);
   color: #ffffff;
   padding: 22px 24px;
 }
@@ -3030,13 +3030,12 @@ onMounted(() => {
   gap: 12px;
 }
 
-.zalo-square-logo {
+.phone-modal-icon {
   width: 42px;
   height: 42px;
   background: #ffffff;
-  color: #0068ff;
-  font-weight: 900;
-  font-size: 13px;
+  color: #ea580c;
+  font-size: 20px;
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -3128,7 +3127,7 @@ onMounted(() => {
 }
 
 .btn-send-zalo-otp {
-  background: #0068ff;
+  background: #ea580c;
   color: #ffffff;
   border: none;
   padding: 0 18px;
@@ -3144,7 +3143,7 @@ onMounted(() => {
 }
 
 .btn-send-zalo-otp:hover:not(:disabled) {
-  background: #0052cc;
+  background: #c2410c;
 }
 
 .btn-send-zalo-otp:disabled {
@@ -3155,7 +3154,7 @@ onMounted(() => {
 .btn-paste-otp-link {
   background: transparent;
   border: none;
-  color: #0068ff;
+  color: #ea580c;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -3172,15 +3171,15 @@ onMounted(() => {
   font-weight: 900 !important;
   letter-spacing: 12px !important;
   text-align: center;
-  color: #0068ff !important;
+  color: #0f172a !important;
   padding: 12px !important;
-  border: 2px solid #bfdbfe !important;
-  background: #f8faff !important;
+  border: 2px solid #fed7aa !important;
+  background: #fffaf5 !important;
 }
 
 .zalo-otp-input-box:focus {
-  border-color: #0068ff !important;
-  box-shadow: 0 0 0 4px rgba(0, 104, 255, 0.15) !important;
+  border-color: #ea580c !important;
+  box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.15) !important;
 }
 
 .zalo-otp-hint {
@@ -3188,10 +3187,10 @@ onMounted(() => {
   color: #64748b;
   margin-top: 8px;
   line-height: 1.45;
-  background: #f0f7ff;
+  background: #fff7ed;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid #dbeafe;
+  border: 1px solid #fed7aa;
 }
 
 .zalo-security-benefits {
@@ -3213,7 +3212,7 @@ onMounted(() => {
 }
 
 .btn-confirm-zalo {
-  background: linear-gradient(135deg, #0068ff, #0052cc);
+  background: linear-gradient(135deg, #ea580c, #f97316);
   color: #ffffff;
   border: none;
   font-size: 14px;
@@ -3224,11 +3223,11 @@ onMounted(() => {
   transition: all 0.2s;
   display: inline-flex;
   align-items: center;
-  box-shadow: 0 4px 14px rgba(0, 104, 255, 0.3);
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.3);
 }
 
 .btn-confirm-zalo:hover:not(:disabled) {
-  background: linear-gradient(135deg, #0055d4, #0043a8);
+  background: linear-gradient(135deg, #c2410c, #ea580c);
   transform: translateY(-1px);
 }
 
