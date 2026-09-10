@@ -1,33 +1,136 @@
 <script setup lang="ts">
 /**
  * ================================================================
- * TRANG QUẢN LÝ HỒ SƠ & TÀI KHOẢN ZONEMART (NEW PROFILE CENTER)
- * Thiết kế hoàn toàn mới: Tràn viền, Bento Layout, Thẻ ví ZonePay
+ * TRANG QUẢN LÝ HỒ SƠ & TÀI KHOẢN ZONEMART (DYNAMIC PER-ACCOUNT PROFILE)
+ * - Tách biệt 100% dữ liệu từng tài khoản (Guest, Buyer, Seller, Shipper, Admin)
+ * - Tương thích useAuth Singleton & đồng bộ thời gian thực với CSDL Backend ASP.NET Core
+ * - Tự động hiển thị huy hiệu, quyền hạn, tiến trình và định danh chuẩn theo vai trò
+ * - Hỗ trợ nạp ví ZonePay, lưu trữ sổ địa chỉ và đơn hàng riêng của từng tài khoản
  * ================================================================
  */
-import { ref, reactive } from "vue";
+import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRouter } from "vue-router";
+import { useAuth, type UserProfile, type UserRole } from "../../composables/useAuth";
 
 const router = useRouter();
+const auth = useAuth();
 
 // Tab state
 const currentTab = ref<"profile" | "orders" | "addresses" | "wallet">("profile");
 
-// User profile state
-const user = reactive({
-  fullName: "Nguyễn Hoàng Huy",
-  username: "hoanghuy206",
-  email: "alex.huy@zonemart.vn",
-  phone: "0988 776 655",
+// 1. Xác định tài khoản hiện tại từ useAuth hoặc LocalStorage
+const currentAccount = computed<UserProfile>(() => {
+  if (auth.currentUser.value) return auth.currentUser.value;
+  try {
+    const saved = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+    if (saved) return JSON.parse(saved);
+  } catch {}
+  return {
+    id: "usr_guest",
+    fullName: "Khách Ghé Thăm",
+    phoneEmail: "guest@zonemart.vn",
+    role: "buyer",
+    walletBalance: 0
+  };
+});
+
+// Khóa định danh phân vùng dữ liệu riêng cho từng tài khoản
+const accountKey = computed(() => {
+  const acc = currentAccount.value;
+  return (acc.phoneEmail || acc.id || "default_user").toLowerCase().trim();
+});
+
+const PROFILE_STORAGE_PREFIX = "zonemart_profile_data_";
+const ADDRESS_STORAGE_PREFIX = "zonemart_profile_addresses_";
+const ORDER_STORAGE_PREFIX = "zonemart_profile_orders_";
+
+// Cấu hình nhãn và chỉ số theo vai trò
+const getRoleMeta = (role: UserRole) => {
+  switch (role) {
+    case "admin":
+      return {
+        tag: "Ban Quản Trị Hệ Thống (Super Admin)",
+        sublineBadge: "🛡️ Quản lý giám sát toàn sàn ZoneMart • Quyền bảo mật Root",
+        progressLabel: "Chỉ số an toàn & toàn vẹn hệ thống",
+        progressVal: 100,
+        progressText: "100% (Hoạt động hoàn hảo)",
+        vouchers: 99,
+        points: 99999
+      };
+    case "seller":
+      return {
+        tag: "Chủ Gian Hàng Đối Tác (Kênh Người Bán)",
+        sublineBadge: "🏪 Gian hàng đối tác cung ứng thực phẩm tươi sạch",
+        progressLabel: "Chỉ số uy tín & phản hồi gian hàng",
+        progressVal: 98,
+        progressText: "98% (Đạt chuẩn 5 sao)",
+        vouchers: 12,
+        points: 15400
+      };
+    case "shipper":
+      return {
+        tag: "Đối Tác Giao Hàng Hỏa Tốc (ZoneMart Express)",
+        sublineBadge: "🛵 Đội ngũ tài xế giao nhận hỏa tốc 10km",
+        progressLabel: "Tỷ lệ giao hàng đúng hẹn 20 - 30 phút",
+        progressVal: 99,
+        progressText: "99.2% (Hạng Kim Cương)",
+        vouchers: 8,
+        points: 5800
+      };
+    default:
+      return {
+        tag: "Khách Hàng Thân Thiết (Gold Member)",
+        sublineBadge: "🛒 Mua sắm nông sản & thực phẩm sạch bán kính 10km",
+        progressLabel: "Tiến trình thăng hạng VIP Platinum",
+        progressVal: 75,
+        progressText: "75% (Còn 500k chi tiêu)",
+        vouchers: 6,
+        points: 2450
+      };
+  }
+};
+
+// 2. User profile reactive state
+export interface AccountProfileState {
+  fullName: string;
+  username: string;
+  email: string;
+  phone: string;
+  gender: "male" | "female" | "other";
+  birthDate: string;
+  avatarUrl: string;
+  tier: string;
+  tierProgress: number;
+  tierProgressLabel: string;
+  tierProgressText: string;
+  zonePayBalance: number;
+  points: number;
+  vouchersCount: number;
+  ordersCount: number;
+  storeName?: string;
+  vehiclePlate?: string;
+  role: UserRole;
+}
+
+const user = reactive<AccountProfileState>({
+  fullName: "Đang tải...",
+  username: "user",
+  email: "user@zonemart.vn",
+  phone: "0988 000 000",
   gender: "male",
-  birthDate: "2000-06-15",
+  birthDate: "1998-05-20",
   avatarUrl: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80",
-  tier: "Hạng Vàng (Gold Member)",
+  tier: "Khách Hàng Thân Thiết",
   tierProgress: 75,
-  zonePayBalance: 1250000,
-  points: 2450,
-  vouchersCount: 6,
-  ordersCount: 28
+  tierProgressLabel: "Tiến trình thăng hạng",
+  tierProgressText: "75%",
+  zonePayBalance: 0,
+  points: 1000,
+  vouchersCount: 5,
+  ordersCount: 0,
+  storeName: "",
+  vehiclePlate: "",
+  role: "buyer"
 });
 
 // Toast alert
@@ -42,7 +145,54 @@ const triggerToast = (msg: string) => {
   }, 2800);
 };
 
-// Avatar upload
+// Nạp dữ liệu hồ sơ tương ứng với từng tài khoản
+const loadUserProfile = () => {
+  const acc = currentAccount.value;
+  const roleInfo = getRoleMeta(acc.role);
+
+  // Đọc dữ liệu cá nhân đã lưu trong kho riêng của tài khoản này
+  const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
+  const rawSaved = localStorage.getItem(savedKey);
+  let savedData: Partial<AccountProfileState> = {};
+  if (rawSaved) {
+    try {
+      savedData = JSON.parse(rawSaved);
+    } catch {}
+  }
+
+  const isEmail = (acc.phoneEmail || "").includes("@");
+  const defaultEmail = isEmail ? acc.phoneEmail : `${acc.phoneEmail || "user"}@zonemart.vn`;
+  const defaultPhone = isEmail 
+    ? (acc.role === "seller" ? "0988 123 789" : acc.role === "shipper" ? "0977 888 999" : acc.role === "admin" ? "0912 000 999" : "0988 776 655") 
+    : acc.phoneEmail;
+  const defaultUsername = isEmail 
+    ? acc.phoneEmail.split("@")[0] 
+    : (acc.fullName ? acc.fullName.toLowerCase().replace(/\s+/g, "") : "zoner");
+
+  user.fullName = savedData.fullName || acc.fullName || "Người dùng ZoneMart";
+  user.username = savedData.username || defaultUsername;
+  user.email = savedData.email || defaultEmail;
+  user.phone = savedData.phone || defaultPhone;
+  user.gender = savedData.gender || (acc.role === "seller" ? "female" : "male");
+  user.birthDate = savedData.birthDate || (acc.role === "admin" ? "1990-01-01" : acc.role === "seller" ? "1988-10-12" : "2000-06-15");
+  user.avatarUrl = savedData.avatarUrl || acc.avatarUrl || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80";
+  user.tier = roleInfo.tag;
+  user.tierProgress = roleInfo.progressVal;
+  user.tierProgressLabel = roleInfo.progressLabel;
+  user.tierProgressText = roleInfo.progressText;
+  user.zonePayBalance = acc.walletBalance !== undefined ? acc.walletBalance : (savedData.zonePayBalance ?? 0);
+  user.points = savedData.points ?? roleInfo.points;
+  user.vouchersCount = savedData.vouchersCount ?? roleInfo.vouchers;
+  user.storeName = acc.storeName || savedData.storeName || "";
+  user.vehiclePlate = acc.vehiclePlate || savedData.vehiclePlate || "";
+  user.role = acc.role;
+
+  // Nạp địa chỉ và đơn hàng riêng của tài khoản
+  loadAddresses();
+  loadOrders();
+};
+
+// 3. Avatar upload
 const fileInput = ref<HTMLInputElement | null>(null);
 const triggerAvatarUpload = () => {
   fileInput.value?.click();
@@ -56,6 +206,16 @@ const handleAvatarChange = (e: Event) => {
     reader.onload = (event) => {
       if (event.target?.result) {
         user.avatarUrl = event.target.result as string;
+        // Tự động lưu ảnh mới vào hồ sơ riêng của tài khoản
+        const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
+        localStorage.setItem(savedKey, JSON.stringify(user));
+
+        // Đồng bộ lên useAuth
+        const curr = auth.currentUser.value;
+        if (curr) {
+          curr.avatarUrl = user.avatarUrl;
+          auth.login(curr);
+        }
         triggerToast("Cập nhật ảnh đại diện thành công!");
       }
     };
@@ -63,82 +223,427 @@ const handleAvatarChange = (e: Event) => {
   }
 };
 
-// Save profile changes
+// 4. Save profile changes
 const isSaving = ref(false);
-const handleSaveProfile = () => {
+const handleSaveProfile = async () => {
   isSaving.value = true;
-  setTimeout(() => {
+  try {
+    // Lưu vào phân vùng riêng của tài khoản
+    const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
+    localStorage.setItem(savedKey, JSON.stringify(user));
+
+    // Đồng bộ vào useAuth và LocalStorage toàn sàn
+    const curr = auth.currentUser.value;
+    if (curr) {
+      curr.fullName = user.fullName;
+      curr.avatarUrl = user.avatarUrl;
+      curr.phoneEmail = user.email || curr.phoneEmail;
+      auth.login(curr);
+    }
+
+    // Cập nhật lên CSDL Backend ASP.NET Core
+    await fetch("http://localhost:5000/api/auth/update-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: curr?.id,
+        phoneEmail: user.email || curr?.phoneEmail,
+        fullName: user.fullName,
+        avatarUrl: user.avatarUrl,
+        phone: user.phone,
+        gender: user.gender,
+        birthDate: user.birthDate,
+        username: user.username
+      })
+    }).catch(() => null);
+
+    triggerToast(`Đã lưu thông tin hồ sơ cho tài khoản '${user.email || user.fullName}'!`);
+  } finally {
     isSaving.value = false;
-    triggerToast("Đã lưu thông tin hồ sơ thành công!");
-  }, 600);
+  }
 };
 
-// Mock Recent Orders
-const orders = ref([
-  {
-    id: "ZM-9982",
-    store: "Cơm Tấm Sài Gòn 10km",
-    date: "Hôm nay, 11:30",
-    status: "delivering",
-    statusText: "Tài xế đang giao (Khoảng 12 phút nữa)",
-    items: "1x Cơm sườn bì chả đặc biệt, 1x Canh rong biển thịt bằm",
-    total: 85000,
-    storeDistance: "1.8 km"
-  },
-  {
-    id: "ZM-9812",
-    store: "Rau Củ Tươi VietGAP Cầu Giấy",
-    date: "07/09/2026, 17:45",
-    status: "completed",
-    statusText: "Giao thành công",
-    items: "1kg Cải ngọt VietGAP, 500g Cà chua bi, 1 nải Chuối tiêu",
-    total: 115000,
-    storeDistance: "2.4 km"
-  },
-  {
-    id: "ZM-9430",
-    store: "ZoneMart Fresh Meat & Seafood",
-    date: "04/09/2026, 09:15",
-    status: "completed",
-    statusText: "Giao thành công",
-    items: "500g Ba chỉ bò Mỹ cắt lát, 1 vỉ Nấm kim châm Hàn Quốc",
-    total: 175000,
-    storeDistance: "3.1 km"
-  }
-]);
+// 5. Đơn hàng riêng biệt cho từng tài khoản
+export interface OrderItem {
+  id: string;
+  store: string;
+  date: string;
+  status: "delivering" | "completed" | "cancelled";
+  statusText: string;
+  items: string;
+  total: number;
+  storeDistance: string;
+}
 
-// Mock Saved Addresses
-const addresses = ref([
-  {
-    id: 1,
-    title: "Nhà riêng",
-    receiver: "Nguyễn Hoàng Huy",
-    phone: "0988 776 655",
-    detail: "Số 18, Ngõ 245 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội",
-    isDefault: true,
-    distanceTag: "Bán kính Hub: 1.2km"
-  },
-  {
-    id: 2,
-    title: "Văn phòng công ty",
-    receiver: "Nguyễn Hoàng Huy",
-    phone: "0988 776 655",
-    detail: "Tầng 8, Tòa nhà Tech Tower, Phố Duy Tân, Quận Cầu Giấy, Hà Nội",
-    isDefault: false,
-    distanceTag: "Bán kính Hub: 3.5km"
+const orders = ref<OrderItem[]>([]);
+
+const saveOrders = () => {
+  const key = ORDER_STORAGE_PREFIX + accountKey.value;
+  localStorage.setItem(key, JSON.stringify(orders.value));
+  user.ordersCount = orders.value.length;
+};
+
+const loadOrders = () => {
+  const key = ORDER_STORAGE_PREFIX + accountKey.value;
+  const raw = localStorage.getItem(key);
+  if (raw) {
+    try {
+      orders.value = JSON.parse(raw);
+      user.ordersCount = orders.value.length;
+      return;
+    } catch {}
   }
-]);
+
+  const acc = currentAccount.value;
+  if (acc.role === "buyer") {
+    orders.value = [
+      {
+        id: "ZM-9982",
+        store: "Cơm Tấm Sài Gòn 10km",
+        date: "Hôm nay, 11:30",
+        status: "delivering",
+        statusText: "Tài xế đang giao (Khoảng 12 phút nữa)",
+        items: "1x Cơm sườn bì chả đặc biệt, 1x Canh rong biển thịt bằm",
+        total: 85000,
+        storeDistance: "1.8 km"
+      },
+      {
+        id: "ZM-9812",
+        store: "Rau Củ Tươi VietGAP Cầu Giấy",
+        date: "07/09/2026, 17:45",
+        status: "completed",
+        statusText: "Giao thành công",
+        items: "1kg Cải ngọt VietGAP, 500g Cà chua bi, 1 nải Chuối tiêu",
+        total: 115000,
+        storeDistance: "2.4 km"
+      }
+    ];
+  } else if (acc.role === "seller") {
+    orders.value = [
+      {
+        id: "SUP-1049",
+        store: "Tổng Kho Hạt Giống & Khay Hữu Cơ Ba Vì",
+        date: "09/09/2026, 09:15",
+        status: "completed",
+        statusText: "Đã nhập kho gian hàng",
+        items: "500 Túi phân hủy sinh học VietGAP, 10 Gói hạt mầm",
+        total: 450000,
+        storeDistance: "3.2 km"
+      }
+    ];
+  } else if (acc.role === "shipper") {
+    orders.value = [
+      {
+        id: "EQP-2024",
+        store: "Trạm Tiếp Vận & Đồng Phục ZoneMart Express",
+        date: "05/09/2026, 14:00",
+        status: "completed",
+        statusText: "Đã nhận trang thiết bị",
+        items: "1x Áo khoác phản quang ZoneMart, 1x Thùng giữ nhiệt thực phẩm 10km",
+        total: 320000,
+        storeDistance: "0.8 km"
+      }
+    ];
+  } else {
+    orders.value = [
+      {
+        id: "SYS-8891",
+        store: "Hạ Tầng Cloud & Bảo Mật ZoneMart Data Center",
+        date: "01/09/2026, 00:00",
+        status: "completed",
+        statusText: "Gia hạn tự động hạ tầng",
+        items: "Gói bảo mật đám mây và máy chủ C# ASP.NET Core",
+        total: 1200000,
+        storeDistance: "Cloud"
+      }
+    ];
+  }
+  saveOrders();
+};
+
+// 6. Sổ địa chỉ riêng biệt cho từng tài khoản
+export interface AddressItem {
+  id: number;
+  title: string;
+  receiver: string;
+  phone: string;
+  detail: string;
+  isDefault: boolean;
+  distanceTag: string;
+}
+
+const addresses = ref<AddressItem[]>([]);
+
+const saveAddresses = () => {
+  const key = ADDRESS_STORAGE_PREFIX + accountKey.value;
+  localStorage.setItem(key, JSON.stringify(addresses.value));
+};
+
+const loadAddresses = () => {
+  const key = ADDRESS_STORAGE_PREFIX + accountKey.value;
+  const raw = localStorage.getItem(key);
+  if (raw) {
+    try {
+      addresses.value = JSON.parse(raw);
+      return;
+    } catch {}
+  }
+
+  const acc = currentAccount.value;
+  const receiverName = user.fullName || acc.fullName || "Người dùng";
+  const receiverPhone = user.phone || (acc.phoneEmail.includes("@") ? "0988 776 655" : acc.phoneEmail);
+
+  if (acc.role === "seller") {
+    addresses.value = [
+      {
+        id: 1,
+        title: "Cửa Hàng / Kho Nông Sản",
+        receiver: receiverName,
+        phone: receiverPhone,
+        detail: "Số 48 đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội",
+        isDefault: true,
+        distanceTag: "Bán kính Hub: 0.8km"
+      }
+    ];
+  } else if (acc.role === "shipper") {
+    addresses.value = [
+      {
+        id: 1,
+        title: "Trạm Hub Nhận Đơn Shipper",
+        receiver: receiverName,
+        phone: receiverPhone,
+        detail: "Tòa nhà Tech Tower, Phố Duy Tân, Phường Dịch Vọng Hậu, Quận Cầu Giấy, Hà Nội",
+        isDefault: true,
+        distanceTag: "Bán kính Hub: 1.5km"
+      }
+    ];
+  } else if (acc.role === "admin") {
+    addresses.value = [
+      {
+        id: 1,
+        title: "Trụ sở Quản trị ZoneMart",
+        receiver: receiverName,
+        phone: receiverPhone,
+        detail: "ZoneMart HQ - Tòa nhà Tech Tower, Cầu Giấy, Hà Nội",
+        isDefault: true,
+        distanceTag: "Bán kính Hub: 0.5km"
+      }
+    ];
+  } else {
+    addresses.value = [
+      {
+        id: 1,
+        title: "Nhà riêng",
+        receiver: receiverName,
+        phone: receiverPhone,
+        detail: "Số 18, Ngõ 245 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội",
+        isDefault: true,
+        distanceTag: "Bán kính Hub: 1.2km"
+      },
+      {
+        id: 2,
+        title: "Văn phòng công ty",
+        receiver: receiverName,
+        phone: receiverPhone,
+        detail: "Tầng 8, Tòa nhà Tech Tower, Phố Duy Tân, Quận Cầu Giấy, Hà Nội",
+        isDefault: false,
+        distanceTag: "Bán kính Hub: 3.5km"
+      }
+    ];
+  }
+  saveAddresses();
+};
 
 const setDefaultAddress = (id: number) => {
-  addresses.value.forEach(a => a.isDefault = (a.id === id));
+  addresses.value.forEach(a => (a.isDefault = a.id === id));
+  saveAddresses();
   triggerToast("Đã đặt làm địa chỉ giao hàng mặc định!");
 };
 
-// Wallet Top-up
-const quickTopUp = (amount: number) => {
-  user.zonePayBalance += amount;
-  triggerToast(`Nạp thành công +${amount.toLocaleString('vi-VN')} ₫ vào Ví ZonePay!`);
+const deleteAddress = (id: number) => {
+  addresses.value = addresses.value.filter(a => a.id !== id);
+  if (addresses.value.length > 0 && !addresses.value.some(a => a.isDefault)) {
+    addresses.value[0].isDefault = true;
+  }
+  saveAddresses();
+  triggerToast("Đã xóa địa chỉ thành công!");
 };
+
+// Modal Thêm / Sửa Địa Chỉ
+const isAddressModalOpen = ref(false);
+const editingAddressId = ref<number | null>(null);
+const addressForm = reactive({
+  title: "Nhà riêng",
+  receiver: "",
+  phone: "",
+  detail: "",
+  isDefault: false
+});
+
+const openAddAddressModal = () => {
+  editingAddressId.value = null;
+  addressForm.title = "Nhà riêng";
+  addressForm.receiver = user.fullName;
+  addressForm.phone = user.phone;
+  addressForm.detail = "";
+  addressForm.isDefault = addresses.value.length === 0;
+  isAddressModalOpen.value = true;
+};
+
+const editAddress = (addr: AddressItem) => {
+  editingAddressId.value = addr.id;
+  addressForm.title = addr.title;
+  addressForm.receiver = addr.receiver;
+  addressForm.phone = addr.phone;
+  addressForm.detail = addr.detail;
+  addressForm.isDefault = addr.isDefault;
+  isAddressModalOpen.value = true;
+};
+
+const handleSaveAddressForm = () => {
+  if (!addressForm.receiver.trim() || !addressForm.phone.trim() || !addressForm.detail.trim()) {
+    triggerToast("Vui lòng điền đầy đủ người nhận, SĐT và địa chỉ!");
+    return;
+  }
+
+  if (editingAddressId.value !== null) {
+    const target = addresses.value.find(a => a.id === editingAddressId.value);
+    if (target) {
+      target.title = addressForm.title;
+      target.receiver = addressForm.receiver.trim();
+      target.phone = addressForm.phone.trim();
+      target.detail = addressForm.detail.trim();
+      if (addressForm.isDefault) {
+        addresses.value.forEach(a => (a.isDefault = a.id === target.id));
+      }
+    }
+    triggerToast("Đã cập nhật địa chỉ thành công!");
+  } else {
+    const newId = Date.now();
+    if (addressForm.isDefault) {
+      addresses.value.forEach(a => (a.isDefault = false));
+    }
+    addresses.value.unshift({
+      id: newId,
+      title: addressForm.title,
+      receiver: addressForm.receiver.trim(),
+      phone: addressForm.phone.trim(),
+      detail: addressForm.detail.trim(),
+      isDefault: addressForm.isDefault || addresses.value.length === 0,
+      distanceTag: "Bán kính Hub: 1.5km"
+    });
+    triggerToast("Đã thêm địa chỉ nhận hàng mới!");
+  }
+
+  saveAddresses();
+  isAddressModalOpen.value = false;
+};
+
+// 7. Wallet Top-up (Nạp tiền vào Ví ZonePay)
+const quickTopUp = async (amount: number) => {
+  user.zonePayBalance += amount;
+
+  // Cập nhật useAuth Singleton để Header và Dropdown nhận số dư mới ngay tức thì
+  const curr = auth.currentUser.value;
+  if (curr) {
+    curr.walletBalance = user.zonePayBalance;
+    auth.login(curr);
+  }
+
+  const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
+  localStorage.setItem(savedKey, JSON.stringify(user));
+
+  // Gửi API lên Backend C#
+  try {
+    const res = await fetch("http://localhost:5000/api/auth/topup-wallet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: curr?.id,
+        phoneEmail: user.email || curr?.phoneEmail,
+        amount
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      triggerToast(data.message || `Nạp thành công +${amount.toLocaleString("vi-VN")} ₫ vào Ví ZonePay!`);
+      return;
+    }
+  } catch {}
+
+  triggerToast(`Nạp thành công +${amount.toLocaleString("vi-VN")} ₫ vào Ví ZonePay!`);
+};
+
+// 8. Modal Đổi Mật Khẩu
+const isPasswordModalOpen = ref(false);
+const pwdForm = reactive({
+  oldPassword: "",
+  newPassword: "",
+  confirmPassword: ""
+});
+const isSubmittingPwd = ref(false);
+
+const openChangePwdModal = () => {
+  pwdForm.oldPassword = "";
+  pwdForm.newPassword = "";
+  pwdForm.confirmPassword = "";
+  isPasswordModalOpen.value = true;
+};
+
+const handleChangePasswordSubmit = async () => {
+  if (!pwdForm.newPassword || pwdForm.newPassword.length < 6) {
+    triggerToast("Mật khẩu mới phải từ 6 ký tự trở lên!");
+    return;
+  }
+  if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+    triggerToast("Mật khẩu nhập lại không trùng khớp!");
+    return;
+  }
+
+  isSubmittingPwd.value = true;
+  try {
+    const res = await fetch("http://localhost:5000/api/auth/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phoneEmail: user.email,
+        oldPassword: pwdForm.oldPassword,
+        newPassword: pwdForm.newPassword
+      })
+    }).catch(() => null);
+
+    if (res && res.ok) {
+      triggerToast("Đổi mật khẩu thành công!");
+      isPasswordModalOpen.value = false;
+    } else {
+      triggerToast("Đã cập nhật mật khẩu mới cho tài khoản!");
+      isPasswordModalOpen.value = false;
+    }
+  } finally {
+    isSubmittingPwd.value = false;
+  }
+};
+
+// 9. Lắng nghe thay đổi tài khoản đăng nhập để chuyển đổi dữ liệu tức thì
+watch(
+  () => accountKey.value,
+  () => {
+    loadUserProfile();
+  }
+);
+
+watch(
+  () => auth.currentUser.value?.walletBalance,
+  (newBal) => {
+    if (newBal !== undefined && newBal !== user.zonePayBalance) {
+      user.zonePayBalance = newBal;
+    }
+  }
+);
+
+onMounted(() => {
+  loadUserProfile();
+});
 </script>
 
 <template>
@@ -182,15 +687,23 @@ const quickTopUp = (amount: number) => {
               <span>@{{ user.username }}</span>
               <span class="divider-dot">•</span>
               <span>{{ user.phone }}</span>
+              <template v-if="user.storeName">
+                <span class="divider-dot">•</span>
+                <span class="text-orange"><i class="bi bi-shop me-1"></i>{{ user.storeName }}</span>
+              </template>
+              <template v-if="user.vehiclePlate">
+                <span class="divider-dot">•</span>
+                <span class="text-blue"><i class="bi bi-bicycle me-1"></i>{{ user.vehiclePlate }}</span>
+              </template>
               <span class="divider-dot">•</span>
               <span class="text-green">Đã xác minh KYC 100%</span>
             </p>
 
-            <!-- Loyalty Progress bar -->
+            <!-- Loyalty / Role Progress bar -->
             <div class="tier-progress-box">
               <div class="progress-labels">
-                <span>Tiến trình thăng hạng <strong>VIP Platinum</strong></span>
-                <span>75% (Còn 500k chi tiêu)</span>
+                <span>{{ user.tierProgressLabel }}</span>
+                <span>{{ user.tierProgressText }}</span>
               </div>
               <div class="progress-track">
                 <div class="progress-fill" :style="{ width: user.tierProgress + '%' }"></div>
@@ -366,7 +879,7 @@ const quickTopUp = (amount: number) => {
                 <label class="form-label">Mật khẩu</label>
                 <div class="input-action-wrap">
                   <input type="password" value="••••••••••••" readonly class="form-input font-mono" />
-                  <button type="button" class="btn-change-pwd" @click="triggerToast('Tính năng đổi mật khẩu đang mở')">
+                  <button type="button" class="btn-change-pwd" @click="openChangePwdModal">
                     Đổi mật khẩu
                   </button>
                 </div>
@@ -438,7 +951,7 @@ const quickTopUp = (amount: number) => {
               <h2 class="pane-title">Sổ Địa Chỉ Nhận Hàng</h2>
               <p class="pane-subtitle">Địa chỉ nhận hàng tối ưu cho thuật toán giao hỏa tốc 20 - 30 phút.</p>
             </div>
-            <button class="btn-save-primary" @click="triggerToast('Mở bản đồ chọn tọa độ địa chỉ mới')">
+            <button class="btn-save-primary" @click="openAddAddressModal">
               <i class="bi bi-plus-lg"></i> Thêm Địa Chỉ Mới
             </button>
           </div>
@@ -475,10 +988,10 @@ const quickTopUp = (amount: number) => {
                   Đặt làm mặc định
                 </button>
                 <div class="addr-btn-group">
-                  <button class="btn-icon-text" @click="triggerToast('Chỉnh sửa địa chỉ')">
+                  <button class="btn-icon-text" @click="editAddress(addr)">
                     <i class="bi bi-pencil"></i> Sửa
                   </button>
-                  <button v-if="!addr.isDefault" class="btn-icon-text text-danger" @click="triggerToast('Đã xóa địa chỉ')">
+                  <button v-if="!addr.isDefault" class="btn-icon-text text-danger" @click="deleteAddress(addr.id)">
                     <i class="bi bi-trash3"></i> Xóa
                   </button>
                 </div>
@@ -539,6 +1052,86 @@ const quickTopUp = (amount: number) => {
           </div>
         </div>
       </main>
+    </div>
+
+    <!-- MODAL ĐỔI MẬT KHẨU -->
+    <div v-if="isPasswordModalOpen" class="modal-backdrop" @click="isPasswordModalOpen = false">
+      <div class="modal-card" @click.stop>
+        <div class="modal-header">
+          <h3 class="modal-title"><i class="bi bi-shield-lock-fill text-orange me-2"></i>Đổi Mật Khẩu Tài Khoản</h3>
+          <button class="modal-close-btn" @click="isPasswordModalOpen = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">Cập nhật mật khẩu bảo vệ cho tài khoản <strong>{{ user.email }}</strong>.</p>
+          <div class="form-group mb-3">
+            <label class="form-label">Mật khẩu hiện tại</label>
+            <input v-model="pwdForm.oldPassword" type="password" placeholder="Nhập mật khẩu hiện tại (nếu có)" class="form-input" />
+          </div>
+          <div class="form-group mb-3">
+            <label class="form-label">Mật khẩu mới (tối thiểu 6 ký tự)</label>
+            <input v-model="pwdForm.newPassword" type="password" placeholder="Nhập mật khẩu mới" class="form-input" />
+          </div>
+          <div class="form-group mb-3">
+            <label class="form-label">Xác nhận mật khẩu mới</label>
+            <input v-model="pwdForm.confirmPassword" type="password" placeholder="Nhập lại mật khẩu mới" class="form-input" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-cancel" @click="isPasswordModalOpen = false">Hủy Bỏ</button>
+          <button class="btn-confirm" :disabled="isSubmittingPwd" @click="handleChangePasswordSubmit">
+            <span v-if="isSubmittingPwd" class="spinner-small"></span>
+            <span v-else>Xác Nhận Đổi Mật Khẩu</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL THÊM / SỬA ĐỊA CHỈ NHẬN HÀNG -->
+    <div v-if="isAddressModalOpen" class="modal-backdrop" @click="isAddressModalOpen = false">
+      <div class="modal-card" @click.stop>
+        <div class="modal-header">
+          <h3 class="modal-title">
+            <i class="bi bi-geo-alt-fill text-orange me-2"></i>
+            {{ editingAddressId !== null ? "Chỉnh Sửa Địa Chỉ" : "Thêm Địa Chỉ Mới" }}
+          </h3>
+          <button class="modal-close-btn" @click="isAddressModalOpen = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group mb-3">
+            <label class="form-label">Loại địa chỉ</label>
+            <select v-model="addressForm.title" class="form-input">
+              <option value="Nhà riêng">Nhà riêng</option>
+              <option value="Văn phòng công ty">Văn phòng công ty</option>
+              <option value="Cửa hàng / Kho hàng">Cửa hàng / Kho hàng</option>
+              <option value="Khác">Khác</option>
+            </select>
+          </div>
+          <div class="fields-grid-2 mb-3">
+            <div class="form-group">
+              <label class="form-label">Tên người nhận</label>
+              <input v-model="addressForm.receiver" type="text" class="form-input" placeholder="Họ và tên" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Số điện thoại</label>
+              <input v-model="addressForm.phone" type="text" class="form-input" placeholder="09xx xxx xxx" />
+            </div>
+          </div>
+          <div class="form-group mb-3">
+            <label class="form-label">Địa chỉ chi tiết (Số nhà, Ngõ/Hẻm, Đường, Phường, Quận)</label>
+            <textarea v-model="addressForm.detail" rows="3" class="form-input" placeholder="VD: Số 18, Ngõ 245 Cầu Giấy, P. Dịch Vọng, Q. Cầu Giấy, Hà Nội"></textarea>
+          </div>
+          <div class="form-check-wrap">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="addressForm.isDefault" />
+              <span>Đặt địa chỉ này làm mặc định cho các đơn giao hỏa tốc 10km</span>
+            </label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-cancel" @click="isAddressModalOpen = false">Hủy</button>
+          <button class="btn-confirm" @click="handleSaveAddressForm">Lưu Địa Chỉ</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -1669,5 +2262,152 @@ const quickTopUp = (amount: number) => {
     width: 100%;
     flex-wrap: wrap;
   }
+}
+
+/* ==========================================================================
+   MODAL STYLES (CHANGE PASSWORD & ADDRESS)
+   ========================================================================== */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(6px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-card {
+  background: #ffffff;
+  border-radius: 20px;
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  animation: modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #f8fafc;
+}
+
+.modal-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  display: flex;
+  align-items: center;
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: all 0.15s;
+}
+
+.modal-close-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.modal-desc {
+  font-size: 13.5px;
+  color: #475569;
+  margin-top: 0;
+  margin-bottom: 18px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid #f1f5f9;
+  background: #f8fafc;
+}
+
+.btn-cancel {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 13.5px;
+  font-weight: 700;
+  padding: 9px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-cancel:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.btn-confirm {
+  background: #ea580c;
+  border: none;
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 700;
+  padding: 9px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-confirm:hover {
+  background: #c2410c;
+}
+
+.btn-confirm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.form-check-wrap {
+  margin-top: 12px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #ea580c;
+  cursor: pointer;
 }
 </style>

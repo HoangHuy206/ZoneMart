@@ -760,6 +760,198 @@ public class AuthController : ControllerBase
             });
         }
     }
+
+    /// <summary>
+    /// API CẬP NHẬT THÔNG TIN HỒ SƠ CÁ NHÂN THEO TÀI KHOẢN
+    /// </summary>
+    [HttpPost("update-profile")]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PhoneEmail) && string.IsNullOrWhiteSpace(request.Id))
+        {
+            return BadRequest(new { success = false, message = "Thiếu thông tin định danh tài khoản" });
+        }
+
+        string cleanEmail = (request.PhoneEmail ?? "").Trim().ToLower();
+
+        User? user = null;
+        if (!string.IsNullOrEmpty(cleanEmail) && InMemoryUsers.TryGetValue(cleanEmail, out var memUser))
+        {
+            user = memUser;
+        }
+        else if (!string.IsNullOrEmpty(request.Id))
+        {
+            user = InMemoryUsers.Values.FirstOrDefault(u => u.Id == request.Id);
+        }
+
+        try
+        {
+            var filter = !string.IsNullOrEmpty(request.Id)
+                ? Builders<User>.Filter.Eq(u => u.Id, request.Id)
+                : Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanEmail);
+
+            var dbUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+            if (dbUser != null) user = dbUser;
+
+            var updateBuilder = Builders<User>.Update;
+            var updates = new List<UpdateDefinition<User>>();
+
+            if (!string.IsNullOrWhiteSpace(request.FullName))
+                updates.Add(updateBuilder.Set(u => u.FullName, request.FullName.Trim()));
+            if (!string.IsNullOrWhiteSpace(request.AvatarUrl))
+                updates.Add(updateBuilder.Set(u => u.AvatarUrl, request.AvatarUrl));
+
+            if (updates.Count > 0)
+            {
+                await _mongoService.Users.UpdateOneAsync(filter, updateBuilder.Combine(updates));
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [MongoDB Atlas UpdateProfile] {ex.Message}");
+        }
+
+        if (user != null)
+        {
+            if (!string.IsNullOrWhiteSpace(request.FullName)) user.FullName = request.FullName.Trim();
+            if (!string.IsNullOrWhiteSpace(request.AvatarUrl)) user.AvatarUrl = request.AvatarUrl;
+            if (!string.IsNullOrEmpty(cleanEmail)) InMemoryUsers[cleanEmail] = user;
+        }
+
+        return Ok(new { success = true, message = "Cập nhật hồ sơ thành công!", user });
+    }
+
+    /// <summary>
+    /// API NẠP TIỀN VÀO VÍ ZONEPAY THEO TÀI KHOẢN
+    /// </summary>
+    [HttpPost("topup-wallet")]
+    public async Task<IActionResult> TopupWallet([FromBody] TopupWalletRequest request)
+    {
+        if (request.Amount <= 0)
+        {
+            return BadRequest(new { success = false, message = "Số tiền nạp không hợp lệ" });
+        }
+
+        string cleanEmail = (request.PhoneEmail ?? "").Trim().ToLower();
+        User? user = null;
+        if (!string.IsNullOrEmpty(cleanEmail) && InMemoryUsers.TryGetValue(cleanEmail, out var memUser))
+        {
+            user = memUser;
+        }
+        else if (!string.IsNullOrEmpty(request.Id))
+        {
+            user = InMemoryUsers.Values.FirstOrDefault(u => u.Id == request.Id);
+        }
+
+        decimal newBalance = 0;
+        if (user != null)
+        {
+            user.WalletBalance += request.Amount;
+            newBalance = user.WalletBalance;
+        }
+
+        try
+        {
+            var filter = !string.IsNullOrEmpty(request.Id)
+                ? Builders<User>.Filter.Eq(u => u.Id, request.Id)
+                : Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanEmail);
+
+            var dbUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+            if (dbUser != null)
+            {
+                dbUser.WalletBalance += request.Amount;
+                newBalance = dbUser.WalletBalance;
+                await _mongoService.Users.UpdateOneAsync(filter, Builders<User>.Update.Set(u => u.WalletBalance, dbUser.WalletBalance));
+                user = dbUser;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [MongoDB Atlas TopupWallet] {ex.Message}");
+        }
+
+        return Ok(new { success = true, message = $"Nạp thành công +{request.Amount:N0} ₫ vào Ví ZonePay!", newBalance });
+    }
+
+    /// <summary>
+    /// API ĐỔI MẬT KHẨU TÀI KHOẢN
+    /// </summary>
+    [HttpPost("change-password")]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+        {
+            return BadRequest(new { success = false, message = "Mật khẩu mới phải từ 6 ký tự trở lên!" });
+        }
+
+        string cleanEmail = (request.PhoneEmail ?? "").Trim().ToLower();
+        User? user = null;
+        if (!string.IsNullOrEmpty(cleanEmail) && InMemoryUsers.TryGetValue(cleanEmail, out var memUser))
+        {
+            user = memUser;
+        }
+
+        try
+        {
+            var filter = Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanEmail);
+            var dbUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+            if (dbUser != null) user = dbUser;
+
+            if (user != null)
+            {
+                if (!string.IsNullOrEmpty(request.OldPassword) && user.PasswordHash != request.OldPassword)
+                {
+                    return BadRequest(new { success = false, message = "Mật khẩu hiện tại không chính xác!" });
+                }
+                user.PasswordHash = request.NewPassword;
+                await _mongoService.Users.UpdateOneAsync(filter, Builders<User>.Update.Set(u => u.PasswordHash, request.NewPassword));
+                if (!string.IsNullOrEmpty(cleanEmail)) InMemoryUsers[cleanEmail] = user;
+                return Ok(new { success = true, message = "Đổi mật khẩu thành công!" });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [ChangePassword] {ex.Message}");
+        }
+
+        if (user != null)
+        {
+            if (!string.IsNullOrEmpty(request.OldPassword) && user.PasswordHash != request.OldPassword)
+            {
+                return BadRequest(new { success = false, message = "Mật khẩu hiện tại không chính xác!" });
+            }
+            user.PasswordHash = request.NewPassword;
+            return Ok(new { success = true, message = "Đổi mật khẩu thành công!" });
+        }
+
+        return NotFound(new { success = false, message = "Không tìm thấy tài khoản người dùng!" });
+    }
+}
+
+public class UpdateProfileRequest
+{
+    public string? Id { get; set; }
+    public string PhoneEmail { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string AvatarUrl { get; set; } = string.Empty;
+    public string? Phone { get; set; }
+    public string? Gender { get; set; }
+    public string? BirthDate { get; set; }
+    public string? Username { get; set; }
+}
+
+public class TopupWalletRequest
+{
+    public string? Id { get; set; }
+    public string PhoneEmail { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+}
+
+public class ChangePasswordRequest
+{
+    public string PhoneEmail { get; set; } = string.Empty;
+    public string OldPassword { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
 }
 
 public class LoginRequest
