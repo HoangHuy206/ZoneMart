@@ -7,12 +7,31 @@
  * ================================================================
  */
 import { ref, reactive } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import ForgotPasswordForm from './ForgotPasswordForm.vue';
 import { useAuth, DEMO_USERS, type UserRole } from '../../composables/useAuth';
 
 const router = useRouter();
+const route = useRoute();
 const auth = useAuth();
+
+// Hàm điều hướng sau khi đăng nhập thành công
+const navigateAfterLogin = (role: string) => {
+  const redirectTarget = route.query.redirect as string;
+  if (redirectTarget && redirectTarget !== '/login') {
+    router.push(redirectTarget);
+    return;
+  }
+  if (role === 'seller') {
+    router.push('/seller');
+  } else if (role === 'admin') {
+    router.push('/admin');
+  } else if (role === 'shipper') {
+    router.push('/shipper');
+  } else {
+    router.push('/');
+  }
+};
 
 // Chế độ xem: false = Đăng nhập, true = Quên mật khẩu
 const isForgotPasswordMode = ref(false);
@@ -50,15 +69,7 @@ const quickLogin = (role: 'buyer' | 'seller' | 'shipper' | 'admin') => {
   }
   successMessage.value = `Đăng nhập nhanh vai trò ${user.role} thành công! Đang chuyển hướng...`;
   setTimeout(() => {
-    if (role === 'seller') {
-      router.push('/seller');
-    } else if (role === 'admin') {
-      router.push('/admin');
-    } else if (role === 'shipper') {
-      router.push('/shipper');
-    } else {
-      router.push('/');
-    }
+    navigateAfterLogin(role);
   }, 500);
 };
 
@@ -129,21 +140,13 @@ const handleLogin = async () => {
         localStorage.setItem("isLoggedIn", "true");
         localStorage.setItem("userRole", detectedRole);
         if (data.user) {
-          localStorage.setItem("currentUser", JSON.stringify(data.user));
+          localStorage.setItem('currentUser', JSON.stringify(data.user));
         }
-        localStorage.removeItem("sellerRegisteredEmail");
-        localStorage.removeItem("sellerRegisteredPassword");
+        localStorage.removeItem('sellerRegisteredEmail');
+        localStorage.removeItem('sellerRegisteredPassword');
 
         setTimeout(() => {
-          if (detectedRole === 'seller') {
-            router.push('/seller');
-          } else if (detectedRole === 'admin') {
-            router.push('/admin');
-          } else if (detectedRole === 'shipper') {
-            router.push('/shipper');
-          } else {
-            router.push('/');
-          }
+          navigateAfterLogin(detectedRole);
         }, 800);
       } else {
         modalErrorMessage.value = data.message || 'Không tìm thấy tài khoản';
@@ -220,6 +223,14 @@ const handleLogin = async () => {
             <p class="form-sub-heading">
               Nhập thông tin tài khoản của bạn để truy cập ZoneMart
             </p>
+          </div>
+
+          <!-- THÔNG BÁO YÊU CẦU ĐĂNG NHẬP -->
+          <div
+            v-if="route.query.reason === 'auth_required'"
+            class="msg-box warning"
+          >
+            🔒 Vui lòng đăng nhập tài khoản để tiếp tục truy cập trang này.
           </div>
 
           <!-- THÔNG BÁO THÀNH CÔNG -->
@@ -320,8 +331,6 @@ const handleLogin = async () => {
               <span v-else>ĐANG XỬ LÝ...</span>
             </button>
 
-            
-
             <!-- Đường kẻ phân cách OR -->
             <div class="divider-row">
               <span class="line"></span>
@@ -350,8 +359,6 @@ const handleLogin = async () => {
                 >
               </div>
             </div>
-
-           
           </form>
         </template>
 
@@ -596,6 +603,11 @@ label {
   background: #f0fdf4;
   color: #15803d;
   border: 1px solid #bbf7d0;
+}
+.msg-box.warning {
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
 }
 
 /* FORM FIELDS */
@@ -862,7 +874,7 @@ label {
 .demo-quick-bar {
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px dashed #E2E8F0;
+  border-top: 1px dashed #e2e8f0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -870,7 +882,7 @@ label {
 .demo-title {
   font-size: 11.5px;
   font-weight: 700;
-  color: #64748B;
+  color: #64748b;
   text-align: center;
 }
 .demo-tags-wrap {
@@ -880,8 +892,8 @@ label {
   flex-wrap: wrap;
 }
 .demo-btn {
-  background: #F8FAFC;
-  border: 1px solid #CBD5E1;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
   border-radius: 6px;
   padding: 5px 10px;
   font-size: 11.5px;
@@ -892,31 +904,31 @@ label {
   align-items: center;
 }
 .demo-btn.seller {
-  color: #C2410C;
-  background: #FFF7ED;
-  border-color: #FDBA74;
+  color: #c2410c;
+  background: #fff7ed;
+  border-color: #fdba74;
 }
 .demo-btn.seller:hover {
-  background: #EA580C;
-  color: #FFFFFF;
+  background: #ea580c;
+  color: #ffffff;
 }
 .demo-btn.buyer {
-  color: #15803D;
-  background: #F0FDF4;
-  border-color: #86EFAC;
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #86efac;
 }
 .demo-btn.buyer:hover {
-  background: #16A34A;
-  color: #FFFFFF;
+  background: #16a34a;
+  color: #ffffff;
 }
 .demo-btn.shipper {
-  color: #1D4ED8;
-  background: #EFF6FF;
-  border-color: #93C5FD;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #93c5fd;
 }
 .demo-btn.shipper:hover {
-  background: #2563EB;
-  color: #FFFFFF;
+  background: #2563eb;
+  color: #ffffff;
 }
 
 /* MODAL THÔNG BÁO ĐÈ MÀN HÌNH VỚI BÓNG MỜ MỜ (CENTRED OVERLAY) */

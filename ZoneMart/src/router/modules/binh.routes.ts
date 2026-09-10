@@ -1,4 +1,4 @@
-import type { RouteRecordRaw } from "vue-router";
+import type { RouteRecordRaw } from 'vue-router';
 
 /**
  * ================================================================
@@ -12,40 +12,23 @@ import type { RouteRecordRaw } from "vue-router";
  */
 export const binhRoutes: RouteRecordRaw[] = [
   {
-    path: "/login",
-    name: "Login",
-    component: () => import("../../views/binh/LoginView.vue"),
-    meta: { title: "Đăng Nhập - ZoneMart", hideHeader: true, hideFooter: true }
+    path: '/login',
+    name: 'Login',
+    component: () => import('../../views/binh/LoginView.vue'),
+    meta: { title: 'Đăng Nhập - ZoneMart', hideHeader: true, hideFooter: true },
   },
   {
-    path: "/register",
-    name: "RegisterBuyer",
-    component: () => import("../../views/binh/RegisterBuyerView.vue"),
-    meta: { title: "Đăng Ký Khách Hàng - ZoneMart", hideHeader: true, hideFooter: true }
-  },
-  {
-    path: "/register-seller",
-    name: "RegisterSeller",
-    component: () => import("../../views/binh/RegisterSellerView.vue"),
-    meta: { title: "Đăng Ký Người Bán - ZoneMart", hideHeader: true, hideFooter: true }
-  },
-  {
-    path: "/register-shipper",
-    name: "RegisterShipper",
-    component: () => import("../../views/binh/RegisterShipperView.vue"),
-    meta: { title: "Đăng Ký Tài Xế Shipper - ZoneMart", hideHeader: true, hideFooter: true }
-  },
-  {
-    path: "/shipper",
-    name: "Shipper",
-    component: () => import("../../views/binh/ShipperView.vue"),
+    path: '/register',
+    name: 'RegisterBuyer',
+    component: () => import('../../views/binh/RegisterBuyerView.vue'),
     meta: {
-      title: "Cổng Tài Xế Shipper - ZoneMart",
+      title: 'Đăng Ký Khách Hàng - ZoneMart',
       hideHeader: true,
-      hideFooter: true
-    }
+      hideFooter: true,
+    },
   },
   {
+<<<<<<< HEAD
     path: "/admin",
     name: "Admin",
     component: () => import("../../views/binh/AdminDashboardView.vue"),
@@ -55,10 +38,59 @@ export const binhRoutes: RouteRecordRaw[] = [
     path: "/seller",
     name: "SellerDashboard",
     component: () => import("../../views/binh/SellerDashboardView.vue"),
+=======
+    path: '/register-seller',
+    name: 'RegisterSeller',
+    component: () => import('../../views/binh/RegisterSellerView.vue'),
+>>>>>>> bd7fd100db66c8ffa95bd9e1f6c0a9dc67339568
     meta: {
-      title: "Kênh Quản Lý Bán Hàng - ZoneMart",
+      title: 'Đăng Ký Người Bán - ZoneMart',
       hideHeader: true,
-      hideFooter: true
-    }
-  }
+      hideFooter: true,
+    },
+  },
+  {
+    path: '/register-shipper',
+    name: 'RegisterShipper',
+    component: () => import('../../views/binh/RegisterShipperView.vue'),
+    meta: {
+      title: 'Đăng Ký Tài Xế Shipper - ZoneMart',
+      hideHeader: true,
+      hideFooter: true,
+    },
+  },
+  {
+    path: '/shipper',
+    name: 'Shipper',
+    component: () => import('../../views/binh/ShipperView.vue'),
+    meta: {
+      title: 'Cổng Tài Xế Shipper - ZoneMart',
+      hideHeader: true,
+      hideFooter: true,
+      requiresAuth: true,
+      roles: ['shipper', 'admin'],
+    },
+  },
+  {
+    path: '/admin',
+    name: 'Admin',
+    component: () => import('../../views/binh/AdminDashboardView.vue'),
+    meta: {
+      title: 'Bảng Điều Khiển Admin - ZoneMart',
+      requiresAuth: true,
+      roles: ['admin'],
+    },
+  },
+  {
+    path: '/seller',
+    name: 'SellerDashboard',
+    component: () => import('../../views/binh/SellerDashboardView.vue'),
+    meta: {
+      title: 'Kênh Quản Lý Bán Hàng - ZoneMart',
+      hideHeader: true,
+      hideFooter: true,
+      requiresAuth: true,
+      roles: ['seller', 'admin'],
+    },
+  },
 ];

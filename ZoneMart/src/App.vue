@@ -3,14 +3,15 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import logoImg from './assets/logo.png';
 import { useAuth, type UserRole } from './composables/useAuth';
+import { useCart } from './composables/useCart';
 
 const router = useRouter();
 const auth = useAuth();
+const cart = useCart();
 
 const isMobileMenuOpen = ref(false);
 const isUserDropdownOpen = ref(false);
 const searchQuery = ref('');
-const cartItemCount = ref(3);
 
 const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value;
@@ -251,93 +252,13 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
           <!-- C. Khi đã đăng nhập: Action Buttons & User Menu -->
           <div v-else class="logged-in-actions">
-            <!-- Icon Tài khoản với Menu Dropdown -->
-            <div class="user-menu-wrapper" @click.stop>
-              <button
-                class="icon-btn user-btn"
-                title="Tài khoản của bạn"
-                aria-label="Tài khoản của bạn"
-                @click="toggleUserDropdown"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="22"
-                  height="22"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="1.8"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="12" cy="7" r="4"></circle>
-                </svg>
-              </button>
-
-              <div v-if="isUserDropdownOpen" class="user-dropdown">
-                <div class="dropdown-header">
-                  <strong>Tài Khoản ZoneMart</strong>
-                </div>
-                <router-link
-                  to="/profile"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
-                  <i class="bi bi-person-circle menu-icon" aria-hidden="true"></i>
-                  <span>Hồ Sơ & Ví Tiền</span>
-                </router-link>
-                <router-link
-                  to="/buyer-orders"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
-                  <i class="bi bi-bag-check menu-icon" aria-hidden="true"></i>
-                  <span>Đơn Mua Của Bạn</span>
-                </router-link>
-                <router-link
-                  to="/seller"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
-                  <i class="bi bi-shop menu-icon" aria-hidden="true"></i>
-                  <span>Kênh Quản Lý Bán Hàng</span>
-                </router-link>
-                <div class="dropdown-divider"></div>
-                <router-link
-                  to="/shipper"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
-                  <i class="bi bi-bicycle menu-icon" aria-hidden="true"></i>
-                  <span>Cổng Shipper</span>
-                </router-link>
-                <router-link
-                  to="/admin"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
-                  <i class="bi bi-shield-check menu-icon" aria-hidden="true"></i>
-                  <span>Bảng Điều Khiển Admin</span>
-                </router-link>
-                <router-link
-                  to="/contact"
-                  class="dropdown-item"
-                  @click="closeDropdowns"
-                >
-                  <i class="bi bi-headset menu-icon" aria-hidden="true"></i>
-                  <span>Liên Hệ Hỗ Trợ</span>
-                </router-link>
-                <div class="dropdown-divider"></div>
-                <button class="dropdown-item logout-btn" @click="handleLogout">
-                  <i class="bi bi-box-arrow-right menu-icon" aria-hidden="true"></i>
-                  <span>Đăng Xuất</span>
-                </button>
-              </div>
-            </div>
-
             <!-- Icon Giỏ hàng kèm huy hiệu số lượng -->
-            <router-link to="/cart" class="icon-btn cart-btn" title="Giỏ hàng" aria-label="Xem giỏ hàng">
+            <router-link
+              to="/cart"
+              class="icon-btn cart-btn"
+              title="Giỏ hàng"
+              aria-label="Xem giỏ hàng"
+            >
               <svg
                 viewBox="0 0 24 24"
                 width="20"
@@ -355,7 +276,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                   d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
                 ></path>
               </svg>
-              <span class="cart-badge">{{ cartItemCount }}</span>
+              <span class="cart-badge">{{ cart.totalCount.value }}</span>
             </router-link>
 
             <!-- Lối tắt nhanh cho Shipper: Nút Trạng Thái Sẵn Sàng -->
@@ -476,7 +397,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                       @click="closeDropdowns"
                     >
                       <i class="bi bi-cart3 menu-icon"></i>
-                      <span>Giỏ Hàng ({{ cartItemCount }})</span>
+                      <span>Giỏ Hàng ({{ cart.totalCount.value }})</span>
                     </router-link>
                     <router-link
                       to="/contact"
@@ -719,7 +640,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             </router-link>
             <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
               <i class="bi bi-cart3 menu-icon"></i>
-              <span>Giỏ Hàng ({{ cartItemCount }})</span>
+              <span>Giỏ Hàng ({{ cart.totalCount.value }})</span>
             </router-link>
             <router-link
               to="/buyer-orders"
@@ -831,11 +752,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             <i class="bi bi-person-circle menu-icon" aria-hidden="true"></i>
             <span>Hồ Sơ & Ví</span>
           </router-link>
-          <router-link
-            to="/seller"
-            class="mobile-link"
-            @click="closeDropdowns"
-          >
+          <router-link to="/seller" class="mobile-link" @click="closeDropdowns">
             <i class="bi bi-shop menu-icon" aria-hidden="true"></i>
             <span>Kênh Bán Hàng</span>
           </router-link>
@@ -1070,7 +987,14 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 body {
   margin: 0;
   padding: 0;
-  font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    'Plus Jakarta Sans',
+    'Be Vietnam Pro',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
   background-color: #faf7f2;
   color: #2b1b14;
   -webkit-font-smoothing: antialiased;
