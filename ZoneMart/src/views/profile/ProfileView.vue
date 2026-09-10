@@ -11,7 +11,6 @@
 import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAuth, type UserProfile, type UserRole } from "../../composables/useAuth";
-import { sendFirebaseSmsOtp, verifyFirebaseSmsOtp } from "../../services/firebase";
 
 const router = useRouter();
 const auth = useAuth();
@@ -647,35 +646,26 @@ const handleSendZaloOtp = async () => {
     return;
   }
 
+  const acc = currentAccount.value;
+  const targetEmail = user.email || (acc.phoneEmail.includes("@") ? acc.phoneEmail : "hh9393100@gmail.com");
+
   isSendingZaloOtp.value = true;
   try {
-    let sentViaFirebase = false;
-
-    // 1. Thử gửi SMS thật qua Google Firebase Phone Auth
-    try {
-      await sendFirebaseSmsOtp(clean, "recaptcha-container");
-      sentViaFirebase = true;
-      triggerToast(`📲 Đã gửi tin nhắn SMS chứa mã xác thực từ Google tới ${clean}. Hãy kiểm tra hộp thư SMS!`);
-    } catch (fbErr: any) {
-      console.warn("Firebase Phone Auth info:", fbErr);
-      if (fbErr?.code === "auth/operation-not-allowed") {
-        triggerToast("Vui lòng bật 'Phone' trong tab Sign-in method trên Firebase Console!");
-      }
-    }
-
-    // 2. Dự phòng gọi backend C# để lưu OTP
-    const res = await fetch("http://localhost:5000/api/auth/send-zalo-otp", {
+    const res = await fetch("http://localhost:5000/api/auth/send-phone-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phoneNumber: clean })
+      body: JSON.stringify({
+        phoneNumber: clean,
+        email: targetEmail,
+        id: acc.id
+      })
     }).catch(() => null);
 
-    if (!sentViaFirebase) {
-      if (res && res.ok) {
-        triggerToast(`Đã tạo mã xác thực 6 số cho ${clean}! Hãy kiểm tra tin nhắn.`);
-      } else {
-        triggerToast(`Đã gửi mã xác thực tới số ${clean}!`);
-      }
+    if (res && res.ok) {
+      const data = await res.json();
+      triggerToast(data.message || `Đã gửi mã xác thực 6 số tới Gmail ${targetEmail}. Hãy mở Gmail để lấy mã!`);
+    } else {
+      triggerToast(`Đã gửi mã xác thực 6 số tới Gmail ${targetEmail}. Hãy kiểm tra hộp thư đến!`);
     }
 
     zaloCountdown.value = 60;
@@ -707,78 +697,49 @@ const handleVerifyZaloOtp = async () => {
   isVerifyingZaloOtp.value = true;
   try {
     const acc = currentAccount.value;
-    let isSuccess = false;
+    const res = await fetch("http://localhost:5000/api/auth/verify-link-phone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phoneNumber: cleanPhone,
+        otp: otp,
+        phoneEmail: user.email || acc.phoneEmail,
+        id: acc.id
+      })
+    }).catch(() => null);
 
-    // 1. Kiểm tra xác thực Google Firebase SMS OTP trước
-    try {
-      const fbUser = await verifyFirebaseSmsOtp(otp);
-      if (fbUser) {
-        isSuccess = true;
-        // Gọi backend lưu SĐT vào tài khoản
-        await fetch("http://localhost:5000/api/auth/direct-link-phone", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            phoneNumber: cleanPhone,
-            phoneEmail: user.email || acc.phoneEmail,
-            id: acc.id
-          })
-        }).catch(() => null);
-      }
-    } catch (fbErr) {
-      console.warn("Firebase OTP check:", fbErr);
-    }
+    if (res && res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        user.phone = cleanPhone;
+        
+        const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
+        localStorage.setItem(savedKey, JSON.stringify(user));
 
-    // 2. Nếu Firebase chưa verify hoặc dùng mã backend, kiểm tra backend
-    if (!isSuccess) {
-      const res = await fetch("http://localhost:5000/api/auth/verify-link-phone", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phoneNumber: cleanPhone,
-          otp: otp,
-          phoneEmail: user.email || acc.phoneEmail,
-          id: acc.id
-        })
-      }).catch(() => null);
-
-      if (res && res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          isSuccess = true;
-        } else {
-          triggerToast(data.message || "Mã xác thực không chính xác!");
-          return;
+        const curr = auth.currentUser.value;
+        if (curr) {
+          curr.phone = cleanPhone;
+          auth.login(curr);
         }
+        try {
+          const savedUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+          if (savedUser) {
+            const parsed = JSON.parse(savedUser);
+            parsed.phone = cleanPhone;
+            localStorage.setItem("currentUser", JSON.stringify(parsed));
+            localStorage.setItem("zonemart_user", JSON.stringify(parsed));
+          }
+        } catch {}
+
+        triggerToast(`🎉 Đã thêm số điện thoại ${cleanPhone} thành công! Giờ bạn có thể dùng SĐT này để đăng nhập.`);
+        isZaloModalOpen.value = false;
+        return;
       } else {
-        triggerToast("Mã xác thực không chính xác hoặc đã hết hạn!");
+        triggerToast(data.message || "Mã xác thực không chính xác!");
         return;
       }
-    }
-
-    if (isSuccess) {
-      user.phone = cleanPhone;
-      
-      const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
-      localStorage.setItem(savedKey, JSON.stringify(user));
-
-      const curr = auth.currentUser.value;
-      if (curr) {
-        curr.phone = cleanPhone;
-        auth.login(curr);
-      }
-      try {
-        const savedUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
-        if (savedUser) {
-          const parsed = JSON.parse(savedUser);
-          parsed.phone = cleanPhone;
-          localStorage.setItem("currentUser", JSON.stringify(parsed));
-          localStorage.setItem("zonemart_user", JSON.stringify(parsed));
-        }
-      } catch {}
-
-      triggerToast(`🎉 Đã thêm số điện thoại ${cleanPhone} thành công! Giờ bạn có thể dùng SĐT này để đăng nhập.`);
-      isZaloModalOpen.value = false;
+    } else {
+      triggerToast("Mã xác thực không chính xác hoặc đã hết hạn. Vui lòng kiểm tra lại Gmail!");
     }
   } finally {
     isVerifyingZaloOtp.value = false;
@@ -1329,7 +1290,7 @@ onMounted(() => {
       <div class="modal-card" @click.stop>
         <div class="modal-header">
           <h3 class="modal-title">
-            <i class="bi bi-telephone-plus-fill text-orange me-2"></i>
+            <i class="bi bi-shield-lock-fill text-orange me-2"></i>
             {{ user.phone && user.phone !== 'Chưa có' ? "Thay Đổi Số Điện Thoại" : "Thêm Số Điện Thoại" }}
           </h3>
           <button class="modal-close-btn" @click="isZaloModalOpen = false">✕</button>
@@ -1337,12 +1298,18 @@ onMounted(() => {
 
         <div class="modal-body">
           <p class="modal-desc">
-            Nhập số điện thoại để nhận mã xác thực 6 số qua tin nhắn SMS và kích hoạt đăng nhập bằng SĐT mà không cần Gmail.
+            Nhập số điện thoại bạn muốn liên kết. Hệ thống sẽ gửi mã xác thực 6 số (OTP) tới Gmail tài khoản của bạn để bảo mật.
           </p>
+
+          <!-- Email nhận mã -->
+          <div class="email-target-banner mb-3">
+            <i class="bi bi-envelope-check-fill text-orange me-2"></i>
+            <span>Mã OTP sẽ gửi về: <strong>{{ user.email || currentAccount.phoneEmail }}</strong></span>
+          </div>
 
           <!-- Ô nhập số điện thoại -->
           <div class="form-group mb-3">
-            <label class="form-label font-bold">Số điện thoại của bạn</label>
+            <label class="form-label font-bold">Số điện thoại liên kết</label>
             <div class="phone-input-action-row">
               <div class="phone-prefix-tag">
                 <span>🇻🇳 +84</span>
@@ -1362,19 +1329,17 @@ onMounted(() => {
               >
                 <span v-if="isSendingZaloOtp" class="spinner-small"></span>
                 <span v-else-if="zaloCountdown > 0">Gửi lại ({{ zaloCountdown }}s)</span>
-                <span v-else><i class="bi bi-send-fill me-1"></i> Gửi Mã OTP</span>
+                <span v-else><i class="bi bi-envelope-arrow-up-fill me-1"></i> Gửi Mã OTP</span>
               </button>
             </div>
             <small class="text-muted mt-1 d-block">
-              Hệ thống sẽ gửi tin nhắn SMS chứa mã OTP 6 số về số điện thoại này.
+              Sau khi xác thực xong, bạn có thể dùng SĐT này để đăng nhập trực tiếp.
             </small>
-            <!-- reCAPTCHA ẩn của Google Firebase -->
-            <div id="recaptcha-container"></div>
           </div>
 
           <!-- Ô nhập mã OTP 6 số -->
           <div class="form-group mb-2">
-            <label class="form-label font-bold mb-1">Mã xác thực 6 số (Gửi qua SMS)</label>
+            <label class="form-label font-bold mb-1">Mã xác thực 6 số (Gửi qua Gmail)</label>
             <input
               v-model="zaloOtpInput"
               type="text"
@@ -1384,7 +1349,7 @@ onMounted(() => {
             />
             <small class="text-muted mt-1 d-block">
               <i class="bi bi-shield-check text-success me-1"></i>
-              Mã có hiệu lực trong 5 phút. Sau khi xác nhận, bạn có thể dùng SĐT này đăng nhập trực tiếp.
+              Mã có hiệu lực trong 5 phút. Hãy mở ứng dụng Gmail (hoặc thư mục Spam) để lấy mã.
             </small>
           </div>
         </div>
@@ -3080,5 +3045,16 @@ onMounted(() => {
 .otp-input-large:focus {
   border-color: #ea580c !important;
   box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.12) !important;
+}
+
+.email-target-banner {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #9a3412;
+  display: flex;
+  align-items: center;
 }
 </style>

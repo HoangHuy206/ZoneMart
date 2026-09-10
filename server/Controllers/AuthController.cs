@@ -943,10 +943,11 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// API GỬI MÃ XÁC THỰC 6 SỐ QUA ZALO ĐỂ LIÊN KẾT SỐ ĐIỆN THOẠI
+    /// API GỬI MÃ XÁC THỰC 6 SỐ QUA GMAIL ĐỂ LIÊN KẾT SỐ ĐIỆN THOẠI VÀO TÀI KHOẢN
     /// </summary>
     [HttpPost("send-zalo-otp")]
-    public IActionResult SendZaloOtp([FromBody] SendZaloOtpRequest request)
+    [HttpPost("send-phone-otp")]
+    public async Task<IActionResult> SendZaloOtp([FromBody] SendZaloOtpRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.PhoneNumber))
         {
@@ -959,18 +960,79 @@ public class AuthController : ControllerBase
             return BadRequest(new { success = false, message = "Số điện thoại không đúng định dạng (từ 9 đến 11 số)!" });
         }
 
+        // Tìm email của người dùng để gửi OTP
+        string targetEmail = (request.Email ?? request.PhoneEmail ?? "").Trim().ToLower();
+        if (string.IsNullOrEmpty(targetEmail) || !targetEmail.Contains("@"))
+        {
+            if (!string.IsNullOrEmpty(request.Id) && InMemoryUsers.Values.FirstOrDefault(u => u.Id == request.Id) is { } found)
+            {
+                targetEmail = (found.PhoneEmail ?? "").ToLower();
+            }
+        }
+
         // Tạo mã ngẫu nhiên 6 chữ số
         string otpCode = new Random().Next(100000, 999999).ToString();
         ZaloOtps[cleanPhone] = (otpCode, DateTime.UtcNow.AddMinutes(5));
 
-        // In ra log console giả lập gửi Zalo ZNS
-        Console.WriteLine($"📱 [ZALO ZNS NOTIFICATION] Đã gửi mã OTP qua Zalo tới {cleanPhone}: {otpCode} (Hết hạn sau 5 phút)");
+        bool emailSent = false;
+        if (!string.IsNullOrEmpty(targetEmail) && targetEmail.Contains("@"))
+        {
+            string subject = $"[ZoneMart Security] Mã xác thực liên kết SĐT: {otpCode}";
+            string htmlBody = $@"
+<!DOCTYPE html>
+<html>
+<head><meta charset='utf-8'></head>
+<body style='font-family: Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; color: #1e293b;'>
+  <div style='max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05);'>
+    <div style='background: linear-gradient(135deg, #ea580c, #f97316); padding: 28px 32px; text-align: center; color: #ffffff;'>
+      <h1 style='margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;'>🛒 ZoneMart Security</h1>
+      <p style='margin: 8px 0 0 0; font-size: 14px; opacity: 0.9;'>Xác Thực Liên Kết Số Điện Thoại</p>
+    </div>
+    <div style='padding: 32px;'>
+      <p style='font-size: 15px; line-height: 1.6; margin: 0 0 16px 0;'>Xin chào Quý khách,</p>
+      <p style='font-size: 14px; line-height: 1.6; margin: 0 0 20px 0; color: #475569;'>
+        Bạn đang thực hiện liên kết số điện thoại <strong>{cleanPhone}</strong> vào tài khoản ZoneMart của mình. Dưới đây là mã xác thực 6 số (OTP) của bạn:
+      </p>
+      
+      <div style='background: #fff7ed; border: 2px dashed #ea580c; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0;'>
+        <span style='font-size: 34px; font-weight: 900; letter-spacing: 8px; color: #ea580c; font-family: monospace; display: block;'>{otpCode}</span>
+        <span style='display: block; font-size: 12px; color: #64748b; margin-top: 8px;'>Mã xác thực có hiệu lực trong 5 phút</span>
+      </div>
+
+      <div style='background: #fef2f2; border-left: 4px solid #ef4444; padding: 12px 16px; border-radius: 6px; margin-bottom: 24px;'>
+        <p style='margin: 0; font-size: 12px; color: #991b1b; line-height: 1.5;'>
+          ⚠️ <strong>Bảo mật:</strong> Tuyệt đối không chia sẻ mã xác thực này cho bất kỳ ai, kể cả nhân viên ZoneMart, để bảo vệ an toàn cho tài khoản của bạn.
+        </p>
+      </div>
+
+      <p style='font-size: 13px; color: #94a3b8; margin: 0; line-height: 1.5;'>
+        Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email hoặc đổi mật khẩu ngay lập tức.
+      </p>
+    </div>
+    <div style='background: #f8fafc; padding: 16px; text-align: center; border-top: 1px solid #f1f5f9; font-size: 12px; color: #94a3b8;'>
+      ZoneMart - Sàn Thương Mại Điện Tử & Giao Hàng Hỏa Tốc
+    </div>
+  </div>
+</body>
+</html>";
+
+            emailSent = await ForgotPasswordController.SendEmailViaMailKitAsync(targetEmail, subject, htmlBody, "ZoneMart Security");
+            Console.WriteLine($"📧 [Gmail OTP] Đã gửi mã OTP liên kết SĐT {cleanPhone} tới Gmail {targetEmail}: {otpCode} (Thành công: {emailSent})");
+        }
+        else
+        {
+            Console.WriteLine($"📱 [OTP Log] Mã OTP liên kết SĐT {cleanPhone}: {otpCode} (Chưa xác định được email)");
+        }
+
+        string msg = emailSent
+            ? $"Mã xác thực 6 số đã được gửi tới Gmail {targetEmail}. Hãy kiểm tra hộp thư đến (hoặc hòm thư Spam)!"
+            : $"Đã tạo mã xác thực 6 số cho SĐT {cleanPhone}!";
 
         return Ok(new
         {
             success = true,
-            message = $"Mã xác thực 6 số đã được gửi qua Zalo tới số điện thoại {cleanPhone}!",
-            demoOtp = otpCode, // Trả về để UI hiển thị thông báo mô phỏng Zalo Popup trực quan
+            message = msg,
+            email = targetEmail,
             phone = cleanPhone,
             expiresInSeconds = 300
         });
@@ -1140,6 +1202,8 @@ public class SendZaloOtpRequest
 {
     public string PhoneNumber { get; set; } = string.Empty;
     public string? PhoneEmail { get; set; }
+    public string? Email { get; set; }
+    public string? Id { get; set; }
 }
 
 public class VerifyLinkPhoneRequest
