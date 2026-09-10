@@ -1312,6 +1312,9 @@ onMounted(() => {
           <button class="btn-cancel" @click="isAddressModalOpen = false">Hủy</button>
           <button class="btn-confirm" @click="handleSaveAddressForm">Lưu Địa Chỉ</button>
         </div>
+      </div>
+    </div>
+
     <!-- THÔNG BÁO MÔ PHỎNG TIN NHẮN ZALO ZNS GỬI TỚI ĐIỆN THOẠI -->
     <transition name="zalo-pop">
       <div v-if="simulatedZaloNotification.show" class="zalo-notification-banner">
