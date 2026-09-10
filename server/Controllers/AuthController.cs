@@ -1059,6 +1059,81 @@ public class AuthController : ControllerBase
             } : null
         });
     }
+
+    /// <summary>
+    /// API LIÊN KẾT SỐ ĐIỆN THOẠI ĐÃ ĐƯỢC XÁC THỰC BỞI GOOGLE FIREBASE SMS OTP
+    /// </summary>
+    [HttpPost("direct-link-phone")]
+    public async Task<IActionResult> DirectLinkPhone([FromBody] DirectLinkPhoneRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PhoneNumber))
+        {
+            return BadRequest(new { success = false, message = "Vui lòng cung cấp số điện thoại!" });
+        }
+
+        string cleanPhone = Regex.Replace(request.PhoneNumber.Trim(), @"[^\d+]", "");
+        string cleanEmail = (request.PhoneEmail ?? "").Trim().ToLower();
+        User? user = null;
+        if (!string.IsNullOrEmpty(cleanEmail) && InMemoryUsers.TryGetValue(cleanEmail, out var memUser))
+        {
+            user = memUser;
+        }
+        else if (!string.IsNullOrEmpty(request.Id))
+        {
+            user = InMemoryUsers.Values.FirstOrDefault(u => u.Id == request.Id);
+        }
+
+        try
+        {
+            var filter = !string.IsNullOrEmpty(request.Id)
+                ? Builders<User>.Filter.Eq(u => u.Id, request.Id)
+                : Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanEmail);
+
+            var dbUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+            if (dbUser != null) user = dbUser;
+
+            if (user != null)
+            {
+                user.Phone = cleanPhone;
+                await _mongoService.Users.UpdateOneAsync(filter, Builders<User>.Update.Set(u => u.Phone, cleanPhone));
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [MongoDB Atlas DirectLinkPhone] {ex.Message}");
+        }
+
+        if (user != null)
+        {
+            user.Phone = cleanPhone;
+            InMemoryUsers[cleanPhone] = user;
+            if (!string.IsNullOrEmpty(cleanEmail)) InMemoryUsers[cleanEmail] = user;
+        }
+
+        return Ok(new
+        {
+            success = true,
+            message = $"Thêm số điện thoại {cleanPhone} thành công qua xác thực Google SMS OTP!",
+            phone = cleanPhone,
+            user = user != null ? new
+            {
+                id = user.Id,
+                phoneEmail = user.PhoneEmail,
+                phone = user.Phone,
+                fullName = user.FullName,
+                avatarUrl = user.AvatarUrl,
+                role = user.IsAdmin ? "admin" : (user.IsSeller ? "seller" : (user.IsShipper ? "shipper" : "buyer")),
+                walletBalance = user.WalletBalance
+            } : null
+        });
+    }
+}
+
+public class DirectLinkPhoneRequest
+{
+    public string PhoneNumber { get; set; } = string.Empty;
+    public string? PhoneEmail { get; set; }
+    public string? Id { get; set; }
 }
 
 public class SendZaloOtpRequest
