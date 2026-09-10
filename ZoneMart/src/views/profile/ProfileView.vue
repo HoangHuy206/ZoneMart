@@ -1349,44 +1349,25 @@ onMounted(() => {
 
     <!-- MODAL THÊM / ĐỔI SỐ ĐIỆN THOẠI (XÁC THỰC MÃ QUA ZALO) -->
     <div v-if="isZaloModalOpen" class="modal-backdrop" @click="isZaloModalOpen = false">
-      <div class="modal-card modal-zalo-card" @click.stop>
-        <div class="modal-header zalo-modal-header">
-          <div class="zalo-header-brand">
-            <div class="phone-modal-icon">
-              <i class="bi bi-telephone-plus-fill"></i>
-            </div>
-            <div>
-              <h3 class="modal-title mb-0">{{ user.phone && user.phone !== 'Chưa có' ? "Thay Đổi Số Điện Thoại" : "Thêm Số Điện Thoại" }}</h3>
-              <p class="zalo-header-sub mb-0">Hệ thống gửi mã xác thực 6 số vào Zalo của số này để đăng nhập không cần Gmail</p>
-            </div>
-          </div>
+      <div class="modal-card" @click.stop>
+        <div class="modal-header">
+          <h3 class="modal-title">
+            <i class="bi bi-telephone-plus-fill text-orange me-2"></i>
+            {{ user.phone && user.phone !== 'Chưa có' ? "Thay Đổi Số Điện Thoại" : "Thêm Số Điện Thoại" }}
+          </h3>
           <button class="modal-close-btn" @click="isZaloModalOpen = false">✕</button>
         </div>
 
         <div class="modal-body">
-          <!-- Hướng dẫn bước thực hiện -->
-          <div class="zalo-steps-guide">
-            <div class="step-guide-item">
-              <span class="step-badge">1</span>
-              <span>Nhập số điện thoại</span>
-            </div>
-            <div class="step-guide-arrow">→</div>
-            <div class="step-guide-item">
-              <span class="step-badge">2</span>
-              <span>Mở Zalo nhận mã 6 số</span>
-            </div>
-            <div class="step-guide-arrow">→</div>
-            <div class="step-guide-item">
-              <span class="step-badge">3</span>
-              <span>Dùng SĐT đăng nhập</span>
-            </div>
-          </div>
+          <p class="modal-desc">
+            Nhập số điện thoại để nhận mã xác thực 6 số qua Zalo và kích hoạt đăng nhập bằng SĐT mà không cần Gmail.
+          </p>
 
-          <!-- Nhập số điện thoại -->
+          <!-- Ô nhập số điện thoại -->
           <div class="form-group mb-3">
             <label class="form-label font-bold">Số điện thoại của bạn</label>
-            <div class="zalo-input-group">
-              <div class="zalo-flag-prefix">
+            <div class="phone-input-action-row">
+              <div class="phone-prefix-tag">
                 <span>🇻🇳 +84</span>
               </div>
               <input
@@ -1398,22 +1379,22 @@ onMounted(() => {
               />
               <button
                 type="button"
-                class="btn-send-zalo-otp"
+                class="btn-send-otp-action"
                 :disabled="isSendingZaloOtp || zaloCountdown > 0"
                 @click="handleSendZaloOtp"
               >
                 <span v-if="isSendingZaloOtp" class="spinner-small"></span>
                 <span v-else-if="zaloCountdown > 0">Gửi lại ({{ zaloCountdown }}s)</span>
-                <span v-else><i class="bi bi-send-fill me-1"></i> Gửi Mã Xác Thực</span>
+                <span v-else><i class="bi bi-send-fill me-1"></i> Gửi Mã OTP</span>
               </button>
             </div>
             <small class="text-muted mt-1 d-block">
-              Hệ thống sẽ gửi tin nhắn kèm mã xác thực 6 số đến Zalo của số điện thoại này.
+              Hệ thống sẽ gửi tin nhắn chứa mã OTP 6 số đến Zalo của số điện thoại này.
             </small>
           </div>
 
-          <!-- Nhập mã OTP 6 số -->
-          <div class="form-group mb-4">
+          <!-- Ô nhập mã OTP 6 số -->
+          <div class="form-group mb-2">
             <div class="d-flex justify-content-between align-items-center mb-1">
               <label class="form-label font-bold mb-0">Mã xác thực 6 số (Gửi qua Zalo)</label>
               <button
@@ -1425,48 +1406,30 @@ onMounted(() => {
                 <i class="bi bi-lightning-charge-fill text-warning"></i> Điền nhanh mã {{ simulatedZaloNotification.otp }}
               </button>
             </div>
-            <div class="zalo-otp-field-wrap">
-              <input
-                v-model="zaloOtpInput"
-                type="text"
-                class="form-input font-mono zalo-otp-input-box"
-                placeholder="• • • • • •"
-                maxlength="6"
-              />
-            </div>
-            <div class="zalo-otp-hint">
-              <i class="bi bi-shield-lock-fill me-1 text-primary"></i>
-              Mã xác thực gồm 6 chữ số có hiệu lực trong 5 phút. Sau khi nhập mã thành công, số điện thoại sẽ được thêm vào tài khoản để bạn đăng nhập trực tiếp vào ZoneMart.
-            </div>
-          </div>
-
-          <!-- Lợi ích bảo mật -->
-          <div class="zalo-security-benefits">
-            <div class="benefit-item">
-              <i class="bi bi-check-circle-fill text-success"></i>
-              <span>Đăng nhập siêu tốc bằng Số điện thoại + Mật khẩu hiện tại (không cần Gmail)</span>
-            </div>
-            <div class="benefit-item">
-              <i class="bi bi-check-circle-fill text-success"></i>
-              <span>Nhận thông báo đơn hàng hỏa tốc 10km và trạng thái giao hàng</span>
-            </div>
-            <div class="benefit-item">
-              <i class="bi bi-check-circle-fill text-success"></i>
-              <span>Khôi phục tài khoản an toàn 2 lớp khi quên mật khẩu</span>
-            </div>
+            <input
+              v-model="zaloOtpInput"
+              type="text"
+              class="form-input font-mono text-center otp-input-large"
+              placeholder="• • • • • •"
+              maxlength="6"
+            />
+            <small class="text-muted mt-1 d-block">
+              <i class="bi bi-shield-check text-success me-1"></i>
+              Mã có hiệu lực trong 5 phút. Sau khi xác nhận, bạn có thể dùng SĐT này đăng nhập trực tiếp.
+            </small>
           </div>
         </div>
 
         <div class="modal-footer">
-          <button class="btn-cancel" @click="isZaloModalOpen = false">Hủy</button>
+          <button class="btn-cancel" @click="isZaloModalOpen = false">Hủy Bỏ</button>
           <button
-            class="btn-confirm-zalo"
+            class="btn-confirm"
             :disabled="isVerifyingZaloOtp || !zaloOtpInput || zaloOtpInput.length < 6"
             @click="handleVerifyZaloOtp"
           >
             <span v-if="isVerifyingZaloOtp" class="spinner-small me-2"></span>
             <i v-else class="bi bi-check2-circle me-2"></i>
-            Xác Nhận & Thêm Số Điện Thoại
+            Xác Nhận & Thêm SĐT
           </button>
         </div>
       </div>
@@ -2620,12 +2583,15 @@ onMounted(() => {
 .modal-card {
   background: #ffffff;
   border-radius: 20px;
-  max-width: 520px;
+  max-width: 500px;
   width: 100%;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   overflow: hidden;
   border: 1px solid #e2e8f0;
   animation: modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes modalFadeIn {
@@ -2670,6 +2636,7 @@ onMounted(() => {
 
 .modal-body {
   padding: 24px;
+  overflow-y: auto;
 }
 
 .modal-desc {
@@ -3235,5 +3202,63 @@ onMounted(() => {
   opacity: 0.5;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.phone-input-action-row {
+  display: flex;
+  gap: 8px;
+}
+
+.phone-prefix-tag {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: #f8fafc;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.btn-send-otp-action {
+  background: #ea580c;
+  color: #ffffff;
+  border: none;
+  padding: 0 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-send-otp-action:hover:not(:disabled) {
+  background: #c2410c;
+}
+
+.btn-send-otp-action:disabled {
+  background: #cbd5e1;
+  cursor: not-allowed;
+}
+
+.otp-input-large {
+  font-size: 26px !important;
+  font-weight: 900 !important;
+  letter-spacing: 12px !important;
+  color: #ea580c !important;
+  background: #fffaf5 !important;
+  border: 2px solid #fed7aa !important;
+  padding: 10px !important;
+}
+
+.otp-input-large:focus {
+  border-color: #ea580c !important;
+  box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.12) !important;
 }
 </style>
