@@ -39,20 +39,44 @@ const togglePassword = () => {
   showPassword.value = !showPassword.value;
 };
 
-// Đăng nhập nhanh 1 chạm theo vai trò mẫu (thuận tiện cho test giao diện)
+// Đăng nhập nhanh kiểm thử các vai trò
+const fillDemoAccount = (role: 'seller' | 'buyer' | 'shipper' | 'admin') => {
+  if (role === 'seller') {
+    form.account = 'seller@zonemart.vn';
+    form.password = '123456';
+  } else if (role === 'shipper') {
+    form.account = 'shipper@zonemart.vn';
+    form.password = '123456';
+  } else if (role === 'admin') {
+    form.account = 'admin@zonemart.vn';
+    form.password = '123456';
+  } else {
+    form.account = 'buyer@zonemart.vn';
+    form.password = '123456';
+  }
+};
+
+// Đăng nhập nhanh vai trò
 const quickLogin = (role: 'buyer' | 'seller' | 'shipper' | 'admin') => {
-  const demo = DEMO_USERS[role];
-  auth.login(demo);
-  successMessage.value = `Đăng nhập thành công với vai trò ${auth.roleLabel.value} (${demo.fullName})!`;
+  const user = DEMO_USERS[role];
+  auth.login(user);
+  localStorage.setItem('isLoggedIn', 'true');
+  localStorage.setItem('userRole', role);
+  if (user) {
+    localStorage.setItem('currentUser', JSON.stringify(user));
+  }
+  successMessage.value = `Đăng nhập nhanh vai trò ${user.role} thành công! Đang chuyển hướng...`;
   setTimeout(() => {
-    if (role === 'seller' || role === 'admin') {
+    if (role === 'seller') {
+      router.push('/seller');
+    } else if (role === 'admin') {
       router.push('/admin');
     } else if (role === 'shipper') {
       router.push('/shipper');
     } else {
       router.push('/');
     }
-  }, 600);
+  }, 500);
 };
 
 // Xử lý Đăng Nhập
@@ -99,8 +123,18 @@ const handleLogin = async () => {
           storeName: data.user?.storeName,
         });
 
+        localStorage.setItem("isLoggedIn", "true");
+        localStorage.setItem("userRole", detectedRole);
+        if (data.user) {
+          localStorage.setItem("currentUser", JSON.stringify(data.user));
+        }
+        localStorage.removeItem("sellerRegisteredEmail");
+        localStorage.removeItem("sellerRegisteredPassword");
+
         setTimeout(() => {
-          if (detectedRole === 'seller' || detectedRole === 'admin') {
+          if (detectedRole === 'seller') {
+            router.push('/seller');
+          } else if (detectedRole === 'admin') {
             router.push('/admin');
           } else if (detectedRole === 'shipper') {
             router.push('/shipper');
@@ -123,7 +157,7 @@ const handleLogin = async () => {
     } else {
       // 2. Fallback ngoại tuyến: Khi chưa bật server Backend, tự động khớp tài khoản demo hoặc tạo phiên buyer
       const acc = form.account.trim().toLowerCase();
-      let matchedRole: UserRole = 'buyer';
+      let matchedRole: 'buyer' | 'seller' | 'shipper' | 'admin' = 'buyer';
       if (acc.includes('seller') || acc.includes('mai') || acc.includes('shop'))
         matchedRole = 'seller';
       else if (
@@ -283,51 +317,7 @@ const handleLogin = async () => {
               <span v-else>ĐANG XỬ LÝ...</span>
             </button>
 
-            <!-- BỘ CHỌN ĐĂNG NHẬP NHANH 4 VAI TRÒ (TEST / DEMO GIAO DIỆN) -->
-            <div class="quick-demo-roles-box">
-              <div class="demo-roles-title">
-                <i class="bi bi-lightning-charge-fill"></i>
-                <span>Hoặc chọn nhanh vai trò để trải nghiệm:</span>
-              </div>
-              <div class="demo-roles-grid">
-                <button
-                  type="button"
-                  class="demo-role-chip buyer"
-                  @click="quickLogin('buyer')"
-                  title="Đăng nhập Khách Hàng"
-                >
-                  <span class="role-icon">👤</span>
-                  <span class="role-txt">Buyer</span>
-                </button>
-                <button
-                  type="button"
-                  class="demo-role-chip seller"
-                  @click="quickLogin('seller')"
-                  title="Đăng nhập Chủ Gian Hàng"
-                >
-                  <span class="role-icon">🌱</span>
-                  <span class="role-txt">Seller</span>
-                </button>
-                <button
-                  type="button"
-                  class="demo-role-chip shipper"
-                  @click="quickLogin('shipper')"
-                  title="Đăng nhập Tài Xế"
-                >
-                  <span class="role-icon">🛵</span>
-                  <span class="role-txt">Shipper</span>
-                </button>
-                <button
-                  type="button"
-                  class="demo-role-chip admin"
-                  @click="quickLogin('admin')"
-                  title="Đăng nhập Quản Trị Viên"
-                >
-                  <span class="role-icon">👑</span>
-                  <span class="role-txt">Admin</span>
-                </button>
-              </div>
-            </div>
+            
 
             <!-- Đường kẻ phân cách OR -->
             <div class="divider-row">
@@ -357,6 +347,8 @@ const handleLogin = async () => {
                 >
               </div>
             </div>
+
+           
           </form>
         </template>
 
@@ -861,6 +853,67 @@ label {
 }
 .link-secondary:hover {
   text-decoration: underline;
+}
+
+/* DEMO QUICK BAR */
+.demo-quick-bar {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #E2E8F0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.demo-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #64748B;
+  text-align: center;
+}
+.demo-tags-wrap {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.demo-btn {
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+}
+.demo-btn.seller {
+  color: #C2410C;
+  background: #FFF7ED;
+  border-color: #FDBA74;
+}
+.demo-btn.seller:hover {
+  background: #EA580C;
+  color: #FFFFFF;
+}
+.demo-btn.buyer {
+  color: #15803D;
+  background: #F0FDF4;
+  border-color: #86EFAC;
+}
+.demo-btn.buyer:hover {
+  background: #16A34A;
+  color: #FFFFFF;
+}
+.demo-btn.shipper {
+  color: #1D4ED8;
+  background: #EFF6FF;
+  border-color: #93C5FD;
+}
+.demo-btn.shipper:hover {
+  background: #2563EB;
+  color: #FFFFFF;
 }
 
 /* MODAL THÔNG BÁO ĐÈ MÀN HÌNH VỚI BÓNG MỜ MỜ (CENTRED OVERLAY) */

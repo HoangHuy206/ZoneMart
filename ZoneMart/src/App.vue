@@ -106,8 +106,8 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                 class="quick-link"
                 active-class="active"
               >
-                <i class="bi bi-geo-alt menu-mini-icon"></i>
-                <span>Bản Đồ 10km</span>
+                <i class="bi bi-headset menu-mini-icon"></i>
+                <span>Liên Hệ</span>
               </router-link>
             </template>
 
@@ -150,7 +150,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             <!-- 3. Seller Links (Chủ gian hàng) -->
             <template v-else-if="auth.currentRole.value === 'seller'">
               <router-link
-                to="/admin"
+                to="/seller"
                 class="quick-link highlight-pill seller-pill"
                 active-class="active"
               >
@@ -252,17 +252,93 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
           <!-- C. Khi đã đăng nhập: Action Buttons & User Menu -->
           <div v-else class="logged-in-actions">
-            <!-- Icon Giỏ hàng (Buyer & Seller) -->
-            <router-link
-              v-if="
-                auth.currentRole.value === 'buyer' ||
-                auth.currentRole.value === 'seller'
-              "
-              to="/cart"
-              class="icon-btn cart-btn"
-              title="Giỏ hàng của bạn"
-              aria-label="Xem giỏ hàng"
-            >
+            <!-- Icon Tài khoản với Menu Dropdown -->
+            <div class="user-menu-wrapper" @click.stop>
+              <button
+                class="icon-btn user-btn"
+                title="Tài khoản của bạn"
+                aria-label="Tài khoản của bạn"
+                @click="toggleUserDropdown"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="22"
+                  height="22"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+              </button>
+
+              <div v-if="isUserDropdownOpen" class="user-dropdown">
+                <div class="dropdown-header">
+                  <strong>Tài Khoản ZoneMart</strong>
+                </div>
+                <router-link
+                  to="/profile"
+                  class="dropdown-item"
+                  @click="closeDropdowns"
+                >
+                  <i class="bi bi-person-circle menu-icon" aria-hidden="true"></i>
+                  <span>Hồ Sơ & Ví Tiền</span>
+                </router-link>
+                <router-link
+                  to="/buyer-orders"
+                  class="dropdown-item"
+                  @click="closeDropdowns"
+                >
+                  <i class="bi bi-bag-check menu-icon" aria-hidden="true"></i>
+                  <span>Đơn Mua Của Bạn</span>
+                </router-link>
+                <router-link
+                  to="/seller"
+                  class="dropdown-item"
+                  @click="closeDropdowns"
+                >
+                  <i class="bi bi-shop menu-icon" aria-hidden="true"></i>
+                  <span>Kênh Quản Lý Bán Hàng</span>
+                </router-link>
+                <div class="dropdown-divider"></div>
+                <router-link
+                  to="/shipper"
+                  class="dropdown-item"
+                  @click="closeDropdowns"
+                >
+                  <i class="bi bi-bicycle menu-icon" aria-hidden="true"></i>
+                  <span>Cổng Shipper</span>
+                </router-link>
+                <router-link
+                  to="/admin"
+                  class="dropdown-item"
+                  @click="closeDropdowns"
+                >
+                  <i class="bi bi-shield-check menu-icon" aria-hidden="true"></i>
+                  <span>Bảng Điều Khiển Admin</span>
+                </router-link>
+                <router-link
+                  to="/contact"
+                  class="dropdown-item"
+                  @click="closeDropdowns"
+                >
+                  <i class="bi bi-headset menu-icon" aria-hidden="true"></i>
+                  <span>Liên Hệ Hỗ Trợ</span>
+                </router-link>
+                <div class="dropdown-divider"></div>
+                <button class="dropdown-item logout-btn" @click="handleLogout">
+                  <i class="bi bi-box-arrow-right menu-icon" aria-hidden="true"></i>
+                  <span>Đăng Xuất</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Icon Giỏ hàng kèm huy hiệu số lượng -->
+            <router-link to="/cart" class="icon-btn cart-btn" title="Giỏ hàng" aria-label="Xem giỏ hàng">
               <svg
                 viewBox="0 0 24 24"
                 width="20"
@@ -598,8 +674,8 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             class="mobile-link"
             @click="closeDropdowns"
           >
-            <i class="bi bi-geo-alt-fill menu-icon" aria-hidden="true"></i>
-            <span>Bản Đồ 10km</span>
+            <i class="bi bi-headset menu-icon" aria-hidden="true"></i>
+            <span>Liên Hệ</span>
           </router-link>
           <div class="mobile-divider"></div>
           <div class="mobile-auth-grid">
@@ -667,7 +743,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
           <!-- Seller Mobile -->
           <template v-else-if="auth.currentRole.value === 'seller'">
             <router-link
-              to="/admin"
+              to="/seller"
               class="mobile-link highlight-mobile-link"
               @click="closeDropdowns"
             >
@@ -745,8 +821,36 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             class="mobile-link"
             @click="closeDropdowns"
           >
-            <i class="bi bi-headset menu-icon"></i>
-            <span>Hỗ Trợ</span>
+            <i class="bi bi-bag-check menu-icon" aria-hidden="true"></i>
+            <span>Đơn Mua</span>
+          </router-link>
+          <router-link
+            to="/profile"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
+            <i class="bi bi-person-circle menu-icon" aria-hidden="true"></i>
+            <span>Hồ Sơ & Ví</span>
+          </router-link>
+          <router-link
+            to="/seller"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
+            <i class="bi bi-shop menu-icon" aria-hidden="true"></i>
+            <span>Kênh Bán Hàng</span>
+          </router-link>
+          <router-link
+            to="/shipper"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
+            <i class="bi bi-bicycle menu-icon" aria-hidden="true"></i>
+            <span>Cổng Shipper</span>
+          </router-link>
+          <router-link to="/admin" class="mobile-link" @click="closeDropdowns">
+            <i class="bi bi-shield-check menu-icon" aria-hidden="true"></i>
+            <span>Admin</span>
           </router-link>
 
           <!-- Mobile Role Switcher -->
@@ -967,21 +1071,27 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 body {
   margin: 0;
   padding: 0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Plus Jakarta Sans', 'Segoe UI', Roboto,
-    sans-serif;
+  font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: #faf7f2;
   color: #2b1b14;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .app-wrapper {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .main-content {
   flex-grow: 1;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 /* ==========================================================

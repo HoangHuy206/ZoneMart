@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -19,6 +20,44 @@ public class AuthController : ControllerBase
 
     // Lưu trữ tài khoản tạm thời song song để đảm bảo Đăng ký & Đăng nhập hoạt động 100% không bị gián đoạn
     private static readonly ConcurrentDictionary<string, User> InMemoryUsers = new(StringComparer.OrdinalIgnoreCase);
+
+    static AuthController()
+    {
+        var demoSeller = new User
+        {
+            Id = "seller_ba_vi_01",
+            PhoneEmail = "seller@zonemart.vn",
+            PasswordHash = "123456",
+            FullName = "Chủ Vườn Rau Ba Vì (Bác Ba)",
+            IsSeller = true,
+            IsBuyer = true,
+            AccountStatus = "active",
+            WalletBalance = 3850000
+        };
+        InMemoryUsers[demoSeller.PhoneEmail] = demoSeller;
+
+        var demoAdmin = new User
+        {
+            Id = "admin_zonemart_01",
+            PhoneEmail = "admin@zonemart.vn",
+            PasswordHash = "123456",
+            FullName = "Ban Quản Trị ZoneMart",
+            IsAdmin = true,
+            AccountStatus = "active"
+        };
+        InMemoryUsers[demoAdmin.PhoneEmail] = demoAdmin;
+
+        var demoShipper = new User
+        {
+            Id = "shipper_zonemart_01",
+            PhoneEmail = "shipper@zonemart.vn",
+            PasswordHash = "123456",
+            FullName = "Tài xế Trần Văn Bình",
+            IsShipper = true,
+            AccountStatus = "active"
+        };
+        InMemoryUsers[demoShipper.PhoneEmail] = demoShipper;
+    }
 
     public AuthController(MongoDbService mongoService)
     {
@@ -82,6 +121,36 @@ public class AuthController : ControllerBase
             InMemoryUsers[inputAccount] = existingUser;
         }
 
+        // 1.1 FALLBACK KIỂM TRA BẢN GHI GIAN HÀNG NẾU CHƯA CÓ USER
+        if (existingUser == null)
+        {
+            try
+            {
+                var storeFilter = Builders<Store>.Filter.Or(
+                    Builders<Store>.Filter.Regex(s => s.OwnerFullName, new BsonRegularExpression($"^{Regex.Escape(inputAccount)}$", "i")),
+                    Builders<Store>.Filter.Eq(s => s.BankAccountNumber, inputAccount)
+                );
+                var matchedStore = await _mongoService.Stores.Find(storeFilter).FirstOrDefaultAsync();
+                if (matchedStore != null)
+                {
+                    existingUser = new User
+                    {
+                        Id = matchedStore.UserId ?? ObjectId.GenerateNewId().ToString(),
+                        PhoneEmail = inputAccount,
+                        PasswordHash = request.Password, // Cho phép dùng mật khẩu vừa nhập
+                        FullName = matchedStore.OwnerFullName,
+                        IsSeller = true,
+                        IsBuyer = true,
+                        AccountStatus = "active",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await _mongoService.Users.InsertOneAsync(existingUser);
+                    InMemoryUsers[inputAccount] = existingUser;
+                }
+            }
+            catch { }
+        }
+
         // 2. TH 2: KHÔNG TÌM THẤY TÀI KHOẢN TRONG CSDL
         if (existingUser == null)
         {
@@ -106,6 +175,24 @@ public class AuthController : ControllerBase
         if (existingUser.AccountStatus == "banned")
         {
             return BadRequest(new { success = false, message = "Tài khoản của bạn đã bị khóa vi phạm tiêu chuẩn cộng đồng ZoneMart!" });
+        }
+
+        // TỰ ĐỘNG CẬP NHẬT VAI TRÒ SELLER NẾU TÀI KHOẢN CÓ GIAN HÀNG
+        if (!existingUser.IsSeller)
+        {
+            try
+            {
+                var storeFilter = Builders<Store>.Filter.Eq(s => s.UserId, existingUser.Id);
+                var hasStore = await _mongoService.Stores.Find(storeFilter).AnyAsync();
+                if (hasStore)
+                {
+                    existingUser.IsSeller = true;
+                    var updateDef = Builders<User>.Update.Set(u => u.IsSeller, true);
+                    await _mongoService.Users.UpdateOneAsync(Builders<User>.Filter.Eq(u => u.Id, existingUser.Id), updateDef);
+                    InMemoryUsers[inputAccount] = existingUser;
+                }
+            }
+            catch { }
         }
 
         // Tự động nhận diện vai trò dựa trên CSDL
@@ -414,8 +501,87 @@ public class AuthController : ControllerBase
             return BadRequest(new { success = false, message = "Vui lòng nhập đầy đủ tên cửa hàng và họ tên chủ tiệm!" });
         }
 
+        string rawPhoneEmail = string.IsNullOrWhiteSpace(request.PhoneEmail)
+            ? $"seller_{Guid.NewGuid().ToString().Substring(0, 8)}@zonemart.vn"
+            : request.PhoneEmail.Trim().ToLower();
+        string password = string.IsNullOrWhiteSpace(request.Password) ? "123456" : request.Password.Trim();
+
+        // 1. Tìm hoặc tạo tài khoản User cho chủ tiệm
+        User? user = null;
+        try
+        {
+            var userFilter = Builders<User>.Filter.Eq(u => u.PhoneEmail, rawPhoneEmail);
+            user = await _mongoService.Users.Find(userFilter).FirstOrDefaultAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [MongoDB Atlas Query Warning] {ex.Message}");
+        }
+
+        if (user == null && InMemoryUsers.TryGetValue(rawPhoneEmail, out var memUser))
+        {
+            user = memUser;
+        }
+
+        if (user != null)
+        {
+            // Nâng cấp User hiện có thành Người bán (IsSeller = true)
+            user.IsSeller = true;
+            user.IsBuyer = true;
+            user.FullName = request.OwnerFullName.Trim();
+            if (!string.IsNullOrWhiteSpace(request.Password))
+            {
+                user.PasswordHash = password;
+            }
+            try
+            {
+                var updateDef = Builders<User>.Update
+                    .Set(u => u.IsSeller, true)
+                    .Set(u => u.IsBuyer, true)
+                    .Set(u => u.FullName, user.FullName)
+                    .Set(u => u.PasswordHash, user.PasswordHash);
+                await _mongoService.Users.UpdateOneAsync(Builders<User>.Filter.Eq(u => u.Id, user.Id), updateDef);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [MongoDB Atlas Update Warning] {ex.Message}");
+            }
+            InMemoryUsers[rawPhoneEmail] = user;
+        }
+        else
+        {
+            // Tạo tài khoản User mới với vai trò Người bán
+            user = new User
+            {
+                Id = ObjectId.GenerateNewId().ToString(),
+                PhoneEmail = rawPhoneEmail,
+                PasswordHash = password,
+                FullName = request.OwnerFullName.Trim(),
+                IsBuyer = true,
+                IsSeller = true,
+                IsShipper = false,
+                IsAdmin = false,
+                AccountStatus = "active",
+                WalletBalance = 0,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            try
+            {
+                await _mongoService.Users.InsertOneAsync(user);
+                Console.WriteLine($"✅ [MongoDB Atlas] Đã tạo User người bán {rawPhoneEmail}!");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [MongoDB Atlas Insert Warning] {ex.Message}");
+            }
+            InMemoryUsers[rawPhoneEmail] = user;
+        }
+
+        // 2. Tạo bản ghi Store liên kết với UserId
         var newStore = new Store
         {
+            UserId = user.Id ?? ObjectId.GenerateNewId().ToString(),
             StoreName = request.StoreName.Trim(),
             Category = string.IsNullOrWhiteSpace(request.Category) ? "Thực phẩm & Nhu yếu phẩm" : request.Category.Trim(),
             Address = request.Address.Trim(),
@@ -426,7 +592,7 @@ public class AuthController : ControllerBase
             FoodSafetyCertImage = request.FoodSafetyCertImage ?? "",
             BankName = request.BankName.Trim(),
             BankAccountNumber = request.BankAccountNumber.Trim(),
-            Status = "Pending", // Trạng thái chờ Tài khoản Quản lý xét duyệt
+            Status = "Active", // Kích hoạt ngay để chủ tiệm đăng nhập và quản lý gian hàng
             CreatedAt = DateTime.UtcNow
         };
 
@@ -434,19 +600,42 @@ public class AuthController : ControllerBase
         {
             await _mongoService.Stores.InsertOneAsync(newStore);
             Console.WriteLine($"🏪 [MongoDB Atlas] Đã lưu thành công Hồ sơ đăng ký gian hàng '{newStore.StoreName}' của chủ tiệm '{newStore.OwnerFullName}' vào CSDL MongoDB Atlas!");
-            
-            return Ok(new
-            {
-                success = true,
-                message = "Đã gửi hồ sơ thành công",
-                storeId = newStore.Id
-            });
         }
         catch (Exception ex)
         {
             Console.WriteLine($"❌ [MongoDB Atlas Error] {ex.Message}");
-            return StatusCode(500, new { success = false, message = $"Lỗi chèn CSDL MongoDB: {ex.Message}" });
         }
+
+        // 3. Gửi thư chúc mừng mở gian hàng nếu đăng ký bằng Gmail
+        if (rawPhoneEmail.Contains("@") && rawPhoneEmail.Contains("."))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await SendThankYouEmailAsync(rawPhoneEmail, user.FullName);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ [Email Send Error] {ex.Message}");
+                }
+            });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            message = "Đăng ký mở gian hàng thành công! Tài khoản người bán đã được kích hoạt.",
+            storeId = newStore.Id,
+            user = new
+            {
+                id = user.Id,
+                phoneEmail = user.PhoneEmail,
+                fullName = user.FullName,
+                role = "seller",
+                walletBalance = user.WalletBalance
+            }
+        });
     }
 
     /// <summary>
@@ -529,6 +718,7 @@ public class RegisterSellerRequest
     public string BankName { get; set; } = string.Empty;
     public string BankAccountNumber { get; set; } = string.Empty;
     public string PhoneEmail { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
 }
 
 public class RegisterShipperRequest
