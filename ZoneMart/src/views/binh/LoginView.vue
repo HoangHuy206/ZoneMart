@@ -39,22 +39,6 @@ const togglePassword = () => {
   showPassword.value = !showPassword.value;
 };
 
-// Đăng nhập nhanh kiểm thử các vai trò
-const fillDemoAccount = (role: 'seller' | 'buyer' | 'shipper' | 'admin') => {
-  if (role === 'seller') {
-    form.account = 'seller@zonemart.vn';
-    form.password = '123456';
-  } else if (role === 'shipper') {
-    form.account = 'shipper@zonemart.vn';
-    form.password = '123456';
-  } else if (role === 'admin') {
-    form.account = 'admin@zonemart.vn';
-    form.password = '123456';
-  } else {
-    form.account = 'buyer@zonemart.vn';
-    form.password = '123456';
-  }
-};
 
 // Đăng nhập nhanh vai trò
 const quickLogin = (role: 'buyer' | 'seller' | 'shipper' | 'admin') => {
