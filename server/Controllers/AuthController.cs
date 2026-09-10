@@ -18,8 +18,10 @@ public class AuthController : ControllerBase
 {
     private readonly MongoDbService _mongoService;
 
-    // Lưu trữ tài khoản tạm thời song song để đảm bảo Đăng ký & Đăng nhập hoạt động 100% không bị gián đoạn
-    private static readonly ConcurrentDictionary<string, User> InMemoryUsers = new(StringComparer.OrdinalIgnoreCase);
+    // Lưu trữ tài khoản và gian hàng tạm thời song song để đảm bảo Đăng ký & Đăng nhập hoạt động 100% không bị gián đoạn
+    public static readonly ConcurrentDictionary<string, User> InMemoryUsers = new(StringComparer.OrdinalIgnoreCase);
+    public static readonly ConcurrentDictionary<string, Store> InMemoryStores = new();
+    public static readonly ConcurrentDictionary<string, Shipper> InMemoryShippers = new();
 
     static AuthController()
     {
@@ -35,6 +37,19 @@ public class AuthController : ControllerBase
             WalletBalance = 3850000
         };
         InMemoryUsers[demoSeller.PhoneEmail] = demoSeller;
+
+        var demoStore = new Store
+        {
+            Id = "store_ba_vi_01",
+            UserId = demoSeller.Id,
+            StoreName = "Vườn Rau Ba Vì - Nông Sản Sạch VietGAP",
+            Category = "Thực phẩm & Nhu yếu phẩm",
+            Address = "Số 48 đường Cầu Giấy, Quan Hoa, Cầu Giấy, Hà Nội",
+            OwnerFullName = demoSeller.FullName,
+            Status = "Active",
+            CreatedAt = DateTime.UtcNow
+        };
+        InMemoryStores[demoStore.Id] = demoStore;
 
         var demoAdmin = new User
         {
@@ -177,22 +192,53 @@ public class AuthController : ControllerBase
             return BadRequest(new { success = false, message = "Tài khoản của bạn đã bị khóa vi phạm tiêu chuẩn cộng đồng ZoneMart!" });
         }
 
-        // TỰ ĐỘNG CẬP NHẬT VAI TRÒ SELLER NẾU TÀI KHOẢN CÓ GIAN HÀNG
-        if (!existingUser.IsSeller)
+        // TỰ ĐỘNG CẬP NHẬT VAI TRÒ SELLER CHỈ KHI GIAN HÀNG ĐÃ ĐƯỢC ADMIN DUYỆT (Active)
+        Store? userStore = null;
+        try
         {
-            try
+            var storeFilter = Builders<Store>.Filter.Eq(s => s.UserId, existingUser.Id);
+            userStore = await _mongoService.Stores.Find(storeFilter).FirstOrDefaultAsync();
+        }
+        catch { }
+
+        if (userStore == null)
+        {
+            userStore = InMemoryStores.Values.FirstOrDefault(s => s.UserId == existingUser.Id || (s.OwnerFullName.Equals(existingUser.FullName, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(existingUser.FullName)));
+        }
+
+        string sellerStatus = "None";
+        string storeName = "";
+        string? rejectReason = null;
+
+        if (userStore != null)
+        {
+            sellerStatus = userStore.Status; // "Pending", "Active", "Rejected"
+            storeName = userStore.StoreName;
+            rejectReason = userStore.RejectReason;
+
+            if (userStore.Status == "Active")
             {
-                var storeFilter = Builders<Store>.Filter.Eq(s => s.UserId, existingUser.Id);
-                var hasStore = await _mongoService.Stores.Find(storeFilter).AnyAsync();
-                if (hasStore)
+                existingUser.IsSeller = true;
+                try
                 {
-                    existingUser.IsSeller = true;
                     var updateDef = Builders<User>.Update.Set(u => u.IsSeller, true);
                     await _mongoService.Users.UpdateOneAsync(Builders<User>.Filter.Eq(u => u.Id, existingUser.Id), updateDef);
                     InMemoryUsers[inputAccount] = existingUser;
                 }
+                catch { }
             }
-            catch { }
+            else
+            {
+                // Nếu chưa Active (Pending hoặc Rejected), không cấp quyền Seller
+                existingUser.IsSeller = false;
+                try
+                {
+                    var updateDef = Builders<User>.Update.Set(u => u.IsSeller, false);
+                    await _mongoService.Users.UpdateOneAsync(Builders<User>.Filter.Eq(u => u.Id, existingUser.Id), updateDef);
+                    InMemoryUsers[inputAccount] = existingUser;
+                }
+                catch { }
+            }
         }
 
         // Tự động nhận diện vai trò dựa trên CSDL
@@ -210,10 +256,20 @@ public class AuthController : ControllerBase
             determinedRole = "shipper";
         }
 
+        string loginMessage = $"Đăng nhập thành công với vai trò {GetRoleDisplayName(determinedRole)}!";
+        if (determinedRole == "buyer" && sellerStatus == "Pending")
+        {
+            loginMessage = $"Đăng nhập thành công! Hồ sơ mở gian hàng '{storeName}' của bạn đang chờ Ban Quản Lý phê duyệt.";
+        }
+        else if (determinedRole == "buyer" && sellerStatus == "Rejected")
+        {
+            loginMessage = $"Đăng nhập thành công! Hồ sơ gian hàng '{storeName}' của bạn đã bị từ chối: {rejectReason ?? "Không đạt tiêu chuẩn"}.";
+        }
+
         return Ok(new
         {
             success = true,
-            message = $"Đăng nhập thành công với vai trò {GetRoleDisplayName(determinedRole)}!",
+            message = loginMessage,
             user = new
             {
                 id = existingUser.Id,
@@ -221,7 +277,10 @@ public class AuthController : ControllerBase
                 fullName = existingUser.FullName,
                 avatarUrl = existingUser.AvatarUrl,
                 role = determinedRole,
-                walletBalance = existingUser.WalletBalance
+                walletBalance = existingUser.WalletBalance,
+                storeName = storeName,
+                sellerStatus = sellerStatus,
+                rejectReason = rejectReason
             }
         });
     }
@@ -525,8 +584,7 @@ public class AuthController : ControllerBase
 
         if (user != null)
         {
-            // Nâng cấp User hiện có thành Người bán (IsSeller = true)
-            user.IsSeller = true;
+            // Cập nhật thông tin User nhưng CHƯA cấp IsSeller vì chờ Admin duyệt Store
             user.IsBuyer = true;
             user.FullName = request.OwnerFullName.Trim();
             if (!string.IsNullOrWhiteSpace(request.Password))
@@ -536,7 +594,6 @@ public class AuthController : ControllerBase
             try
             {
                 var updateDef = Builders<User>.Update
-                    .Set(u => u.IsSeller, true)
                     .Set(u => u.IsBuyer, true)
                     .Set(u => u.FullName, user.FullName)
                     .Set(u => u.PasswordHash, user.PasswordHash);
@@ -550,7 +607,7 @@ public class AuthController : ControllerBase
         }
         else
         {
-            // Tạo tài khoản User mới với vai trò Người bán
+            // Tạo tài khoản User mới (chờ duyệt quyền người bán)
             user = new User
             {
                 Id = ObjectId.GenerateNewId().ToString(),
@@ -558,7 +615,7 @@ public class AuthController : ControllerBase
                 PasswordHash = password,
                 FullName = request.OwnerFullName.Trim(),
                 IsBuyer = true,
-                IsSeller = true,
+                IsSeller = false, // Chờ duyệt mới thành true
                 IsShipper = false,
                 IsAdmin = false,
                 AccountStatus = "active",
@@ -569,7 +626,7 @@ public class AuthController : ControllerBase
             try
             {
                 await _mongoService.Users.InsertOneAsync(user);
-                Console.WriteLine($"✅ [MongoDB Atlas] Đã tạo User người bán {rawPhoneEmail}!");
+                Console.WriteLine($"✅ [MongoDB Atlas] Đã tạo User người bán {rawPhoneEmail} (Trạng thái chờ duyệt gian hàng)!");
             }
             catch (Exception ex)
             {
@@ -578,9 +635,10 @@ public class AuthController : ControllerBase
             InMemoryUsers[rawPhoneEmail] = user;
         }
 
-        // 2. Tạo bản ghi Store liên kết với UserId
+        // 2. Tạo bản ghi Store liên kết với UserId, trạng thái PENDING chờ Admin duyệt
         var newStore = new Store
         {
+            Id = ObjectId.GenerateNewId().ToString(),
             UserId = user.Id ?? ObjectId.GenerateNewId().ToString(),
             StoreName = request.StoreName.Trim(),
             Category = string.IsNullOrWhiteSpace(request.Category) ? "Thực phẩm & Nhu yếu phẩm" : request.Category.Trim(),
@@ -592,21 +650,23 @@ public class AuthController : ControllerBase
             FoodSafetyCertImage = request.FoodSafetyCertImage ?? "",
             BankName = request.BankName.Trim(),
             BankAccountNumber = request.BankAccountNumber.Trim(),
-            Status = "Active", // Kích hoạt ngay để chủ tiệm đăng nhập và quản lý gian hàng
+            Status = "Pending", // BẮT BUỘC PENDING để Quản trị viên xét duyệt
             CreatedAt = DateTime.UtcNow
         };
 
         try
         {
             await _mongoService.Stores.InsertOneAsync(newStore);
-            Console.WriteLine($"🏪 [MongoDB Atlas] Đã lưu thành công Hồ sơ đăng ký gian hàng '{newStore.StoreName}' của chủ tiệm '{newStore.OwnerFullName}' vào CSDL MongoDB Atlas!");
+            Console.WriteLine($"🏪 [MongoDB Atlas] Đã lưu Hồ sơ mở gian hàng '{newStore.StoreName}' (Chờ duyệt) vào CSDL MongoDB Atlas!");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"❌ [MongoDB Atlas Error] {ex.Message}");
         }
 
-        // 3. Gửi thư chúc mừng mở gian hàng nếu đăng ký bằng Gmail
+        InMemoryStores[newStore.Id] = newStore;
+
+        // 3. Gửi thư tiếp nhận hồ sơ nếu đăng ký bằng Gmail
         if (rawPhoneEmail.Contains("@") && rawPhoneEmail.Contains("."))
         {
             _ = Task.Run(async () =>
@@ -625,14 +685,16 @@ public class AuthController : ControllerBase
         return Ok(new
         {
             success = true,
-            message = "Đăng ký mở gian hàng thành công! Tài khoản người bán đã được kích hoạt.",
+            message = "Đăng ký mở gian hàng thành công! Hồ sơ của bạn đã được chuyển đến Ban Quản Lý để xét duyệt.",
             storeId = newStore.Id,
+            status = "Pending",
             user = new
             {
                 id = user.Id,
                 phoneEmail = user.PhoneEmail,
                 fullName = user.FullName,
-                role = "seller",
+                role = user.IsSeller ? "seller" : "buyer",
+                sellerStatus = "Pending",
                 walletBalance = user.WalletBalance
             }
         });
@@ -651,6 +713,7 @@ public class AuthController : ControllerBase
 
         var newShipper = new Shipper
         {
+            Id = ObjectId.GenerateNewId().ToString(),
             FullName = request.FullName.Trim(),
             PhoneNumber = request.PhoneNumber?.Trim() ?? "",
             AvatarUrl = request.AvatarUrl ?? "",
@@ -676,6 +739,7 @@ public class AuthController : ControllerBase
         {
             await _mongoService.Shippers.InsertOneAsync(newShipper);
             Console.WriteLine($"🛵 [MongoDB Atlas] Đã lưu thành công Hồ sơ tài xế Shipper '{newShipper.FullName}' (Biển số: {newShipper.LicensePlate}) vào CSDL MongoDB Atlas!");
+            InMemoryShippers[newShipper.Id] = newShipper;
 
             return Ok(new
             {
@@ -687,7 +751,13 @@ public class AuthController : ControllerBase
         catch (Exception ex)
         {
             Console.WriteLine($"❌ [MongoDB Atlas Error] {ex.Message}");
-            return StatusCode(500, new { success = false, message = $"Lỗi chèn CSDL MongoDB: {ex.Message}" });
+            InMemoryShippers[newShipper.Id] = newShipper;
+            return Ok(new
+            {
+                success = true,
+                message = "Đã gửi hồ sơ thành công (Lưu bộ nhớ tạm)",
+                shipperId = newShipper.Id
+            });
         }
     }
 }

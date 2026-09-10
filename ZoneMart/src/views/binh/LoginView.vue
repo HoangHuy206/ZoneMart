@@ -39,23 +39,6 @@ const togglePassword = () => {
   showPassword.value = !showPassword.value;
 };
 
-// Đăng nhập nhanh kiểm thử các vai trò
-const fillDemoAccount = (role: 'seller' | 'buyer' | 'shipper' | 'admin') => {
-  if (role === 'seller') {
-    form.account = 'seller@zonemart.vn';
-    form.password = '123456';
-  } else if (role === 'shipper') {
-    form.account = 'shipper@zonemart.vn';
-    form.password = '123456';
-  } else if (role === 'admin') {
-    form.account = 'admin@zonemart.vn';
-    form.password = '123456';
-  } else {
-    form.account = 'buyer@zonemart.vn';
-    form.password = '123456';
-  }
-};
-
 // Đăng nhập nhanh vai trò
 const quickLogin = (role: 'buyer' | 'seller' | 'shipper' | 'admin') => {
   const user = DEMO_USERS[role];
@@ -108,8 +91,14 @@ const handleLogin = async () => {
     if (res) {
       const data = await res.json();
       if (res.ok && data.success) {
-        successMessage.value =
-          data.message || 'Đăng nhập thành công! Đang chuyển hướng...';
+        if (data.user?.sellerStatus === 'Pending') {
+          successMessage.value = data.message || `Hồ sơ mở gian hàng '${data.user.storeName || ''}' đang chờ Ban Quản Lý phê duyệt! Bạn có thể tiếp tục mua sắm...`;
+        } else if (data.user?.sellerStatus === 'Rejected') {
+          successMessage.value = `Hồ sơ mở gian hàng của bạn đã bị từ chối: ${data.user.rejectReason || 'Không đạt yêu cầu'}. Bạn có thể tiếp tục mua sắm...`;
+        } else {
+          successMessage.value =
+            data.message || 'Đăng nhập thành công! Đang chuyển hướng...';
+        }
         const detectedRole = (data.user?.role as UserRole) || 'buyer';
 
         // Lưu thông tin người dùng vào useAuth state & localStorage
@@ -122,6 +111,20 @@ const handleLogin = async () => {
           walletBalance: data.user?.walletBalance,
           storeName: data.user?.storeName,
         });
+
+        // Ghi đè vào zonemart_user để lưu cả sellerStatus và rejectReason
+        const userWithStatus: any = {
+          id: data.user?.id || `usr_${Date.now()}`,
+          fullName: data.user?.fullName || form.account.trim(),
+          phoneEmail: data.user?.phoneEmail || form.account.trim(),
+          role: detectedRole,
+          avatarUrl: data.user?.avatarUrl,
+          walletBalance: data.user?.walletBalance,
+          storeName: data.user?.storeName,
+          sellerStatus: data.user?.sellerStatus,
+          rejectReason: data.user?.rejectReason,
+        };
+        localStorage.setItem('zonemart_user', JSON.stringify(userWithStatus));
 
         localStorage.setItem("isLoggedIn", "true");
         localStorage.setItem("userRole", detectedRole);

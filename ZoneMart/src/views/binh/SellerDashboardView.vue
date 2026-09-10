@@ -15,6 +15,11 @@
  */
 import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
+import {
+  useProductModeration,
+  type ModeratedProduct,
+  type AIScanResult
+} from "../../composables/useProductModeration";
 
 const router = useRouter();
 
@@ -40,10 +45,17 @@ const currentUser = reactive({
 });
 
 onMounted(() => {
-  const savedUser = localStorage.getItem("currentUser");
+  const savedUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
   if (savedUser) {
     try {
       const parsed = JSON.parse(savedUser);
+      if (parsed.role && parsed.role !== 'seller' && parsed.role !== 'admin') {
+        if (parsed.sellerStatus === 'Pending') {
+          alert("Hồ sơ gian hàng của bạn đang chờ Ban Quản Lý phê duyệt. Bạn sẽ được truy cập Kênh Người Bán sau khi được duyệt!");
+        }
+        router.push('/');
+        return;
+      }
       if (parsed.fullName) currentUser.name = parsed.fullName;
       if (parsed.phoneEmail) currentUser.email = parsed.phoneEmail;
       if (parsed.avatarUrl) currentUser.avatar = parsed.avatarUrl;
@@ -265,101 +277,347 @@ const topProducts = ref<TopProduct[]>([
   }
 ]);
 
-// Quản lý sản phẩm (Tab Products)
-interface SellerProduct {
-  id: string;
-  name: string;
-  category: string;
-  price: number;
-  unit: string;
-  stock: number;
-  image: string;
-  isAvailable: boolean;
-}
+// ================================================================
+// QUẢN LÝ SẢN PHẨM & AI KIỂM DUYỆT (LUỒNG 2 ZONEMART)
+// ================================================================
+const productModeration = useProductModeration();
 
-const products = ref<SellerProduct[]>([
-  {
-    id: "p-01",
-    name: "Rau muống hữu cơ Ba Vì",
-    category: "Rau củ quả",
-    price: 18000,
-    unit: "Bó 500g",
-    stock: 45,
-    image: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80",
-    isAvailable: true
-  },
-  {
-    id: "p-02",
-    name: "Cà chua bi Đà Lạt mọng nước",
-    category: "Rau củ quả",
-    price: 35000,
-    unit: "Hộp 500g",
-    stock: 28,
-    image: "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=400&q=80",
-    isAvailable: true
-  },
-  {
-    id: "p-03",
-    name: "Thịt ba chỉ heo sạch chuẩn CP",
-    category: "Thịt cá tươi",
-    price: 65000,
-    unit: "Khay 500g",
-    stock: 12,
-    image: "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=400&q=80",
-    isAvailable: true
-  },
-  {
-    id: "p-04",
-    name: "Trứng gà ta thảo mộc thiên nhiên",
-    category: "Thực phẩm bổ dưỡng",
-    price: 45000,
-    unit: "Vỉ 10 quả",
-    stock: 60,
-    image: "https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?auto=format&fit=crop&w=400&q=80",
-    isAvailable: true
-  },
-  {
-    id: "p-05",
-    name: "Cam sành Hàm Yên mọng nước",
-    category: "Trái cây tươi",
-    price: 42000,
-    unit: "Kg",
-    stock: 35,
-    image: "https://images.unsplash.com/photo-1582979512210-99b6a53386f9?auto=format&fit=crop&w=400&q=80",
-    isAvailable: true
-  }
-]);
+// Danh sách sản phẩm
+const products = computed(() => productModeration.allProducts.value);
 
-// Modal thêm sản phẩm mới
+// Trạng thái vi phạm của Seller hiện tại
+const currentSellerPenalty = computed(() =>
+  productModeration.getSellerPenalty(currentUser.email)
+);
+
+// Trạng thái AI Scanning & Modal Kết Quả
+const isScanningAI = ref(false);
+const scanStepText = ref("");
+const scanProgress = ref(0);
+const lastScanResult = ref<AIScanResult | null>(null);
+const showScanResultModal = ref(false);
+const penaltyNotice = ref<{ actionType: string; violationCount: number; message: string } | null>(null);
+
+// Modal thêm / sửa sản phẩm
 const showAddProductModal = ref(false);
+const isEditingMode = ref(false);
+const editingProductId = ref<string | null>(null);
+
+const fileInputRef = ref<HTMLInputElement | null>(null);
+const isDraggingFile = ref(false);
+const uploadedFileName = ref("");
+const uploadedFileSize = ref("");
+const customCategoryInput = ref("");
+const imageVisualTag = ref<string>("unknown");
+
 const newProductForm = reactive({
   name: "",
   category: "Rau củ quả",
-  price: 0,
+  price: 25000,
   unit: "Bó 500g",
-  stock: 20,
-  image: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80"
+  stock: 30,
+  image: ""
 });
 
-const handleSaveProduct = () => {
+const triggerFileInput = () => {
+  fileInputRef.value?.click();
+};
+
+const analyzeImagePixels = (dataUrl: string): Promise<string> => {
+  return new Promise((resolve) => {
+    if (!dataUrl) {
+      imageVisualTag.value = "unknown";
+      resolve("unknown");
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = 48;
+        canvas.height = 48;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) {
+          imageVisualTag.value = "unknown";
+          resolve("unknown");
+          return;
+        }
+        ctx.drawImage(img, 0, 0, 48, 48);
+        const imgData = ctx.getImageData(0, 0, 48, 48).data;
+        let whiteBgCount = 0;
+        let greenCount = 0;
+        let redCount = 0;
+        let darkSteelCount = 0;
+        let brassBulletCount = 0;
+        let nonBgCount = 0;
+        const pixelCount = imgData.length / 4;
+
+        for (let i = 0; i < imgData.length; i += 4) {
+          const r = imgData[i];
+          const g = imgData[i + 1];
+          const b = imgData[i + 2];
+          const a = imgData[i + 3];
+
+          // Bỏ qua pixel trong suốt hoặc nền trắng studio ảnh sản phẩm
+          if (a < 30) {
+            whiteBgCount++;
+            continue;
+          }
+
+          const maxVal = Math.max(r, g, b);
+          const minVal = Math.min(r, g, b);
+          const isStudioWhite = minVal > 210 && (maxVal - minVal) < 30;
+
+          if (isStudioWhite) {
+            whiteBgCount++;
+            continue;
+          }
+
+          nonBgCount++;
+
+          // Nhận diện đen sắt thép súng / vũ khí kim loại (r,g,b < 65, độ bão hòa thấp)
+          if (r < 65 && g < 65 && b < 65 && (maxVal - minVal < 25)) {
+            darkSteelCount++;
+          }
+          // Nhận diện sắc vàng đồng (vỏ đạn, đầu đạn kim loại: r > 130, g > 95, b < 75)
+          else if (r > 130 && g > 95 && b < 75 && r > b * 1.5) {
+            brassBulletCount++;
+          }
+          // Nhận diện sắc xanh rau củ tươi (rau xà lách, rau muống, cải...)
+          else if ((g > r * 1.12 && g > b * 1.05 && g > 45) || (g > 70 && g > r + 10 && g > b + 10)) {
+            greenCount++;
+          }
+          // Nhận diện sắc đỏ / hồng tươi sống (thịt, cá đỏ)
+          else if (r > g * 1.25 && r > b * 1.15 && r > 70) {
+            redCount++;
+          }
+        }
+
+        const darkSteelRatio = darkSteelCount / pixelCount;
+        const brassBulletRatio = brassBulletCount / pixelCount;
+        const greenSubjectRatio = nonBgCount > 0 ? greenCount / nonBgCount : 0;
+        const greenTotalRatio = greenCount / pixelCount;
+        const redSubjectRatio = nonBgCount > 0 ? redCount / nonBgCount : 0;
+        const redTotalRatio = redCount / pixelCount;
+
+        let tag = "neutral";
+        // Phát hiện vũ khí súng đạn: Kim loại đen thép súng kết hợp vỏ đạn hoặc nền đỏ tương phản, không có rau
+        const isWeaponPattern = (darkSteelRatio >= 0.12 && (brassBulletRatio >= 0.012 || redTotalRatio >= 0.15) && greenTotalRatio < 0.05) ||
+                                (darkSteelRatio >= 0.22 && greenTotalRatio < 0.05 && redSubjectRatio < 0.35);
+
+        if (isWeaponPattern) {
+          tag = "prohibited_weapon";
+        } else if (greenSubjectRatio >= 0.18 || greenTotalRatio >= 0.08) {
+          tag = "green_vegetables";
+        } else if (redSubjectRatio >= 0.18 || redTotalRatio >= 0.08) {
+          tag = "red_meat";
+        } else if (whiteBgCount / pixelCount > 0.60 && greenSubjectRatio < 0.10 && redSubjectRatio < 0.10) {
+          tag = "white_packaged";
+        }
+
+        imageVisualTag.value = tag;
+        resolve(tag);
+      } catch {
+        imageVisualTag.value = "unknown";
+        resolve("unknown");
+      }
+    };
+    img.onerror = () => {
+      imageVisualTag.value = "unknown";
+      resolve("unknown");
+    };
+    img.src = dataUrl;
+  });
+};
+
+const processUploadedFile = (file: File) => {
+  if (!file.type.startsWith("image/")) {
+    triggerToast("Vui lòng chọn tệp hình ảnh hợp lệ (PNG, JPG, WEBP)!");
+    return;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    triggerToast("Dung lượng tệp ảnh vượt quá 10MB!");
+    return;
+  }
+  uploadedFileName.value = file.name;
+  uploadedFileSize.value = (file.size / 1024).toFixed(1) + " KB";
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const dataUrl = (e.target?.result as string) || "";
+    newProductForm.image = dataUrl;
+    await analyzeImagePixels(dataUrl);
+  };
+  reader.readAsDataURL(file);
+};
+
+const handleFileUpload = (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+  if (file) {
+    processUploadedFile(file);
+  }
+  target.value = "";
+};
+
+const handleFileDrop = (event: DragEvent) => {
+  isDraggingFile.value = false;
+  const file = event.dataTransfer?.files?.[0];
+  if (file) {
+    processUploadedFile(file);
+  }
+};
+
+const clearUploadedImage = () => {
+  newProductForm.image = "";
+  uploadedFileName.value = "";
+  uploadedFileSize.value = "";
+  imageVisualTag.value = "unknown";
+};
+
+// Mở modal thêm sản phẩm mới
+const openCreateProduct = () => {
+  const penalty = currentSellerPenalty.value;
+  if (penalty.isBanned) {
+    triggerToast("Tài khoản của bạn đã bị XÓA VĨNH VIỄN do tái phạm > 10 lần. Không thể đăng bài!");
+    return;
+  }
+  if (penalty.isLocked) {
+    const lockDate = penalty.lockUntil ? new Date(penalty.lockUntil).toLocaleDateString("vi-VN") : "10 ngày";
+    triggerToast(`Tài khoản đang bị TẠM KHÓA đến ${lockDate} do vi phạm chính sách!`);
+    return;
+  }
+  isEditingMode.value = false;
+  editingProductId.value = null;
+  newProductForm.name = "";
+  newProductForm.category = "Rau củ quả";
+  customCategoryInput.value = "";
+  newProductForm.price = 25000;
+  newProductForm.unit = "Bó 500g";
+  newProductForm.stock = 30;
+  newProductForm.image = "";
+  uploadedFileName.value = "";
+  uploadedFileSize.value = "";
+  showAddProductModal.value = true;
+};
+
+// B6: Sửa bài bị Manager từ chối hoặc cần cập nhật -> Kích hoạt AI quét lại
+const openEditProduct = (prod: ModeratedProduct) => {
+  const penalty = currentSellerPenalty.value;
+  if (penalty.isBanned || penalty.isLocked) {
+    triggerToast("Tài khoản đang bị giới hạn, không thể sửa bài!");
+    return;
+  }
+  isEditingMode.value = true;
+  editingProductId.value = prod.id;
+  newProductForm.name = prod.name;
+  
+  const standardCategories = ["Rau củ quả", "Thịt cá tươi", "Trái cây tươi", "Thực phẩm bổ dưỡng", "Món ăn nóng"];
+  if (standardCategories.includes(prod.category)) {
+    newProductForm.category = prod.category;
+    customCategoryInput.value = "";
+  } else {
+    newProductForm.category = "Khác";
+    customCategoryInput.value = prod.category;
+  }
+
+  newProductForm.price = prod.price;
+  newProductForm.unit = prod.unit;
+  newProductForm.stock = prod.stock;
+  newProductForm.image = prod.image;
+  uploadedFileName.value = prod.name ? `${prod.name}.jpg` : "Ảnh sản phẩm hiện tại";
+  uploadedFileSize.value = "";
+  showAddProductModal.value = true;
+};
+
+
+// Xử lý lưu & kích hoạt AI Quét Bài (Luồng 2)
+const handleSaveProduct = async () => {
   if (!newProductForm.name.trim() || newProductForm.price <= 0) {
     triggerToast("Vui lòng nhập tên và giá bán hợp lệ!");
     return;
   }
-  products.value.unshift({
-    id: `p-${Date.now()}`,
-    name: newProductForm.name.trim(),
-    category: newProductForm.category,
-    price: newProductForm.price,
-    unit: newProductForm.unit,
-    stock: newProductForm.stock,
-    image: newProductForm.image,
-    isAvailable: true
-  });
+  if (newProductForm.category === "Khác" && !customCategoryInput.value.trim()) {
+    triggerToast("Vui lòng nhập tên ngành hàng khác!");
+    return;
+  }
+  if (!newProductForm.image) {
+    triggerToast("Vui lòng tải lên tệp ảnh cho sản phẩm!");
+    return;
+  }
+
+  // Đảm bảo đối soát pixel ảnh hoàn tất chính xác trước khi đưa vào AI
+  const currentVisualTag = await analyzeImagePixels(newProductForm.image);
+
+  const finalCategory = (newProductForm.category === "Khác"
+    ? customCategoryInput.value.trim()
+    : newProductForm.category);
+
   showAddProductModal.value = false;
-  newProductForm.name = "";
-  newProductForm.price = 0;
-  triggerToast("Đã thêm sản phẩm mới vào gian hàng thành công!");
+  isScanningAI.value = true;
+  scanProgress.value = 15;
+  scanStepText.value = "Đang kết nối AI Moderation Engine & quét nội dung...";
+
+  setTimeout(() => {
+    scanProgress.value = 55;
+    scanStepText.value = "Phát hiện nội dung 18+, từ khóa cấm & đối soát thị giác Ảnh - Tên...";
+  }, 600);
+
+  setTimeout(() => {
+    scanProgress.value = 90;
+    scanStepText.value = "Tổng hợp kết quả thẩm định an toàn & độ tương thích...";
+  }, 1200);
+
+  setTimeout(() => {
+    isScanningAI.value = false;
+    scanProgress.value = 100;
+
+    try {
+      if (isEditingMode.value && editingProductId.value) {
+        const res = productModeration.updateAndRescanProduct(editingProductId.value, {
+          name: newProductForm.name.trim(),
+          category: finalCategory,
+          price: newProductForm.price,
+          unit: newProductForm.unit,
+          stock: newProductForm.stock,
+          image: newProductForm.image,
+          imageFileName: uploadedFileName.value || undefined,
+          imageVisualTag: currentVisualTag || imageVisualTag.value
+        });
+        lastScanResult.value = res.scanResult;
+        penaltyNotice.value = res.penaltyResult || null;
+      } else {
+        const res = productModeration.submitNewProduct(currentUser.email, storeInfo.name, {
+          name: newProductForm.name.trim(),
+          category: finalCategory,
+          price: newProductForm.price,
+          unit: newProductForm.unit,
+          stock: newProductForm.stock,
+          image: newProductForm.image,
+          imageFileName: uploadedFileName.value || undefined,
+          imageVisualTag: currentVisualTag || imageVisualTag.value
+        });
+        lastScanResult.value = res.scanResult;
+        penaltyNotice.value = res.penaltyResult || null;
+      }
+      showScanResultModal.value = true;
+    } catch (err: any) {
+      triggerToast(err.message || "Lỗi xử lý kiểm duyệt AI!");
+    }
+  }, 1700);
+};
+
+// Reset vi phạm demo
+const handleResetViolationsDemo = () => {
+  productModeration.resetSellerPenalties(currentUser.email);
+  triggerToast("Đã reset vi phạm về 0 và mở khóa tài khoản demo thành công!");
+};
+
+// Bật/tắt trạng thái bán
+const handleToggleAvailable = (prod: ModeratedProduct) => {
+  prod.isAvailable = !prod.isAvailable;
+  productModeration.saveProducts();
+  triggerToast(prod.isAvailable ? `Đã mở bán sản phẩm "${prod.name}"` : `Đã tạm ngưng bán "${prod.name}"`);
 };
 
 // Xử lý đơn hàng
@@ -856,28 +1114,91 @@ const displayedOrders = computed(() => {
 
         <!-- ==================== TAB 2: PRODUCTS ==================== -->
         <section v-else-if="activeNav === 'products'" class="tab-page-container">
+          <!-- THANH CẢNH BÁO VI PHẠM SELLER (NẾU CÓ) -->
+          <div
+            v-if="currentSellerPenalty.violationCount > 0"
+            class="seller-violation-banner"
+            :class="{
+              'banner-banned': currentSellerPenalty.isBanned,
+              'banner-locked': currentSellerPenalty.isLocked && !currentSellerPenalty.isBanned,
+              'banner-warn': !currentSellerPenalty.isLocked && !currentSellerPenalty.isBanned
+            }"
+          >
+            <div class="violation-banner-left">
+              <i
+                class="bi"
+                :class="
+                  currentSellerPenalty.isBanned
+                    ? 'bi-x-octagon-fill text-danger'
+                    : currentSellerPenalty.isLocked
+                    ? 'bi-shield-lock-fill text-warning'
+                    : 'bi-exclamation-triangle-fill text-warning'
+                "
+              ></i>
+              <div>
+                <h4 v-if="currentSellerPenalty.isBanned" class="violation-title text-danger">
+                  TÀI KHOẢN ĐÃ BỊ XÓA VĨNH VIỄN DO TÁI PHẠM QUÁ 10 LẦN
+                </h4>
+                <h4 v-else-if="currentSellerPenalty.isLocked" class="violation-title text-warning">
+                  TÀI KHOẢN ĐANG BỊ KHÓA 10 NGÀY (Lần vi phạm: {{ currentSellerPenalty.violationCount }}/10)
+                </h4>
+                <h4 v-else class="violation-title">
+                  CẢNH BÁO VI PHẠM CHÍNH SÁCH ĐĂNG BÀI: {{ currentSellerPenalty.violationCount }}/5 LẦN
+                </h4>
+                <p class="violation-desc">
+                  <span v-if="currentSellerPenalty.isBanned">
+                    Hệ thống AI đã xóa vĩnh viễn tư cách người bán của bạn theo Luồng 2. Mọi chức năng đăng bài bị vô hiệu.
+                  </span>
+                  <span v-else-if="currentSellerPenalty.isLocked">
+                    Bạn đã bị đình chỉ đăng bài đến {{ currentSellerPenalty.lockUntil ? new Date(currentSellerPenalty.lockUntil).toLocaleDateString('vi-VN') : '10 ngày' }}. Email thông báo xử phạt đã gửi tới {{ currentUser.email }}.
+                  </span>
+                  <span v-else>
+                    Lý do gần nhất: "{{ currentSellerPenalty.lastViolationReason }}". Email cảnh báo đã gửi tới {{ currentUser.email }}. Nếu tái phạm từ lần thứ 6 sẽ bị KHÓA TÀI KHOẢN 10 NGÀY!
+                  </span>
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="btn-reset-demo"
+              @click="handleResetViolationsDemo"
+              title="Khôi phục trạng thái để kiểm thử tiếp"
+            >
+              <i class="bi bi-arrow-counterclockwise me-1"></i> Reset Demo Vi Phạm
+            </button>
+          </div>
+
+          <!-- HEADER TAB -->
           <div class="tab-header-flex">
             <div>
               <h2 class="tab-heading">Quản Lý Sản Phẩm Gian Hàng</h2>
-              <p class="tab-subheading">Xem, thêm mới, sửa giá và quản lý tồn kho nông sản VietGAP</p>
+              <p class="tab-subheading">
+                Tích hợp AI Kiểm Duyệt Bài Đăng (Luồng 2: Quét 18+, hàng cấm & đối soát Ảnh - Tên)
+              </p>
             </div>
-            <button type="button" class="btn-brand-primary" @click="showAddProductModal = true">
+            <button
+              type="button"
+              class="btn-brand-primary"
+              @click="openCreateProduct"
+              :disabled="currentSellerPenalty.isBanned || currentSellerPenalty.isLocked"
+            >
               <i class="bi bi-plus-lg me-1"></i> Thêm Sản Phẩm Mới
             </button>
           </div>
 
+          <!-- BẢNG DANH SÁCH SẢN PHẨM -->
           <div class="dashboard-panel-card">
             <div class="table-responsive-box">
               <table class="modern-data-table">
                 <thead>
                   <tr>
                     <th>Hình ảnh</th>
-                    <th>Tên sản phẩm</th>
+                    <th>Tên sản phẩm & Thông tin AI</th>
                     <th>Danh mục</th>
                     <th>Đơn vị</th>
                     <th>Giá niêm yết</th>
                     <th>Tồn kho</th>
-                    <th>Trạng thái</th>
+                    <th>Trạng thái Luồng 2</th>
                     <th class="text-center">Thao tác</th>
                   </tr>
                 </thead>
@@ -886,21 +1207,69 @@ const displayedOrders = computed(() => {
                     <td>
                       <img :src="prod.image" :alt="prod.name" class="table-prod-img" />
                     </td>
-                    <td><b>{{ prod.name }}</b></td>
+                    <td>
+                      <div class="product-title-wrap">
+                        <b>{{ prod.name }}</b>
+                        <div v-if="prod.aiScore" class="ai-meta-tag">
+                          <span class="ai-badge-match">
+                            <i class="bi bi-robot"></i> Độ khớp: {{ prod.aiScore.matchScore }}%
+                          </span>
+                        </div>
+                        <!-- Ghi chú từ chối của Manager (Nếu có) -->
+                        <div v-if="prod.status === 'rejected_need_edit' && prod.managerNote" class="manager-reject-box">
+                          <i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>
+                          <span>Manager yêu cầu sửa: "{{ prod.managerNote }}"</span>
+                        </div>
+                        <!-- Cờ nghi ngờ của AI (Nếu có) -->
+                        <div v-else-if="prod.status === 'pending_review' && prod.aiScore?.flag" class="ai-flag-box">
+                          <i class="bi bi-info-circle-fill text-warning me-1"></i>
+                          <span>AI cờ: {{ prod.aiScore.flag }}</span>
+                        </div>
+                      </div>
+                    </td>
                     <td>{{ prod.category }}</td>
                     <td>{{ prod.unit }}</td>
                     <td class="price-cell">{{ prod.price.toLocaleString('vi-VN') }} đ</td>
                     <td>{{ prod.stock }}</td>
                     <td>
-                      <span class="badge-status-pill" :class="prod.isAvailable ? 'available' : 'out-of-stock'">
-                        {{ prod.isAvailable ? 'Đang bán' : 'Hết hàng' }}
+                      <!-- Trạng thái 1: Đang bán -->
+                      <span v-if="prod.status === 'active'" class="badge-status-pill available">
+                        <i class="bi bi-check-circle-fill me-1"></i> Đang bán
+                      </span>
+                      <!-- Trạng thái 2: Chờ Manager duyệt (Nghi ngờ) -->
+                      <span v-else-if="prod.status === 'pending_review'" class="badge-status-pill pending-ai">
+                        <i class="bi bi-hourglass-split me-1"></i> Chờ Manager duyệt
+                      </span>
+                      <!-- Trạng thái 3: Manager từ chối -> Yêu cầu sửa -->
+                      <span v-else-if="prod.status === 'rejected_need_edit'" class="badge-status-pill rejected-edit">
+                        <i class="bi bi-exclamation-octagon-fill me-1"></i> Cần sửa lại
+                      </span>
+                      <!-- Trạng thái khác -->
+                      <span v-else class="badge-status-pill out-of-stock">
+                        Tạm ẩn
                       </span>
                     </td>
                     <td class="text-center">
+                      <!-- Nếu sản phẩm bị Manager từ chối: Nút Sửa bài (Quét lại AI) -->
                       <button
+                        v-if="prod.status === 'rejected_need_edit'"
+                        type="button"
+                        class="btn-rescan-pill"
+                        @click="openEditProduct(prod)"
+                        title="Chỉnh sửa nội dung và gửi AI quét lại từ đầu"
+                      >
+                        <i class="bi bi-arrow-repeat me-1"></i> Sửa bài (Quét lại)
+                      </button>
+                      <!-- Nếu sản phẩm đang chờ duyệt: Hiển thị trạng thái chờ -->
+                      <span v-else-if="prod.status === 'pending_review'" class="pending-admin-label">
+                        <i class="bi bi-shield-lock me-1"></i> Chờ duyệt ở /admin
+                      </span>
+                      <!-- Nếu đang bán: Nút Bật/Tắt -->
+                      <button
+                        v-else
                         type="button"
                         class="btn-action-pill"
-                        @click="prod.isAvailable = !prod.isAvailable; triggerToast('Đã cập nhật trạng thái sản phẩm!')"
+                        @click="handleToggleAvailable(prod)"
                       >
                         {{ prod.isAvailable ? 'Tạm ngưng' : 'Bật bán' }}
                       </button>
@@ -1130,41 +1499,336 @@ const displayedOrders = computed(() => {
       </main>
     </div>
 
-    <!-- ==================== MODAL THÊM SẢN PHẨM ==================== -->
+    <!-- ==================== 1. MODAL THÊM / SỬA SẢN PHẨM ==================== -->
     <div v-if="showAddProductModal" class="modal-backdrop-overlay" @click.self="showAddProductModal = false">
-      <div class="modal-card-box">
+      <div class="modal-card-box modal-lg">
         <div class="modal-header-row">
-          <h4>Thêm Sản Phẩm Mới</h4>
+          <div class="modal-title-with-badge">
+            <h4>{{ isEditingMode ? 'Chỉnh Sửa Bài & Quét Lại AI (Luồng 2)' : 'Thêm Sản Phẩm Mới & AI Kiểm Duyệt' }}</h4>
+            <span class="ai-shield-tag"><i class="bi bi-robot"></i> AI Moderation Active</span>
+          </div>
           <button type="button" class="btn-close-modal" @click="showAddProductModal = false">✕</button>
         </div>
+
+
         <div class="modal-body-fields">
           <div class="field-item">
-            <label>Tên sản phẩm</label>
-            <input v-model="newProductForm.name" type="text" class="field-input" placeholder="VD: Bắp cải hữu cơ Đà Lạt" />
+            <label>Tên sản phẩm <span class="text-danger">*</span></label>
+            <input
+              v-model="newProductForm.name"
+              type="text"
+              class="field-input"
+              placeholder="VD: Xà lách mỡ VietGAP Ba Vì"
+              required
+            />
           </div>
+
           <div class="field-grid-2">
             <div class="field-item">
-              <label>Giá bán (VNĐ)</label>
-              <input v-model.number="newProductForm.price" type="number" class="field-input" placeholder="25000" />
+              <label>Danh mục ngành hàng <span class="text-danger">*</span></label>
+              <select v-model="newProductForm.category" class="field-input">
+                <option value="Rau củ quả">Rau củ quả</option>
+                <option value="Thịt cá tươi">Thịt cá tươi</option>
+                <option value="Trái cây tươi">Trái cây tươi</option>
+                <option value="Thực phẩm bổ dưỡng">Thực phẩm bổ dưỡng</option>
+                <option value="Món ăn nóng">Món ăn nóng</option>
+                <option value="Khác">Khác (Ngành hàng khác)</option>
+              </select>
             </div>
             <div class="field-item">
               <label>Đơn vị tính</label>
               <input v-model="newProductForm.unit" type="text" class="field-input" placeholder="Bó 500g" />
             </div>
           </div>
-          <div class="field-item">
-            <label>Số lượng tồn kho</label>
-            <input v-model.number="newProductForm.stock" type="number" class="field-input" placeholder="50" />
+
+          <!-- Nhập ngành hàng khác khi chọn Khác -->
+          <div v-if="newProductForm.category === 'Khác'" class="field-item custom-category-box">
+            <label>Tên ngành hàng tùy chỉnh <span class="text-danger">*</span></label>
+            <input
+              v-model="customCategoryInput"
+              type="text"
+              class="field-input"
+              placeholder="VD: Đồ khô & Gia vị, Nông sản chế biến, Bánh kẹo handmade..."
+              required
+            />
+            <small class="custom-cat-hint">
+              <i class="bi bi-info-circle me-1"></i> Nhập chính xác tên ngành hàng để người mua và AI dễ dàng phân loại sản phẩm.
+            </small>
           </div>
+
+          <div class="field-grid-2">
+            <div class="field-item">
+              <label>Giá niêm yết (VNĐ) <span class="text-danger">*</span></label>
+              <input v-model.number="newProductForm.price" type="number" class="field-input" placeholder="25000" />
+            </div>
+            <div class="field-item">
+              <label>Số lượng tồn kho</label>
+              <input v-model.number="newProductForm.stock" type="number" class="field-input" placeholder="50" />
+            </div>
+          </div>
+
           <div class="field-item">
-            <label>URL Hình ảnh</label>
-            <input v-model="newProductForm.image" type="text" class="field-input" />
+            <label>Hình ảnh sản phẩm <span class="text-danger">*</span></label>
+            
+            <!-- Hidden input file -->
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept="image/png, image/jpeg, image/jpg, image/webp, image/gif"
+              style="display: none;"
+              @change="handleFileUpload"
+            />
+
+            <!-- Dropzone khi chưa có ảnh -->
+            <div
+              v-if="!newProductForm.image"
+              class="upload-dropzone"
+              :class="{ 'is-dragging': isDraggingFile }"
+              @click="triggerFileInput"
+              @dragover.prevent="isDraggingFile = true"
+              @dragleave.prevent="isDraggingFile = false"
+              @drop.prevent="handleFileDrop"
+            >
+              <div class="dropzone-content">
+                <div class="dropzone-icon-circle">
+                  <i class="bi bi-cloud-arrow-up-fill"></i>
+                </div>
+                <div class="dropzone-text">
+                  <p class="dropzone-main-text">
+                    <span class="text-primary-link">Bấm để tải tệp ảnh lên</span> hoặc kéo thả ảnh vào đây
+                  </p>
+                  <p class="dropzone-sub-text">Hỗ trợ định dạng JPG, PNG, WEBP (Tối đa 10MB)</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card hiển thị khi đã chọn/tải ảnh -->
+            <div v-else class="image-uploaded-card">
+              <div class="uploaded-card-left">
+                <img :src="newProductForm.image" alt="Uploaded Preview" class="uploaded-preview-img" />
+                <div class="uploaded-file-details">
+                  <div class="uploaded-filename">{{ uploadedFileName || 'Tệp hình ảnh sản phẩm' }}</div>
+                  <div class="uploaded-filesize">
+                    <span v-if="uploadedFileSize">{{ uploadedFileSize }} • </span>
+                    <span class="text-success fw-bold"><i class="bi bi-check2-circle"></i> Đã sẵn sàng quét AI</span>
+                  </div>
+                </div>
+              </div>
+              <div class="uploaded-card-actions">
+                <button type="button" class="btn-change-image" @click="triggerFileInput" title="Chọn file ảnh khác">
+                  <i class="bi bi-arrow-repeat me-1"></i> Đổi ảnh
+                </button>
+                <button type="button" class="btn-remove-image" @click="clearUploadedImage" title="Xóa tệp ảnh này">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="ai-image-note">
+              <i class="bi bi-shield-check text-success me-1"></i>
+              <span>Hệ thống AI sẽ phân tích thị giác hình ảnh này để kiểm tra nội dung 18+, vật phẩm cấm & đối soát độ khớp với tên sản phẩm.</span>
+            </div>
           </div>
         </div>
+
         <div class="modal-footer-row">
-          <button type="button" class="btn-cancel-gray" @click="showAddProductModal = false">Hủy</button>
-          <button type="button" class="btn-brand-primary" @click="handleSaveProduct">Lưu Sản Phẩm</button>
+          <button type="button" class="btn-cancel-gray" @click="showAddProductModal = false">Hủy Bỏ</button>
+          <button type="button" class="btn-brand-primary" @click="handleSaveProduct">
+            <i class="bi bi-cpu me-1"></i>
+            {{ isEditingMode ? 'Lưu & Quét Lại AI ➔' : 'Gửi Bài & Quét AI ➔' }}
+          </button>
         </div>
+      </div>
+    </div>
+
+    <!-- ==================== 2. AI SCANNING OVERLAY (RADAR HUD) ==================== -->
+    <div v-if="isScanningAI" class="ai-scanning-overlay">
+      <div class="ai-scan-card">
+        <div class="radar-box">
+          <div class="radar-circle circle-1"></div>
+          <div class="radar-circle circle-2"></div>
+          <div class="radar-circle circle-3"></div>
+          <div class="radar-beam"></div>
+          <div class="radar-center-bot">
+            <i class="bi bi-robot"></i>
+          </div>
+        </div>
+
+        <h3 class="ai-scan-title">AI Đang Quét Bài Đăng Theo Luồng 2...</h3>
+        <p class="ai-scan-step-text">{{ scanStepText }}</p>
+
+        <!-- Progress bar -->
+        <div class="scan-progress-track">
+          <div class="scan-progress-fill" :style="{ width: `${scanProgress}%` }"></div>
+        </div>
+        <span class="scan-percent">{{ scanProgress }}% Hoàn tất</span>
+
+        <div class="ai-check-bullets">
+          <span class="check-item"><i class="bi bi-shield-check text-success"></i> Bộ lọc 18+ & Khiêu dâm</span>
+          <span class="check-item"><i class="bi bi-shield-check text-success"></i> Hàng quốc cấm & Vũ khí</span>
+          <span class="check-item"><i class="bi bi-search text-primary"></i> Đối soát thị giác Ảnh - Tên</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 3. MODAL KẾT QUẢ AI QUÉT BÀI (LUỒNG 2) ==================== -->
+    <div v-if="showScanResultModal && lastScanResult" class="modal-backdrop-overlay" @click.self="showScanResultModal = false">
+      <div class="modal-card-box result-card-box">
+        <!-- NHÁNH 1: VI PHẠM NGHIÊM TRỌNG (18+, HÀNG CẤM) -->
+        <template v-if="lastScanResult.decision === 'VIOLATION'">
+          <div class="result-header-box violation">
+            <div class="result-icon-badge danger">
+              <i class="bi bi-x-octagon-fill"></i>
+            </div>
+            <h3 class="result-title text-danger">HỆ THỐNG XÓA BÀI: PHÁT HIỆN VI PHẠM CHÍNH SÁCH!</h3>
+            <p class="result-subtitle">Hệ thống AI đã xóa bỏ bài đăng ngay lập tức theo quy định Luồng 2</p>
+          </div>
+
+          <div class="result-body-content">
+            <!-- Lý do vi phạm -->
+            <div class="violation-reason-panel">
+              <h5><i class="bi bi-exclamation-triangle-fill text-danger me-1"></i> Nội dung vi phạm:</h5>
+              <p class="reason-text">{{ lastScanResult.reason }}</p>
+            </div>
+
+            <!-- Khung xử phạt tích lũy -->
+            <div v-if="penaltyNotice" class="penalty-status-panel">
+              <div class="penalty-badge-row">
+                <span class="penalty-count-badge">
+                  Số lần vi phạm tích lũy: <strong>{{ penaltyNotice.violationCount }} lần</strong>
+                </span>
+                <span
+                  class="penalty-level-tag"
+                  :class="{
+                    'tag-warn': penaltyNotice.actionType === 'warn',
+                    'tag-lock': penaltyNotice.actionType === 'lock',
+                    'tag-ban': penaltyNotice.actionType === 'ban'
+                  }"
+                >
+                  {{
+                    penaltyNotice.actionType === 'warn'
+                      ? 'Cảnh báo Email (<= 5 lần)'
+                      : penaltyNotice.actionType === 'lock'
+                      ? 'Khóa TK 10 ngày (6-10 lần)'
+                      : 'Xóa vĩnh viễn TK (> 10 lần)'
+                  }}
+                </span>
+              </div>
+
+              <!-- Mô phỏng hộp thư Email thông báo kỷ luật -->
+              <div class="simulated-email-box">
+                <div class="email-box-header">
+                  <i class="bi bi-envelope-exclamation-fill text-danger me-1"></i>
+                  <span>Thông báo kỷ luật tự động đã gửi tới: <strong>{{ currentUser.email }}</strong></span>
+                </div>
+                <div class="email-box-body">
+                  <p>{{ penaltyNotice.message }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="result-footer-box">
+            <button type="button" class="btn-cancel-gray" @click="showScanResultModal = false">
+              Đã hiểu & Đóng
+            </button>
+            <button type="button" class="btn-reset-danger" @click="handleResetViolationsDemo(); showScanResultModal = false">
+              <i class="bi bi-arrow-counterclockwise me-1"></i> Reset Vi Phạm Để Test Tiếp
+            </button>
+          </div>
+        </template>
+
+        <!-- NHÁNH 2: NGHI NGỜ SAI LỆCH (ẢNH - TÊN KHÔNG KHỚP) -->
+        <template v-else-if="lastScanResult.decision === 'SUSPICIOUS'">
+          <div class="result-header-box suspicious">
+            <div class="result-icon-badge warning">
+              <i class="bi bi-question-diamond-fill"></i>
+            </div>
+            <h3 class="result-title text-warning">ĐƯA VÀO DANH SÁCH CHỜ (PENDING MANAGER)</h3>
+            <p class="result-subtitle">AI phát hiện nghi ngờ sai lệch giữa Ảnh chụp và Tên sản phẩm</p>
+          </div>
+
+          <div class="result-body-content">
+            <div class="scores-summary-row">
+              <div class="score-card">
+                <span class="score-title">Độ khớp Ảnh - Tên</span>
+                <span class="score-val text-warning">{{ lastScanResult.matchScore }}%</span>
+                <span class="score-sub">Chưa đạt ngưỡng 70%</span>
+              </div>
+              <div class="score-card">
+                <span class="score-title">Chỉ số an toàn</span>
+                <span class="score-val text-success">{{ lastScanResult.safetyScore }}%</span>
+                <span class="score-sub">Không có hàng cấm/18+</span>
+              </div>
+            </div>
+
+            <div class="suspicious-reason-box">
+              <h5><i class="bi bi-info-circle-fill text-warning me-1"></i> Chi tiết cờ nghi ngờ của AI:</h5>
+              <p>{{ lastScanResult.reason }}</p>
+            </div>
+
+            <div class="manager-handover-box">
+              <i class="bi bi-person-badge-fill text-primary fs-3"></i>
+              <div>
+                <h6>Chuyển tiếp cho Quản Lý (Manager) kiểm tra thủ công</h6>
+                <p>
+                  Món hàng đã được tạm đưa vào danh sách chờ. Manager tại trang <strong>/admin</strong> sẽ kiểm tra:
+                  <br />• Nếu Manager <strong>Chấp nhận</strong>: Sản phẩm sẽ tự động kích hoạt Đang Bán.
+                  <br />• Nếu Manager <strong>Từ chối</strong>: Món hàng sẽ bị ẩn và gửi lý do yêu cầu bạn Sửa Bài.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="result-footer-box">
+            <button type="button" class="btn-cancel-gray" @click="showScanResultModal = false">
+              Đóng
+            </button>
+            <router-link to="/admin" class="btn-brand-primary" @click="showScanResultModal = false">
+              <i class="bi bi-box-arrow-up-right me-1"></i> Đến Trang /admin Để Duyệt Ngay ➔
+            </router-link>
+          </div>
+        </template>
+
+        <!-- NHÁNH 3: HỢP LỆ (PASS 100%) -->
+        <template v-else>
+          <div class="result-header-box passed">
+            <div class="result-icon-badge success">
+              <i class="bi bi-check-circle-fill"></i>
+            </div>
+            <h3 class="result-title text-success">KIỂM DUYỆT THÀNH CÔNG: SẢN PHẨM HỢP LỆ!</h3>
+            <p class="result-subtitle">Sản phẩm đạt chuẩn an toàn & khớp hoàn toàn giữa tên và hình ảnh</p>
+          </div>
+
+          <div class="result-body-content">
+            <div class="scores-summary-row">
+              <div class="score-card">
+                <span class="score-title">Độ khớp Ảnh - Tên</span>
+                <span class="score-val text-success">{{ lastScanResult.matchScore }}%</span>
+                <span class="score-sub">Tuyệt đối an tâm</span>
+              </div>
+              <div class="score-card">
+                <span class="score-title">Chỉ số an toàn</span>
+                <span class="score-val text-success">{{ lastScanResult.safetyScore }}%</span>
+                <span class="score-sub">Không có vi phạm</span>
+              </div>
+            </div>
+
+            <div class="passed-success-box">
+              <i class="bi bi-shop-window text-success fs-3"></i>
+              <div>
+                <h6>Hệ thống: Sản phẩm Đang Bán (B7)</h6>
+                <p>Món hàng đã được thêm vào gian hàng của bạn và đồng bộ trực tiếp lên trang mua sắm khách hàng (/products).</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="result-footer-box">
+            <button type="button" class="btn-brand-primary" @click="showScanResultModal = false">
+              <i class="bi bi-check-lg me-1"></i> Hoàn Tất & Xem Gian Hàng
+            </button>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -2931,6 +3595,806 @@ h1, h2, h3, h4, h5, h6 {
 .fade-toast-leave-to {
   opacity: 0;
   transform: translateY(15px);
+}
+
+/* ==================== AI MODERATION & VIOLATION BANNER (LUỒNG 2) ==================== */
+.seller-violation-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-radius: 14px;
+  margin-bottom: 20px;
+  gap: 16px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+}
+
+.banner-warn {
+  background: #FFFBEB;
+  border: 1.5px solid #FDE68A;
+}
+
+.banner-locked {
+  background: #FEF3C7;
+  border: 1.5px solid #F59E0B;
+}
+
+.banner-banned {
+  background: #FEF2F2;
+  border: 1.5px solid #F87171;
+}
+
+.violation-banner-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.violation-banner-left i {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.violation-title {
+  font-size: 15px;
+  font-weight: 800;
+  margin: 0 0 4px 0;
+}
+
+.violation-desc {
+  font-size: 13px;
+  color: #475569;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.btn-reset-demo {
+  background: #FFFFFF;
+  border: 1.5px solid #CBD5E1;
+  color: #0F172A !important;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.btn-reset-demo:hover {
+  background: #F1F5F9;
+  transform: translateY(-1px);
+}
+
+/* AI Flow Demo Bar */
+.ai-flow-demo-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 12px 18px;
+  margin-bottom: 20px;
+}
+
+.demo-bar-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0F172A;
+  display: flex;
+  align-items: center;
+}
+
+.demo-bar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-demo-chip {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #F8FAFC;
+  color: #334155 !important;
+}
+
+.btn-demo-chip.chip-pass {
+  background: #DCFCE7;
+  border-color: #86EFAC;
+  color: #166534 !important;
+}
+
+.btn-demo-chip.chip-suspicious {
+  background: #FEF9C3;
+  border-color: #FDE047;
+  color: #854D0E !important;
+}
+
+.btn-demo-chip.chip-nsfw {
+  background: #FEE2E2;
+  border-color: #FCA5A5;
+  color: #991B1B !important;
+}
+
+.btn-demo-chip.chip-prohibited {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+  color: #475569 !important;
+}
+
+.btn-demo-chip:hover {
+  transform: translateY(-1px);
+  filter: brightness(0.96);
+}
+
+/* Table Enhancements */
+.product-title-wrap b {
+  font-size: 14px;
+  color: #0F172A;
+}
+
+.ai-meta-tag {
+  margin-top: 4px;
+}
+
+.ai-badge-match {
+  font-size: 11px;
+  font-weight: 700;
+  background: #F1F5F9;
+  color: #475569;
+  padding: 2px 7px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.manager-reject-box {
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: #FEF2F2;
+  border-left: 3px solid #EF4444;
+  border-radius: 4px;
+  font-size: 11.5px;
+  color: #991B1B;
+  line-height: 1.4;
+}
+
+.ai-flag-box {
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: #FFFBEB;
+  border-left: 3px solid #F59E0B;
+  border-radius: 4px;
+  font-size: 11.5px;
+  color: #92400E;
+  line-height: 1.4;
+}
+
+.badge-status-pill.pending-ai {
+  background: #FEF3C7;
+  color: #B45309;
+}
+
+.badge-status-pill.rejected-edit {
+  background: #FEE2E2;
+  color: #DC2626;
+}
+
+.btn-rescan-pill {
+  padding: 6px 14px;
+  background: #DC2626;
+  color: #FFFFFF !important;
+  font-size: 12px;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.2);
+}
+
+.btn-rescan-pill:hover {
+  background: #B91C1C;
+  transform: translateY(-1px);
+}
+
+.pending-admin-label {
+  font-size: 12px;
+  color: #D97706;
+  font-weight: 700;
+  background: #FFFBEB;
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: inline-block;
+}
+
+/* Modal Title & Preset Chips */
+.modal-lg {
+  max-width: 620px !important;
+}
+
+.modal-title-with-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-shield-tag {
+  font-size: 11.5px;
+  font-weight: 800;
+  background: #EFF6FF;
+  color: #2563EB;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #BFDBFE;
+}
+
+.custom-category-box {
+  margin-top: 4px;
+  animation: fadeInDown 0.25s ease-out;
+}
+
+.custom-cat-hint {
+  font-size: 11.5px;
+  color: #64748B;
+  display: block;
+  margin-top: 5px;
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==================== UPLOAD TỆP HÌNH ẢNH ==================== */
+.upload-dropzone {
+  margin-top: 8px;
+  border: 2px dashed #CBD5E1;
+  border-radius: 14px;
+  padding: 24px 16px;
+  text-align: center;
+  background: #F8FAFC;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.upload-dropzone:hover,
+.upload-dropzone.is-dragging {
+  border-color: #2563EB;
+  background: #EFF6FF;
+}
+
+.dropzone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.dropzone-icon-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #E0E7FF;
+  color: #4F46E5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
+.dropzone-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dropzone-main-text {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #334155;
+  margin: 0;
+}
+
+.text-primary-link {
+  color: #2563EB;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.dropzone-sub-text {
+  font-size: 12px;
+  color: #94A3B8;
+  margin: 0;
+}
+
+/* Card hiển thị ảnh đã upload */
+.image-uploaded-card {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.uploaded-card-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.uploaded-preview-img {
+  width: 54px;
+  height: 54px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid #CBD5E1;
+  flex-shrink: 0;
+}
+
+.uploaded-file-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.uploaded-filename {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0F172A;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.uploaded-filesize {
+  font-size: 11.5px;
+  color: #64748B;
+}
+
+.uploaded-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-change-image {
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-change-image:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.btn-remove-image {
+  background: #FEE2E2;
+  border: 1px solid #FECDD3;
+  color: #DC2626;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-remove-image:hover {
+  background: #FCA5A5;
+}
+
+.ai-image-note {
+  margin-top: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: #64748B;
+  line-height: 1.4;
+  background: #F8FAFC;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+/* ==================== AI SCANNING OVERLAY (RADAR HUD) ==================== */
+.ai-scanning-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(6px);
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.ai-scan-card {
+  background: #0F172A;
+  border: 1px solid #334155;
+  border-radius: 20px;
+  padding: 36px 32px;
+  width: 100%;
+  max-width: 480px;
+  text-align: center;
+  color: #FFFFFF !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.radar-box {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 20px auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.radar-circle {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid rgba(56, 189, 248, 0.4);
+}
+
+.circle-1 { width: 40px; height: 40px; }
+.circle-2 { width: 80px; height: 80px; }
+.circle-3 { width: 120px; height: 120px; }
+
+.radar-beam {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(56, 189, 248, 0.4) 0deg, transparent 60deg, transparent 360deg);
+  animation: spinRadar 1.5s linear infinite;
+}
+
+@keyframes spinRadar {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.radar-center-bot {
+  position: relative;
+  z-index: 2;
+  font-size: 32px;
+  color: #38BDF8;
+}
+
+.ai-scan-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0 0 8px 0;
+  color: #FFFFFF !important;
+}
+
+.ai-scan-step-text {
+  font-size: 13px;
+  color: #94A3B8 !important;
+  min-height: 22px;
+  margin: 0 0 16px 0;
+}
+
+.scan-progress-track {
+  width: 100%;
+  height: 8px;
+  background: #1E293B;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.scan-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #38BDF8, #22C55E);
+  transition: width 0.4s ease;
+}
+
+.scan-percent {
+  font-size: 12px;
+  font-weight: 700;
+  color: #38BDF8 !important;
+  display: block;
+  margin-bottom: 18px;
+}
+
+.ai-check-bullets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+
+.check-item {
+  font-size: 12px;
+  color: #CBD5E1 !important;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ==================== AI SCAN RESULT MODAL ==================== */
+.result-card-box {
+  max-width: 540px !important;
+  padding: 0 !important;
+  overflow: hidden;
+  border-radius: 20px !important;
+}
+
+.result-header-box {
+  padding: 28px 24px 20px 24px;
+  text-align: center;
+}
+
+.result-header-box.violation { background: #FEF2F2; }
+.result-header-box.suspicious { background: #FFFBEB; }
+.result-header-box.passed { background: #F0FDF4; }
+
+.result-icon-badge {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  margin: 0 auto 12px auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+}
+
+.result-icon-badge.danger { background: #FEE2E2; color: #DC2626; }
+.result-icon-badge.warning { background: #FEF3C7; color: #D97706; }
+.result-icon-badge.success { background: #DCFCE7; color: #16A34A; }
+
+.result-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0 0 6px 0;
+}
+
+.result-subtitle {
+  font-size: 13px;
+  color: #64748B;
+  margin: 0;
+}
+
+.result-body-content {
+  padding: 20px 24px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.violation-reason-panel {
+  background: #FFF1F2;
+  border: 1.5px solid #FECDD3;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.violation-reason-panel h5 {
+  font-size: 13.5px;
+  font-weight: 800;
+  margin: 0 0 6px 0;
+}
+
+.violation-reason-panel .reason-text {
+  font-size: 13px;
+  color: #9F1239;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.penalty-status-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.penalty-badge-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.penalty-count-badge {
+  font-size: 13px;
+  color: #0F172A;
+}
+
+.penalty-level-tag {
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.tag-warn { background: #FEF3C7; color: #92400E; }
+.tag-lock { background: #FEE2E2; color: #B91C1C; }
+.tag-ban { background: #7F1D1D; color: #FFFFFF; }
+
+.simulated-email-box {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.email-box-header {
+  font-size: 12px;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+.email-box-body p {
+  font-size: 12.5px;
+  color: #475569;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.scores-summary-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.score-card {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 12px;
+  text-align: center;
+}
+
+.score-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #64748B;
+  display: block;
+}
+
+.score-val {
+  font-size: 26px;
+  font-weight: 800;
+  margin: 4px 0;
+  display: block;
+}
+
+.score-sub {
+  font-size: 11px;
+  color: #94A3B8;
+}
+
+.suspicious-reason-box {
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.suspicious-reason-box h5 {
+  font-size: 13px;
+  font-weight: 800;
+  margin: 0 0 6px 0;
+}
+
+.suspicious-reason-box p {
+  font-size: 12.5px;
+  color: #92400E;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.manager-handover-box,
+.passed-success-box {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: 12px;
+}
+
+.manager-handover-box {
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+}
+
+.manager-handover-box h6 {
+  font-size: 13.5px;
+  font-weight: 800;
+  margin: 0 0 4px 0;
+  color: #1E40AF;
+}
+
+.manager-handover-box p {
+  font-size: 12px;
+  color: #1E3A8A;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.passed-success-box {
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+}
+
+.passed-success-box h6 {
+  font-size: 13.5px;
+  font-weight: 800;
+  margin: 0 0 4px 0;
+  color: #166534;
+}
+
+.passed-success-box p {
+  font-size: 12px;
+  color: #14532D;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.result-footer-box {
+  padding: 16px 24px;
+  background: #F8FAFC;
+  border-top: 1px solid #E2E8F0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.btn-reset-danger {
+  background: #FEE2E2;
+  border: 1px solid #FECDD3;
+  color: #DC2626 !important;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-reset-danger:hover {
+  background: #FCA5A5;
 }
 
 /* ==================== RESPONSIVE ==================== */

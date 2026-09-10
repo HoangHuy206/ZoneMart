@@ -9,6 +9,7 @@
  */
 import { ref, computed, watch, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
+import { useProductModeration } from "../../composables/useProductModeration";
 
 const router = useRouter();
 const route = useRoute();
@@ -291,9 +292,43 @@ const allProducts = ref<ProductItem[]>([
   }
 ]);
 
+const productModeration = useProductModeration();
+
 // Lọc và sắp xếp theo điều kiện
 const filteredProducts = computed(() => {
-  let result = allProducts.value.filter((p) => {
+  // Đồng bộ các sản phẩm đã được AI / Manager duyệt bán (Luồng 2: B7)
+  const dynamicActive = productModeration.activeProducts.value.map(p => {
+    let catKey = "food";
+    if (p.category === "Rau củ quả") catKey = "veggie";
+    else if (p.category === "Thịt cá tươi") catKey = "food";
+    else if (p.category === "Trái cây tươi") catKey = "beverage";
+    else if (p.category === "Món ăn nóng") catKey = "fastfood";
+    else catKey = "household";
+
+    return {
+      id: p.id,
+      name: p.name,
+      category: catKey,
+      categoryName: p.category,
+      price: p.price,
+      storeName: p.storeName || "Nông Sản Sạch Ba Vì",
+      distanceKm: 1.8,
+      deliveryTime: "20 - 30 phút",
+      rating: 5.0,
+      reviews: 14,
+      sold: 42,
+      unit: p.unit || "Phần",
+      image: p.image,
+      badge: "Đã AI Kiểm Duyệt"
+    } as ProductItem;
+  });
+
+  const combined = [
+    ...dynamicActive.filter(dp => !allProducts.value.some(p => p.id === dp.id)),
+    ...allProducts.value
+  ];
+
+  let result = combined.filter((p) => {
     const matchCategory =
       selectedCategory.value === "all" || p.category === selectedCategory.value;
     const matchQuery =

@@ -31,9 +31,11 @@ const form = reactive({
   cccdBackImage: "",      // Preview URL hoặc Base64
   foodSafetyCertImage: "",// Preview URL hoặc Base64 ảnh Giấy CN An toàn thực phẩm
 
-  // BƯỚC 3: THANH TOÁN
+  // BƯỚC 3: THANH TOÁN & TÀI KHOẢN ĐĂNG NHẬP
   bankName: "Vietcombank (VCB)",
-  bankAccountNumber: ""
+  bankAccountNumber: "",
+  phoneEmail: "",
+  password: ""
 });
 
 const isLoading = ref(false);
@@ -174,6 +176,14 @@ const handleClickOutside = (e: MouseEvent) => {
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
+  const savedUser = localStorage.getItem("currentUser");
+  if (savedUser) {
+    try {
+      const parsed = JSON.parse(savedUser);
+      if (parsed.phoneEmail) form.phoneEmail = parsed.phoneEmail;
+      if (parsed.fullName && !form.ownerFullName) form.ownerFullName = parsed.fullName;
+    } catch {}
+  }
 });
 
 onUnmounted(() => {
@@ -377,6 +387,12 @@ const handleSubmitApplication = async () => {
     return;
   }
 
+  const phoneEmailTrimmed = form.phoneEmail.trim();
+  if (!phoneEmailTrimmed) {
+    errorMessage.value = "Vui lòng nhập Số điện thoại hoặc Email đăng nhập!";
+    return;
+  }
+
   isLoading.value = true;
 
   try {
@@ -393,7 +409,9 @@ const handleSubmitApplication = async () => {
         cccdBackImage: form.cccdBackImage,
         foodSafetyCertImage: form.foodSafetyCertImage,
         bankName: form.bankName,
-        bankAccountNumber: accountNumberTrimmed
+        bankAccountNumber: accountNumberTrimmed,
+        phoneEmail: phoneEmailTrimmed,
+        password: form.password.trim() || "123456"
       })
     }).catch(() => null);
 
@@ -759,6 +777,36 @@ const closeSuccessModal = () => {
             />
           </div>
 
+          <!-- THÔNG TIN TÀI KHOẢN ĐĂNG NHẬP -->
+          <div class="field-item">
+            <label class="field-label">
+              Số điện thoại hoặc Email đăng nhập <span class="req">*</span>
+              <span class="hint-text">(Dùng để đăng nhập và theo dõi kết quả xét duyệt)</span>
+            </label>
+            <input
+              v-model="form.phoneEmail"
+              type="text"
+              class="field-input"
+              placeholder="VD: 0912345678 hoặc email@gmail.com"
+              required
+            />
+          </div>
+
+          <div class="field-item">
+            <label class="field-label">
+              Mật khẩu đăng nhập <span class="req">*</span>
+              <span class="hint-text">(Tối thiểu 6 ký tự)</span>
+            </label>
+            <input
+              v-model="form.password"
+              type="password"
+              class="field-input"
+              placeholder="Nhập mật khẩu cho tài khoản người bán"
+              minlength="6"
+              required
+            />
+          </div>
+
           <!-- Nhóm Nút Quay lại / Gửi hồ sơ đăng ký -->
           <div class="step-btn-group">
             <button type="button" class="btn-secondary-gray" @click="goToPrevStep">
@@ -805,12 +853,16 @@ const closeSuccessModal = () => {
           <h3 class="modal-heading-title green-title">Đã gửi hồ sơ thành công</h3>
           
           <p class="modal-body-text">
-            Hồ sơ mở gian hàng <b>{{ form.storeName }}</b> của bạn đã được lưu trực tiếp vào CSDL MongoDB Atlas và chuyển về hệ thống tài khoản Quản lý xét duyệt!
+            Hồ sơ mở gian hàng <b>{{ form.storeName }}</b> của bạn đã được ghi nhận và đang ở trạng thái <b>CHỜ BAN QUẢN LÝ XÉT DUYỆT</b>!
           </p>
+
+          <div style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin: 12px 0 18px 0; text-align: left; line-height: 1.5;">
+            <i class="bi bi-clock-history me-1"></i> <strong>Quy trình kiểm duyệt:</strong> Ban Quản Trị ZoneMart sẽ kiểm tra giấy tờ pháp lý (CCCD & Giấy chứng nhận ATTP). Sau khi được phê duyệt, bạn có thể đăng nhập bằng tài khoản vừa tạo để quản lý gian hàng.
+          </div>
 
           <div class="modal-action-buttons">
             <button type="button" class="btn-modal-close" @click="closeSuccessModal">
-              Đóng thông báo
+              Đăng nhập ngay
             </button>
           </div>
         </div>
