@@ -1,4 +1,4 @@
-﻿import type { RouteRecordRaw } from "vue-router";
+import type { RouteRecordRaw } from "vue-router";
 
 /**
  * ================================================================
@@ -20,18 +20,18 @@ export const thangRoutes: RouteRecordRaw[] = [
     path: "/cart",
     name: "Cart",
     component: () => import("../../views/thang/CartView.vue"),
-    meta: { title: "Giỏ Hàng - ZoneMart" }
+    meta: { title: "Giỏ Hàng - ZoneMart", requiresAuth: true }
   },
   {
     path: "/checkout",
     name: "Checkout",
     component: () => import("../../views/thang/CheckoutView.vue"),
-    meta: { title: "Thanh Toán Đơn Hàng - ZoneMart" }
+    meta: { title: "Thanh Toán Đơn Hàng - ZoneMart", requiresAuth: true }
   },
   {
     path: "/buyer-orders",
     name: "BuyerOrders",
     component: () => import("../../views/thang/BuyerOrdersView.vue"),
-    meta: { title: "Đơn Mua Của Bạn - ZoneMart" }
+    meta: { title: "Đơn Mua Của Bạn - ZoneMart", requiresAuth: true }
   }
 ];

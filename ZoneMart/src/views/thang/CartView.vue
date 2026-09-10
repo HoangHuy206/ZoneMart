@@ -6,19 +6,21 @@
  * Phụ trách: Thắng
  * ============================================================================
  */
-import { ref } from "vue";
-import { useRouter } from "vue-router";
-import { useCart } from "../../composables/useCart";
+import { ref } from 'vue';
+import { useRouter } from 'vue-router';
+import { useCart } from '../../composables/useCart';
 
 const router = useRouter();
 const cart = useCart();
 
 // State nhập mã giảm giá
-const voucherInput = ref("");
-const voucherAlert = ref<{ type: "success" | "error"; text: string } | null>(null);
+const voucherInput = ref('');
+const voucherAlert = ref<{ type: 'success' | 'error'; text: string } | null>(
+  null,
+);
 
 // State hiển thị Toast thông báo thêm món nhanh
-const toastMessage = ref("");
+const toastMessage = ref('');
 const showToast = ref(false);
 
 const triggerToast = (msg: string) => {
@@ -33,69 +35,73 @@ const triggerToast = (msg: string) => {
 const handleApplyVoucher = (code?: string) => {
   const codeToApply = code || voucherInput.value;
   if (!codeToApply.trim()) {
-    voucherAlert.value = { type: "error", text: "Vui lòng nhập mã giảm giá!" };
+    voucherAlert.value = { type: 'error', text: 'Vui lòng nhập mã giảm giá!' };
     return;
   }
   const res = cart.applyVoucher(codeToApply);
   if (res.success) {
-    voucherAlert.value = { type: "success", text: res.message };
-    voucherInput.value = "";
+    voucherAlert.value = { type: 'success', text: res.message };
+    voucherInput.value = '';
     triggerToast(res.message);
   } else {
-    voucherAlert.value = { type: "error", text: res.message };
+    voucherAlert.value = { type: 'error', text: res.message };
   }
 };
 
 // Danh sách 4 sản phẩm gợi ý mua kèm (Cross-sell)
 const suggestedProducts = [
   {
-    storeId: "st_1",
-    storeName: "ZoneMart Bách Hóa Cầu Giấy",
+    storeId: 'st_1',
+    storeName: 'ZoneMart Bách Hóa Cầu Giấy',
     distanceKm: 1.2,
-    deliveryTime: "15 - 20 phút",
-    id: "p_egg",
-    name: "Trứng Gà Ta Ăn Thóc Chuẩn Sạch (Hộp 10 quả)",
+    deliveryTime: '15 - 20 phút',
+    id: 'p_egg',
+    name: 'Trứng Gà Ta Ăn Thóc Chuẩn Sạch (Hộp 10 quả)',
     price: 38000,
     originalPrice: 48000,
-    unit: "Hộp 10 quả",
-    image: "https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?auto=format&fit=crop&w=400&q=80"
+    unit: 'Hộp 10 quả',
+    image:
+      'https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?auto=format&fit=crop&w=400&q=80',
   },
   {
-    storeId: "st_2",
-    storeName: "Siêu Thị Trái Cây Xanh",
+    storeId: 'st_2',
+    storeName: 'Siêu Thị Trái Cây Xanh',
     distanceKm: 2.5,
-    deliveryTime: "20 - 25 phút",
-    id: "p4",
-    name: "Nước Ép Cam Sành Tươi Nguyên Chất 100%",
+    deliveryTime: '20 - 25 phút',
+    id: 'p4',
+    name: 'Nước Ép Cam Sành Tươi Nguyên Chất 100%',
     price: 32000,
     originalPrice: 40000,
-    unit: "Chai 350ml",
-    image: "https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=400&q=80"
+    unit: 'Chai 350ml',
+    image:
+      'https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=400&q=80',
   },
   {
-    storeId: "st_1",
-    storeName: "ZoneMart Bách Hóa Cầu Giấy",
+    storeId: 'st_1',
+    storeName: 'ZoneMart Bách Hóa Cầu Giấy',
     distanceKm: 1.2,
-    deliveryTime: "15 - 20 phút",
-    id: "p_veg",
-    name: "Rau Muống Hữu Cơ Ba Vì Chuẩn VietGAP",
+    deliveryTime: '15 - 20 phút',
+    id: 'p_veg',
+    name: 'Rau Muống Hữu Cơ Ba Vì Chuẩn VietGAP',
     price: 18000,
     originalPrice: 22000,
-    unit: "Bó 500g",
-    image: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80"
+    unit: 'Bó 500g',
+    image:
+      'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80',
   },
   {
-    storeId: "st_3",
-    storeName: "Tiệm Bánh Mì Zone",
+    storeId: 'st_3',
+    storeName: 'Tiệm Bánh Mì Zone',
     distanceKm: 2.8,
-    deliveryTime: "15 - 20 phút",
-    id: "p3",
-    name: "Combo Bánh Mì Chảo Nóng Hổi Kèm Pate",
+    deliveryTime: '15 - 20 phút',
+    id: 'p3',
+    name: 'Combo Bánh Mì Chảo Nóng Hổi Kèm Pate',
     price: 45000,
     originalPrice: 55000,
-    unit: "Phần 1 người",
-    image: "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=400&q=80"
-  }
+    unit: 'Phần 1 người',
+    image:
+      'https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=400&q=80',
+  },
 ];
 
 const handleAddSuggested = (prod: any) => {
@@ -104,7 +110,7 @@ const handleAddSuggested = (prod: any) => {
       storeId: prod.storeId,
       storeName: prod.storeName,
       distanceKm: prod.distanceKm,
-      deliveryTime: prod.deliveryTime
+      deliveryTime: prod.deliveryTime,
     },
     {
       id: prod.id,
@@ -112,8 +118,8 @@ const handleAddSuggested = (prod: any) => {
       price: prod.price,
       originalPrice: prod.originalPrice,
       unit: prod.unit,
-      image: prod.image
-    }
+      image: prod.image,
+    },
   );
   triggerToast(`Đã thêm "${prod.name}" vào giỏ hàng!`);
 };
@@ -121,10 +127,10 @@ const handleAddSuggested = (prod: any) => {
 // Chuyển sang trang thanh toán
 const handleProceedToCheckout = () => {
   if (cart.selectedItemsCount.value === 0) {
-    alert("Vui lòng chọn ít nhất 1 sản phẩm để tiến hành thanh toán!");
+    alert('Vui lòng chọn ít nhất 1 sản phẩm để tiến hành thanh toán!');
     return;
   }
-  router.push("/checkout");
+  router.push('/checkout');
 };
 </script>
 
@@ -162,14 +168,25 @@ const handleProceedToCheckout = () => {
           <div class="banner-content">
             <div class="banner-title-row">
               <span v-if="cart.freeshipRemaining.value > 0" class="banner-text">
-                Mua thêm <strong>{{ cart.freeshipRemaining.value.toLocaleString('vi-VN') }} ₫</strong> để nhận ưu đãi <strong>MIỄN PHÍ GIAO HÀNG HỎA TỐC 10KM</strong>!
+                Mua thêm
+                <strong
+                  >{{
+                    cart.freeshipRemaining.value.toLocaleString('vi-VN')
+                  }}
+                  ₫</strong
+                >
+                để nhận ưu đãi <strong>MIỄN PHÍ GIAO HÀNG HỎA TỐC 10KM</strong>!
               </span>
               <span v-else class="banner-text text-success-bold">
-                🎉 Đơn hàng của bạn đã đạt điều kiện <strong>MIỄN PHÍ VẬN CHUYỂN HỎA TỐC 10KM</strong>!
+                🎉 Đơn hàng của bạn đã đạt điều kiện
+                <strong>MIỄN PHÍ VẬN CHUYỂN HỎA TỐC 10KM</strong>!
               </span>
             </div>
             <div class="progress-bar-bg">
-              <div class="progress-bar-fill" :style="{ width: `${cart.freeshipProgress.value}%` }"></div>
+              <div
+                class="progress-bar-fill"
+                :style="{ width: `${cart.freeshipProgress.value}%` }"
+              ></div>
             </div>
           </div>
         </div>
@@ -184,7 +201,8 @@ const handleProceedToCheckout = () => {
             />
             <span class="custom-checkmark"></span>
             <span class="toolbar-select-all-text">
-              Chọn tất cả (<strong>{{ cart.totalCount.value }}</strong> sản phẩm)
+              Chọn tất cả (<strong>{{ cart.totalCount.value }}</strong> sản
+              phẩm)
             </span>
           </label>
           <button
@@ -210,8 +228,11 @@ const handleProceedToCheckout = () => {
               <label class="custom-checkbox-wrap store-checkbox">
                 <input
                   type="checkbox"
-                  :checked="store.items.every(i => i.selected)"
-                  @change="(e: any) => cart.toggleStoreSelect(store.storeId, e.target.checked)"
+                  :checked="store.items.every((i) => i.selected)"
+                  @change="
+                    (e: any) =>
+                      cart.toggleStoreSelect(store.storeId, e.target.checked)
+                  "
                   class="real-checkbox"
                 />
                 <span class="custom-checkmark"></span>
@@ -220,13 +241,15 @@ const handleProceedToCheckout = () => {
                 <span class="store-badge-icon"><i class="bi bi-shop"></i></span>
                 <strong class="store-name-txt">{{ store.storeName }}</strong>
                 <span class="store-distance-badge">
-                  <i class="bi bi-geo-alt-fill"></i> Cách bạn {{ store.distanceKm }} km
+                  <i class="bi bi-geo-alt-fill"></i> Cách bạn
+                  {{ store.distanceKm }} km
                 </span>
               </div>
             </div>
             <div class="store-head-right">
               <span class="express-eta-tag">
-                <i class="bi bi-lightning-charge-fill"></i> {{ store.deliveryTime }}
+                <i class="bi bi-lightning-charge-fill"></i>
+                {{ store.deliveryTime }}
               </span>
             </div>
           </div>
@@ -251,17 +274,27 @@ const handleProceedToCheckout = () => {
 
               <!-- Ảnh món -->
               <div class="item-thumb-box">
-                <img :src="item.image" :alt="item.name" class="item-thumb-img" />
+                <img
+                  :src="item.image"
+                  :alt="item.name"
+                  class="item-thumb-img"
+                />
               </div>
 
               <!-- Chi tiết món -->
               <div class="item-meta-box">
-                <h4 class="item-name-heading" :title="item.name">{{ item.name }}</h4>
-                <div class="item-unit-tag" v-if="item.unit">Quy cách: {{ item.unit }}</div>
+                <h4 class="item-name-heading" :title="item.name">
+                  {{ item.name }}
+                </h4>
+                <div class="item-unit-tag" v-if="item.unit">
+                  Quy cách: {{ item.unit }}
+                </div>
                 <div class="item-price-row">
-                  <span class="current-price">{{ item.price.toLocaleString("vi-VN") }} ₫</span>
+                  <span class="current-price"
+                    >{{ item.price.toLocaleString('vi-VN') }} ₫</span
+                  >
                   <span v-if="item.originalPrice" class="original-price">
-                    {{ item.originalPrice.toLocaleString("vi-VN") }} ₫
+                    {{ item.originalPrice.toLocaleString('vi-VN') }} ₫
                   </span>
                 </div>
               </div>
@@ -291,7 +324,7 @@ const handleProceedToCheckout = () => {
 
               <!-- Thành tiền -->
               <div class="item-line-total">
-                {{ (item.price * item.quantity).toLocaleString("vi-VN") }} ₫
+                {{ (item.price * item.quantity).toLocaleString('vi-VN') }} ₫
               </div>
 
               <!-- Nút xóa món -->
@@ -314,7 +347,10 @@ const handleProceedToCheckout = () => {
               <input
                 type="text"
                 :value="store.note || ''"
-                @input="(e: any) => cart.updateStoreNote(store.storeId, e.target.value)"
+                @input="
+                  (e: any) =>
+                    cart.updateStoreNote(store.storeId, e.target.value)
+                "
                 class="store-note-input"
                 placeholder="Lời nhắn cho nhà vườn / tiệm (VD: Lấy quả chín vừa, thái lát sẵn...)"
               />
@@ -347,8 +383,12 @@ const handleProceedToCheckout = () => {
                 <div class="sug-store-name">{{ sug.storeName }}</div>
                 <h4 class="sug-prod-name" :title="sug.name">{{ sug.name }}</h4>
                 <div class="sug-price-row">
-                  <span class="sug-price">{{ sug.price.toLocaleString('vi-VN') }} ₫</span>
-                  <span v-if="sug.originalPrice" class="sug-original">{{ sug.originalPrice.toLocaleString('vi-VN') }} ₫</span>
+                  <span class="sug-price"
+                    >{{ sug.price.toLocaleString('vi-VN') }} ₫</span
+                  >
+                  <span v-if="sug.originalPrice" class="sug-original"
+                    >{{ sug.originalPrice.toLocaleString('vi-VN') }} ₫</span
+                  >
                 </div>
                 <button
                   type="button"
@@ -397,14 +437,21 @@ const handleProceedToCheckout = () => {
               class="voucher-alert-msg"
               :class="voucherAlert.type"
             >
-              <i :class="voucherAlert.type === 'success' ? 'bi-check-circle-fill' : 'bi-exclamation-circle-fill'"></i>
+              <i
+                :class="
+                  voucherAlert.type === 'success'
+                    ? 'bi-check-circle-fill'
+                    : 'bi-exclamation-circle-fill'
+                "
+              ></i>
               <span>{{ voucherAlert.text }}</span>
             </div>
 
             <!-- Voucher đang kích hoạt -->
             <div v-if="cart.currentVoucher.value" class="active-voucher-pill">
               <div class="voucher-pill-content">
-                <strong>{{ cart.currentVoucher.value.code }}</strong>:
+                <strong>{{ cart.currentVoucher.value.code }}</strong
+                >:
                 <span>{{ cart.currentVoucher.value.title }}</span>
               </div>
               <button
@@ -440,30 +487,48 @@ const handleProceedToCheckout = () => {
           <div class="cost-breakdown-table">
             <div class="cost-row">
               <span class="cost-label">
-                Tạm tính (<strong>{{ cart.selectedItemsCount.value }}</strong> món):
+                Tạm tính (<strong>{{ cart.selectedItemsCount.value }}</strong>
+                món):
               </span>
-              <strong class="cost-value">{{ cart.subTotal.value.toLocaleString("vi-VN") }} ₫</strong>
+              <strong class="cost-value"
+                >{{ cart.subTotal.value.toLocaleString('vi-VN') }} ₫</strong
+              >
             </div>
 
-            <div v-if="cart.voucherDiscount.value > 0" class="cost-row discount-row">
+            <div
+              v-if="cart.voucherDiscount.value > 0"
+              class="cost-row discount-row"
+            >
               <span class="cost-label">
                 <i class="bi bi-tag-fill"></i> Giảm giá Voucher:
               </span>
-              <strong class="cost-value text-success">-{{ cart.voucherDiscount.value.toLocaleString("vi-VN") }} ₫</strong>
+              <strong class="cost-value text-success"
+                >-{{
+                  cart.voucherDiscount.value.toLocaleString('vi-VN')
+                }}
+                ₫</strong
+              >
             </div>
 
             <div class="cost-row">
               <span class="cost-label">
                 Phí giao hỏa tốc ({{ cart.activeStoresCount.value }} quán):
               </span>
-              <strong class="cost-value">{{ cart.estimatedShipping.value.toLocaleString("vi-VN") }} ₫</strong>
+              <strong class="cost-value"
+                >{{
+                  cart.estimatedShipping.value.toLocaleString('vi-VN')
+                }}
+                ₫</strong
+              >
             </div>
 
             <div class="cost-divider"></div>
 
             <div class="cost-row grand-total-row">
               <span class="grand-label">Tổng thanh toán:</span>
-              <strong class="grand-value">{{ cart.totalAmount.value.toLocaleString("vi-VN") }} ₫</strong>
+              <strong class="grand-value"
+                >{{ cart.totalAmount.value.toLocaleString('vi-VN') }} ₫</strong
+              >
             </div>
             <div class="vat-note">(Đã bao gồm thuế và các phụ phí nếu có)</div>
           </div>
@@ -475,10 +540,15 @@ const handleProceedToCheckout = () => {
             :disabled="cart.selectedItemsCount.value === 0"
             @click="handleProceedToCheckout"
           >
-            <span>TIẾN HÀNH ĐẶT HÀNG ({{ cart.selectedItemsCount.value }})</span>
+            <span
+              >TIẾN HÀNH ĐẶT HÀNG ({{ cart.selectedItemsCount.value }})</span
+            >
             <i class="bi bi-arrow-right-short"></i>
           </button>
-          <p v-if="cart.selectedItemsCount.value === 0" class="no-selection-warning">
+          <p
+            v-if="cart.selectedItemsCount.value === 0"
+            class="no-selection-warning"
+          >
             ⚠️ Vui lòng tick chọn ít nhất 1 món để chốt đơn hàng!
           </p>
 
@@ -492,11 +562,16 @@ const handleProceedToCheckout = () => {
               </li>
               <li>
                 <i class="bi bi-shield-fill-check text-green"></i>
-                <span>Nông sản kiểm định VietGAP & Vệ sinh an toàn thực phẩm.</span>
+                <span
+                  >Nông sản kiểm định VietGAP & Vệ sinh an toàn thực phẩm.</span
+                >
               </li>
               <li>
                 <i class="bi bi-arrow-repeat text-blue"></i>
-                <span>Đổi trả 100% trong vòng 24 giờ nếu hàng dập nát, hư hỏng.</span>
+                <span
+                  >Đổi trả 100% trong vòng 24 giờ nếu hàng dập nát, hư
+                  hỏng.</span
+                >
               </li>
             </ul>
           </div>
@@ -512,7 +587,9 @@ const handleProceedToCheckout = () => {
         </div>
         <h2 class="empty-main-title">Giỏ Hàng Của Bạn Đang Trống!</h2>
         <p class="empty-sub-text">
-          Chưa có món hàng nào trong giỏ. Hãy dạo quanh các gian hàng nhà vườn và tiểu thương địa phương quanh bạn để chọn những nông sản tươi ngon nhất nhé!
+          Chưa có món hàng nào trong giỏ. Hãy dạo quanh các gian hàng nhà vườn
+          và tiểu thương địa phương quanh bạn để chọn những nông sản tươi ngon
+          nhất nhé!
         </p>
         <div class="empty-actions">
           <router-link to="/products" class="btn-shop-now">
@@ -546,7 +623,11 @@ const handleProceedToCheckout = () => {
   max-width: 1240px;
   margin: 24px auto 80px auto;
   padding: 0 20px;
-  font-family: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  font-family:
+    'Plus Jakarta Sans',
+    system-ui,
+    -apple-system,
+    sans-serif;
   color: #2b1b14;
 }
 
@@ -731,7 +812,7 @@ const handleProceedToCheckout = () => {
   border-color: #d85a2a;
 }
 .real-checkbox:checked ~ .custom-checkmark::after {
-  content: "";
+  content: '';
   display: block;
   width: 5px;
   height: 10px;
@@ -918,7 +999,9 @@ const handleProceedToCheckout = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.15s, transform 0.15s;
+  transition:
+    color 0.15s,
+    transform 0.15s;
 }
 .btn-delete-item:hover {
   color: #dc2626;
@@ -1040,7 +1123,9 @@ const handleProceedToCheckout = () => {
   background: #faf7f2;
   display: flex;
   flex-direction: column;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 .suggested-card:hover {
   transform: translateY(-3px);
@@ -1387,9 +1472,15 @@ const handleProceedToCheckout = () => {
   color: #52525b;
   line-height: 1.4;
 }
-.text-terracotta { color: #d85a2a; }
-.text-green { color: #16a34a; }
-.text-blue { color: #2563eb; }
+.text-terracotta {
+  color: #d85a2a;
+}
+.text-green {
+  color: #16a34a;
+}
+.text-blue {
+  color: #2563eb;
+}
 
 /* 8. EMPTY STATE */
 .empty-cart-container {
