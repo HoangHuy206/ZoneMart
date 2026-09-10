@@ -633,14 +633,6 @@ const isVerifyingZaloOtp = ref(false);
 const zaloCountdown = ref(0);
 let zaloTimer: any = null;
 
-// Thông báo mô phỏng tin nhắn Zalo OA gửi mã xác thực tới điện thoại
-const simulatedZaloNotification = reactive({
-  show: false,
-  phone: "",
-  otp: "",
-  time: ""
-});
-
 const openLinkZaloModal = () => {
   zaloPhoneInput.value = (user.phone && user.phone !== "0988 000 000") ? user.phone.replace(/\s+/g, '') : "";
   zaloOtpInput.value = "";
@@ -662,22 +654,11 @@ const handleSendZaloOtp = async () => {
       body: JSON.stringify({ phoneNumber: clean })
     }).catch(() => null);
 
-    let generatedOtp = "839215";
     if (res && res.ok) {
-      const data = await res.json();
-      if (data.demoOtp) generatedOtp = data.demoOtp;
+      triggerToast(`Đã gửi mã xác thực 6 số vào Zalo của ${clean}. Hãy mở ứng dụng Zalo để lấy mã!`);
     } else {
-      generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+      triggerToast(`Đã gửi mã xác thực 6 số vào Zalo của ${clean}. Hãy mở ứng dụng Zalo để lấy mã!`);
     }
-
-    const now = new Date();
-    const timeStr = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
-    simulatedZaloNotification.phone = clean;
-    simulatedZaloNotification.otp = generatedOtp;
-    simulatedZaloNotification.time = timeStr;
-    simulatedZaloNotification.show = true;
-
-    triggerToast(`Đã gửi mã xác thực 6 số qua Zalo tới ${clean}!`);
 
     zaloCountdown.value = 60;
     if (zaloTimer) clearInterval(zaloTimer);
@@ -693,13 +674,6 @@ const handleSendZaloOtp = async () => {
   }
 };
 
-const fillDemoZaloOtp = () => {
-  if (simulatedZaloNotification.otp) {
-    zaloOtpInput.value = simulatedZaloNotification.otp;
-    triggerToast("Đã tự động điền mã OTP từ tin nhắn Zalo!");
-  }
-};
-
 const handleVerifyZaloOtp = async () => {
   const cleanPhone = zaloPhoneInput.value.replace(/[^0-9]/g, "");
   const otp = zaloOtpInput.value.trim();
@@ -708,7 +682,7 @@ const handleVerifyZaloOtp = async () => {
     return;
   }
   if (!otp || otp.length < 6) {
-    triggerToast("Vui lòng nhập đầy đủ mã OTP 6 số!");
+    triggerToast("Vui lòng nhập đầy đủ mã xác thực 6 số!");
     return;
   }
 
@@ -726,51 +700,38 @@ const handleVerifyZaloOtp = async () => {
       })
     }).catch(() => null);
 
-    let isSuccess = false;
-    let successMsg = "";
-
     if (res && res.ok) {
       const data = await res.json();
       if (data.success) {
-        isSuccess = true;
-        successMsg = data.message;
+        user.phone = cleanPhone;
+        
+        const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
+        localStorage.setItem(savedKey, JSON.stringify(user));
+
+        const curr = auth.currentUser.value;
+        if (curr) {
+          curr.phone = cleanPhone;
+          auth.login(curr);
+        }
+        try {
+          const savedUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+          if (savedUser) {
+            const parsed = JSON.parse(savedUser);
+            parsed.phone = cleanPhone;
+            localStorage.setItem("currentUser", JSON.stringify(parsed));
+            localStorage.setItem("zonemart_user", JSON.stringify(parsed));
+          }
+        } catch {}
+
+        triggerToast(`🎉 Đã thêm số điện thoại ${cleanPhone} thành công! Giờ bạn có thể dùng SĐT này để đăng nhập.`);
+        isZaloModalOpen.value = false;
+        return;
       } else {
-        triggerToast(data.message || "Mã OTP Zalo không chính xác hoặc đã hết hạn!");
+        triggerToast(data.message || "Mã xác thực Zalo không chính xác!");
         return;
       }
     } else {
-      if (simulatedZaloNotification.otp && otp === simulatedZaloNotification.otp) {
-        isSuccess = true;
-      } else {
-        triggerToast("Mã OTP không chính xác. Vui lòng kiểm tra lại tin nhắn Zalo!");
-        return;
-      }
-    }
-
-    if (isSuccess) {
-      user.phone = cleanPhone;
-      
-      const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
-      localStorage.setItem(savedKey, JSON.stringify(user));
-
-      const curr = auth.currentUser.value;
-      if (curr) {
-        curr.phone = cleanPhone;
-        auth.login(curr);
-      }
-      try {
-        const savedUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
-        if (savedUser) {
-          const parsed = JSON.parse(savedUser);
-          parsed.phone = cleanPhone;
-          localStorage.setItem("currentUser", JSON.stringify(parsed));
-          localStorage.setItem("zonemart_user", JSON.stringify(parsed));
-        }
-      } catch {}
-
-      triggerToast(successMsg || `🎉 Liên kết Zalo thành công! Giờ bạn có thể dùng SĐT ${cleanPhone} để đăng nhập.`);
-      isZaloModalOpen.value = false;
-      simulatedZaloNotification.show = false;
+      triggerToast("Mã xác thực không chính xác hoặc đã hết hạn. Vui lòng kiểm tra lại tin nhắn Zalo!");
     }
   } finally {
     isVerifyingZaloOtp.value = false;
@@ -1315,37 +1276,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- THÔNG BÁO MÔ PHỎNG TIN NHẮN ZALO ZNS GỬI TỚI ĐIỆN THOẠI -->
-    <transition name="zalo-pop">
-      <div v-if="simulatedZaloNotification.show" class="zalo-notification-banner">
-        <div class="zalo-banner-header">
-          <div class="zalo-brand">
-            <span class="zalo-app-badge">Zalo</span>
-            <span class="zalo-oa-name">ZoneMart Security</span>
-            <i class="bi bi-patch-check-fill zalo-verified-tick" title="Tài khoản Zalo Doanh Nghiệp đã xác thực"></i>
-          </div>
-          <div class="zalo-time">{{ simulatedZaloNotification.time }}</div>
-          <button class="zalo-close-btn" @click="simulatedZaloNotification.show = false">✕</button>
-        </div>
-        <div class="zalo-banner-body">
-          <p class="zalo-banner-msg">
-            Mã xác thực (OTP) liên kết tài khoản ZoneMart cho SĐT <strong>{{ simulatedZaloNotification.phone }}</strong> là:
-          </p>
-          <div class="zalo-otp-highlight-box">
-            <span class="zalo-otp-digits font-mono">{{ simulatedZaloNotification.otp }}</span>
-            <span class="zalo-otp-exp">(Có hiệu lực trong 5 phút)</span>
-          </div>
-          <p class="zalo-banner-warning">
-            ⚠️ <em>Tuyệt đối không chia sẻ mã xác thực này cho bất kỳ ai để bảo vệ tài khoản.</em>
-          </p>
-        </div>
-        <div class="zalo-banner-action">
-          <button type="button" class="btn-zalo-autofill" @click="fillDemoZaloOtp">
-            <i class="bi bi-lightning-charge-fill me-1"></i> Điền Nhanh Mã Này Vào Ô OTP
-          </button>
-        </div>
-      </div>
-    </transition>
 
     <!-- MODAL THÊM / ĐỔI SỐ ĐIỆN THOẠI (XÁC THỰC MÃ QUA ZALO) -->
     <div v-if="isZaloModalOpen" class="modal-backdrop" @click="isZaloModalOpen = false">
@@ -1395,17 +1325,7 @@ onMounted(() => {
 
           <!-- Ô nhập mã OTP 6 số -->
           <div class="form-group mb-2">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <label class="form-label font-bold mb-0">Mã xác thực 6 số (Gửi qua Zalo)</label>
-              <button
-                v-if="simulatedZaloNotification.otp"
-                type="button"
-                class="btn-paste-otp-link"
-                @click="fillDemoZaloOtp"
-              >
-                <i class="bi bi-lightning-charge-fill text-warning"></i> Điền nhanh mã {{ simulatedZaloNotification.otp }}
-              </button>
-            </div>
+            <label class="form-label font-bold mb-1">Mã xác thực 6 số (Gửi qua Zalo)</label>
             <input
               v-model="zaloOtpInput"
               type="text"
@@ -2822,155 +2742,6 @@ onMounted(() => {
   transform: translateY(-1px);
 }
 
-/* POPUP MÔ PHỎNG TIN NHẮN ZALO ZNS */
-.zalo-notification-banner {
-  position: fixed;
-  top: 86px;
-  right: 28px;
-  width: 360px;
-  background: #ffffff;
-  border: 1px solid #bfdbfe;
-  border-radius: 16px;
-  box-shadow: 0 16px 36px rgba(0, 104, 255, 0.2), 0 4px 12px rgba(0, 0, 0, 0.08);
-  padding: 16px 18px;
-  z-index: 10000;
-  border-left: 6px solid #0068ff;
-  animation: zaloSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes zaloSlideIn {
-  from {
-    transform: translateX(40px) scale(0.95);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0) scale(1);
-    opacity: 1;
-  }
-}
-
-.zalo-pop-enter-active,
-.zalo-pop-leave-active {
-  transition: all 0.3s ease;
-}
-
-.zalo-pop-enter-from,
-.zalo-pop-leave-to {
-  opacity: 0;
-  transform: translateX(30px);
-}
-
-.zalo-banner-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.zalo-brand {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.zalo-app-badge {
-  background: #0068ff;
-  color: #ffffff;
-  font-size: 10.5px;
-  font-weight: 900;
-  padding: 2px 6px;
-  border-radius: 6px;
-}
-
-.zalo-oa-name {
-  font-size: 13px;
-  font-weight: 800;
-  color: #0f172a;
-}
-
-.zalo-verified-tick {
-  color: #0068ff;
-  font-size: 13px;
-}
-
-.zalo-time {
-  font-size: 11px;
-  color: #94a3b8;
-}
-
-.zalo-close-btn {
-  background: transparent;
-  border: none;
-  color: #94a3b8;
-  font-size: 12px;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.zalo-close-btn:hover {
-  color: #0f172a;
-  background: #f1f5f9;
-}
-
-.zalo-banner-msg {
-  font-size: 12.5px;
-  color: #334155;
-  margin: 0 0 8px 0;
-  line-height: 1.5;
-}
-
-.zalo-otp-highlight-box {
-  background: #eff6ff;
-  border: 1px dashed #0068ff;
-  border-radius: 10px;
-  padding: 10px;
-  text-align: center;
-  margin-bottom: 8px;
-}
-
-.zalo-otp-digits {
-  font-size: 26px;
-  font-weight: 900;
-  letter-spacing: 6px;
-  color: #0068ff;
-  display: block;
-}
-
-.zalo-otp-exp {
-  font-size: 11px;
-  color: #64748b;
-}
-
-.zalo-banner-warning {
-  font-size: 11px;
-  color: #dc2626;
-  margin: 0 0 10px 0;
-  line-height: 1.4;
-}
-
-.btn-zalo-autofill {
-  width: 100%;
-  background: linear-gradient(135deg, #0068ff, #0052cc);
-  color: #ffffff;
-  border: none;
-  font-size: 12.5px;
-  font-weight: 700;
-  padding: 8px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
-.btn-zalo-autofill:hover {
-  background: #004dc2;
-}
 
 /* MODAL LIÊN KẾT ZALO */
 .modal-zalo-card {
