@@ -8,12 +8,16 @@
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
+import { useProductCatalog, type CatalogProduct } from "../../composables/useProductCatalog";
 
 const auth = useAuth();
 const router = useRouter();
+const catalog = useProductCatalog();
 const orders = ref<any[]>([]);
 
 interface OrderProductItem {
+  id?: string;
+  productId?: string;
   name: string;
   price: number;
   quantity: number;
@@ -27,6 +31,8 @@ const parseOrderItems = (rawItems: any): OrderProductItem[] => {
     return rawItems.map((it: any) => {
       if (typeof it === "object" && it !== null) {
         return {
+          id: it.id || it.productId || "",
+          productId: it.productId || it.id || "",
           name: it.name || "Sản phẩm ZoneMart",
           price: Number(it.price) || 0,
           quantity: Number(it.quantity) || 1,
@@ -35,6 +41,8 @@ const parseOrderItems = (rawItems: any): OrderProductItem[] => {
         };
       }
       return {
+        id: "",
+        productId: "",
         name: String(it),
         price: 0,
         quantity: 1,
@@ -90,12 +98,20 @@ const getOrderStatusClass = (status: any): string => {
 const getOrderStatusText = (status: any): string => {
   if (!status) return "Đang xử lý";
   if (typeof status === "string") {
-    if (status.includes("TPBank") || status.includes("Đã thanh toán")) return status;
-    if (status === "completed") return "Giao hàng thành công";
-    if (status === "delivering") return "Đang giao hàng (Hỏa tốc)";
-    return status;
+    const clean = status.replace(/\s*\(TPBank\)/gi, "").replace(/\s*TPBank/gi, "").trim();
+    if (clean.includes("Đã thanh toán")) return "Đã thanh toán";
+    if (clean === "completed") return "Giao hàng thành công";
+    if (clean === "delivering") return "Đang giao hàng (Hỏa tốc)";
+    return clean;
   }
   return "Đang xử lý";
+};
+
+const formatPaymentMethod = (method: any): string => {
+  if (!method) return "";
+  const clean = String(method).replace(/\s*\(TPBank\)/gi, "").replace(/\s*TPBank/gi, "").trim();
+  if (clean.toLowerCase() === "chuyển khoản") return "Chuyển khoản QR";
+  return clean || "Chuyển khoản QR";
 };
 
 const formatPrice = (val: number | undefined): string => {
@@ -194,8 +210,91 @@ const handleConfirmReceived = (id: string) => {
   alert(`Cảm ơn bạn đã xác nhận nhận hàng cho đơn #${id}! Đơn hàng đã hoàn tất.`);
 };
 
-const handleReportIssue = (id: string) => {
-  alert(`Đã gửi yêu cầu khiếu nại cho đơn #${id}. CSKH ZoneMart sẽ liên hệ hỗ trợ bạn ngay!`);
+const findProductMatch = (item: any): CatalogProduct | undefined => {
+  if (!item) return undefined;
+  const all = catalog.allProducts.value || [];
+  
+  if (item.id || item.productId) {
+    const byId = all.find(p => p.id === (item.id || item.productId));
+    if (byId) return byId;
+  }
+  
+  if (item.name) {
+    const target = item.name.toLowerCase().trim();
+    const byExact = all.find(p => p.name.toLowerCase().trim() === target);
+    if (byExact) return byExact;
+    
+    const bySub = all.find(p => {
+      const pn = p.name.toLowerCase().trim();
+      return pn.includes(target) || target.includes(pn);
+    });
+    if (bySub) return bySub;
+  }
+
+  if (item.image) {
+    const byImg = all.find(p => p.image === item.image);
+    if (byImg) return byImg;
+  }
+
+  return undefined;
+};
+
+const goToProductDetail = (item: any) => {
+  const match = findProductMatch(item);
+  if (match) {
+    router.push(`/products/${match.id}`);
+  } else if (item.id || item.productId) {
+    router.push(`/products/${item.id || item.productId}`);
+  } else if (item.name) {
+    router.push(`/products?search=${encodeURIComponent(item.name)}`);
+  } else {
+    router.push('/products');
+  }
+};
+
+const handleBuyAgain = (order: any) => {
+  const items = parseOrderItems(order.items);
+  if (!items || items.length === 0) {
+    router.push('/products');
+    return;
+  }
+  goToProductDetail(items[0]);
+};
+
+const handleReportIssue = (order: any) => {
+  const items = parseOrderItems(order.items);
+  const firstItem = items[0] || {};
+  const orderId = String(order.orderId || order.id || '').replace(/^#/, '').trim();
+  const storeName = getOrderStoreName(order);
+  const total = order.total || 0;
+
+  const supportData = {
+    orderCode: orderId,
+    productName: firstItem.name || 'Đơn hàng ZoneMart',
+    productImage: firstItem.image || '',
+    storeName: storeName,
+    total: total,
+    date: order.date || '',
+    recipientName: order.recipientName || '',
+    recipientPhone: order.recipientPhone || '',
+    itemsCount: items.length
+  };
+
+  try {
+    sessionStorage.setItem('zonemart_support_order', JSON.stringify(supportData));
+  } catch (e) {}
+
+  router.push({
+    path: '/contact',
+    query: {
+      orderCode: orderId,
+      productName: firstItem.name || '',
+      productImage: firstItem.image || '',
+      storeName: storeName,
+      total: String(total),
+      topic: 'order'
+    }
+  });
 };
 </script>
 
@@ -225,7 +324,7 @@ const handleReportIssue = (id: string) => {
 
           <div class="order-top-badges">
             <span class="badge payment-badge" v-if="order.paymentMethod">
-              <i class="bi bi-credit-card-2-front me-1"></i>{{ order.paymentMethod }}
+              <i class="bi bi-credit-card-2-front me-1"></i>{{ formatPaymentMethod(order.paymentMethod) }}
             </span>
             <span class="delivery-badge" :class="order.deliveryType || (order.shippingMethod?.includes('Hỏa Tốc') ? 'express' : 'standard')">
               <i class="bi bi-lightning-charge-fill me-1"></i>
@@ -261,7 +360,9 @@ const handleReportIssue = (id: string) => {
             <div 
               v-for="(item, idx) in parseOrderItems(order.items)" 
               :key="idx" 
-              class="product-item-card"
+              class="product-item-card clickable-product"
+              @click="goToProductDetail(item)"
+              title="Bấm để xem chi tiết sản phẩm này"
             >
               <!-- Hình ảnh sản phẩm -->
               <div class="product-thumb-box">
@@ -313,12 +414,7 @@ const handleReportIssue = (id: string) => {
                 <strong>Lời nhắn giao hàng:</strong> <span>{{ order.deliveryNote }}</span>
               </div>
             </div>
-            <div v-if="order.bankRef" class="info-row bank-row">
-              <i class="bi bi-bank2 info-icon text-success"></i>
-              <div class="info-text">
-                <strong>Đối soát ngân hàng:</strong> <span>{{ order.bankRef }}</span>
-              </div>
-            </div>
+
           </div>
         </div>
 
@@ -338,7 +434,7 @@ const handleReportIssue = (id: string) => {
             </div>
 
             <div class="action-buttons">
-              <button class="btn btn-outline-primary btn-sm" @click="router.push('/products')">
+              <button class="btn btn-outline-primary btn-sm" @click="handleBuyAgain(order)" title="Xem và mua lại sản phẩm này">
                 <i class="bi bi-arrow-repeat me-1"></i> Mua Lại
               </button>
               <button 
@@ -350,7 +446,8 @@ const handleReportIssue = (id: string) => {
               </button>
               <button 
                 class="btn btn-outline-secondary btn-sm" 
-                @click="handleReportIssue(order.orderId || order.id)"
+                @click="handleReportIssue(order)"
+                title="Gửi yêu cầu hỗ trợ cho đơn hàng này"
               >
                 <i class="bi bi-question-circle me-1"></i> Trợ giúp
               </button>
@@ -629,6 +726,17 @@ const handleReportIssue = (id: string) => {
   border-radius: 14px;
   padding: 12px 16px;
   transition: all 0.2s ease;
+}
+
+.product-item-card.clickable-product {
+  cursor: pointer;
+}
+
+.product-item-card.clickable-product:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
 }
 
 .product-item-card:hover {

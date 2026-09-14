@@ -33,5 +33,7 @@ skills/
 GEMINI.md
 **/GEMINI.md
 AGENTS.md
-**/AGENTS.md
-
+# Environment & local state
+.env
+.env.*
+.paid_orders.json

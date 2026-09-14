@@ -459,7 +459,7 @@ const onPaymentConfirmed = (paidAmount?: number) => {
     id: orderId,
     date: dateStr,
     total: finalAmount,
-    status: "Đã thanh toán (TPBank)",
+    status: "Đã thanh toán",
     itemsCount: cart.selectedItemsCount.value,
     items: selectedCartItems.value.map(item => ({
       name: item.name,
@@ -473,9 +473,8 @@ const onPaymentConfirmed = (paidAmount?: number) => {
     recipientPhone: buyerPhone.value,
     deliveryNote: deliveryNote.value,
     shippingMethod: isExpressSelected.value ? "Hỏa Tốc Siêu Tốc" : "Tiêu Chuẩn",
-    paymentMethod: "Chuyển khoản TPBank",
+    paymentMethod: "Chuyển khoản QR",
     paidAt: new Date().toISOString(),
-    bankRef: "TPBank • 28122068866 (DOAN HOANG HUY)",
     location: currentCoords.value
   };
 
@@ -577,8 +576,31 @@ const initPaymentSSE = () => {
   } catch (e) {}
 };
 
+const syncOrderDetailsToServer = async () => {
+  try {
+    const items = selectedCartItems.value.map(i => ({
+      name: i.name,
+      price: i.price,
+      quantity: i.quantity,
+      image: i.image,
+      shop: i.shop,
+    }));
+    await fetch('/api/payment/register-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: orderPaymentCode.value,
+        total: finalTotal.value,
+        buyerName: buyerName.value,
+        items,
+      }),
+    });
+  } catch (e) {}
+};
+
 const startPaymentListener = () => {
   initPaymentSSE();
+  syncOrderDetailsToServer();
 
   try {
     if (window.BroadcastChannel) {
@@ -1026,9 +1048,29 @@ const handlePlaceOrder = () => {
 
               <!-- Trạng thái: HỆ THỐNG ĐANG XỬ LÝ (KHI ĐANG ĐỐI SOÁT VỚI TƯƠNG TÁC TỪ KHÁCH) -->
               <div v-else-if="paymentState === 'PROCESSING'" class="payment-status-radar">
-      <span class="radar-dot"></span>
-      <span class="radar-text">Đang tự động đối soát giao dịch ngân hàng...</span>
-    </div>
+                <span class="radar-dot"></span>
+                <span class="radar-text">Đang tự động đối soát giao dịch ngân hàng...</span>
+              </div>
+
+              <!-- HIỂN THỊ DANH SÁCH SẢN PHẨM THANH TOÁN (HÌNH ẢNH + TÊN) -->
+              <div v-if="selectedCartItems && selectedCartItems.length > 0" class="qr-products-summary-card">
+                <div class="summary-card-header">
+                  <i class="bi bi-bag-check-fill text-primary me-1"></i>
+                  <span>Sản phẩm thanh toán ({{ selectedCartItems.length }})</span>
+                </div>
+                <div class="summary-card-items">
+                  <div v-for="item in selectedCartItems" :key="item.id" class="qr-product-item-row">
+                    <img :src="item.image" :alt="item.name" class="qr-product-item-thumb" />
+                    <div class="qr-product-item-info">
+                      <div class="qr-product-item-name" :title="item.name">{{ item.name }}</div>
+                      <div class="qr-product-item-meta">
+                        <span class="qr-product-item-qty">x{{ item.quantity }}</span>
+                        <span class="qr-product-item-price">{{ (item.price * item.quantity).toLocaleString('vi-VN') }} ₫</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <!-- Ảnh QR sạch qr_only (không logo, không chữ vietqr hay mb) -->
               <div class="qr-image-wrapper">
@@ -1054,11 +1096,9 @@ const handlePlaceOrder = () => {
                 <i class="bi bi-shield-check text-success me-1"></i>
                 <span>Quét mã qua app ngân hàng, tiền vào hệ thống tự động xác nhận</span>
               </div>
-
-              
             </template>
 
-            <!-- TRƯỜNG HỢP 2: KHI TIỀN VÀO -> HIỆN HIỆU ỨNG ANIMATION NÚT TÍCH NGAY TẠI ĐÂY -->
+            <!-- TRƯỜNG HỢP 2: KHI TIỀN VÀO -> HIỆN HIỆU ỨNG ANIMATION NÚT TÍCH & BIÊN LAI XÁC NHẬN SANG XỊN -->
             <template v-else>
               <div class="qr-success-inline-box">
                 <div class="success-animation-circle">
@@ -1071,10 +1111,40 @@ const handlePlaceOrder = () => {
                 <h4 class="success-inline-title">Thanh Toán Thành Công!</h4>
                 <p class="success-inline-desc">Đã nhận được tiền qua tài khoản TPBank</p>
 
-                <div class="success-inline-badge">
-                  <span>Mã GD: <strong>#{{ orderPaymentCode }}</strong></span>
-                  <span class="dot-sep">•</span>
-                  <span class="price-val">{{ finalTotal.toLocaleString('vi-VN') }} ₫</span>
+                <!-- KHUNG TÓM TẮT SẢN PHẨM ĐÃ THANH TOÁN (HÌNH ẢNH + TÊN) -->
+                <div v-if="selectedCartItems && selectedCartItems.length > 0" class="success-products-preview-box">
+                  <div class="success-products-header">
+                    <span class="sp-title"><i class="bi bi-box2-heart-fill text-danger me-1"></i> Món hàng đã thanh toán</span>
+                    <span class="badge-item-count">{{ selectedCartItems.length }} món</span>
+                  </div>
+                  <div class="success-products-list">
+                    <div v-for="item in selectedCartItems" :key="item.id" class="success-product-chip">
+                      <img :src="item.image" :alt="item.name" class="success-product-thumb" />
+                      <div class="success-product-details">
+                        <span class="success-product-name">{{ item.name }}</span>
+                        <div class="success-product-pricing">
+                          <span class="success-product-qty">SL: {{ item.quantity }}</span>
+                          <span class="success-product-price">{{ (item.price * item.quantity).toLocaleString('vi-VN') }} ₫</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- BIÊN LAI GIAO DỊCH TINH GỌN -->
+                <div class="success-receipt-card">
+                  <div class="receipt-row">
+                    <span class="receipt-label">Mã giao dịch</span>
+                    <span class="receipt-value memo-val">#{{ orderPaymentCode }}</span>
+                  </div>
+                  <div class="receipt-row">
+                    <span class="receipt-label">Tổng tiền</span>
+                    <span class="receipt-value amount-val">{{ finalTotal.toLocaleString('vi-VN') }} ₫</span>
+                  </div>
+                  <div class="receipt-row">
+                    <span class="receipt-label">Ngân hàng</span>
+                    <span class="receipt-value">TPBank (DOAN HOANG HUY)</span>
+                  </div>
                 </div>
 
                 <div class="redirect-progress-bar">
@@ -1083,7 +1153,7 @@ const handlePlaceOrder = () => {
                 <p class="redirect-sub">Tự động chuyển tới đơn hàng sau {{ autoRedirectTimer }}s...</p>
 
                 <button type="button" class="btn-go-orders-inline" @click="goToBuyerOrders">
-                  <i class="bi bi-bag-check-fill me-1"></i> Xem Đơn Hàng Ngay
+                  <i class="bi bi-bag-check-fill me-1"></i> Xem Chi Tiết Đơn Hàng
                 </button>
               </div>
             </template>
@@ -1618,47 +1688,51 @@ const handlePlaceOrder = () => {
 }
 
 /* ============================================================================
-   KHUNG QR CHUYỂN KHOẢN TINH GỌN (VIETINBANK)
+   KHUNG QR CHUYỂN KHOẢN TINH GỌN & BIÊN LAI THANH TOÁN
    ============================================================================ */
 .qr-checkout-card {
-  background: #fafaf9;
-  border: 1.5px solid #e2e8f0;
-  border-radius: 18px;
-  padding: 18px 16px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 20px 18px;
   margin: 18px 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 2px 6px -1px rgba(15, 23, 42, 0.02);
+  position: relative;
+  overflow: hidden;
   transition: all 0.3s ease;
 }
 
 .payment-status-radar {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  font-weight: 700;
-  color: #c2410c;
-  background: #ffedd5;
+  font-weight: 600;
+  color: #0d9488;
+  background: #f0fdfa;
+  border: 1px solid #ccfbf1;
   padding: 5px 14px;
-  border-radius: 999px;
+  border-radius: 9999px;
   margin-bottom: 14px;
+  letter-spacing: 0.1px;
 }
 
 .radar-dot {
   width: 8px;
   height: 8px;
-  background: #ea580c;
+  background: #0d9488;
   border-radius: 50%;
-  box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.7);
-  animation: radar-pulse 1.6s infinite cubic-bezier(0.66, 0, 0, 1);
+  box-shadow: 0 0 0 0 rgba(13, 148, 136, 0.6);
+  animation: radar-pulse 1.8s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes radar-pulse {
-  to {
-    box-shadow: 0 0 0 10px rgba(234, 88, 12, 0);
-  }
+  0% { box-shadow: 0 0 0 0 rgba(13, 148, 136, 0.6); }
+  70% { box-shadow: 0 0 0 8px rgba(13, 148, 136, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(13, 148, 136, 0); }
 }
 
 .payment-status-processing {
@@ -1684,82 +1758,210 @@ const handlePlaceOrder = () => {
   100% { transform: rotate(360deg); }
 }
 
+/* THẺ TÓM TẮT SẢN PHẨM TRƯỚC KHI QUÉT QR */
+.qr-products-summary-card {
+  width: 100%;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.summary-card-header {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.summary-card-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.summary-card-items::-webkit-scrollbar {
+  width: 4px;
+}
+
+.summary-card-items::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.qr-product-item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ffffff;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  padding: 6px 10px;
+  transition: all 0.15s ease;
+}
+
+.qr-product-item-row:hover {
+  border-color: #e2e8f0;
+  transform: translateY(-1px);
+}
+
+.qr-product-item-thumb {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+
+.qr-product-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.qr-product-item-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qr-product-item-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.qr-product-item-qty {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.qr-product-item-price {
+  color: #ea580c;
+  font-weight: 700;
+}
+
+/* KHUNG QR */
 .qr-image-wrapper {
   background: #ffffff;
-  padding: 12px;
-  border-radius: 16px;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid #f1f5f9;
+  box-shadow: 0 8px 24px -4px rgba(15, 23, 42, 0.06), 0 2px 6px -1px rgba(15, 23, 42, 0.02);
   margin-bottom: 14px;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.qr-image-wrapper:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08);
 }
 
 .vietqr-clean-img {
   width: 195px;
   height: 195px;
   display: block;
-  border-radius: 8px;
+  border-radius: 10px;
   object-fit: contain;
 }
 
-/* HỘP NỘI DUNG CHUYỂN TIỀN DUY NHẤT */
+/* HỘP NỘI DUNG CHUYỂN TIỀN HIỆN ĐẠI */
 .memo-only-box {
   width: 100%;
-  background: #ffffff;
-  border: 1.5px dashed #cbd5e1;
-  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.memo-only-box:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
 }
 
 .memo-label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   color: #64748b;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
 }
 
 .memo-copy-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  gap: 12px;
 }
 
 .memo-code {
-  font-size: 18px;
-  font-weight: 900;
+  font-size: 19px;
+  font-weight: 800;
   color: #ea580c;
-  font-family: monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   letter-spacing: 1px;
 }
 
 .btn-copy-memo {
-  background: #fff7ed;
+  background: #ffffff;
   border: 1px solid #fed7aa;
   color: #ea580c;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.15s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .btn-copy-memo:hover {
   background: #ea580c;
+  border-color: #ea580c;
   color: #ffffff;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.25);
+  transform: translateY(-1px);
+}
+
+.btn-copy-memo:active {
+  transform: translateY(0);
 }
 
 .qr-helper-text {
   font-size: 11.5px;
-  color: #475569;
+  color: #64748b;
   text-align: center;
-  line-height: 1.4;
-  margin-bottom: 10px;
+  line-height: 1.5;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .api-guide-row {
@@ -1801,10 +2003,10 @@ const handlePlaceOrder = () => {
   color: #ffffff;
 }
 
-/* ANIMATION NÚT TÍCH XANH */
+/* ANIMATION NÚT TÍCH XANH & BIÊN LAI CAO CẤP */
 .qr-success-inline-box {
   width: 100%;
-  padding: 10px 4px 6px 4px;
+  padding: 8px 4px;
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -1813,20 +2015,20 @@ const handlePlaceOrder = () => {
 }
 
 @keyframes success-fade-in {
-  0% { opacity: 0; transform: scale(0.92); }
+  0% { opacity: 0; transform: scale(0.94); }
   100% { opacity: 1; transform: scale(1); }
 }
 
 .success-animation-circle {
-  width: 80px;
-  height: 80px;
-  margin: 6px auto 14px auto;
+  width: 72px;
+  height: 72px;
+  margin: 4px auto 12px auto;
   position: relative;
 }
 
 .checkmark-svg {
-  width: 80px;
-  height: 80px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
   display: block;
   stroke-width: 3.5;
@@ -1861,47 +2063,183 @@ const handlePlaceOrder = () => {
 
 @keyframes checkmark-scale {
   0%, 100% { transform: none; }
-  50% { transform: scale3d(1.1, 1.1, 1); }
+  50% { transform: scale3d(1.08, 1.08, 1); }
 }
 
 @keyframes checkmark-fill {
-  100% { box-shadow: inset 0 0 0 40px #ecfdf5; }
+  100% { box-shadow: inset 0 0 0 38px #ecfdf5; }
 }
 
 .success-inline-title {
-  margin: 0 0 4px 0;
-  font-size: 19px;
+  margin: 4px 0 4px 0;
+  font-size: 20px;
   font-weight: 800;
-  color: #166534;
+  color: #0f172a;
+  letter-spacing: -0.02em;
 }
 
 .success-inline-desc {
-  margin: 0 0 12px 0;
-  font-size: 12.5px;
-  color: #475569;
+  margin: 0 0 14px 0;
+  font-size: 13px;
+  color: #64748b;
 }
 
-.success-inline-badge {
-  background: #ffffff;
-  border: 1px solid #bbf7d0;
-  color: #166534;
-  font-size: 12.5px;
-  padding: 6px 14px;
-  border-radius: 999px;
+/* KHUNG DANH SÁCH MÓN ĐÃ THANH TOÁN (CARD SUCCESS) */
+.success-products-preview-box {
+  width: 100%;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  text-align: left;
+}
+
+.success-products-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.sp-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  display: flex;
+  align-items: center;
+}
+
+.badge-item-count {
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.success-products-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.success-products-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.success-products-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.success-product-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ffffff;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+
+.success-product-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+
+.success-product-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.success-product-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.success-product-pricing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+}
+
+.success-product-qty {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.success-product-price {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+/* BIÊN LAI GIAO DỊCH */
+.success-receipt-card {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px 14px;
   margin-bottom: 14px;
-  box-shadow: 0 2px 6px rgba(22, 163, 74, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.success-inline-badge .price-val {
+.receipt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed #f1f5f9;
+}
+
+.receipt-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.receipt-label {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.receipt-value {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.receipt-value.memo-val {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-weight: 800;
-  color: #15803d;
+  color: #ea580c;
 }
 
-.dot-sep {
-  color: #86efac;
+.receipt-value.amount-val {
+  font-size: 14px;
+  font-weight: 800;
+  color: #16a34a;
 }
 
 .redirect-progress-bar {
@@ -1927,28 +2265,33 @@ const handlePlaceOrder = () => {
 
 .redirect-sub {
   margin: 0 0 14px 0;
-  font-size: 11.5px;
+  font-size: 12px;
   color: #64748b;
   font-weight: 600;
 }
 
 .btn-go-orders-inline {
-  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  background: #0f172a;
   color: #ffffff;
   border: none;
   width: 100%;
-  padding: 10px;
-  border-radius: 10px;
-  font-size: 13.5px;
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 3px 10px rgba(22, 163, 74, 0.3);
-  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .btn-go-orders-inline:hover {
-  background: linear-gradient(135deg, #15803d 0%, #166534 100%);
+  background: #1e293b;
   transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.2);
 }
 
 .btn {

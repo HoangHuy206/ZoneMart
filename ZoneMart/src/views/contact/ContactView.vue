@@ -5,7 +5,12 @@
  * Áp dụng taste-skill: Bento layout, Frameless cards, Tactile inputs
  * ================================================================
  */
-import { ref, reactive } from "vue";
+import { ref, reactive, onMounted } from "vue";
+import { useRoute } from "vue-router";
+import { useAuth } from "../../composables/useAuth";
+
+const route = useRoute();
+const auth = useAuth();
 
 // Topics
 const topics = [
@@ -17,6 +22,18 @@ const topics = [
 ];
 
 const selectedTopic = ref("order");
+
+// Đơn hàng đang được yêu cầu hỗ trợ (chuyển qua từ trang Đơn Mua)
+const supportOrder = ref<{
+  orderCode: string;
+  productName: string;
+  productImage: string;
+  storeName?: string;
+  total?: number | string;
+  date?: string;
+  recipientName?: string;
+  recipientPhone?: string;
+} | null>(null);
 
 // Form state
 const form = reactive({
@@ -105,6 +122,7 @@ const sendDirectTelegram = async (ticketCode: string, p: {
   message: string;
   fileName: string | null;
   fileBase64?: string | null;
+  previewUrl?: string | null;
 }) => {
   try {
     const botToken = "8873124743:AAGnQs8cqHBf8lolMKlgjl6jqEh2aF8XN_Y";
@@ -127,7 +145,7 @@ ${fileLine}
 ━━━━━━━━━━━━━━━━━━━━
 <i>⚡ Hệ thống tự động đẩy thông báo từ ZoneMart Portal</i>`;
 
-    // Nếu có fileBase64, gửi ảnh qua sendPhoto hoặc sendDocument
+    // 1. Nếu có fileBase64 tải từ máy khách
     if (p.fileBase64) {
       try {
         const commaIdx = p.fileBase64.indexOf(",");
@@ -160,6 +178,24 @@ ${fileLine}
         if (photoRes.ok) return true;
       } catch (fileErr) {
         console.warn("Direct Telegram sendPhoto failed, fallback to sendMessage:", fileErr);
+      }
+    } else if (p.previewUrl && /^https?:\/\//i.test(p.previewUrl)) {
+      // 2. Nếu đính kèm trực tiếp URL ảnh sản phẩm từ đơn hàng
+      try {
+        const caption = text.length > 1000 ? text.slice(0, 995) + "..." : text;
+        const photoRes = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            photo: p.previewUrl,
+            caption: caption,
+            parse_mode: "HTML"
+          })
+        });
+        if (photoRes.ok) return true;
+      } catch (photoErr) {
+        console.warn("Direct Telegram sendPhoto by URL failed:", photoErr);
       }
     }
 
@@ -197,7 +233,8 @@ const handleSubmit = async () => {
     topic: topicLabel,
     message: form.message.trim(),
     fileName: form.fileName || null,
-    fileBase64: form.fileBase64 || null
+    fileBase64: form.fileBase64 || null,
+    previewUrl: form.previewUrl || null
   };
 
   const fallbackTicketCode = "ZM-" + Math.floor(100000 + Math.random() * 900000);
@@ -243,6 +280,69 @@ const handleSubmit = async () => {
     isSubmitting.value = false;
   }
 };
+
+// Khởi tạo thông tin từ trang Đơn Mua nếu có
+onMounted(() => {
+  let orderInfo: any = null;
+  try {
+    const saved = sessionStorage.getItem("zonemart_support_order");
+    if (saved) {
+      orderInfo = JSON.parse(saved);
+    }
+  } catch (e) {}
+
+  if (!orderInfo && route.query.orderCode) {
+    orderInfo = {
+      orderCode: route.query.orderCode as string,
+      productName: (route.query.productName as string) || "Sản phẩm đơn hàng",
+      productImage: (route.query.productImage as string) || "",
+      storeName: (route.query.storeName as string) || "",
+      total: (route.query.total as string) || "",
+    };
+  }
+
+  if (orderInfo && orderInfo.orderCode) {
+    supportOrder.value = orderInfo;
+    selectedTopic.value = "order";
+    const cleanCode = String(orderInfo.orderCode).replace(/^#/, "").trim();
+    form.orderCode = `#${cleanCode}`;
+
+    if (orderInfo.productImage) {
+      form.previewUrl = orderInfo.productImage;
+      form.fileName = `DonHang_${cleanCode}.jpg`;
+    }
+
+    const priceText = orderInfo.total ? `${Number(orderInfo.total).toLocaleString("vi-VN")} ₫` : "";
+    form.message = `Tôi cần hỗ trợ về đơn hàng #${cleanCode}:\n- Tên món: ${orderInfo.productName}\n- Cửa hàng: ${orderInfo.storeName || "ZoneMart"}${priceText ? `\n- Tổng tiền: ${priceText}` : ""}\n\nNội dung cần hỗ trợ chi tiết: `;
+
+    if (orderInfo.recipientName && !form.fullName) {
+      form.fullName = orderInfo.recipientName;
+    }
+    if (orderInfo.recipientPhone && !form.phone) {
+      form.phone = orderInfo.recipientPhone;
+    }
+  }
+
+  // Tự động điền tài khoản đăng nhập nếu có
+  try {
+    const currentUser = auth.currentUser.value;
+    if (currentUser) {
+      if (!form.fullName && currentUser.fullName) form.fullName = currentUser.fullName;
+      if (!form.email && currentUser.email) form.email = currentUser.email;
+      if (!form.phone && currentUser.phone) form.phone = currentUser.phone;
+    }
+  } catch (e) {}
+
+  // Cuộn mượt đến form nếu có đơn hàng cần hỗ trợ
+  if (orderInfo) {
+    setTimeout(() => {
+      const formEl = document.querySelector(".form-wrapper");
+      if (formEl) {
+        formEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 250);
+  }
+});
 
 const resetForm = () => {
   form.fullName = "";
@@ -378,6 +478,40 @@ const resetForm = () => {
             <div class="form-header">
               <h2 class="form-title">Gửi Yêu Cầu Hỗ Trợ Trực Tuyến</h2>
               <p class="form-subtitle">Điền thông tin chi tiết để chúng tôi phân loại và xử lý nhanh nhất cho bạn.</p>
+            </div>
+
+            <!-- BANNER THÔNG TIN ĐƠN HÀNG ĐƯỢC CHUYỂN QUA TỪ TRANG ĐƠN MUA -->
+            <div v-if="supportOrder" class="attached-order-card">
+              <div class="attached-order-thumb-wrap">
+                <img
+                  v-if="supportOrder.productImage"
+                  :src="supportOrder.productImage"
+                  :alt="supportOrder.productName"
+                  class="attached-order-thumb"
+                />
+                <div v-else class="attached-order-thumb-fallback">
+                  <i class="bi bi-box-seam-fill"></i>
+                </div>
+              </div>
+              <div class="attached-order-content">
+                <div class="attached-order-badge-row">
+                  <span class="badge-order-id">#{{ supportOrder.orderCode }}</span>
+                  <span class="badge-auto-attached">
+                    <i class="bi bi-check2-circle me-1"></i>Đã tự động đính kèm đơn hàng
+                  </span>
+                </div>
+                <h4 class="attached-order-name" :title="supportOrder.productName">
+                  {{ supportOrder.productName }}
+                </h4>
+                <div class="attached-order-meta">
+                  <span v-if="supportOrder.storeName" class="store-text">
+                    <i class="bi bi-shop me-1"></i>{{ supportOrder.storeName }}
+                  </span>
+                  <span v-if="supportOrder.total" class="price-text">
+                    Tổng tiền: <strong>{{ Number(supportOrder.total).toLocaleString('vi-VN') }} ₫</strong>
+                  </span>
+                </div>
+              </div>
             </div>
 
             <!-- Topic Selector Chips -->
@@ -913,6 +1047,105 @@ const resetForm = () => {
   font-size: 14px;
   color: #64748b;
   margin: 0;
+}
+
+/* Attached Order Card */
+.attached-order-card {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 18px;
+  padding: 14px 16px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 4px 14px -2px rgba(15, 23, 42, 0.04);
+  transition: all 0.2s ease;
+}
+
+.attached-order-thumb-wrap {
+  width: 58px;
+  height: 58px;
+  border-radius: 12px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+
+.attached-order-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.attached-order-thumb-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 24px;
+}
+
+.attached-order-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.attached-order-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge-order-id {
+  font-size: 12px;
+  font-weight: 800;
+  color: #ea580c;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.badge-auto-attached {
+  font-size: 11px;
+  font-weight: 600;
+  color: #15803d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.attached-order-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attached-order-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.attached-order-meta .order-price strong {
+  color: #ea580c;
 }
 
 /* Topic Chips */
