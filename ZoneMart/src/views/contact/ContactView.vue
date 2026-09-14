@@ -329,6 +329,8 @@ onMounted(() => {
     if (currentUser) {
       if (!form.fullName && currentUser.fullName) form.fullName = currentUser.fullName;
       if (!form.email && currentUser.email) form.email = currentUser.email;
+      const userEmail = (currentUser as any).email || (currentUser.phoneEmail?.includes('@') ? currentUser.phoneEmail : '');
+      if (!form.email && userEmail) form.email = userEmail;
       if (!form.phone && currentUser.phone) form.phone = currentUser.phone;
     }
   } catch (e) {}
