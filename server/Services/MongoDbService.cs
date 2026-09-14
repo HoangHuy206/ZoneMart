@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using ZoneMart.Server.Models;
 using ZoneMart.Server.Settings;
@@ -27,4 +27,5 @@ public class MongoDbService
     public IMongoCollection<OrderItem> OrderItems => _database.GetCollection<OrderItem>("orderitems");
     public IMongoCollection<WalletTransaction> WalletTransactions => _database.GetCollection<WalletTransaction>("wallettransactions");
     public IMongoCollection<SupportTicket> SupportTickets => _database.GetCollection<SupportTicket>("support_tickets");
+    public IMongoCollection<AuditLog> AuditLogs => _database.GetCollection<AuditLog>("audit_logs");
 }

@@ -7,13 +7,61 @@
  * Vị trí: src/views/binh/ForgotPasswordForm.vue (Nằm gọn trong 1 thư mục binh)
  * ================================================================
  */
-import { ref, reactive, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { useRoute } from "vue-router";
 
-const props = defineProps<{
-  initialEmail?: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    initialEmail?: string;
+    role?: "customer" | "seller" | "shipper";
+  }>(),
+  {
+    role: "customer"
+  }
+);
 
+const route = useRoute();
 const emit = defineEmits(["back-to-login", "success"]);
+
+const effectiveRole = computed(() => {
+  const r = (route?.query?.role as string || props.role || "").toLowerCase();
+  if (r === "shipper" || r === "driver") return "shipper";
+  if (r === "seller" || r === "shop") return "seller";
+  return "customer";
+});
+
+// Role-based Theme Config (Emerald Green for Seller, Cyan/Blue for Shipper, Orange for Customer)
+const themeConfig = computed(() => {
+  const role = effectiveRole.value;
+  if (role === "shipper") {
+    return {
+      primaryColor: "#0284C7",
+      hoverColor: "#0369A1",
+      focusShadow: "rgba(2, 132, 199, 0.18)",
+      btnClass: "btn-submit-cyan",
+      badgeBg: "#F0F9FF",
+      badgeBorder: "#BAE6FD"
+    };
+  } else if (role === "seller") {
+    return {
+      primaryColor: "#10B981",
+      hoverColor: "#059669",
+      focusShadow: "rgba(16, 185, 129, 0.18)",
+      btnClass: "btn-submit-emerald",
+      badgeBg: "#ECFDF5",
+      badgeBorder: "#A7F3D0"
+    };
+  } else {
+    return {
+      primaryColor: "#D94E15",
+      hoverColor: "#C8451F",
+      focusShadow: "rgba(217, 78, 21, 0.18)",
+      btnClass: "btn-submit-orange",
+      badgeBg: "#FFF7ED",
+      badgeBorder: "#FED7AA"
+    };
+  }
+});
 
 // Flow Steps: 'email' | 'otp' | 'reset'
 const step = ref<"email" | "otp" | "reset">("email");
@@ -208,13 +256,21 @@ const handleResetPassword = async () => {
 </script>
 
 <template>
-  <div class="forgot-form-wrap">
+  <div 
+    class="forgot-form-wrap"
+    :style="{
+      '--theme-primary': themeConfig.primaryColor,
+      '--theme-hover': themeConfig.hoverColor,
+      '--theme-focus-shadow': themeConfig.focusShadow
+    }"
+  >
     
     <!-- NÚT QUAY LẠI -->
     <div class="card-top-bar">
       <button 
         type="button" 
         class="back-home-btn" 
+        :style="{ color: themeConfig.primaryColor }"
         @click="step === 'email' ? emit('back-to-login') : (step = 'email')"
         title="Quay lại"
       >
@@ -225,7 +281,7 @@ const handleResetPassword = async () => {
     <!-- BƯỚC 1: NHẬP EMAIL -->
     <template v-if="step === 'email'">
       <div class="card-brand-header">
-        <h1 class="form-main-heading">QUÊN MẬT KHẨU</h1>
+        <h1 class="form-main-heading" :style="{ color: themeConfig.primaryColor }">QUÊN MẬT KHẨU</h1>
         <p class="form-sub-heading">Nhập địa chỉ Email để nhận mã xác thực (2 phút)</p>
       </div>
 
@@ -251,7 +307,7 @@ const handleResetPassword = async () => {
           </div>
         </div>
 
-        <button type="submit" class="btn-submit-orange" :disabled="isLoading">
+        <button type="submit" :class="themeConfig.btnClass" :disabled="isLoading">
           <span v-if="!isLoading">GỬI MÃ XÁC THỰC ➔</span>
           <span v-else>ĐANG GỬI EMAIL...</span>
         </button>
@@ -261,14 +317,14 @@ const handleResetPassword = async () => {
     <!-- BƯỚC 2: NHẬP MÃ XÁC THỰC 6 CHỮ SỐ -->
     <template v-else-if="step === 'otp'">
       <div class="card-brand-header">
-        <h1 class="form-main-heading">XÁC NHẬN MÃ XÁC THỰC</h1>
+        <h1 class="form-main-heading" :style="{ color: themeConfig.primaryColor }">XÁC NHẬN MÃ XÁC THỰC</h1>
         <p class="form-sub-heading">Mã xác thực đã được gửi tới <strong>{{ form.email }}</strong></p>
       </div>
 
       <!-- TIMER COUNTDOWN BADGE -->
-      <div class="timer-badge-row">
+      <div class="timer-badge-row" :style="{ background: themeConfig.badgeBg, borderColor: themeConfig.badgeBorder }">
         <span>Thời gian còn lại:</span>
-        <span :class="['timer-text', { expired: timerSeconds <= 0 }]">
+        <span :class="['timer-text', { expired: timerSeconds <= 0 }]" :style="{ color: timerSeconds > 0 ? themeConfig.primaryColor : undefined }">
           ⏱️ {{ formatTime(timerSeconds) }}
         </span>
       </div>
@@ -278,29 +334,23 @@ const handleResetPassword = async () => {
 
       <form @submit.prevent="handleVerifyOtp" class="form-body" method="post" novalidate>
         <div class="field-item">
-          <label for="forgot-otp" class="field-label">Nhập mã xác thực 6 số <span class="required-star">*</span></label>
-          <div class="input-icon-wrapper">
-            <i class="bi bi-shield-lock-fill input-leading-icon"></i>
-            <input
-              id="forgot-otp"
-              name="otp"
-              v-model="form.otp"
-              type="text"
-              inputmode="numeric"
-              autocomplete="one-time-code"
-              maxlength="6"
-              class="field-input has-leading-icon otp-center-input"
-              placeholder="• • • • • •"
-              required
-              aria-required="true"
-            />
-          </div>
+          <label class="field-label">Nhập mã xác thực (6 chữ số)</label>
+          <input
+            v-model="form.otp"
+            type="text"
+            maxlength="6"
+            class="field-input otp-center-input"
+            :style="{ color: themeConfig.primaryColor }"
+            placeholder="• • • • • •"
+            required
+          />
         </div>
 
         <div class="resend-row">
           <button 
             type="button" 
             class="btn-resend-link" 
+            :style="{ color: themeConfig.primaryColor }"
             :disabled="timerSeconds > 0 || isLoading"
             @click="handleSendOtp"
           >
@@ -308,7 +358,7 @@ const handleResetPassword = async () => {
           </button>
         </div>
 
-        <button type="submit" class="btn-submit-orange" :disabled="isLoading || timerSeconds <= 0">
+        <button type="submit" :class="themeConfig.btnClass" :disabled="isLoading || timerSeconds <= 0">
           <span v-if="!isLoading">XÁC NHẬN MÃ XÁC THỰC ➔</span>
           <span v-else>ĐANG ĐỐI CHIẾU...</span>
         </button>
@@ -318,7 +368,7 @@ const handleResetPassword = async () => {
     <!-- BƯỚC 3: NHẬP MẬT KHẨU MỚI -->
     <template v-else-if="step === 'reset'">
       <div class="card-brand-header">
-        <h1 class="form-main-heading">ĐẶT LẠI MẬT KHẨU MỚI</h1>
+        <h1 class="form-main-heading" :style="{ color: themeConfig.primaryColor }">ĐẶT LẠI MẬT KHẨU MỚI</h1>
         <p class="form-sub-heading">Tạo mật khẩu mới an toàn cho tài khoản của bạn</p>
       </div>
 
@@ -380,7 +430,7 @@ const handleResetPassword = async () => {
           </div>
         </div>
 
-        <button type="submit" class="btn-submit-orange" :disabled="isLoading">
+        <button type="submit" :class="themeConfig.btnClass" :disabled="isLoading">
           <span v-if="!isLoading">CẬP NHẬT MẬT KHẨU ➔</span>
           <span v-else>ĐANG CẬP NHẬT...</span>
         </button>
@@ -392,8 +442,8 @@ const handleResetPassword = async () => {
       <div v-if="showNotFoundModal" class="modal-backdrop-overlay" @click.self="showNotFoundModal = false">
         <div class="modal-pop-card">
           <!-- ICON KÍNH LÚP CẢNH BÁO KHÔNG TÌM THẤY TÀI KHOẢN -->
-          <div class="modal-icon-badge">
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#D94E15" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <div class="modal-icon-badge" :style="{ background: themeConfig.badgeBg, borderColor: themeConfig.badgeBorder }">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" :stroke="themeConfig.primaryColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               <line x1="8" y1="11" x2="14" y2="11"></line>
@@ -407,7 +457,7 @@ const handleResetPassword = async () => {
           </p>
 
           <div class="modal-action-buttons">
-            <button type="button" class="btn-modal-close" @click="showNotFoundModal = false">
+            <button type="button" :class="['btn-modal-close-dynamic', themeConfig.btnClass]" @click="showNotFoundModal = false">
               Đóng thông báo
             </button>
           </div>
@@ -555,7 +605,7 @@ const handleResetPassword = async () => {
 }
 
 .back-home-btn:hover {
-  color: #D94E15;
+  color: var(--theme-hover, #D94E15);
   transform: translateX(-2px);
 }
 
@@ -567,7 +617,7 @@ const handleResetPassword = async () => {
 .form-main-heading {
   font-size: 22px;
   font-weight: 900;
-  color: #D94E15;
+  color: var(--theme-primary, #D94E15);
   margin: 0 0 4px 0;
   letter-spacing: 0.8px;
 }
@@ -594,7 +644,7 @@ const handleResetPassword = async () => {
 
 .timer-text {
   font-weight: 800;
-  color: #D94E15;
+  color: var(--theme-primary, #D94E15);
 }
 
 .timer-text.expired {
@@ -606,7 +656,7 @@ const handleResetPassword = async () => {
   letter-spacing: 8px;
   font-size: 18px !important;
   font-weight: 900;
-  color: #D94E15 !important;
+  color: var(--theme-primary, #D94E15) !important;
 }
 
 .resend-row {
@@ -617,7 +667,7 @@ const handleResetPassword = async () => {
 .btn-resend-link {
   background: none;
   border: none;
-  color: #D94E15;
+  color: var(--theme-primary, #D94E15);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -675,8 +725,8 @@ const handleResetPassword = async () => {
 
 .field-input:focus {
   background: #FFFFFF;
-  border-color: #D94E15;
-  box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.14);
+  border-color: var(--theme-primary, #D94E15);
+  box-shadow: 0 0 0 3px var(--theme-focus-shadow, rgba(217, 78, 21, 0.14));
 }
 
 .password-wrapper {
@@ -700,6 +750,18 @@ const handleResetPassword = async () => {
   align-items: center;
 }
 
+.btn-modal-close-dynamic {
+  width: 100%;
+  padding: 11px;
+  color: #FFFFFF;
+  border: none;
+  border-radius: 30px;
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
 .btn-submit-orange {
   width: 100%;
   padding: 11.5px;
@@ -715,14 +777,62 @@ const handleResetPassword = async () => {
   transition: all 0.2s ease;
   margin-top: 4px;
 }
-
 .btn-submit-orange:hover:not(:disabled) {
   background: #C8451F;
   transform: translateY(-1px);
   box-shadow: 0 8px 20px rgba(217, 78, 21, 0.38);
 }
-
 .btn-submit-orange:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn-submit-cyan {
+  width: 100%;
+  padding: 11.5px;
+  background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 30px;
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.3);
+  transition: all 0.2s ease;
+  margin-top: 4px;
+}
+.btn-submit-cyan:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0369A1 0%, #075985 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(2, 132, 199, 0.38);
+}
+.btn-submit-cyan:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn-submit-emerald {
+  width: 100%;
+  padding: 11.5px;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 30px;
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+  transition: all 0.2s ease;
+  margin-top: 4px;
+}
+.btn-submit-emerald:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.38);
+}
+.btn-submit-emerald:disabled {
   opacity: 0.65;
   cursor: not-allowed;
 }

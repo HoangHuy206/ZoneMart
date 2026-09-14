@@ -531,52 +531,6 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                   </template>
                 </div>
 
-                <!-- ROLE SWITCHER DÀNH CHO TEST TRỰC QUAN -->
-                <div class="dropdown-role-switcher">
-                  <div class="switcher-title">
-                    <i class="bi bi-arrow-repeat"></i>
-                    <span>Chuyển vai trò thử nghiệm:</span>
-                  </div>
-                  <div class="switcher-buttons">
-                    <button
-                      type="button"
-                      class="switch-btn"
-                      :class="{ active: auth.currentRole.value === 'buyer' }"
-                      @click="handleRoleSwitch('buyer')"
-                      title="Chuyển sang Khách Hàng"
-                    >
-                      👤 Buyer
-                    </button>
-                    <button
-                      type="button"
-                      class="switch-btn"
-                      :class="{ active: auth.currentRole.value === 'seller' }"
-                      @click="handleRoleSwitch('seller')"
-                      title="Chuyển sang Chủ Cửa Hàng"
-                    >
-                      🌱 Seller
-                    </button>
-                    <button
-                      type="button"
-                      class="switch-btn"
-                      :class="{ active: auth.currentRole.value === 'shipper' }"
-                      @click="handleRoleSwitch('shipper')"
-                      title="Chuyển sang Tài Xế"
-                    >
-                      🛵 Shipper
-                    </button>
-                    <button
-                      type="button"
-                      class="switch-btn"
-                      :class="{ active: auth.currentRole.value === 'admin' }"
-                      @click="handleRoleSwitch('admin')"
-                      title="Chuyển sang Admin"
-                    >
-                      👑 Admin
-                    </button>
-                  </div>
-                </div>
-
                 <div class="dropdown-divider"></div>
                 <button class="dropdown-item logout-btn" @click="handleLogout">
                   <i class="bi bi-box-arrow-right menu-icon"></i>

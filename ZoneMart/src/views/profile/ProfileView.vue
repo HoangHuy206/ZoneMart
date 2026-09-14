@@ -311,6 +311,9 @@ export interface OrderItem {
   items: string;
   total: number;
   storeDistance: string;
+  shippingAddress?: string;
+  recipientName?: string;
+  recipientPhone?: string;
 }
 
 const orders = ref<OrderItem[]>([]);

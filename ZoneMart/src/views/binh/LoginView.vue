@@ -2,43 +2,79 @@
 /**
  * ================================================================
  * ĐĂNG NHẬP (LOGIN VIEW) - Phụ trách: Bình
- * Giao diện Bảng Đăng Nhập Đơn Giản & Tự Động Nhận Diện Vai Trò
- * Tích hợp Bảng Quên Mật Khẩu với Gmail OTP 120s (dobinh225599@gmail.com)
+ * Hỗ trợ 3 Vai Trò Tách Biệt:
+ * 1. Khách Hàng (Customer Login) -> ?role=customer / mặc định
+ * 2. Gian Hàng (Seller Login) -> ?role=seller
+ * 3. Tài Xế Shipper (Driver Login) -> ?role=shipper
  * ================================================================
  */
-import { ref, reactive, onMounted } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
-import ForgotPasswordForm from './ForgotPasswordForm.vue';
-import { useAuth, DEMO_USERS, type UserRole } from '../../composables/useAuth';
-
-onMounted(() => {
-  document.title = "Đăng Nhập | ZoneMart - Sàn TMĐT & Giao Hàng Hỏa Tốc";
-});
+import { ref, reactive, computed } from "vue";
+import { useRouter, useRoute } from "vue-router";
+import ForgotPasswordForm from "./ForgotPasswordForm.vue";
 
 const router = useRouter();
 const route = useRoute();
-const auth = useAuth();
-
-// Hàm điều hướng sau khi đăng nhập thành công
-const navigateAfterLogin = (role: string) => {
-  const redirectTarget = route.query.redirect as string;
-  if (redirectTarget && redirectTarget !== '/login') {
-    router.push(redirectTarget);
-    return;
-  }
-  if (role === 'seller') {
-    router.push('/seller');
-  } else if (role === 'admin') {
-    router.push('/admin');
-  } else if (role === 'shipper') {
-    router.push('/shipper');
-  } else {
-    router.push('/');
-  }
-};
 
 // Chế độ xem: false = Đăng nhập, true = Quên mật khẩu
 const isForgotPasswordMode = ref(false);
+
+// Nhận diện vai trò từ Query Param (?role=shipper | ?role=seller | ?role=customer)
+const activeRole = computed(() => {
+  const r = (route.query.role as string || "").toLowerCase();
+  if (r === "shipper" || r === "driver") return "shipper";
+  if (r === "seller" || r === "shop") return "seller";
+  return "customer";
+});
+
+// Cấu hình linh hoạt giao diện & màu sắc theo vai trò
+const config = computed(() => {
+  if (activeRole.value === "shipper") {
+    return {
+      roleKey: "shipper",
+      title: "ĐĂNG NHẬP TÀI XẾ DRIVER",
+      titleColor: "#0284C7",
+      subtitle: "Nhập thông tin tài khoản tài xế để bắt đầu bật app & chạy đơn ZoneMart",
+      illustrationImg: "/images/anhxoanendkyshipper_clean.png",
+      illustrationAlt: "ZoneMart Driver Scooter Illustration",
+      bgStyle: "linear-gradient(180deg, #F0F9FF 0%, #E0F2FE 40%, #F8FAFC 100%)",
+      btnClass: "btn-submit-cyan",
+      backTarget: "/register-shipper",
+      backLabel: "Quay lại trang ZoneMart Driver",
+      registerText: "Đăng ký Tài khoản Tài xế",
+      registerLink: "/register-shipper#shipper-register-card"
+    };
+  } else if (activeRole.value === "seller") {
+    return {
+      roleKey: "seller",
+      title: "ĐĂNG NHẬP GIAN HÀNG SELLER",
+      titleColor: "#10B981",
+      subtitle: "Nhập thông tin tài khoản gian hàng để quản lý cửa hàng ZoneMart",
+      illustrationImg: "/images/anhxoanendkybanhang_clean.png",
+      illustrationAlt: "ZoneMart Seller Illustration",
+      bgStyle: "radial-gradient(circle at 40% 30%, #F0FDF4 0%, #DCFCE7 60%, #F0FDF4 100%)",
+      btnClass: "btn-submit-emerald",
+      backTarget: "/register-seller",
+      backLabel: "Quay lại trang ZoneMart Seller",
+      registerText: "Đăng ký Gian hàng Seller",
+      registerLink: "/register-seller"
+    };
+  } else {
+    return {
+      roleKey: "customer",
+      title: "ĐĂNG NHẬP KHÁCH HÀNG",
+      titleColor: "#D94E15",
+      subtitle: "Nhập thông tin tài khoản của bạn để truy cập ZoneMart",
+      illustrationImg: "/images/anhxoanen_clean.png",
+      illustrationAlt: "ZoneMart Giao Hàng Hỏa Tốc",
+      bgStyle: "radial-gradient(circle at 40% 30%, #FFFDF9 0%, #FAF5EF 60%, #F3ECE2 100%)",
+      btnClass: "btn-submit-orange",
+      backTarget: "/",
+      backLabel: "Quay lại Trang Chủ ZoneMart",
+      registerText: "Tạo tài khoản Khách Hàng",
+      registerLink: "/register"
+    };
+  }
+});
 
 // Form State
 const form = reactive({
@@ -62,19 +98,32 @@ const togglePassword = () => {
   showPassword.value = !showPassword.value;
 };
 
-// Đăng nhập nhanh vai trò
-const quickLogin = (role: 'buyer' | 'seller' | 'shipper' | 'admin') => {
-  const user = DEMO_USERS[role];
-  auth.login(user);
-  localStorage.setItem('isLoggedIn', 'true');
-  localStorage.setItem('userRole', role);
-  if (user) {
-    localStorage.setItem('currentUser', JSON.stringify(user));
+const handleBackHome = () => {
+  router.push(config.value.backTarget);
+};
+
+const handleRegisterClick = (e: MouseEvent) => {
+  if (activeRole.value === "shipper") {
+    e.preventDefault();
+    router.push({ path: "/register-shipper", hash: "#shipper-register-card", query: { register: "true" } }).then(() => {
+      setTimeout(() => {
+        const el = document.getElementById("shipper-register-card");
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 200);
+    });
+  } else if (activeRole.value === "seller") {
+    e.preventDefault();
+    router.push({ path: "/register-seller", hash: "#seller-register-card", query: { register: "true" } }).then(() => {
+      setTimeout(() => {
+        const el = document.getElementById("seller-register-card");
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 200);
+    });
   }
-  successMessage.value = `Đăng nhập nhanh vai trò ${user.role} thành công! Đang chuyển hướng...`;
-  setTimeout(() => {
-    navigateAfterLogin(role);
-  }, 500);
 };
 
 // Xử lý Đăng Nhập
@@ -93,95 +142,69 @@ const handleLogin = async () => {
   isLoading.value = true;
 
   try {
-    // 1. Thử kết nối API Backend (C# .NET Core)
-    const res = await fetch('http://localhost:5000/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch("http://localhost:5000/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         account: form.account.trim(),
         password: form.password,
-      }),
+        role: activeRole.value
+      })
     }).catch(() => null);
 
     if (res) {
       const data = await res.json();
       if (res.ok && data.success) {
-        if (data.user?.sellerStatus === 'Pending') {
-          successMessage.value = data.message || `Hồ sơ mở gian hàng '${data.user.storeName || ''}' đang chờ Ban Quản Lý phê duyệt! Bạn có thể tiếp tục mua sắm...`;
-        } else if (data.user?.sellerStatus === 'Rejected') {
-          successMessage.value = `Hồ sơ mở gian hàng của bạn đã bị từ chối: ${data.user.rejectReason || 'Không đạt yêu cầu'}. Bạn có thể tiếp tục mua sắm...`;
-        } else {
-          successMessage.value =
-            data.message || 'Đăng nhập thành công! Đang chuyển hướng...';
-        }
-        const detectedRole = (data.user?.role as UserRole) || 'buyer';
-
-        // Lưu thông tin người dùng vào useAuth state & localStorage
-        auth.login({
-          id: data.user?.id || `usr_${Date.now()}`,
-          fullName: data.user?.fullName || form.account.trim(),
-          phoneEmail: data.user?.phoneEmail || form.account.trim(),
-          phone: data.user?.phone || (!form.account.includes('@') ? form.account.trim() : undefined),
-          role: detectedRole,
-          avatarUrl: data.user?.avatarUrl,
-          walletBalance: data.user?.walletBalance,
-          storeName: data.user?.storeName,
-        });
-
-        // Ghi đè vào zonemart_user để lưu cả sellerStatus và rejectReason
-        const userWithStatus: any = {
-          id: data.user?.id || `usr_${Date.now()}`,
-          fullName: data.user?.fullName || form.account.trim(),
-          phoneEmail: data.user?.phoneEmail || form.account.trim(),
-          phone: data.user?.phone || (!form.account.includes('@') ? form.account.trim() : undefined),
-          role: detectedRole,
-          avatarUrl: data.user?.avatarUrl,
-          walletBalance: data.user?.walletBalance,
-          storeName: data.user?.storeName,
-          sellerStatus: data.user?.sellerStatus,
-          rejectReason: data.user?.rejectReason,
-        };
-        localStorage.setItem('zonemart_user', JSON.stringify(userWithStatus));
-
         localStorage.setItem("isLoggedIn", "true");
-        localStorage.setItem("userRole", detectedRole);
         if (data.user) {
-          localStorage.setItem('currentUser', JSON.stringify(data.user));
+          localStorage.setItem("currentUser", JSON.stringify(data.user));
+          localStorage.setItem("userRole", data.user.role || activeRole.value);
         }
-        localStorage.removeItem('sellerRegisteredEmail');
-        localStorage.removeItem('sellerRegisteredPassword');
 
+        successMessage.value = data.message || "Đăng nhập thành công! Đang chuyển hướng...";
+        const detectedRole = data.user?.role || activeRole.value;
         setTimeout(() => {
-          navigateAfterLogin(detectedRole);
-        }, 800);
+          if (activeRole.value === "shipper" || detectedRole === "shipper") {
+            router.push("/shipper");
+          } else if (activeRole.value === "seller" || detectedRole === "seller") {
+            router.push("/seller");
+          } else if (detectedRole === "admin") {
+            router.push("/admin");
+          } else {
+            router.push("/");
+          }
+        }, 1100);
       } else {
-        modalErrorMessage.value = data.message || 'Không tìm thấy tài khoản';
-        if (
-          data.errorType === 'INCORRECT_PASSWORD' ||
-          (data.message && data.message.toLowerCase().includes('mật khẩu'))
-        ) {
-          modalErrorType.value = 'INCORRECT_PASSWORD';
+        modalErrorMessage.value = data.message || "Không tìm thấy tài khoản";
+        if (data.errorType === "INCORRECT_PASSWORD" || (data.message && data.message.toLowerCase().includes("mật khẩu"))) {
+          modalErrorType.value = "INCORRECT_PASSWORD";
         } else {
-          modalErrorType.value = 'ACCOUNT_NOT_FOUND';
+          modalErrorType.value = "ACCOUNT_NOT_FOUND";
         }
         showNotFoundModal.value = true;
       }
     } else {
-      // 2. Fallback ngoại tuyến: Khi chưa bật server Backend, tự động khớp tài khoản demo hoặc tạo phiên buyer
-      const acc = form.account.trim().toLowerCase();
-      let matchedRole: 'buyer' | 'seller' | 'shipper' | 'admin' = 'buyer';
-      if (acc.includes('seller') || acc.includes('mai') || acc.includes('shop'))
-        matchedRole = 'seller';
-      else if (
-        acc.includes('shipper') ||
-        acc.includes('nam') ||
-        acc.includes('driver')
-      )
-        matchedRole = 'shipper';
-      else if (acc.includes('admin') || acc.includes('quan tri'))
-        matchedRole = 'admin';
-
-      quickLogin(matchedRole);
+      // Offline / Fallback local demo login when backend server is not running
+      localStorage.setItem("isLoggedIn", "true");
+      const localRole = activeRole.value;
+      const demoUser = {
+        id: `demo_${Date.now()}`,
+        phoneEmail: form.account.trim(),
+        fullName: form.account.trim().split('@')[0],
+        role: localRole
+      };
+      localStorage.setItem("currentUser", JSON.stringify(demoUser));
+      localStorage.setItem("userRole", localRole);
+      successMessage.value = "Đăng nhập thành công (Chế độ Ngoại tuyến)! Đang chuyển hướng...";
+      setTimeout(() => {
+        if (localRole === "shipper") {
+          router.push("/shipper");
+        } else if (localRole === "seller") {
+          router.push("/seller");
+        } else {
+          router.push("/");
+        }
+      }, 1100);
     }
   } catch (error: any) {
     modalErrorMessage.value =
@@ -195,48 +218,36 @@ const handleLogin = async () => {
 </script>
 
 <template>
-  <div class="login-page-container">
+  <div class="login-page-container" :style="{ background: config.bgStyle }">
     <!-- KHUNG TỔNG THỂ 2 CỘT: ẢNH BÊN TRÁI + BẢNG ĐĂNG NHẬP BÊN PHẢI -->
     <div class="login-hero-layout">
-      <!-- CỘT TRÁI: ẢNH MINH HỌA XE ZONEMART TÁCH SẠCH NỀN -->
+      
+      <!-- CỘT TRÁI: ẢNH MINH HỌA (XE SHIPPER DÀNH CHO TÀI XẾ, XE THỰC PHẨM DÀNH CHO KHÁCH HÀNG/SELLER) -->
       <div class="login-illustration-side">
         <img
-          src="/images/anhxoanen_clean.png"
-          alt="ZoneMart Giao Hàng Hỏa Tốc"
+          :src="config.illustrationImg"
+          :alt="config.illustrationAlt"
           class="illustration-img"
+          :class="{ 'driver-img-style': config.roleKey === 'shipper' }"
         />
       </div>
 
-      <!-- CỘT PHẢI: BẢNG ĐĂNG NHẬP / QUÊN MẬT KHẨU TRÔI NỔI (FLOATING CARD) -->
-      <div class="login-card-floating">
+      <!-- CỘT PHẢI: BẢNG ĐĂNG NHẬP FLOATING CARD -->
+      <div class="login-card-floating" :class="`role-${config.roleKey}`">
+        
         <!-- TRẠNG THÁI 1: FORM ĐĂNG NHẬP -->
         <template v-if="!isForgotPasswordMode">
-          <!-- THANH ĐIỀU HƯỚNG QUAY LẠI TRANG CHỦ Ở MÉP TRÁI BẢNG -->
+          <!-- THANH ĐIỀU HƯỚNG QUAY LẠI TRANG CHỦ RIÊNG -->
           <div class="card-top-bar">
-            <button
-              type="button"
-              class="back-home-btn"
-              @click="router.push('/')"
-              title="Về trang chủ"
-            >
+            <button type="button" class="back-home-btn" @click="handleBackHome" :title="config.backLabel">
               ← Quay lại
             </button>
           </div>
 
           <!-- TIÊU ĐỀ ĐĂNG NHẬP -->
           <div class="card-brand-header">
-            <h1 class="form-main-heading">ĐĂNG NHẬP</h1>
-            <p class="form-sub-heading">
-              Nhập thông tin tài khoản của bạn để truy cập ZoneMart
-            </p>
-          </div>
-
-          <!-- THÔNG BÁO YÊU CẦU ĐĂNG NHẬP -->
-          <div
-            v-if="route.query.reason === 'auth_required'"
-            class="msg-box warning"
-          >
-            🔒 Vui lòng đăng nhập tài khoản để tiếp tục truy cập trang này.
+            <h1 class="form-main-heading" :style="{ color: config.titleColor }">{{ config.title }}</h1>
+            <p class="form-sub-heading">{{ config.subtitle }}</p>
           </div>
 
           <!-- THÔNG BÁO THÀNH CÔNG -->
@@ -271,13 +282,8 @@ const handleLogin = async () => {
             <!-- Mật khẩu -->
             <div class="field-item">
               <div class="label-row-between">
-                <label for="login-password" class="field-label">Mật khẩu <span class="required-star">*</span></label>
-                <a
-                  href="#"
-                  @click.prevent="isForgotPasswordMode = true"
-                  class="forgot-pass-link"
-                  >Quên mật khẩu?</a
-                >
+                <label class="field-label">Mật khẩu</label>
+                <a href="#" @click.prevent="isForgotPasswordMode = true" class="forgot-pass-link" :style="{ color: config.titleColor }">Quên mật khẩu?</a>
               </div>
               <div class="password-wrapper input-icon-wrapper">
                 <i class="bi bi-lock-fill input-leading-icon"></i>
@@ -307,21 +313,13 @@ const handleLogin = async () => {
             <!-- Checkbox Ghi nhớ -->
             <div class="form-options-row">
               <label class="custom-checkbox-label">
-                <input
-                  type="checkbox"
-                  v-model="form.rememberMe"
-                  class="custom-checkbox"
-                />
+                <input type="checkbox" v-model="form.rememberMe" class="custom-checkbox" :style="{ accentColor: config.titleColor }" />
                 <span>Ghi nhớ đăng nhập trên thiết bị này</span>
               </label>
             </div>
 
             <!-- Nút Đăng Nhập -->
-            <button
-              type="submit"
-              class="btn-submit-orange"
-              :disabled="isLoading"
-            >
+            <button type="submit" :class="config.btnClass" :disabled="isLoading">
               <span v-if="!isLoading">ĐĂNG NHẬP NGAY ➔</span>
               <span v-else>ĐANG XỬ LÝ...</span>
             </button>
@@ -337,30 +335,24 @@ const handleLogin = async () => {
             <div class="register-cta-box">
               <div class="cta-line">
                 <span>Bạn chưa có tài khoản? </span>
-                <router-link to="/register" class="link-orange-bold"
-                  >Tạo tài khoản Khách Hàng</router-link
+                <router-link
+                  :to="config.registerLink"
+                  class="link-role-bold"
+                  :style="{ color: config.titleColor }"
+                  @click="handleRegisterClick"
                 >
-              </div>
-              <div class="cta-sub-line">
-                <span>Muốn mở gian hàng? </span>
-                <router-link to="/register-seller" class="link-secondary"
-                  >Đăng ký bán hàng với ZoneMart</router-link
-                >
-              </div>
-              <div class="cta-sub-line" style="margin-top: 2px">
-                <span>Đăng ký làm shipper? </span>
-                <router-link to="/register-shipper" class="link-secondary"
-                  >Đăng ký đối tác giao hàng</router-link
-                >
+                  {{ config.registerText }}
+                </router-link>
               </div>
             </div>
           </form>
         </template>
 
-        <!-- TRẠNG THÁI 2: FORM QUÊN MẬT KHẨU WITH GMAIL OTP -->
+        <!-- TRẠNG THÁI 2: FORM QUÊN MẬT KHẨU -->
         <template v-else>
           <ForgotPasswordForm
             :initial-email="form.account"
+            :role="activeRole"
             @back-to-login="isForgotPasswordMode = false"
             @success="
               isForgotPasswordMode = false;
@@ -372,7 +364,7 @@ const handleLogin = async () => {
       </div>
     </div>
 
-    <!-- MODAL THÔNG BÁO TÀI KHOẢN / MẬT KHẨU (BÓNG MỜ NỀN ĐÈ GIỮA MÀN HÌNH) -->
+    <!-- MODAL THÔNG BÁO TÀI KHOẢN / MẬT KHẨU KHÔNG ĐÚNG -->
     <Transition name="fade-modal">
       <div
         v-if="showNotFoundModal"
@@ -380,45 +372,20 @@ const handleLogin = async () => {
         @click.self="showNotFoundModal = false"
       >
         <div class="modal-pop-card">
-          <!-- TH 1: MẬT KHẨU KHÔNG ĐÚNG (ICON DẤU TRÒN CÓ CHỮ X) -->
-          <div
-            v-if="modalErrorType === 'INCORRECT_PASSWORD'"
-            class="modal-icon-badge error-x-badge"
-          >
-            <svg
-              width="34"
-              height="34"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#EF4444"
-              stroke-width="2.5"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
+          <div v-if="modalErrorType === 'INCORRECT_PASSWORD'" class="modal-icon-badge error-x-badge">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="15" y1="9" x2="9" y2="15"></line>
               <line x1="9" y1="9" x2="15" y2="15"></line>
             </svg>
           </div>
-
-          <!-- TH 2: KHÔNG TÌM THẤY TÀI KHOẢN (ICON KÍNH LÚP) -->
           <div v-else class="modal-icon-badge">
-            <svg
-              width="34"
-              height="34"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#D94E15"
-              stroke-width="2.2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" :stroke="config.titleColor" stroke-width="2.2">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               <line x1="8" y1="11" x2="14" y2="11"></line>
             </svg>
           </div>
-
           <h3 class="modal-heading-title">
             {{
               modalErrorType === 'INCORRECT_PASSWORD'
@@ -426,11 +393,7 @@ const handleLogin = async () => {
                 : 'Không tìm thấy tài khoản'
             }}
           </h3>
-
-          <p class="modal-body-text">
-            {{ modalErrorMessage }}
-          </p>
-
+          <p class="modal-body-text">{{ modalErrorMessage }}</p>
           <div class="modal-action-buttons">
             <button
               type="button"
@@ -447,45 +410,23 @@ const handleLogin = async () => {
 </template>
 
 <style scoped>
-/* ÉP NỔI FONT CHỮ CHUẨN KHÔNG BỊ LỖI FONT */
-*,
-input,
-button,
-select,
-textarea,
-label {
-  font-family:
-    'Plus Jakarta Sans',
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    Helvetica,
-    Arial,
-    sans-serif !important;
+*, input, button, select, textarea, label {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
 }
 
-/* PAGE CONTAINER VỪA KHÍT 1 MÀN HÌNH (NO SCROLLBAR, LÙI ẢNH SÁT LỀ TRÁI) */
 .login-page-container {
   width: 100vw;
   height: 100vh;
   max-height: 100vh;
   overflow: hidden;
-  background: radial-gradient(
-    circle at 40% 30%,
-    #fffdf9 0%,
-    #faf5ef 60%,
-    #f3ece2 100%
-  );
   display: flex;
   align-items: center;
   justify-content: flex-start;
   padding: 16px 40px 16px 24px;
   box-sizing: border-box;
+  transition: background 0.3s ease;
 }
 
-/* HERO LAYOUT 2 CỘT: ẢNH SIÊU TO LÙI TRÁI + BẢNG DỊCH THEO VỀ TRÁI */
 .login-hero-layout {
   display: flex;
   align-items: center;
@@ -497,7 +438,6 @@ label {
   max-height: 580px;
 }
 
-/* CỘT TRÁI - ẢNH MINH HỌA SIÊU TO & LÙI SÁT MÉP TRÁI */
 .login-illustration-side {
   flex: 1.4;
   max-width: 700px;
@@ -515,9 +455,14 @@ label {
   position: relative;
   z-index: 1;
   filter: drop-shadow(0 16px 32px rgba(217, 78, 21, 0.15));
+  transition: all 0.3s ease;
 }
 
-/* CỘT PHẢI - BẢNG ĐĂNG NHẬP TRÔI NỔI */
+.illustration-img.driver-img-style {
+  max-width: 660px;
+  filter: drop-shadow(0 16px 32px rgba(2, 132, 199, 0.18));
+}
+
 .login-card-floating {
   width: 100%;
   max-width: 430px;
@@ -526,8 +471,8 @@ label {
   padding: 24px 28px 22px 28px;
   box-shadow:
     0 20px 45px -10px rgba(15, 23, 42, 0.12),
-    0 8px 20px -5px rgba(217, 78, 21, 0.08),
-    0 0 0 1px rgba(240, 230, 220, 0.8);
+    0 8px 20px -5px rgba(2, 132, 199, 0.08),
+    0 0 0 1px rgba(186, 230, 253, 0.8);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -547,7 +492,6 @@ label {
   }
 }
 
-/* NÚT QUAY LẠI BÊN TRÁI MÉP BẢNG */
 .card-top-bar {
   display: flex;
   justify-content: flex-start;
@@ -569,31 +513,29 @@ label {
 }
 
 .back-home-btn:hover {
-  color: #d94e15;
+  color: #0284C7;
   transform: translateX(-2px);
 }
 
-/* HEADER BẢNG ĐĂNG NHẬP */
 .card-brand-header {
   text-align: center;
   margin-bottom: 18px;
 }
 
 .form-main-heading {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 900;
-  color: #d94e15;
   margin: 0 0 4px 0;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.5px;
 }
 
 .form-sub-heading {
   font-size: 12.5px;
   color: #64748b;
   margin: 0;
+  line-height: 1.4;
 }
 
-/* MESSAGES */
 .msg-box {
   padding: 8px 12px;
   border-radius: 10px;
@@ -617,7 +559,6 @@ label {
   border: 1px solid #fde68a;
 }
 
-/* FORM FIELDS */
 .form-body {
   display: flex;
   flex-direction: column;
@@ -644,40 +585,11 @@ label {
 
 .forgot-pass-link {
   font-size: 11.5px;
-  color: #d94e15;
   font-weight: 700;
   text-decoration: none;
 }
 .forgot-pass-link:hover {
   text-decoration: underline;
-}
-
-.required-star {
-  color: #dc2626;
-  font-weight: 800;
-  margin-left: 2px;
-}
-
-.input-icon-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-
-.input-leading-icon {
-  position: absolute;
-  left: 14px;
-  font-size: 15px;
-  color: #94a3b8;
-  pointer-events: none;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 2;
-}
-
-.input-icon-wrapper:focus-within .input-leading-icon {
-  color: #d94e15;
-  transform: scale(1.1);
 }
 
 .field-input {
@@ -690,26 +602,36 @@ label {
   color: #0f172a;
   outline: none;
   box-sizing: border-box;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  font-family:
-    'Plus Jakarta Sans',
-    system-ui,
-    -apple-system,
-    sans-serif !important;
+  transition: all 0.2s ease;
 }
 
-.field-input.has-leading-icon {
-  padding-left: 40px;
+.role-seller .field-input:focus {
+  background: #FFFFFF;
+  border-color: #10B981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
 }
 
-.field-input.has-trailing-btn {
-  padding-right: 42px;
+.role-shipper .field-input:focus {
+  background: #FFFFFF;
+  border-color: #0284C7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.14);
 }
 
-.field-input:focus {
-  background: #ffffff;
-  border-color: #d94e15;
-  box-shadow: 0 0 0 4px rgba(217, 78, 21, 0.12);
+.role-customer .field-input:focus {
+  background: #FFFFFF;
+  border-color: #D94E15;
+  box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.14);
+}
+
+.password-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-wrapper .field-input {
+  padding-left: 12px;
+  padding-right: 38px;
 }
 
 .eye-toggle-btn {
@@ -733,7 +655,6 @@ label {
   transform: scale(1.1);
 }
 
-/* CHECKBOX ROW */
 .form-options-row {
   margin-top: 1px;
 }
@@ -749,13 +670,12 @@ label {
 }
 
 .custom-checkbox {
-  accent-color: #d94e15;
   width: 15px;
   height: 15px;
   cursor: pointer;
 }
 
-/* SUBMIT BUTTON - WARM ORANGE PILL */
+/* BUTTON VARIANTS FOR 3 ROLES */
 .btn-submit-orange {
   width: 100%;
   padding: 12px;
@@ -765,13 +685,11 @@ label {
   border-radius: 30px;
   font-size: 14px;
   font-weight: 800;
-  letter-spacing: 0.5px;
   cursor: pointer;
   box-shadow: 0 6px 18px rgba(217, 78, 21, 0.3);
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   margin-top: 2px;
 }
-
 .btn-submit-orange:hover:not(:disabled) {
   background: linear-gradient(135deg, #c2410c, #d94e15);
   transform: translateY(-2px);
@@ -783,80 +701,46 @@ label {
   box-shadow: 0 4px 12px rgba(217, 78, 21, 0.25);
 }
 
-.btn-submit-orange:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* QUICK DEMO ROLES */
-.quick-demo-roles-box {
-  background: #fdfaf6;
-  border: 1px dashed #ebdcd3;
-  border-radius: 12px;
-  padding: 8px 10px;
-  margin: 4px 0;
-}
-.demo-roles-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: #7a6358;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-bottom: 6px;
-}
-.demo-roles-title i {
-  color: #d85a2a;
-  font-size: 12px;
-}
-.demo-roles-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-}
-.demo-role-chip {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 6px 4px;
-  border-radius: 8px;
-  border: 1px solid #ebdcd3;
-  background: #ffffff;
+.btn-submit-cyan {
+  width: 100%;
+  padding: 11px;
+  background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 30px;
+  font-size: 13.5px;
+  font-weight: 800;
   cursor: pointer;
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.3);
   transition: all 0.2s ease;
+  margin-top: 2px;
 }
-.demo-role-chip .role-icon {
-  font-size: 14px;
-}
-.demo-role-chip .role-txt {
-  font-size: 10px;
-  font-weight: 700;
-  color: #4a3830;
-}
-.demo-role-chip.buyer:hover {
-  background: #eef6ff;
-  border-color: #93c5fd;
-  transform: translateY(-2px);
-}
-.demo-role-chip.seller:hover {
-  background: #fff7ed;
-  border-color: #fdba74;
-  transform: translateY(-2px);
-}
-.demo-role-chip.shipper:hover {
-  background: #f0fdf4;
-  border-color: #86efac;
-  transform: translateY(-2px);
-}
-.demo-role-chip.admin:hover {
-  background: #faf5ff;
-  border-color: #d8b4fe;
-  transform: translateY(-2px);
+.btn-submit-cyan:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0369A1 0%, #075985 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(2, 132, 199, 0.4);
 }
 
-/* DIVIDER */
+.btn-submit-emerald {
+  width: 100%;
+  padding: 11px;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 30px;
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+  transition: all 0.2s ease;
+  margin-top: 2px;
+}
+.btn-submit-emerald:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+}
+
 .divider-row {
   display: flex;
   align-items: center;
@@ -877,7 +761,6 @@ label {
   letter-spacing: 0.5px;
 }
 
-/* REGISTER CTA BOX */
 .register-cta-box {
   display: flex;
   flex-direction: column;
@@ -887,86 +770,14 @@ label {
   color: #64748b;
 }
 
-.link-orange-bold {
-  color: #d94e15;
+.link-role-bold {
   font-weight: 800;
   text-decoration: none;
 }
-.link-orange-bold:hover {
+.link-role-bold:hover {
   text-decoration: underline;
 }
 
-.link-secondary {
-  color: #2563eb;
-  font-weight: 700;
-  text-decoration: none;
-}
-.link-secondary:hover {
-  text-decoration: underline;
-}
-
-/* DEMO QUICK BAR */
-.demo-quick-bar {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px dashed #e2e8f0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.demo-title {
-  font-size: 11.5px;
-  font-weight: 700;
-  color: #64748b;
-  text-align: center;
-}
-.demo-tags-wrap {
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.demo-btn {
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  padding: 5px 10px;
-  font-size: 11.5px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: inline-flex;
-  align-items: center;
-}
-.demo-btn.seller {
-  color: #c2410c;
-  background: #fff7ed;
-  border-color: #fdba74;
-}
-.demo-btn.seller:hover {
-  background: #ea580c;
-  color: #ffffff;
-}
-.demo-btn.buyer {
-  color: #15803d;
-  background: #f0fdf4;
-  border-color: #86efac;
-}
-.demo-btn.buyer:hover {
-  background: #16a34a;
-  color: #ffffff;
-}
-.demo-btn.shipper {
-  color: #1d4ed8;
-  background: #eff6ff;
-  border-color: #93c5fd;
-}
-.demo-btn.shipper:hover {
-  background: #2563eb;
-  color: #ffffff;
-}
-
-/* MODAL THÔNG BÁO ĐÈ MÀN HÌNH VỚI BÓNG MỜ MỜ (CENTRED OVERLAY) */
 .modal-backdrop-overlay {
   position: fixed;
   top: 0;
@@ -990,43 +801,27 @@ label {
   width: 100%;
   max-width: 380px;
   text-align: center;
-  box-shadow:
-    0 25px 50px -12px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(240, 230, 220, 0.9);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
   align-items: center;
-  animation: modalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes modalScaleUp {
-  from {
-    opacity: 0;
-    transform: scale(0.88) translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
 }
 
 .modal-icon-badge {
   width: 60px;
   height: 60px;
-  background: #fff7ed;
+  background: #F0F9FF;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 12px;
-  border: 2px solid #ffedd5;
-  box-shadow: 0 4px 12px rgba(217, 78, 21, 0.15);
+  border: 2px solid #BAE6FD;
 }
 
 .modal-icon-badge.error-x-badge {
-  background: #fef2f2;
-  border: 2px solid #fee2e2;
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.18);
+  background: #FEF2F2;
+  border: 2px solid #FEE2E2;
 }
 
 .modal-heading-title {
@@ -1034,7 +829,6 @@ label {
   font-weight: 900;
   color: #0f172a;
   margin: 0 0 8px 0;
-  letter-spacing: 0.3px;
 }
 
 .modal-body-text {
@@ -1046,28 +840,6 @@ label {
 
 .modal-action-buttons {
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.btn-modal-register {
-  width: 100%;
-  padding: 11px;
-  background: #d94e15;
-  color: #ffffff;
-  border: none;
-  border-radius: 30px;
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(217, 78, 21, 0.3);
-  transition: all 0.2s ease;
-}
-
-.btn-modal-register:hover {
-  background: #c8451f;
-  transform: translateY(-1px);
 }
 
 .btn-modal-close {
@@ -1079,14 +851,12 @@ label {
   font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
-  transition: color 0.2s ease;
 }
 
 .btn-modal-close:hover {
   color: #0f172a;
 }
 
-/* TRANSITION FADE */
 .fade-modal-enter-active,
 .fade-modal-leave-active {
   transition: opacity 0.25s ease;

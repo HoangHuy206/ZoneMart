@@ -20,6 +20,7 @@ const currentStep = ref<1 | 2 | 3>(1);
 const form = reactive({
   // BƯỚC 1: THÔNG TIN CÁ NHÂN
   fullName: "",
+  phoneNumber: "",
   cccdNumber: "",
   cccdFrontImage: "",  // Preview URL hoặc Base64
   cccdBackImage: "",   // Preview URL hoặc Base64
@@ -40,6 +41,38 @@ const form = reactive({
 
 const isLoading = ref(false);
 const errorMessage = ref("");
+
+interface CurrentUser {
+  id?: string;
+  fullName?: string;
+  phoneEmail?: string;
+  role?: string;
+}
+
+const currentUser = ref<CurrentUser | null>(null);
+
+onMounted(() => {
+  const savedUserStr = localStorage.getItem("currentUser");
+  if (savedUserStr) {
+    try {
+      const parsed = JSON.parse(savedUserStr);
+      if (parsed && (parsed.phoneEmail || parsed.fullName)) {
+        currentUser.value = parsed;
+        if (parsed.fullName && !form.fullName) {
+          form.fullName = parsed.fullName;
+        }
+        if (parsed.phoneEmail && !form.phoneNumber) {
+          form.phoneNumber = parsed.phoneEmail;
+        }
+      }
+    } catch (e) {}
+  }
+});
+
+const goToLoginWithIntent = (target: "seller" | "shipper") => {
+  sessionStorage.setItem("pendingRegisterTarget", target);
+  router.push("/login");
+};
 
 // Trạng thái Modal Pop-up Thành Công giữa màn hình
 const showSuccessModal = ref(false);
@@ -403,6 +436,7 @@ const handleSubmitShipper = async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         fullName: form.fullName.trim(),
+        phoneNumber: form.phoneNumber.trim(),
         cccdNumber: form.cccdNumber.trim(),
         cccdFrontImage: form.cccdFrontImage,
         cccdBackImage: form.cccdBackImage,
@@ -502,31 +536,50 @@ onMounted(() => {
         <!-- THÔNG BÁO LỖI NẾU CÓ -->
         <div v-if="errorMessage" class="msg-box error">⚠️ {{ errorMessage }}</div>
 
-        <!-- CHUYỂN BƯỚC MƯỢT MÀ VỚI TRANSITION -->
-        <Transition name="step-slide" mode="out-in">
-          <!-- ==================== BƯỚC 1: THÔNG TIN CÁ NHÂN ==================== -->
-          <form v-if="currentStep === 1" key="shipper-step-1" @submit.prevent="goToNextStep" class="form-body" novalidate>
-            <div class="form-group">
-              <label for="shipper-fullname" class="input-label">
-                Họ tên thật <span class="req">*</span>
-                <span class="hint-text">(6 - 16 ký tự, chỉ nhập chữ)</span>
-              </label>
-              <div class="input-icon-wrapper">
-                <i class="bi bi-person-fill input-leading-icon"></i>
-                <input
-                  id="shipper-fullname"
-                  name="fullName"
-                  type="text"
-                  v-model="form.fullName"
-                  autocomplete="name"
-                  placeholder="VD: Nguyễn Văn A"
-                  class="custom-input has-leading-icon"
-                  maxlength="16"
-                  required
-                  aria-required="true"
-                />
-              </div>
+        <!-- ==================== BƯỚC 1: THÔNG TIN CÁ NHÂN ==================== -->
+        <form v-if="currentStep === 1" @submit.prevent="goToNextStep" class="form-body">
+          
+          <!-- Ô THÔNG BÁO TÀI KHOẢN KHÁCH HÀNG LIÊN KẾT (NẰM TẠI ĐẦU BƯỚC 1 - TRÊN CỘT HỌ TÊN SHIPPER) -->
+          <div v-if="currentUser" class="customer-account-banner success-linked">
+            <div class="banner-head-row">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D94E15" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+              <span class="banner-head-title">Tài khoản Khách Hàng liên kết đăng ký Shipper:</span>
             </div>
+            <div class="banner-user-detail">
+              <span class="user-display-name">Anh/Chị <b>{{ currentUser.fullName || 'Khách Hàng' }}</b></span>
+              <span class="user-display-email">(Gmail/SĐT: <b class="highlight-email">{{ currentUser.phoneEmail }}</b>)</span>
+            </div>
+          </div>
+          <div v-else class="customer-account-banner warning-not-linked">
+            <div class="banner-head-row">
+              <span class="warn-icon">⚠️</span>
+              <span class="banner-head-title">Chưa liên kết tài khoản Khách Hàng!</span>
+            </div>
+            <p class="banner-warn-desc">
+              Theo quy định ZoneMart, bạn cần đăng nhập tài khoản Khách Hàng trước khi đăng ký làm đối tác Shipper.
+            </p>
+            <button type="button" class="btn-banner-login" @click="goToLoginWithIntent('shipper')">
+              🔑 Đăng Nhập Tài Khoản Khách Hàng Ngay ➔
+            </button>
+          </div>
+
+          <div class="form-group">
+            <label class="input-label">
+              Họ tên thật <span class="req">*</span>
+              <span class="hint-text">(6 - 16 ký tự, chỉ nhập chữ)</span>
+            </label>
+            <input
+              type="text"
+              v-model="form.fullName"
+              placeholder="VD: Nguyễn Văn A"
+              class="custom-input"
+              maxlength="16"
+              required
+            />
+          </div>
 
             <div class="form-group">
               <label for="shipper-cccd" class="input-label">
@@ -837,7 +890,6 @@ onMounted(() => {
               </button>
             </div>
           </form>
-        </Transition>
 
         <!-- Đường kẻ phân cách & Liên kết -->
         <div class="divider-row">
@@ -1060,8 +1112,7 @@ onMounted(() => {
 }
 
 .back-home-btn:hover {
-  color: #D94E15;
-  transform: translateX(-2px);
+  color: #0369A1;
 }
 
 /* HEADER BẢNG */
@@ -1073,7 +1124,7 @@ onMounted(() => {
 .form-main-heading {
   font-size: 21px;
   font-weight: 900;
-  color: #D94E15;
+  color: #0284C7;
   margin: 0 0 4px 0;
   letter-spacing: -0.5px;
 }
@@ -1127,20 +1178,18 @@ onMounted(() => {
 }
 
 .step-item.active .step-badge {
-  background: #FFEBE1;
-  color: #D94E15;
+  background: #F0F9FF;
+  color: #0284C7;
 }
 
 .step-item.current .step-badge {
-  background: #D94E15;
+  background: #0284C7;
   color: #FFFFFF;
-  box-shadow: 0 4px 10px rgba(217, 78, 21, 0.35);
-  box-shadow: 0 0 0 4px rgba(217, 78, 21, 0.2), 0 4px 10px rgba(217, 78, 21, 0.35);
-  transform: scale(1.06);
+  box-shadow: 0 4px 10px rgba(2, 132, 199, 0.35);
 }
 
 .step-item.current .step-label {
-  color: #D94E15;
+  color: #0284C7;
   font-weight: 800;
 }
 
@@ -1154,7 +1203,7 @@ onMounted(() => {
 }
 
 .step-connector.active {
-  background: #D94E15;
+  background: #0284C7;
 }
 
 /* MSG ERROR */
@@ -1253,9 +1302,9 @@ onMounted(() => {
 
 .custom-input:focus,
 .custom-select:focus {
-  border-color: #D94E15;
+  border-color: #0284C7;
   background: #FFFFFF;
-  box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.12);
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
 }
 
 /* CUSTOM DROPDOWN CONTAINER (LUÔN MỞ THẢ XUÔI XUỐNG DƯỚI) */
@@ -1286,9 +1335,9 @@ onMounted(() => {
 
 .custom-select-trigger:hover,
 .custom-select-trigger.active {
-  border-color: #D94E15;
+  border-color: #0284C7;
   background: #FFFFFF;
-  box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.12);
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
 }
 
 .selected-text {
@@ -1306,7 +1355,7 @@ onMounted(() => {
 
 .custom-select-trigger.active .chevron-arrow {
   transform: rotate(180deg);
-  color: #D94E15;
+  color: #0284C7;
 }
 
 /* MENU THẢ XUÔI XUỐNG DƯỚI (TOP: 100%) VỚI THANH CUỘN */
@@ -1319,7 +1368,7 @@ onMounted(() => {
   max-height: 180px;
   overflow-y: auto;
   background: #FFFFFF;
-  border: 1.5px solid #D94E15;
+  border: 1.5px solid #0284C7;
   border-radius: 12px;
   box-shadow: 0 10px 25px rgba(15, 23, 42, 0.18);
   z-index: 99999;
@@ -1335,13 +1384,13 @@ onMounted(() => {
 }
 
 .dropdown-option-item:hover {
-  background: #FFF5F0;
-  color: #D94E15;
+  background: #F0F9FF;
+  color: #0284C7;
   font-weight: 700;
 }
 
 .dropdown-option-item.selected {
-  background: #D94E15;
+  background: #0284C7;
   color: #FFFFFF;
   font-weight: 700;
 }
@@ -1385,10 +1434,10 @@ onMounted(() => {
   min-height: 44px;
   max-height: 44px;
   padding: 0 8px;
-  background: #FFF5F0;
-  border: 1.5px dashed #FDBA74;
+  background: #F0F9FF;
+  border: 1.5px dashed #BAE6FD;
   border-radius: 12px;
-  color: #C2410C;
+  color: #0284C7;
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
@@ -1401,8 +1450,8 @@ onMounted(() => {
 }
 
 .btn-upload-box:hover {
-  background: #FFEDD5;
-  border-color: #D94E15;
+  background: #E0F2FE;
+  border-color: #0284C7;
 }
 
 .btn-upload-box.uploaded {
@@ -1466,12 +1515,12 @@ onMounted(() => {
 }
 
 .checkbox-container:hover input ~ .checkmark {
-  border-color: #D94E15;
+  border-color: #0284C7;
 }
 
 .checkbox-container input:checked ~ .checkmark {
-  background-color: #D94E15;
-  border-color: #D94E15;
+  background-color: #0284C7;
+  border-color: #0284C7;
 }
 
 .checkmark:after {
@@ -1496,26 +1545,27 @@ onMounted(() => {
 }
 
 /* BUTTON ACTIONS */
-.btn-submit-orange {
+.btn-submit-orange,
+.btn-submit-cyan {
   width: 100%;
   padding: 11px;
-  background: #D94E15;
+  background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%);
   color: #FFFFFF;
   border: none;
   border-radius: 30px;
   font-size: 13.5px;
   font-weight: 800;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(217, 78, 21, 0.3);
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.3);
   transition: all 0.2s ease;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   margin-top: 4px;
 }
 
-.btn-submit-orange:hover:not(:disabled) {
-  background: #C8451F;
-  transform: translateY(-1.5px);
-  box-shadow: 0 6px 18px rgba(217, 78, 21, 0.4);
+.btn-submit-orange:hover,
+.btn-submit-cyan:hover {
+  background: linear-gradient(135deg, #0369A1 0%, #075985 100%);
+  box-shadow: 0 6px 18px rgba(2, 132, 199, 0.4);
 }
 
 .btn-submit-orange:active:not(:disabled) {
@@ -1588,7 +1638,7 @@ onMounted(() => {
 }
 
 .link-orange-bold {
-  color: #D94E15;
+  color: #0284C7;
   font-weight: 800;
   text-decoration: none;
 }
@@ -1916,6 +1966,87 @@ onMounted(() => {
 .btn-modal-save:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(230, 81, 0, 0.35);
+}
+
+/* ================================================================
+   Ô THÔNG BÁO TÀI KHOẢN KHÁCH HÀNG LIÊN KẾT (CUSTOMER ACCOUNT BANNER)
+   ================================================================ */
+.customer-account-banner {
+  padding: 14px 16px;
+  border-radius: 16px;
+  margin-bottom: 18px;
+  font-size: 13.5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  transition: all 0.25s ease;
+}
+
+.customer-account-banner.success-linked {
+  background: #FFF7ED;
+  border: 1.5px solid #FFEDD5;
+}
+
+.customer-account-banner.warning-not-linked {
+  background: #FEF2F2;
+  border: 1.5px solid #FECACA;
+}
+
+.banner-head-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  color: #1F2937;
+  font-size: 13.5px;
+  margin-bottom: 4px;
+}
+
+.banner-head-title {
+  color: #9A3412;
+  letter-spacing: -0.2px;
+}
+
+.warning-not-linked .banner-head-title {
+  color: #991B1B;
+}
+
+.banner-user-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  color: #374151;
+  padding-left: 2px;
+}
+
+.highlight-email {
+  color: #D94E15;
+  font-weight: 700;
+}
+
+.banner-warn-desc {
+  font-size: 12.5px;
+  color: #7F1D1D;
+  margin: 4px 0 10px 0;
+  line-height: 1.5;
+}
+
+.btn-banner-login {
+  background: linear-gradient(135deg, #D94E15 0%, #EA580C 100%);
+  color: #ffffff;
+  border: none;
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 12.5px;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(217, 78, 21, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-banner-login:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(217, 78, 21, 0.35);
 }
 
 .btn-upload-box {

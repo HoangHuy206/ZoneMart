@@ -313,6 +313,19 @@ const goToRoute = (path: string) => {
   router.push(path);
 };
 
+const openNewTabRoute = (path: string) => {
+  const routeUrl = router.resolve(path).href;
+  window.open(routeUrl, '_blank');
+};
+
+const goToPortal = (btnRoute: string) => {
+  if (btnRoute === '/register-seller' || btnRoute === '/register-shipper') {
+    openNewTabRoute(btnRoute);
+  } else {
+    router.push(btnRoute);
+  }
+};
+
 const handleAddToCartHome = (item: any) => {
   cart.addItem(
     {
@@ -449,7 +462,7 @@ const handleAddToCartHome = (item: any) => {
             <p class="portal-tagline">{{ card.tagline }}</p>
             <p class="portal-desc">{{ card.description }}</p>
 
-            <button class="portal-btn" @click="goToRoute(card.btnRoute)">
+            <button class="portal-btn" @click="goToPortal(card.btnRoute)">
               {{ card.btnText }}
             </button>
           </div>
@@ -708,11 +721,11 @@ const handleAddToCartHome = (item: any) => {
           <div class="cta-btn-group">
             <button
               class="btn-partner-seller"
-              @click="goToRoute('/register-seller')"
+              @click="openNewTabRoute('/register-seller')"
             >
               <i class="bi bi-shop me-2" aria-hidden="true"></i> ĐĂNG KÝ BÁN HÀNG NGAY
             </button>
-            <button class="btn-partner-shipper" @click="goToRoute('/register-shipper')">
+            <button class="btn-partner-shipper" @click="openNewTabRoute('/register-shipper')">
               <i class="bi bi-bicycle me-2" aria-hidden="true"></i> GIA NHẬP ĐỘI TÀI XẾ
             </button>
           </div>
