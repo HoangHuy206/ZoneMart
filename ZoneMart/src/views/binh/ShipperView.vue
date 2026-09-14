@@ -4,7 +4,7 @@
  * CỔNG TRANG CHỦ TÀI XẾ (DRIVER DASHBOARD WITH LIVE MAP) - Phụ trách: Bình
  * Tính năng chính:
  * 1. Nút gạt BẬT / TẮT hoạt động (Active/Inactive Toggle)
- * 2. Bản đồ tương tác Leaflet hiển thị vị trí Shipper, Shop, Khách hàng & Tuyến đường 10km
+ * 2. Bản đồ tương tác Leaflet hiển thị vị trí Shipper, Shop, Khách hàng & Tuyến đường 3km
  * 3. Luồng nhận đơn hàng hỏa tốc, xác nhận lấy hàng và hoàn tất đơn
  * 4. Thống kê thu nhập ca làm việc hôm nay
  * ================================================================
@@ -73,7 +73,7 @@ const driverProfile = reactive({
   licensePlate: "Chưa cập nhật",
   vehicleType: "Xe máy xăng",
   vehicleModel: "Xe máy",
-  operatingArea: "Quận Cầu Giấy, Hà Nội (Bán kính 10km)",
+  operatingArea: "Quận Cầu Giấy, Hà Nội (Bán kính 3km)",
   avatarUrl: "",
   shipperCode: "00001",
   status: "Pending"
@@ -311,7 +311,7 @@ const renderOrderOnMap = () => {
         <div class="gm-iw-tag text-danger">ĐIỂM GIAO HÀNG</div>
         <h4 class="gm-iw-title">${activeOrder.value.customer.name}</h4>
         <p class="gm-iw-desc"><i class="bi bi-geo-alt-fill text-danger"></i> ${activeOrder.value.customer.address}</p>
-        <div class="gm-iw-meta"><i class="bi bi-telephone-fill"></i> ${activeOrder.value.customer.phone} • Hỏa tốc 10km</div>
+        <div class="gm-iw-meta"><i class="bi bi-telephone-fill"></i> ${activeOrder.value.customer.phone} • Hỏa tốc 3km</div>
       </div>
     `);
 
@@ -416,7 +416,7 @@ const locateAndTrackDriver = (isSilent = false) => {
         `);
       }
 
-      // Cập nhật vòng bán kính 10km quanh tài xế
+      // Cập nhật vòng bán kính 3km quanh tài xế
       if (radiusCircle) {
         radiusCircle.setLatLng([lat, lng]);
       }
@@ -639,7 +639,7 @@ onUnmounted(() => {
             <i class="bi bi-power"></i>
           </div>
           <h3>Bạn Đang Tạm Nghỉ</h3>
-          <p>Nhấn nút <strong>"BẬT HOẠT ĐỘNG"</strong> ở phía dưới để kích hoạt định vị GPS và nhận đơn hỏa tốc 10km.</p>
+          <p>Nhấn nút <strong>"BẬT HOẠT ĐỘNG"</strong> ở phía dưới để kích hoạt định vị GPS và nhận đơn hỏa tốc 3km.</p>
           <button class="btn btn-primary btn-turn-online" @click="toggleOnline">
             <i class="bi bi-lightning-charge-fill"></i> Bật Hoạt Động Ngay
           </button>
@@ -662,7 +662,7 @@ onUnmounted(() => {
             <span class="pill-rating"><i class="bi bi-star-fill text-warning"></i> 5.0</span>
           </div>
           <span class="pill-status-text">
-            {{ isOnline ? "Trực tuyến • Bán kính 10km" : "Ngoại tuyến • Tạm nghỉ" }}
+            {{ isOnline ? "Trực tuyến • Bán kính 3km" : "Ngoại tuyến • Tạm nghỉ" }}
           </span>
         </div>
       </div>
@@ -720,7 +720,7 @@ onUnmounted(() => {
       <div v-if="isOnline && currentStep !== 'idle' && currentStep !== 'delivered' && activeOrder" class="floating-order-card">
         <div class="f-order-header">
           <span class="f-order-badge">
-            <i class="bi bi-lightning-charge-fill"></i> HỎA TỐC 10KM
+            <i class="bi bi-lightning-charge-fill"></i> HỎA TỐC 3KM
           </span>
           <span class="f-order-fee">Thù lao: <strong>{{ activeOrder.shippingFee.toLocaleString('vi-VN') }} ₫</strong></span>
         </div>
@@ -798,6 +798,15 @@ onUnmounted(() => {
         <button class="btn btn-primary w-100" @click="currentStep = 'idle'">
           Hoàn tất cuốc xe
         </button>
+      </div>
+
+      <!-- Case C: Đang trực tuyến quét đơn trong bán kính 3km -->
+      <div v-else-if="isOnline && currentStep === 'idle'" class="floating-radar-chip">
+        <span class="radar-dot-pulse"></span>
+        <div class="radar-info">
+          <strong>Đang quét đơn hàng trong bán kính 3km...</strong>
+          <small>Hệ thống tự động điều phối khi có khách đặt hỏa tốc</small>
+        </div>
       </div>
     </div>
 
@@ -973,7 +982,7 @@ onUnmounted(() => {
               </div>
               <div class="detail-item">
                 <span class="dt-label">Khu vực hoạt động:</span>
-                <strong>{{ driverProfile.operatingArea || "Quận Cầu Giấy, Hà Nội (Bán kính 10km)" }}</strong>
+                <strong>{{ driverProfile.operatingArea || "Quận Cầu Giấy, Hà Nội (Bán kính 3km)" }}</strong>
               </div>
               <div class="detail-item">
                 <span class="dt-label">Trạng thái tài xế:</span>

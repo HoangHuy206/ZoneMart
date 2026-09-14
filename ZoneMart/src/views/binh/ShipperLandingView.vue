@@ -139,7 +139,7 @@ const faqs = [
   },
   {
     q: "Bán kính giao hàng của ZoneMart Driver là bao xa?",
-    a: "Tất cả đơn hàng nông sản và thực phẩm tươi sạch của ZoneMart đều nằm trong bán kính hỏa tốc tối đa 10km quanh khu vực bạn đăng ký, giúp bạn di chuyển ngắn, tiết kiệm xăng xe và giao hàng nhanh chóng."
+    a: "Tất cả đơn hàng nông sản và thực phẩm tươi sạch của ZoneMart đều nằm trong bán kính hỏa tốc tối đa 3km quanh khu vực bạn đăng ký, giúp bạn di chuyển ngắn, tiết kiệm xăng xe và giao hàng nhanh chóng."
   }
 ];
 
@@ -484,7 +484,7 @@ const scrollToRegisterForm = () => {
         <!-- CỘT NỘI DUNG BÊN TRÁI -->
         <div class="hero-left-col">
           <div class="hero-badge-pill">
-            <span>ĐỘI NGŨ GIAO HÀNG HỎA TỐC BÁN KÍNH 10KM</span>
+            <span>ĐỘI NGŨ GIAO HÀNG HỎA TỐC BÁN KÍNH 3KM</span>
           </div>
 
           <h1 class="hero-main-title">
@@ -523,7 +523,7 @@ const scrollToRegisterForm = () => {
             </div>
             <div class="stat-divider"></div>
             <div class="stat-box">
-              <span class="stat-val">&lt; 10 km</span>
+              <span class="stat-val">&lt; 3 km</span>
               <span class="stat-lbl">Bán kính giao ngắn</span>
             </div>
             <div class="stat-divider"></div>
@@ -611,8 +611,8 @@ const scrollToRegisterForm = () => {
               <line x1="16" y1="6" x2="16" y2="22"></line>
             </svg>
           </div>
-          <h3>Quãng Đường Ngắn &lt; 10km</h3>
-          <p>Tất cả đơn hàng giao nông sản & thực phẩm đều nằm trong bán kính 10km quanh khu vực bạn chọn, giúp tiết kiệm xăng xe tối đa.</p>
+          <h3>Quãng Đường Ngắn &lt; 3km</h3>
+          <p>Tất cả đơn hàng giao nông sản & thực phẩm đều nằm trong bán kính 3km quanh khu vực bạn chọn, giúp tiết kiệm xăng xe tối đa.</p>
         </div>
 
         <!-- CARD 2 -->
@@ -1338,7 +1338,7 @@ const scrollToRegisterForm = () => {
           <ul class="f-links-list">
             <li><a href="#hero">Giới thiệu ZoneMart Driver</a></li>
             <li><a href="#benefits">Quy chế hoạt động ứng dụng tài xế</a></li>
-            <li><a href="#benefits">Tiêu chuẩn giao hàng hỏa tốc 10km</a></li>
+            <li><a href="#benefits">Tiêu chuẩn giao hàng hỏa tốc 3km</a></li>
             <li><a href="#income-calculator">Bảng cước phí & thưởng mốc đơn</a></li>
             <li><a href="#faq">Tin tức & Mẹo tài xế an toàn</a></li>
             <li><a href="#shipper-register-card">Đăng ký gia nhập đội ngũ tài xế</a></li>
@@ -1414,7 +1414,7 @@ const scrollToRegisterForm = () => {
       </div>
 
       <div class="footer-bottom-line text-center">
-        <p>© 2026 ZoneMart E-Commerce Platform. Cổng thông tin & Đăng ký Tài xế ZoneMart Driver chính thức. Giao hàng hỏa tốc 10km.</p>
+        <p>© 2026 ZoneMart E-Commerce Platform. Cổng thông tin & Đăng ký Tài xế ZoneMart Driver chính thức. Giao hàng hỏa tốc 3km.</p>
       </div>
     </footer>
 
