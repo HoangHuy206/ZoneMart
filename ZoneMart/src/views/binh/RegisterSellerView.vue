@@ -31,9 +31,11 @@ const form = reactive({
   cccdBackImage: "",      // Preview URL hoặc Base64
   foodSafetyCertImage: "",// Preview URL hoặc Base64 ảnh Giấy CN An toàn thực phẩm
 
-  // BƯỚC 3: THANH TOÁN
+  // BƯỚC 3: THANH TOÁN & TÀI KHOẢN ĐĂNG NHẬP
   bankName: "Vietcombank (VCB)",
-  bankAccountNumber: ""
+  bankAccountNumber: "",
+  phoneEmail: "",
+  password: ""
 });
 
 const isLoading = ref(false);
@@ -174,6 +176,14 @@ const handleClickOutside = (e: MouseEvent) => {
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
+  const savedUser = localStorage.getItem("currentUser");
+  if (savedUser) {
+    try {
+      const parsed = JSON.parse(savedUser);
+      if (parsed.phoneEmail) form.phoneEmail = parsed.phoneEmail;
+      if (parsed.fullName && !form.ownerFullName) form.ownerFullName = parsed.fullName;
+    } catch {}
+  }
 });
 
 onUnmounted(() => {
@@ -377,6 +387,12 @@ const handleSubmitApplication = async () => {
     return;
   }
 
+  const phoneEmailTrimmed = form.phoneEmail.trim();
+  if (!phoneEmailTrimmed) {
+    errorMessage.value = "Vui lòng nhập Số điện thoại hoặc Email đăng nhập!";
+    return;
+  }
+
   isLoading.value = true;
 
   try {
@@ -393,7 +409,9 @@ const handleSubmitApplication = async () => {
         cccdBackImage: form.cccdBackImage,
         foodSafetyCertImage: form.foodSafetyCertImage,
         bankName: form.bankName,
-        bankAccountNumber: accountNumberTrimmed
+        bankAccountNumber: accountNumberTrimmed,
+        phoneEmail: phoneEmailTrimmed,
+        password: form.password.trim() || "123456"
       })
     }).catch(() => null);
 
@@ -417,6 +435,10 @@ const closeSuccessModal = () => {
   showSuccessModal.value = false;
   router.push("/login");
 };
+
+onMounted(() => {
+  document.title = "Đăng Ký Người Bán & Mở Gian Hàng | ZoneMart - Sàn TMĐT & Giao Hàng Hỏa Tốc";
+});
 </script>
 
 <template>
@@ -452,17 +474,25 @@ const closeSuccessModal = () => {
         <!-- BẢNG THEO DÕI BƯỚC (STEPPER BAR 3 BƯỚC CHUYÊN NGHIỆP) -->
         <div class="stepper-bar">
           <div class="step-item" :class="{ active: currentStep >= 1, current: currentStep === 1 }">
-            <div class="step-badge">1</div>
+            <div class="step-badge">
+              <i v-if="currentStep > 1" class="bi bi-check-lg"></i>
+              <span v-else>1</span>
+            </div>
             <span class="step-label">Thông tin tiệm</span>
           </div>
           <div class="step-connector" :class="{ active: currentStep >= 2 }"></div>
           <div class="step-item" :class="{ active: currentStep >= 2, current: currentStep === 2 }">
-            <div class="step-badge">2</div>
+            <div class="step-badge">
+              <i v-if="currentStep > 2" class="bi bi-check-lg"></i>
+              <span v-else>2</span>
+            </div>
             <span class="step-label">Xác thực chủ tiệm</span>
           </div>
           <div class="step-connector" :class="{ active: currentStep >= 3 }"></div>
           <div class="step-item" :class="{ active: currentStep >= 3, current: currentStep === 3 }">
-            <div class="step-badge">3</div>
+            <div class="step-badge">
+              <span>3</span>
+            </div>
             <span class="step-label">Thanh toán</span>
           </div>
         </div>
@@ -470,306 +500,379 @@ const closeSuccessModal = () => {
         <!-- THÔNG BÁO LỖI NẾU CÓ -->
         <div v-if="errorMessage" class="msg-box error">⚠️ {{ errorMessage }}</div>
 
-        <!-- ==================== BƯỚC 1: THÔNG TIN TIỆM ==================== -->
-        <form v-if="currentStep === 1" @submit.prevent="goToNextStep" class="form-body">
-          <!-- Tên cửa hàng -->
-          <div class="field-item">
-            <label class="field-label">
-              Tên cửa hàng <span class="req">*</span>
-              <span class="hint-text">(12 - 30 ký tự, không ký tự đặc biệt)</span>
-            </label>
-            <input
-              v-model="form.storeName"
-              type="text"
-              class="field-input"
-              placeholder="VD: Bách Hóa Sạch ZoneMart Cầu Giấy"
-              maxlength="30"
-              required
-            />
-          </div>
-
-          <!-- CUSTOM DROPDOWN DANH MỤC HÀNG BÁN CHÍNH (MỞ THẢ XUÔI XUỐNG DƯỚI) -->
-          <div class="field-item custom-select-container">
-            <label class="field-label">Danh mục hàng bán chính <span class="req">*</span></label>
-            <div
-              class="custom-select-trigger"
-              :class="{ 'active': isCategoryDropdownOpen }"
-              @click.stop="toggleCategoryDropdown"
-            >
-              <span class="selected-text">{{ form.category }}</span>
-              <span class="chevron-arrow">▼</span>
+        <!-- CHUYỂN BƯỚC MƯỢT MÀ VỚI TRANSITION -->
+        <Transition name="step-slide" mode="out-in">
+          <!-- ==================== BƯỚC 1: THÔNG TIN TIỆM ==================== -->
+          <form v-if="currentStep === 1" key="seller-step-1" @submit.prevent="goToNextStep" class="form-body" novalidate>
+            <!-- Tên cửa hàng -->
+            <div class="field-item">
+              <label for="seller-store-name" class="field-label">
+                Tên cửa hàng <span class="req">*</span>
+                <span class="hint-text">(12 - 30 ký tự, không ký tự đặc biệt)</span>
+              </label>
+              <div class="input-icon-wrapper">
+                <i class="bi bi-shop input-leading-icon"></i>
+                <input
+                  id="seller-store-name"
+                  name="storeName"
+                  v-model="form.storeName"
+                  type="text"
+                  class="field-input has-leading-icon"
+                  placeholder="VD: Bách Hóa Sạch ZoneMart Cầu Giấy"
+                  maxlength="30"
+                  required
+                  aria-required="true"
+                />
+              </div>
             </div>
 
-            <Transition name="fade-dropdown">
-              <div v-if="isCategoryDropdownOpen" class="custom-dropdown-menu">
-                <div
-                  v-for="cat in categoriesList"
-                  :key="cat"
-                  class="dropdown-option-item"
-                  :class="{ 'selected': form.category === cat }"
-                  @click.stop="selectCategory(cat)"
-                >
-                  {{ cat }}
-                </div>
-              </div>
-            </Transition>
-          </div>
-
-          <!-- Địa chỉ tiệm -->
-          <div class="field-item">
-            <label class="field-label">
-              Địa chỉ tiệm <span class="req">*</span>
-              <span class="hint-text">(Không nhập ký tự đặc biệt)</span>
-            </label>
-            <input
-              v-model="form.address"
-              type="text"
-              class="field-input"
-              placeholder="VD: Số 225 đường Nguyễn Trãi, Thành phố Hà Nội"
-              required
-            />
-          </div>
-
-          <!-- CUSTOM DROPDOWN KHUNG GIỜ MỞ CỬA (MỞ THẢ XUÔI XUỐNG DƯỚI) -->
-          <div class="field-item custom-select-container">
-            <label class="field-label">Cửa hàng mở những giờ nào? <span class="req">*</span></label>
-            <div
-              class="custom-select-trigger"
-              :class="{ 'active': isOpenHoursDropdownOpen }"
-              @click.stop="toggleOpenHoursDropdown"
-            >
-              <span class="selected-text">{{ selectedPreset }}</span>
-              <span class="chevron-arrow">▼</span>
-            </div>
-
-            <Transition name="fade-dropdown">
-              <div v-if="isOpenHoursDropdownOpen" class="custom-dropdown-menu">
-                <div
-                  v-for="opt in openHoursOptions"
-                  :key="opt"
-                  class="dropdown-option-item"
-                  :class="{ 'selected': selectedPreset === opt }"
-                  @click.stop="selectPresetHours(opt)"
-                >
-                  {{ opt }}
-                </div>
-              </div>
-            </Transition>
-          </div>
-
-          <!-- Tùy chọn 2 khung giờ mở & đóng riêng biệt nếu chọn tùy chọn khác -->
-          <div v-if="selectedPreset === 'Tùy chọn khung giờ mở - đóng khác...'" class="time-select-row">
+            <!-- CUSTOM DROPDOWN DANH MỤC HÀNG BÁN CHÍNH (MỞ THẢ XUÔI XUỐNG DƯỚI) -->
             <div class="field-item custom-select-container">
-              <label class="field-label">Giờ mở cửa</label>
+              <label class="field-label">Danh mục hàng bán chính <span class="req">*</span></label>
               <div
                 class="custom-select-trigger"
-                :class="{ 'active': isOpenTimeDropdownOpen }"
-                @click.stop="toggleOpenTimeDropdown"
+                :class="{ 'active': isCategoryDropdownOpen }"
+                @click.stop="toggleCategoryDropdown"
               >
-                <span class="selected-text">{{ openTime }}</span>
+                <span class="selected-text">{{ form.category }}</span>
                 <span class="chevron-arrow">▼</span>
               </div>
 
               <Transition name="fade-dropdown">
-                <div v-if="isOpenTimeDropdownOpen" class="custom-dropdown-menu">
+                <div v-if="isCategoryDropdownOpen" class="custom-dropdown-menu">
                   <div
-                    v-for="h in openTimeList"
-                    :key="h"
+                    v-for="cat in categoriesList"
+                    :key="cat"
                     class="dropdown-option-item"
-                    :class="{ 'selected': openTime === h }"
-                    @click.stop="selectOpenTime(h)"
+                    :class="{ 'selected': form.category === cat }"
+                    @click.stop="selectCategory(cat)"
                   >
-                    {{ h }}
+                    {{ cat }}
                   </div>
                 </div>
               </Transition>
             </div>
 
+            <!-- Địa chỉ tiệm -->
+            <div class="field-item">
+              <label for="seller-store-address" class="field-label">
+                Địa chỉ tiệm <span class="req">*</span>
+                <span class="hint-text">(Không nhập ký tự đặc biệt)</span>
+              </label>
+              <div class="input-icon-wrapper">
+                <i class="bi bi-geo-alt-fill input-leading-icon"></i>
+                <input
+                  id="seller-store-address"
+                  name="address"
+                  v-model="form.address"
+                  type="text"
+                  class="field-input has-leading-icon"
+                  placeholder="VD: Số 225 đường Nguyễn Trãi, Thành phố Hà Nội"
+                  required
+                  aria-required="true"
+                />
+              </div>
+            </div>
+
+            <!-- CUSTOM DROPDOWN KHUNG GIỜ MỞ CỬA (MỞ THẢ XUÔI XUỐNG DƯỚI) -->
             <div class="field-item custom-select-container">
-              <label class="field-label">Giờ đóng cửa</label>
+              <label class="field-label">Cửa hàng mở những giờ nào? <span class="req">*</span></label>
               <div
                 class="custom-select-trigger"
-                :class="{ 'active': isCloseTimeDropdownOpen }"
-                @click.stop="toggleCloseTimeDropdown"
+                :class="{ 'active': isOpenHoursDropdownOpen }"
+                @click.stop="toggleOpenHoursDropdown"
               >
-                <span class="selected-text">{{ closeTime }}</span>
+                <span class="selected-text">{{ selectedPreset }}</span>
                 <span class="chevron-arrow">▼</span>
               </div>
 
               <Transition name="fade-dropdown">
-                <div v-if="isCloseTimeDropdownOpen" class="custom-dropdown-menu">
+                <div v-if="isOpenHoursDropdownOpen" class="custom-dropdown-menu">
                   <div
-                    v-for="h in closeTimeList"
-                    :key="h"
+                    v-for="opt in openHoursOptions"
+                    :key="opt"
                     class="dropdown-option-item"
-                    :class="{ 'selected': closeTime === h }"
-                    @click.stop="selectCloseTime(h)"
+                    :class="{ 'selected': selectedPreset === opt }"
+                    @click.stop="selectPresetHours(opt)"
                   >
-                    {{ h }}
+                    {{ opt }}
                   </div>
                 </div>
               </Transition>
             </div>
-          </div>
 
-          <!-- Nút bấm Chuyển sang Bước 2 -->
-          <button type="submit" class="btn-submit-orange">
-            Tiếp theo ➔
-          </button>
-        </form>
-
-        <!-- ==================== BƯỚC 2: XÁC THỰC CHỦ TIỆM ==================== -->
-        <form v-else-if="currentStep === 2" @submit.prevent="goToNextStep" class="form-body">
-          <!-- Họ tên chủ tiệm -->
-          <div class="field-item">
-            <label class="field-label">
-              Họ tên chủ tiệm <span class="req">*</span>
-              <span class="hint-text">(6 - 16 ký tự, chỉ nhập chữ)</span>
-            </label>
-            <input
-              v-model="form.ownerFullName"
-              type="text"
-              class="field-input"
-              placeholder="VD: Nguyễn Văn Bình"
-              maxlength="16"
-              required
-            />
-          </div>
-
-          <!-- Upload CCCD Mặt Trước & Mặt Sau -->
-          <div class="cccd-upload-group">
-            <label class="field-label">Tải ảnh CCCD mặt trước & mặt sau <span class="req">*</span></label>
-            
-            <div class="upload-row">
-              <!-- Mặt trước -->
-              <div class="upload-card">
-                <input type="file" accept="image/*" id="cccdFront" @change="handleCccdFrontUpload" class="file-input-hidden" />
-                <div 
-                  class="upload-box" 
-                  :class="{ 'has-preview': form.cccdFrontImage }"
-                  @click="handleUploadBoxClick('cccdFrontImage', 'cccdFront', 'Ảnh CCCD Mặt Trước')"
+            <!-- Tùy chọn 2 khung giờ mở & đóng riêng biệt nếu chọn tùy chọn khác -->
+            <div v-if="selectedPreset === 'Tùy chọn khung giờ mở - đóng khác...'" class="time-select-row">
+              <div class="field-item custom-select-container">
+                <label class="field-label">Giờ mở cửa</label>
+                <div
+                  class="custom-select-trigger"
+                  :class="{ 'active': isOpenTimeDropdownOpen }"
+                  @click.stop="toggleOpenTimeDropdown"
                 >
-                  <template v-if="!form.cccdFrontImage">
-                    <span class="upload-icon">📷</span>
-                    <span class="upload-text">CCCD Mặt trước</span>
-                  </template>
-                  <template v-else>
-                    <img :src="form.cccdFrontImage" alt="CCCD Mặt Trước" class="preview-img" />
-                    <div class="preview-overlay-badge">🔍 Nhấn để xem & thay đổi</div>
-                  </template>
+                  <span class="selected-text">{{ openTime }}</span>
+                  <span class="chevron-arrow">▼</span>
                 </div>
+
+                <Transition name="fade-dropdown">
+                  <div v-if="isOpenTimeDropdownOpen" class="custom-dropdown-menu">
+                    <div
+                      v-for="h in openTimeList"
+                      :key="h"
+                      class="dropdown-option-item"
+                      :class="{ 'selected': openTime === h }"
+                      @click.stop="selectOpenTime(h)"
+                    >
+                      {{ h }}
+                    </div>
+                  </div>
+                </Transition>
               </div>
 
-              <!-- Mặt sau -->
-              <div class="upload-card">
-                <input type="file" accept="image/*" id="cccdBack" @change="handleCccdBackUpload" class="file-input-hidden" />
-                <div 
-                  class="upload-box" 
-                  :class="{ 'has-preview': form.cccdBackImage }"
-                  @click="handleUploadBoxClick('cccdBackImage', 'cccdBack', 'Ảnh CCCD Mặt Sau')"
+              <div class="field-item custom-select-container">
+                <label class="field-label">Giờ đóng cửa</label>
+                <div
+                  class="custom-select-trigger"
+                  :class="{ 'active': isCloseTimeDropdownOpen }"
+                  @click.stop="toggleCloseTimeDropdown"
                 >
-                  <template v-if="!form.cccdBackImage">
-                    <span class="upload-icon">💳</span>
-                    <span class="upload-text">CCCD Mặt sau</span>
-                  </template>
-                  <template v-else>
-                    <img :src="form.cccdBackImage" alt="CCCD Mặt Sau" class="preview-img" />
-                    <div class="preview-overlay-badge">🔍 Nhấn để xem & thay đổi</div>
-                  </template>
+                  <span class="selected-text">{{ closeTime }}</span>
+                  <span class="chevron-arrow">▼</span>
                 </div>
+
+                <Transition name="fade-dropdown">
+                  <div v-if="isCloseTimeDropdownOpen" class="custom-dropdown-menu">
+                    <div
+                      v-for="h in closeTimeList"
+                      :key="h"
+                      class="dropdown-option-item"
+                      :class="{ 'selected': closeTime === h }"
+                      @click.stop="selectCloseTime(h)"
+                    >
+                      {{ h }}
+                    </div>
+                  </div>
+                </Transition>
               </div>
             </div>
-          </div>
 
-          <!-- TẢI ĂNH GIẤY CHỨNG NHẬN AN TOÀN THỰC PHẨM -->
-          <div class="cccd-upload-group">
-            <label class="field-label">Tải ảnh Giấy chứng nhận an toàn thực phẩm <span class="req">*</span></label>
-            <div class="upload-card full-width">
-              <input type="file" accept="image/*" id="foodSafetyCert" @change="handleFoodSafetyCertUpload" class="file-input-hidden" />
-              <div 
-                class="upload-box upload-box-wide" 
-                :class="{ 'has-preview': form.foodSafetyCertImage }"
-                @click="handleUploadBoxClick('foodSafetyCertImage', 'foodSafetyCert', 'Giấy CN An toàn thực phẩm')"
-              >
-                <template v-if="!form.foodSafetyCertImage">
-                  <span class="upload-icon">📜</span>
-                  <span class="upload-text">Tải ảnh Giấy CN An toàn thực phẩm (Tệp hình ảnh .jpg, .png)</span>
-                </template>
-                <template v-else>
-                  <img :src="form.foodSafetyCertImage" alt="Giấy CN An toàn thực phẩm" class="preview-img" />
-                  <div class="preview-overlay-badge">🔍 Nhấn để xem & thay đổi</div>
-                </template>
-              </div>
-            </div>
-          </div>
-
-          <!-- Nhóm Nút Quay lại / Tiếp theo -->
-          <div class="step-btn-group">
-            <button type="button" class="btn-secondary-gray" @click="goToPrevStep">
-              ← Quay lại
-            </button>
-            <button type="submit" class="btn-submit-orange btn-flex">
+            <!-- Nút bấm Chuyển sang Bước 2 -->
+            <button type="submit" class="btn-submit-orange">
               Tiếp theo ➔
             </button>
-          </div>
-        </form>
+          </form>
 
-        <!-- ==================== BƯỚC 3: THANH TOÁN & GỬI HỒ SƠ ==================== -->
-        <form v-else-if="currentStep === 3" @submit.prevent="handleSubmitApplication" class="form-body">
-          <!-- CUSTOM DROPDOWN CHỌN NGÂN HÀNG NHẬN TIỀN (MỞ THẢ XUÔI XUỐNG DƯỚI) -->
-          <div class="field-item custom-select-container">
-            <label class="field-label">Chọn Ngân hàng nhận tiền <span class="req">*</span></label>
-            <div
-              class="custom-select-trigger"
-              :class="{ 'active': isBankDropdownOpen }"
-              @click.stop="toggleBankDropdown"
-            >
-              <span class="selected-text">{{ form.bankName }}</span>
-              <span class="chevron-arrow">▼</span>
+          <!-- ==================== BƯỚC 2: XÁC THỰC CHỦ TIỆM ==================== -->
+          <form v-else-if="currentStep === 2" key="seller-step-2" @submit.prevent="goToNextStep" class="form-body" novalidate>
+            <!-- Họ tên chủ tiệm -->
+            <div class="field-item">
+              <label for="seller-owner-name" class="field-label">
+                Họ tên chủ tiệm <span class="req">*</span>
+                <span class="hint-text">(6 - 16 ký tự, chỉ nhập chữ)</span>
+              </label>
+              <div class="input-icon-wrapper">
+                <i class="bi bi-person-badge-fill input-leading-icon"></i>
+                <input
+                  id="seller-owner-name"
+                  name="ownerFullName"
+                  v-model="form.ownerFullName"
+                  type="text"
+                  autocomplete="name"
+                  class="field-input has-leading-icon"
+                  placeholder="VD: Nguyễn Văn Bình"
+                  maxlength="16"
+                  required
+                  aria-required="true"
+                />
+              </div>
             </div>
 
-            <Transition name="fade-dropdown">
-              <div v-if="isBankDropdownOpen" class="custom-dropdown-menu">
-                <div
-                  v-for="bank in banksList"
-                  :key="bank"
-                  class="dropdown-option-item"
-                  :class="{ 'selected': form.bankName === bank }"
-                  @click.stop="selectBank(bank)"
-                >
-                  {{ bank }}
+            <!-- Upload CCCD Mặt Trước & Mặt Sau -->
+            <div class="cccd-upload-group">
+              <label class="field-label">Tải ảnh CCCD mặt trước & mặt sau <span class="req">*</span></label>
+              
+              <div class="upload-row">
+                <!-- Mặt trước -->
+                <div class="upload-card">
+                  <input type="file" accept="image/*" id="cccdFront" @change="handleCccdFrontUpload" class="file-input-hidden" />
+                  <div 
+                    class="upload-box" 
+                    :class="{ 'has-preview': form.cccdFrontImage }"
+                    @click="handleUploadBoxClick('cccdFrontImage', 'cccdFront', 'Ảnh CCCD Mặt Trước')"
+                  >
+                    <template v-if="!form.cccdFrontImage">
+                      <span class="upload-icon">📷</span>
+                      <span class="upload-text">CCCD Mặt trước</span>
+                    </template>
+                    <template v-else>
+                      <img :src="form.cccdFrontImage" alt="CCCD Mặt Trước" class="preview-img" />
+                      <div class="preview-overlay-badge">🔍 Nhấn để xem & thay đổi</div>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- Mặt sau -->
+                <div class="upload-card">
+                  <input type="file" accept="image/*" id="cccdBack" @change="handleCccdBackUpload" class="file-input-hidden" />
+                  <div 
+                    class="upload-box" 
+                    :class="{ 'has-preview': form.cccdBackImage }"
+                    @click="handleUploadBoxClick('cccdBackImage', 'cccdBack', 'Ảnh CCCD Mặt Sau')"
+                  >
+                    <template v-if="!form.cccdBackImage">
+                      <span class="upload-icon">💳</span>
+                      <span class="upload-text">CCCD Mặt sau</span>
+                    </template>
+                    <template v-else>
+                      <img :src="form.cccdBackImage" alt="CCCD Mặt Sau" class="preview-img" />
+                      <div class="preview-overlay-badge">🔍 Nhấn để xem & thay đổi</div>
+                    </template>
+                  </div>
                 </div>
               </div>
-            </Transition>
-          </div>
+            </div>
 
-          <!-- Số tài khoản nhận tiền -->
-          <div class="field-item">
-            <label class="field-label">
-              Số tài khoản nhận tiền <span class="req">*</span>
-              <span class="hint-text">(8 - 15 chữ số)</span>
-            </label>
-            <input
-              v-model="form.bankAccountNumber"
-              type="text"
-              class="field-input"
-              placeholder="VD: 190382910283 (Chỉ nhập chữ số)"
-              maxlength="15"
-              required
-            />
-          </div>
+            <!-- TẢI ẢNH GIẤY CHỨNG NHẬN AN TOÀN THỰC PHẨM -->
+            <div class="cccd-upload-group">
+              <label class="field-label">Tải ảnh Giấy chứng nhận an toàn thực phẩm <span class="req">*</span></label>
+              <div class="upload-card full-width">
+                <input type="file" accept="image/*" id="foodSafetyCert" @change="handleFoodSafetyCertUpload" class="file-input-hidden" />
+                <div 
+                  class="upload-box upload-box-wide" 
+                  :class="{ 'has-preview': form.foodSafetyCertImage }"
+                  @click="handleUploadBoxClick('foodSafetyCertImage', 'foodSafetyCert', 'Giấy CN An toàn thực phẩm')"
+                >
+                  <template v-if="!form.foodSafetyCertImage">
+                    <span class="upload-icon">📜</span>
+                    <span class="upload-text">Tải ảnh Giấy CN An toàn thực phẩm (Tệp hình ảnh .jpg, .png)</span>
+                  </template>
+                  <template v-else>
+                    <img :src="form.foodSafetyCertImage" alt="Giấy CN An toàn thực phẩm" class="preview-img" />
+                    <div class="preview-overlay-badge">🔍 Nhấn để xem & thay đổi</div>
+                  </template>
+                </div>
+              </div>
+            </div>
 
-          <!-- Nhóm Nút Quay lại / Gửi hồ sơ đăng ký -->
-          <div class="step-btn-group">
-            <button type="button" class="btn-secondary-gray" @click="goToPrevStep">
-              ← Quay lại
-            </button>
-            <button type="submit" class="btn-submit-orange btn-flex" :disabled="isLoading">
-              <span v-if="!isLoading">Gửi hồ sơ đăng ký ➔</span>
-              <span v-else>ĐANG GỬI HỒ SƠ...</span>
-            </button>
-          </div>
-        </form>
+            <!-- Nhóm Nút Quay lại / Tiếp theo -->
+            <div class="step-btn-group">
+              <button type="button" class="btn-secondary-gray" @click="goToPrevStep">
+                ← Quay lại
+              </button>
+              <button type="submit" class="btn-submit-orange btn-flex">
+                Tiếp theo ➔
+              </button>
+            </div>
+          </form>
+
+          <!-- ==================== BƯỚC 3: THANH TOÁN & GỬI HỒ SƠ ==================== -->
+          <form v-else-if="currentStep === 3" key="seller-step-3" @submit.prevent="handleSubmitApplication" class="form-body" novalidate>
+            <!-- CUSTOM DROPDOWN CHỌN NGÂN HÀNG NHẬN TIỀN (MỞ THẢ XUÔI XUỐNG DƯỚI) -->
+            <div class="field-item custom-select-container">
+              <label class="field-label">Chọn Ngân hàng nhận tiền <span class="req">*</span></label>
+              <div
+                class="custom-select-trigger"
+                :class="{ 'active': isBankDropdownOpen }"
+                @click.stop="toggleBankDropdown"
+              >
+                <span class="selected-text">{{ form.bankName }}</span>
+                <span class="chevron-arrow">▼</span>
+              </div>
+
+              <Transition name="fade-dropdown">
+                <div v-if="isBankDropdownOpen" class="custom-dropdown-menu">
+                  <div
+                    v-for="bank in banksList"
+                    :key="bank"
+                    class="dropdown-option-item"
+                    :class="{ 'selected': form.bankName === bank }"
+                    @click.stop="selectBank(bank)"
+                  >
+                    {{ bank }}
+                  </div>
+                </div>
+              </Transition>
+            </div>
+
+            <!-- Số tài khoản nhận tiền -->
+            <div class="field-item">
+              <label for="seller-bank-acc" class="field-label">
+                Số tài khoản nhận tiền <span class="req">*</span>
+                <span class="hint-text">(8 - 15 chữ số)</span>
+              </label>
+              <div class="input-icon-wrapper">
+                <i class="bi bi-credit-card-2-front-fill input-leading-icon"></i>
+                <input
+                  id="seller-bank-acc"
+                  name="bankAccountNumber"
+                  v-model="form.bankAccountNumber"
+                  type="text"
+                  inputmode="numeric"
+                  class="field-input has-leading-icon font-mono"
+                  placeholder="VD: 190382910283 (Chỉ nhập chữ số)"
+                  maxlength="15"
+                  required
+                  aria-required="true"
+                />
+              </div>
+            </div>
+
+            <!-- THÔNG TIN TÀI KHOẢN ĐĂNG NHẬP -->
+            <div class="field-item">
+              <label for="seller-account-login" class="field-label">
+                Số điện thoại hoặc Email đăng nhập <span class="req">*</span>
+                <span class="hint-text">(Dùng để đăng nhập và theo dõi kết quả xét duyệt)</span>
+              </label>
+              <div class="input-icon-wrapper">
+                <i class="bi bi-envelope-at-fill input-leading-icon"></i>
+                <input
+                  id="seller-account-login"
+                  name="username"
+                  v-model="form.phoneEmail"
+                  type="text"
+                  autocomplete="username"
+                  class="field-input has-leading-icon"
+                  placeholder="VD: 0912345678 hoặc email@gmail.com"
+                  required
+                  aria-required="true"
+                />
+              </div>
+            </div>
+
+            <div class="field-item">
+              <label for="seller-password" class="field-label">
+                Mật khẩu đăng nhập <span class="req">*</span>
+                <span class="hint-text">(Tối thiểu 6 ký tự)</span>
+              </label>
+              <div class="input-icon-wrapper">
+                <i class="bi bi-lock-fill input-leading-icon"></i>
+                <input
+                  id="seller-password"
+                  name="new-password"
+                  v-model="form.password"
+                  type="password"
+                  autocomplete="new-password"
+                  class="field-input has-leading-icon"
+                  placeholder="Nhập mật khẩu cho tài khoản người bán"
+                  minlength="6"
+                  required
+                  aria-required="true"
+                />
+              </div>
+            </div>
+
+            <!-- Nhóm Nút Quay lại / Gửi hồ sơ đăng ký -->
+            <div class="step-btn-group">
+              <button type="button" class="btn-secondary-gray" @click="goToPrevStep">
+                ← Quay lại
+              </button>
+              <button type="submit" class="btn-submit-orange btn-flex" :disabled="isLoading">
+                <span v-if="!isLoading">Gửi hồ sơ đăng ký ➔</span>
+                <span v-else>ĐANG GỬI HỒ SƠ...</span>
+              </button>
+            </div>
+          </form>
+        </Transition>
 
         <!-- Đường kẻ phân cách & Liên kết -->
         <div class="divider-row">
@@ -805,12 +908,16 @@ const closeSuccessModal = () => {
           <h3 class="modal-heading-title green-title">Đã gửi hồ sơ thành công</h3>
           
           <p class="modal-body-text">
-            Hồ sơ mở gian hàng <b>{{ form.storeName }}</b> của bạn đã được lưu trực tiếp vào CSDL MongoDB Atlas và chuyển về hệ thống tài khoản Quản lý xét duyệt!
+            Hồ sơ mở gian hàng <b>{{ form.storeName }}</b> của bạn đã được ghi nhận và đang ở trạng thái <b>CHỜ BAN QUẢN LÝ XÉT DUYỆT</b>!
           </p>
+
+          <div style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin: 12px 0 18px 0; text-align: left; line-height: 1.5;">
+            <i class="bi bi-clock-history me-1"></i> <strong>Quy trình kiểm duyệt:</strong> Ban Quản Trị ZoneMart sẽ kiểm tra giấy tờ pháp lý (CCCD & Giấy chứng nhận ATTP). Sau khi được phê duyệt, bạn có thể đăng nhập bằng tài khoản vừa tạo để quản lý gian hàng.
+          </div>
 
           <div class="modal-action-buttons">
             <button type="button" class="btn-modal-close" @click="closeSuccessModal">
-              Đóng thông báo
+              Đăng nhập ngay
             </button>
           </div>
         </div>
@@ -940,6 +1047,34 @@ const closeSuccessModal = () => {
   box-sizing: border-box;
   z-index: 2;
   position: relative;
+  animation: formCardEntrance 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes formCardEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* HIỆU ỨNG CHUYỂN BƯỚC MULTI-STEP */
+.step-slide-enter-active,
+.step-slide-leave-active {
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1), transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.step-slide-enter-from {
+  opacity: 0;
+  transform: translateX(18px);
+}
+
+.step-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-18px);
 }
 
 /* NÚT QUAY LẠI */
@@ -965,6 +1100,7 @@ const closeSuccessModal = () => {
 
 .back-home-btn:hover {
   color: #D94E15;
+  transform: translateX(-2px);
 }
 
 /* HEADER BẢNG */
@@ -1018,6 +1154,7 @@ const closeSuccessModal = () => {
   align-items: center;
   justify-content: center;
   transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .step-label {
@@ -1037,6 +1174,8 @@ const closeSuccessModal = () => {
   background: #D94E15;
   color: #FFFFFF;
   box-shadow: 0 4px 10px rgba(217, 78, 21, 0.35);
+  box-shadow: 0 0 0 4px rgba(217, 78, 21, 0.2), 0 4px 10px rgba(217, 78, 21, 0.35);
+  transform: scale(1.06);
 }
 
 .step-item.current .step-label {
@@ -1103,6 +1242,28 @@ const closeSuccessModal = () => {
   font-weight: 800;
 }
 
+.input-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input-leading-icon {
+  position: absolute;
+  left: 12px;
+  font-size: 13.5px;
+  color: #94A3B8;
+  pointer-events: none;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 2;
+}
+
+.input-icon-wrapper:focus-within .input-leading-icon {
+  color: #D94E15;
+  transform: scale(1.12);
+}
+
 .field-input, .field-select {
   width: 100%;
   padding: 8px 11px;
@@ -1114,6 +1275,12 @@ const closeSuccessModal = () => {
   outline: none;
   box-sizing: border-box;
   transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: inherit;
+}
+
+.field-input.has-leading-icon {
+  padding-left: 35px;
 }
 
 .field-input:focus, .field-select:focus {
@@ -1304,11 +1471,19 @@ const closeSuccessModal = () => {
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(217, 78, 21, 0.3);
   transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   margin-top: 2px;
 }
 
-.btn-submit-orange:hover {
+.btn-submit-orange:hover:not(:disabled) {
   background: #C8451F;
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 18px rgba(217, 78, 21, 0.38);
+}
+
+.btn-submit-orange:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: 0 2px 6px rgba(217, 78, 21, 0.25);
 }
 
 .step-btn-group {
@@ -1328,11 +1503,17 @@ const closeSuccessModal = () => {
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .btn-secondary-gray:hover {
   background: #E2E8F0;
   color: #0F172A;
+  transform: translateY(-1px);
+}
+
+.btn-secondary-gray:active {
+  transform: translateY(1px) scale(0.985);
 }
 
 .btn-flex {

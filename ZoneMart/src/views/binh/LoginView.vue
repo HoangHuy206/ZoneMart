@@ -6,10 +6,14 @@
  * Tích hợp Bảng Quên Mật Khẩu với Gmail OTP 120s (dobinh225599@gmail.com)
  * ================================================================
  */
-import { ref, reactive } from 'vue';
+import { ref, reactive, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import ForgotPasswordForm from './ForgotPasswordForm.vue';
 import { useAuth, DEMO_USERS, type UserRole } from '../../composables/useAuth';
+
+onMounted(() => {
+  document.title = "Đăng Nhập | ZoneMart - Sàn TMĐT & Giao Hàng Hỏa Tốc";
+});
 
 const router = useRouter();
 const route = useRoute();
@@ -102,8 +106,14 @@ const handleLogin = async () => {
     if (res) {
       const data = await res.json();
       if (res.ok && data.success) {
-        successMessage.value =
-          data.message || 'Đăng nhập thành công! Đang chuyển hướng...';
+        if (data.user?.sellerStatus === 'Pending') {
+          successMessage.value = data.message || `Hồ sơ mở gian hàng '${data.user.storeName || ''}' đang chờ Ban Quản Lý phê duyệt! Bạn có thể tiếp tục mua sắm...`;
+        } else if (data.user?.sellerStatus === 'Rejected') {
+          successMessage.value = `Hồ sơ mở gian hàng của bạn đã bị từ chối: ${data.user.rejectReason || 'Không đạt yêu cầu'}. Bạn có thể tiếp tục mua sắm...`;
+        } else {
+          successMessage.value =
+            data.message || 'Đăng nhập thành công! Đang chuyển hướng...';
+        }
         const detectedRole = (data.user?.role as UserRole) || 'buyer';
 
         // Lưu thông tin người dùng vào useAuth state & localStorage
@@ -111,14 +121,30 @@ const handleLogin = async () => {
           id: data.user?.id || `usr_${Date.now()}`,
           fullName: data.user?.fullName || form.account.trim(),
           phoneEmail: data.user?.phoneEmail || form.account.trim(),
+          phone: data.user?.phone || (!form.account.includes('@') ? form.account.trim() : undefined),
           role: detectedRole,
           avatarUrl: data.user?.avatarUrl,
           walletBalance: data.user?.walletBalance,
           storeName: data.user?.storeName,
         });
 
-        localStorage.setItem('isLoggedIn', 'true');
-        localStorage.setItem('userRole', detectedRole);
+        // Ghi đè vào zonemart_user để lưu cả sellerStatus và rejectReason
+        const userWithStatus: any = {
+          id: data.user?.id || `usr_${Date.now()}`,
+          fullName: data.user?.fullName || form.account.trim(),
+          phoneEmail: data.user?.phoneEmail || form.account.trim(),
+          phone: data.user?.phone || (!form.account.includes('@') ? form.account.trim() : undefined),
+          role: detectedRole,
+          avatarUrl: data.user?.avatarUrl,
+          walletBalance: data.user?.walletBalance,
+          storeName: data.user?.storeName,
+          sellerStatus: data.user?.sellerStatus,
+          rejectReason: data.user?.rejectReason,
+        };
+        localStorage.setItem('zonemart_user', JSON.stringify(userWithStatus));
+
+        localStorage.setItem("isLoggedIn", "true");
+        localStorage.setItem("userRole", detectedRole);
         if (data.user) {
           localStorage.setItem('currentUser', JSON.stringify(data.user));
         }
@@ -218,24 +244,34 @@ const handleLogin = async () => {
             ✅ {{ successMessage }}
           </div>
 
-          <!-- FORM NHẬP THÔNG TIN -->
-          <form @submit.prevent="handleLogin" class="form-body">
+          <!-- FORM NHẬP THÔNG TIN (CHUẨN SEO SEMANTIC & ACCESSIBILITY) -->
+          <form @submit.prevent="handleLogin" class="form-body" method="post" action="/api/auth/login" novalidate itemscope itemtype="https://schema.org/WebPage">
             <!-- Số điện thoại / Email -->
             <div class="field-item">
-              <label class="field-label">Số điện thoại hoặc Email</label>
-              <input
-                v-model="form.account"
-                type="text"
-                class="field-input"
-                placeholder="VD: 0912345678 hoặc email@gmail.com"
-                required
-              />
+              <div class="label-row-between">
+                <label for="login-account" class="field-label">Tài khoản đăng nhập <span class="required-star">*</span></label>
+                <span class="zalo-hint-tag"><i class="bi bi-shield-check"></i> SĐT liên kết / Email</span>
+              </div>
+              <div class="input-icon-wrapper">
+                <i class="bi bi-person-fill input-leading-icon"></i>
+                <input
+                  id="login-account"
+                  name="username"
+                  v-model="form.account"
+                  type="text"
+                  autocomplete="username"
+                  class="field-input has-leading-icon"
+                  placeholder="Nhập SĐT hoặc Email của bạn"
+                  required
+                  aria-required="true"
+                />
+              </div>
             </div>
 
             <!-- Mật khẩu -->
             <div class="field-item">
               <div class="label-row-between">
-                <label class="field-label">Mật khẩu</label>
+                <label for="login-password" class="field-label">Mật khẩu <span class="required-star">*</span></label>
                 <a
                   href="#"
                   @click.prevent="isForgotPasswordMode = true"
@@ -243,48 +279,27 @@ const handleLogin = async () => {
                   >Quên mật khẩu?</a
                 >
               </div>
-              <div class="password-wrapper">
+              <div class="password-wrapper input-icon-wrapper">
+                <i class="bi bi-lock-fill input-leading-icon"></i>
                 <input
+                  id="login-password"
+                  name="password"
                   v-model="form.password"
                   :type="showPassword ? 'text' : 'password'"
-                  class="field-input"
+                  autocomplete="current-password"
+                  class="field-input has-leading-icon has-trailing-btn"
                   placeholder="Nhập mật khẩu..."
                   required
+                  aria-required="true"
                 />
                 <button
                   type="button"
                   class="eye-toggle-btn"
                   @click="togglePassword"
-                  title="Ẩn/Hiện mật khẩu"
+                  :title="showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'"
+                  :aria-label="showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'"
                 >
-                  <svg
-                    v-if="!showPassword"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#9CA3AF"
-                    stroke-width="2"
-                  >
-                    <path
-                      d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
-                    ></path>
-                    <circle cx="12" cy="12" r="3"></circle>
-                  </svg>
-                  <svg
-                    v-else
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#9CA3AF"
-                    stroke-width="2"
-                  >
-                    <path
-                      d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
-                    ></path>
-                    <line x1="1" y1="1" x2="23" y2="23"></line>
-                  </svg>
+                  <i :class="showPassword ? 'bi bi-eye-slash-fill' : 'bi bi-eye-fill'"></i>
                 </button>
               </div>
             </div>
@@ -518,6 +533,18 @@ label {
   box-sizing: border-box;
   z-index: 2;
   position: relative;
+  animation: formCardEntrance 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes formCardEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* NÚT QUAY LẠI BÊN TRÁI MÉP BẢNG */
@@ -625,30 +652,45 @@ label {
   text-decoration: underline;
 }
 
+.required-star {
+  color: #dc2626;
+  font-weight: 800;
+  margin-left: 2px;
+}
+
 .input-icon-wrapper {
   position: relative;
   display: flex;
   align-items: center;
+  width: 100%;
 }
 
 .input-leading-icon {
   position: absolute;
-  left: 12px;
-  font-size: 14px;
+  left: 14px;
+  font-size: 15px;
+  color: #94a3b8;
   pointer-events: none;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 2;
+}
+
+.input-icon-wrapper:focus-within .input-leading-icon {
+  color: #d94e15;
+  transform: scale(1.1);
 }
 
 .field-input {
   width: 100%;
-  padding: 9.5px 14px;
+  padding: 10px 14px;
   border-radius: 12px;
   border: 1.5px solid #e2e8f0;
   background: #f8fafc;
-  font-size: 13px;
+  font-size: 13.5px;
   color: #0f172a;
   outline: none;
   box-sizing: border-box;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   font-family:
     'Plus Jakarta Sans',
     system-ui,
@@ -656,32 +698,39 @@ label {
     sans-serif !important;
 }
 
+.field-input.has-leading-icon {
+  padding-left: 40px;
+}
+
+.field-input.has-trailing-btn {
+  padding-right: 42px;
+}
+
 .field-input:focus {
   background: #ffffff;
   border-color: #d94e15;
-  box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.14);
-}
-
-.password-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.password-wrapper .field-input {
-  padding-left: 12px;
-  padding-right: 38px;
+  box-shadow: 0 0 0 4px rgba(217, 78, 21, 0.12);
 }
 
 .eye-toggle-btn {
   position: absolute;
-  right: 12px;
+  right: 14px;
   background: none;
   border: none;
+  color: #94a3b8;
   cursor: pointer;
-  padding: 2px;
+  padding: 4px;
   display: flex;
   align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  transition: all 0.2s ease;
+  z-index: 2;
+}
+
+.eye-toggle-btn:hover {
+  color: #d94e15;
+  transform: scale(1.1);
 }
 
 /* CHECKBOX ROW */
@@ -709,29 +758,35 @@ label {
 /* SUBMIT BUTTON - WARM ORANGE PILL */
 .btn-submit-orange {
   width: 100%;
-  padding: 11px;
-  background: #d94e15;
+  padding: 12px;
+  background: linear-gradient(135deg, #d94e15, #ea580c);
   color: #ffffff;
   border: none;
   border-radius: 30px;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.5px;
   cursor: pointer;
-  box-shadow: 0 6px 16px rgba(217, 78, 21, 0.3);
-  transition: all 0.2s ease;
+  box-shadow: 0 6px 18px rgba(217, 78, 21, 0.3);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   margin-top: 2px;
 }
 
 .btn-submit-orange:hover:not(:disabled) {
-  background: #c8451f;
-  transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(217, 78, 21, 0.38);
+  background: linear-gradient(135deg, #c2410c, #d94e15);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(217, 78, 21, 0.4);
+}
+
+.btn-submit-orange:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 4px 12px rgba(217, 78, 21, 0.25);
 }
 
 .btn-submit-orange:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+  transform: none;
 }
 
 /* QUICK DEMO ROLES */
@@ -1040,5 +1095,18 @@ label {
 .fade-modal-enter-from,
 .fade-modal-leave-to {
   opacity: 0;
+}
+
+.zalo-hint-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #0068ff;
+  background: #f0f7ff;
+  border: 1px solid #c7e0ff;
+  padding: 2px 8px;
+  border-radius: 6px;
 }
 </style>

@@ -2,805 +2,912 @@
 /**
  * ================================================================
  * QUẢN LÝ ĐƠN MUA (BUYER ORDERS) - Phụ trách: Thắng
- * Kết nối 100% Database MongoDB Atlas qua Backend ASP.NET Core
- * Phong cách thiết kế: Warm Humanist & Terracotta (Bán kính Hub 10km)
+ * Hiển thị đầy đủ hình ảnh, tên, giá, số lượng, cửa hàng và địa chỉ
  * ================================================================
  */
-import { ref, onMounted, computed } from 'vue';
-import { useAuth } from '../../composables/useAuth';
-import { orderService, type OrderRecord } from '../../services/orderService';
+import { ref, onMounted } from "vue";
+import { useRouter } from "vue-router";
+import { useAuth } from "../../composables/useAuth";
 
 const auth = useAuth();
-const orders = ref<OrderRecord[]>([]);
-const isLoading = ref(true);
-const filterTab = ref<'all' | 'delivering' | 'completed'>('all');
+const router = useRouter();
+const orders = ref<any[]>([]);
 
-// Toast thông báo
-const toastMsg = ref('');
-const showToast = ref(false);
-const triggerToast = (msg: string) => {
-  toastMsg.value = msg;
-  showToast.value = true;
-  setTimeout(() => {
-    showToast.value = false;
-  }, 2800);
+interface OrderProductItem {
+  name: string;
+  price: number;
+  quantity: number;
+  image?: string;
+  shop?: string;
+}
+
+const parseOrderItems = (rawItems: any): OrderProductItem[] => {
+  if (!rawItems) return [];
+  if (Array.isArray(rawItems)) {
+    return rawItems.map((it: any) => {
+      if (typeof it === "object" && it !== null) {
+        return {
+          name: it.name || "Sản phẩm ZoneMart",
+          price: Number(it.price) || 0,
+          quantity: Number(it.quantity) || 1,
+          image: it.image || "",
+          shop: it.shop || ""
+        };
+      }
+      return {
+        name: String(it),
+        price: 0,
+        quantity: 1,
+        image: "",
+        shop: ""
+      };
+    });
+  }
+  if (typeof rawItems === "string") {
+    const trimmed = rawItems.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parseOrderItems(parsed);
+        }
+      } catch (e) {}
+    }
+    // Dạng chuỗi text liệt kê "Tên SP (x2), Tên SP (x1)"
+    return trimmed.split(",").map((part: string) => {
+      const p = part.trim();
+      const matchQty = p.match(/\(x(\d+)\)/i);
+      const qty = matchQty ? parseInt(matchQty[1]) : 1;
+      const cleanName = p.replace(/\(x\d+\)/i, "").trim();
+      return {
+        name: cleanName || p,
+        price: 0,
+        quantity: qty,
+        image: "",
+        shop: ""
+      };
+    });
+  }
+  return [];
 };
 
-const fetchOrders = async () => {
-  isLoading.value = true;
-  try {
-    const buyerId = auth.currentUser.value?.id || 'usr_buyer_01';
-    const data = await orderService.getBuyerOrders(buyerId);
-    orders.value = data;
-  } catch (e) {
-    console.error('Lỗi tải đơn mua:', e);
-    orders.value = orderService.getLocalOrders();
-  } finally {
-    isLoading.value = false;
+const getOrderStoreName = (order: any): string => {
+  const items = parseOrderItems(order.items);
+  if (items.length > 0 && items[0].shop) {
+    return items[0].shop;
   }
+  return order.store || order.storeName || "ZoneMart Đối Tác";
+};
+
+const getOrderStatusClass = (status: any): string => {
+  if (!status) return "processing";
+  const s = String(status).toLowerCase();
+  if (s.includes("thanh toán") || s.includes("completed") || s.includes("thành công")) return "completed";
+  if (s.includes("delivering") || s.includes("giao")) return "delivering";
+  return "processing";
+};
+
+const getOrderStatusText = (status: any): string => {
+  if (!status) return "Đang xử lý";
+  if (typeof status === "string") {
+    if (status.includes("TPBank") || status.includes("Đã thanh toán")) return status;
+    if (status === "completed") return "Giao hàng thành công";
+    if (status === "delivering") return "Đang giao hàng (Hỏa tốc)";
+    return status;
+  }
+  return "Đang xử lý";
+};
+
+const formatPrice = (val: number | undefined): string => {
+  return ((val || 0).toLocaleString("vi-VN")) + " ₫";
+};
+
+const handleImgError = (e: Event) => {
+  const target = e.target as HTMLImageElement;
+  target.src = "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=300&q=80";
+};
+
+const loadBuyerOrders = () => {
+  const acc = auth.currentUser.value;
+  const ownerKey = (acc?.phoneEmail || acc?.id || "guest").toLowerCase().trim();
+  const isNew = !acc || !["usr_buyer_01", "usr_seller_01", "usr_shipper_01", "usr_admin_01"].includes(acc.id);
+  const key = "zonemart_profile_orders_" + ownerKey;
+
+  const raw = localStorage.getItem(key);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        if (isNew && parsed.every((o: any) => o.id === "ZM-9982" || o.id === "ZM-9812" || o.orderId === "ORD_98213")) {
+          orders.value = [];
+          return;
+        }
+        orders.value = parsed;
+        return;
+      }
+    } catch {}
+  }
+
+  // Nếu là tài khoản mới: Mặc định 0 đơn hàng
+  if (isNew) {
+    orders.value = [];
+    return;
+  }
+
+  // Chỉ nạp đơn mẫu cho tài khoản demo
+  orders.value = [
+    {
+      orderId: "ORD_98213",
+      date: "07/09/2026 18:30",
+      total: 395000,
+      paymentMethod: "Chuyển khoản TPBank",
+      shippingMethod: "Hỏa Tốc Siêu Tốc (10km)",
+      deliveryType: "express",
+      status: "delivering",
+      statusText: "Shipper đang giao hàng tới bạn",
+      store: "ZoneMart Nông Sản Sạch Cầu Giấy",
+      items: [
+        {
+          name: "Thịt Bò Mỹ Nhập Khẩu Tươi Ngon",
+          price: 150000,
+          quantity: 2,
+          image: "https://images.unsplash.com/photo-1551028150-64b9f398f678?auto=format&fit=crop&w=400&q=80",
+          shop: "ZoneMart Nông Sản Sạch Cầu Giấy"
+        },
+        {
+          name: "Gạo ST25 Ông Cua Thơm Thượng Hạng (5kg)",
+          price: 95000,
+          quantity: 1,
+          image: "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=400&q=80",
+          shop: "ZoneMart Nông Sản Sạch Cầu Giấy"
+        }
+      ]
+    },
+    {
+      orderId: "ORD_97842",
+      date: "05/09/2026 12:15",
+      total: 125000,
+      paymentMethod: "Tiền mặt khi nhận hàng (COD)",
+      shippingMethod: "Giao Hàng Tiêu Chuẩn",
+      deliveryType: "standard",
+      status: "completed",
+      statusText: "Giao hàng thành công",
+      store: "Siêu Thị Trái Cây Xanh",
+      items: [
+        {
+          name: "Dâu Tây Đà Lạt Giống Nhật Hộp 500g",
+          price: 125000,
+          quantity: 1,
+          image: "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=400&q=80",
+          shop: "Siêu Thị Trái Cây Xanh"
+        }
+      ]
+    }
+  ];
 };
 
 onMounted(() => {
-  fetchOrders();
+  loadBuyerOrders();
 });
 
-// Lọc đơn hàng theo Tab
-const filteredOrders = computed(() => {
-  if (filterTab.value === 'all') return orders.value;
-  return orders.value.filter((order) => {
-    if (filterTab.value === 'delivering') {
-      return order.subOrders.some(
-        (s) => s.status === 'delivering' || s.status === 'pending',
-      );
-    } else if (filterTab.value === 'completed') {
-      return order.subOrders.every((s) => s.status === 'completed');
-    }
-    return true;
-  });
-});
-
-// Xác nhận đã nhận hàng (Hoàn thành đơn con)
-const handleConfirmReceived = async (orderId: string, subId: string) => {
-  const ok = await orderService.updateSubOrderStatus(subId, 'completed');
-  if (ok) {
-    // Cập nhật trạng thái hiển thị
-    orders.value.forEach((ord) => {
-      if (ord.orderId === orderId) {
-        ord.subOrders.forEach((sub) => {
-          if (sub.subId === subId) {
-            sub.status = 'completed';
-            sub.statusText = 'Giao hàng thành công';
-          }
-        });
-      }
-    });
-    triggerToast(`Cảm ơn bạn! Đơn kiện #${subId} đã hoàn tất giao hàng.`);
-  }
+const handleConfirmReceived = (id: string) => {
+  alert(`Cảm ơn bạn đã xác nhận nhận hàng cho đơn #${id}! Đơn hàng đã hoàn tất.`);
 };
 
-// Khiếu nại / Báo cáo sự cố
-const handleReportIssue = async (orderId: string, subId: string) => {
-  const reason = prompt(
-    'Vui lòng nhập lý do sự cố (Hàng dập nát, giao trễ, thiếu món...):',
-  );
-  if (!reason || !reason.trim()) return;
-
-  const ok = await orderService.updateSubOrderStatus(
-    subId,
-    'cancelled',
-    reason,
-  );
-  if (ok) {
-    orders.value.forEach((ord) => {
-      if (ord.orderId === orderId) {
-        ord.subOrders.forEach((sub) => {
-          if (sub.subId === subId) {
-            sub.status = 'cancelled';
-            sub.statusText = 'Đang xử lý khiếu nại (CSKH sẽ liên hệ)';
-          }
-        });
-      }
-    });
-    triggerToast(
-      `Đã gửi khiếu nại kiện #${subId}. CSKH ZoneMart sẽ liên hệ hỗ trợ bạn ngay!`,
-    );
-  }
+const handleReportIssue = (id: string) => {
+  alert(`Đã gửi yêu cầu khiếu nại cho đơn #${id}. CSKH ZoneMart sẽ liên hệ hỗ trợ bạn ngay!`);
 };
 </script>
 
 <template>
-  <div class="buyer-orders-page">
-    <!-- TIÊU ĐỀ TRANG -->
-    <div class="page-header">
-      <div class="header-left">
-        <h1 class="page-title">
-          <i class="bi bi-box-seam-fill text-terracotta"></i>
-          Đơn Mua Của Bạn
-        </h1>
-        <p class="page-subtitle">
-          Theo dõi trực tiếp hành trình đơn hàng giao hỏa tốc 10km và lịch sử
-          mua sắm từ Database
-        </p>
+  <div class="buyer-orders-container">
+    <div class="header">
+      <div class="header-content">
+        <h2><i class="bi bi-box-seam-fill me-2 text-primary"></i>Đơn Mua Của Bạn</h2>
+        <p>Theo dõi trực tiếp chi tiết sản phẩm, hình ảnh và trạng thái các đơn hàng của bạn.</p>
       </div>
-      <button
-        type="button"
-        class="btn-refresh"
-        @click="fetchOrders"
-        title="Làm mới"
-      >
-        <i class="bi bi-arrow-clockwise"></i>
-        <span>Làm mới</span>
-      </button>
-    </div>
-
-    <!-- TABS LỌC TRẠNG THÁI -->
-    <div class="status-filter-tabs">
-      <button
-        type="button"
-        class="filter-tab"
-        :class="{ active: filterTab === 'all' }"
-        @click="filterTab = 'all'"
-      >
-        <span>Tất Cả Đơn</span>
-        <span class="count-badge">{{ orders.length }}</span>
-      </button>
-      <button
-        type="button"
-        class="filter-tab"
-        :class="{ active: filterTab === 'delivering' }"
-        @click="filterTab = 'delivering'"
-      >
-        <span>Đang Giao Hỏa Tốc</span>
-        <span class="count-badge pulse">
-          {{
-            orders.filter((o) =>
-              o.subOrders.some((s) => s.status === 'delivering'),
-            ).length
-          }}
-        </span>
-      </button>
-      <button
-        type="button"
-        class="filter-tab"
-        :class="{ active: filterTab === 'completed' }"
-        @click="filterTab = 'completed'"
-      >
-        <span>Đã Hoàn Thành</span>
-        <span class="count-badge">
-          {{
-            orders.filter((o) =>
-              o.subOrders.every((s) => s.status === 'completed'),
-            ).length
-          }}
-        </span>
-      </button>
+      <router-link to="/products" class="btn-continue-shopping">
+        <i class="bi bi-cart-plus me-1"></i> Mua thêm nông sản
+      </router-link>
     </div>
 
     <!-- DANH SÁCH ĐƠN HÀNG -->
-    <div v-if="isLoading" class="loading-state-card">
-      <div class="spinner-ring"></div>
-      <p>Đang tải dữ liệu đơn hàng từ Database MongoDB Atlas...</p>
-    </div>
-
-    <div v-else-if="filteredOrders.length > 0" class="orders-feed">
-      <div
-        v-for="order in filteredOrders"
-        :key="order.orderId"
-        class="order-panel"
-      >
-        <!-- HEADER CỦA PARENT ORDER -->
-        <div class="order-top-banner">
-          <div class="order-id-col">
-            <span class="label-tiny">MÃ ĐƠN HÀNG:</span>
-            <strong class="order-code">#{{ order.orderId }}</strong>
-            <span class="order-time"
-              ><i class="bi bi-clock"></i> {{ order.date }}</span
-            >
+    <div v-if="orders.length > 0" class="orders-list">
+      <div v-for="order in orders" :key="order.orderId || order.id" class="order-card">
+        <!-- HEADER ĐƠN HÀNG -->
+        <div class="order-top">
+          <div class="order-meta-info">
+            <span class="order-tag">Mã đơn:</span>
+            <strong class="order-id-code">#{{ order.orderId || order.id }}</strong>
+            <span class="order-meta-sep">•</span>
+            <span class="order-date"><i class="bi bi-clock me-1"></i>{{ order.date }}</span>
           </div>
-          <div class="order-badges-col">
-            <span class="badge-delivery" :class="order.deliveryType">
-              <i
-                class="bi"
-                :class="
-                  order.deliveryType === 'express'
-                    ? 'bi-lightning-charge-fill'
-                    : 'bi-bicycle'
-                "
-              ></i>
-              {{
-                order.deliveryType === 'express'
-                  ? 'Hỏa Tốc 10km'
-                  : 'Giao Tiêu Chuẩn'
-              }}
+
+          <div class="order-top-badges">
+            <span class="badge payment-badge" v-if="order.paymentMethod">
+              <i class="bi bi-credit-card-2-front me-1"></i>{{ order.paymentMethod }}
             </span>
-            <span class="badge-payment">
-              {{
-                order.paymentMethod === 'ONLINE_QR'
-                  ? 'VietQR MB Bank'
-                  : order.paymentMethod === 'ZONEPAY_WALLET'
-                    ? 'Ví ZonePay'
-                    : 'Tiền mặt COD'
-              }}
+            <span class="delivery-badge" :class="order.deliveryType || (order.shippingMethod?.includes('Hỏa Tốc') ? 'express' : 'standard')">
+              <i class="bi bi-lightning-charge-fill me-1"></i>
+              {{ order.shippingMethod || (order.deliveryType === 'standard' ? 'Giao Tiêu Chuẩn' : 'Hỏa Tốc 10km') }}
             </span>
           </div>
         </div>
 
-        <!-- DANH SÁCH SUB-ORDERS CỦA TỪNG CỬA HÀNG -->
-        <div class="sub-orders-container">
-          <div
-            v-for="sub in order.subOrders"
-            :key="sub.subId"
-            class="sub-order-card"
-          >
-            <div class="sub-card-top">
-              <div class="store-badge">
+        <!-- THÂN ĐƠN HÀNG -->
+        <div class="order-body">
+          <!-- Banner Cửa Hàng & Trạng Thái -->
+          <div class="order-store-banner">
+            <div class="store-brand">
+              <div class="store-icon-wrap">
                 <i class="bi bi-shop"></i>
-                <strong>{{ sub.storeName }}</strong>
-                <span v-if="sub.distanceKm" class="km-text"
-                  >({{ sub.distanceKm }} km)</span
-                >
               </div>
-              <span class="status-pill" :class="sub.status">
-                <i
-                  v-if="sub.status === 'delivering'"
-                  class="bi bi-bicycle me-1"
-                ></i>
-                <i
-                  v-else-if="sub.status === 'completed'"
-                  class="bi bi-check-circle-fill me-1"
-                ></i>
-                <i v-else class="bi bi-info-circle-fill me-1"></i>
-                {{ sub.statusText }}
-              </span>
+              <div class="store-name-group">
+                <h4 class="store-name">{{ getOrderStoreName(order) }}</h4>
+                <span class="store-verified"><i class="bi bi-patch-check-fill text-success me-1"></i>Gian hàng chính hãng</span>
+              </div>
             </div>
 
-            <!-- Tên các món trong kiện hàng này -->
-            <p class="items-summary-line">
-              <i class="bi bi-bag-check-fill text-terracotta"></i>
-              <span>{{ sub.items }}</span>
-            </p>
+            <div class="status-pill" :class="getOrderStatusClass(order.status)">
+              <i v-if="getOrderStatusClass(order.status) === 'completed'" class="bi bi-check-circle-fill me-1"></i>
+              <i v-else-if="getOrderStatusClass(order.status) === 'delivering'" class="bi bi-bicycle me-1"></i>
+              <i v-else class="bi bi-hourglass-split me-1"></i>
+              <span>{{ getOrderStatusText(order.status || order.statusText) }}</span>
+            </div>
+          </div>
 
-            <p v-if="sub.note" class="sub-note-hint">
-              <i class="bi bi-sticky"></i> Ghi chú: <em>"{{ sub.note }}"</em>
-            </p>
-
-            <!-- Khung thông tin tài xế Shipper nếu đang giao -->
-            <div v-if="sub.status === 'delivering'" class="shipper-live-box">
-              <div class="shipper-meta">
-                <div class="shipper-avatar-circle">
-                  <i class="bi bi-person-fill"></i>
-                </div>
-                <div>
-                  <span class="shipper-title">Tài xế giao hàng:</span>
-                  <strong class="shipper-name">{{
-                    sub.shipperInfo || 'Nguyễn Văn Nam (29M1-8888)'
-                  }}</strong>
-                </div>
-                <div class="shipper-call">
-                  <i class="bi bi-telephone-fill"></i>
-                  <strong>{{ sub.shipperPhone || '0987 654 321' }}</strong>
+          <!-- DANH SÁCH SẢN PHẨM TRONG ĐƠN (ĐẦY ĐỦ HÌNH ẢNH, GIÁ, SỐ LƯỢNG) -->
+          <div class="products-list">
+            <div 
+              v-for="(item, idx) in parseOrderItems(order.items)" 
+              :key="idx" 
+              class="product-item-card"
+            >
+              <!-- Hình ảnh sản phẩm -->
+              <div class="product-thumb-box">
+                <img 
+                  v-if="item.image" 
+                  :src="item.image" 
+                  :alt="item.name" 
+                  class="product-thumb-img" 
+                  @error="handleImgError" 
+                />
+                <div v-else class="product-thumb-fallback">
+                  <i class="bi bi-basket3-fill"></i>
                 </div>
               </div>
 
-              <!-- Nút Thao tác -->
-              <div class="sub-action-buttons">
-                <button
-                  type="button"
-                  class="btn-action-confirm"
-                  @click="handleConfirmReceived(order.orderId, sub.subId)"
-                >
-                  <i class="bi bi-check-circle-fill"></i>
-                  <span>Đã Nhận Được Hàng</span>
-                </button>
-                <button
-                  type="button"
-                  class="btn-action-dispute"
-                  @click="handleReportIssue(order.orderId, sub.subId)"
-                >
-                  <i class="bi bi-exclamation-triangle-fill"></i>
-                  <span>Báo Cáo Sự Cố</span>
-                </button>
+              <!-- Thông tin chi tiết sản phẩm -->
+              <div class="product-details-col">
+                <h4 class="product-name">{{ item.name }}</h4>
+                <div class="product-shop-badge" v-if="item.shop">
+                  <i class="bi bi-geo-alt-fill me-1"></i>{{ item.shop }}
+                </div>
+                <div class="product-price-qty-row">
+                  <span class="unit-price" v-if="item.price > 0">{{ formatPrice(item.price) }}</span>
+                  <span class="qty-badge">Số lượng: <strong>x{{ item.quantity || 1 }}</strong></span>
+                </div>
+              </div>
+
+              <!-- Thành tiền sản phẩm -->
+              <div class="product-subtotal-box" v-if="item.price > 0">
+                <span class="subtotal-label">Thành tiền:</span>
+                <strong class="subtotal-amount">{{ formatPrice((item.price || 0) * (item.quantity || 1)) }}</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- HỘP THÔNG TIN NGƯỜI NHẬN & ĐỊA CHỈ GIAO HÀNG -->
+          <div v-if="order.shippingAddress || order.recipientName" class="shipping-info-box">
+            <div class="info-row">
+              <i class="bi bi-geo-alt-fill info-icon text-danger"></i>
+              <div class="info-text">
+                <strong>Địa chỉ nhận hàng:</strong> 
+                <span v-if="order.recipientName" class="recipient-name">{{ order.recipientName }} ({{ order.recipientPhone }})</span> - 
+                <span>{{ order.shippingAddress }}</span>
+              </div>
+            </div>
+            <div v-if="order.deliveryNote" class="info-row note-row">
+              <i class="bi bi-chat-left-dots-fill info-icon text-warning"></i>
+              <div class="info-text">
+                <strong>Lời nhắn giao hàng:</strong> <span>{{ order.deliveryNote }}</span>
+              </div>
+            </div>
+            <div v-if="order.bankRef" class="info-row bank-row">
+              <i class="bi bi-bank2 info-icon text-success"></i>
+              <div class="info-text">
+                <strong>Đối soát ngân hàng:</strong> <span>{{ order.bankRef }}</span>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- FOOTER CỦA ĐƠN HÀNG TỔNG -->
-        <div class="order-bottom-bar">
-          <span class="total-caption">Tổng thanh toán đơn hàng:</span>
-          <strong class="total-price-tag"
-            >{{ order.total.toLocaleString('vi-VN') }} ₫</strong
-          >
+        <!-- FOOTER ĐƠN HÀNG (TỔNG TIỀN VÀ NÚT THAO TÁC) -->
+        <div class="order-bottom">
+          <div class="bottom-left-summary">
+            <span class="items-count-text">
+              <i class="bi bi-bag-check me-1"></i>
+              Tổng cộng <strong>{{ parseOrderItems(order.items).reduce((sum, it) => sum + (it.quantity || 1), 0) }}</strong> món hàng
+            </span>
+          </div>
+
+          <div class="bottom-right-actions">
+            <div class="total-price-box">
+              <span class="total-label">Tổng thanh toán:</span>
+              <strong class="total-amount">{{ formatPrice(order.total) }}</strong>
+            </div>
+
+            <div class="action-buttons">
+              <button class="btn btn-outline-primary btn-sm" @click="router.push('/products')">
+                <i class="bi bi-arrow-repeat me-1"></i> Mua Lại
+              </button>
+              <button 
+                v-if="getOrderStatusClass(order.status) === 'delivering'" 
+                class="btn btn-success btn-sm" 
+                @click="handleConfirmReceived(order.orderId || order.id)"
+              >
+                <i class="bi bi-check-circle-fill me-1"></i> Đã nhận hàng
+              </button>
+              <button 
+                class="btn btn-outline-secondary btn-sm" 
+                @click="handleReportIssue(order.orderId || order.id)"
+              >
+                <i class="bi bi-question-circle me-1"></i> Trợ giúp
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- EMPTY STATE NẾU CHƯA CÓ ĐƠN -->
-    <div v-else class="empty-orders-view">
-      <div class="empty-orders-inner">
-        <div class="empty-icon-art">
-          <i class="bi bi-bag-x"></i>
-        </div>
-        <h3>Bạn Chưa Có Đơn Hàng Nào!</h3>
-        <p>
-          Các đơn hàng bạn đặt tại ZoneMart sẽ được lưu trữ và hiển thị trực
-          tiếp tại đây.
-        </p>
-        <router-link to="/products" class="btn-go-shopping">
-          <i class="bi bi-grid-fill"></i>
-          <span>Khám Phá Sản Phẩm Ngay</span>
-        </router-link>
+    <!-- GIAO DIỆN KHI CHƯA CÓ ĐƠN MUA -->
+    <div v-else class="empty-orders-card">
+      <div class="empty-art-circle">
+        <i class="bi bi-box2-heart"></i>
       </div>
+      <h3 class="empty-main-title">Bạn Chưa Có Đơn Mua Nào</h3>
+      <p class="empty-sub-text">
+        Chưa có đơn hàng nào được đặt. Hãy khám phá các gian hàng nông sản và thực phẩm tươi sống quanh bạn để đặt những bữa ăn ngon lành nhé!
+      </p>
+      <router-link to="/products" class="btn-shop-now">
+        <i class="bi bi-bag-plus-fill me-1"></i> Khám Phá Nông Sản Quanh Bạn (10km)
+      </router-link>
     </div>
-
-    <!-- TOAST THÔNG BÁO -->
-    <transition name="toast-fade">
-      <div v-if="showToast" class="global-toast-bar">
-        <i class="bi bi-check2-circle"></i>
-        <span>{{ toastMsg }}</span>
-      </div>
-    </transition>
   </div>
 </template>
 
 <style scoped>
-/* ============================================================================
-   WARM HUMANIST & TERRACOTTA BUYER ORDERS STYLES
-   ============================================================================ */
-.buyer-orders-page {
+.buyer-orders-container {
   max-width: 1080px;
-  margin: 0 auto;
-  padding: 24px 16px 80px 16px;
-  color: #2b1b14;
-  font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', sans-serif;
+  margin: 32px auto 80px auto;
+  padding: 0 20px;
 }
 
-/* HEADER TRANG */
-.page-header {
+.header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 24px;
-}
-.page-title {
-  font-size: 24px;
-  font-weight: 900;
-  margin: 0 0 6px 0;
-  color: #2b1b14;
-  display: flex;
   align-items: center;
-  gap: 10px;
-}
-.text-terracotta {
-  color: #d85a2a;
-}
-.page-subtitle {
-  margin: 0;
-  font-size: 13.5px;
-  color: #78655d;
-}
-.btn-refresh {
-  background: #ffffff;
-  border: 1.5px solid #ebdcd3;
-  padding: 8px 16px;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 700;
-  color: #55443d;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.2s;
-}
-.btn-refresh:hover {
-  background: #fdf0e8;
-  color: #d85a2a;
-  border-color: #d85a2a;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 28px;
 }
 
-/* STATUS TABS */
-.status-filter-tabs {
+.header-content h2 {
+  margin: 0 0 6px 0;
+  color: #0f172a;
+  font-size: 26px;
+  font-weight: 800;
   display: flex;
-  gap: 10px;
-  margin-bottom: 24px;
-  border-bottom: 2px solid #f1e5dc;
-  padding-bottom: 4px;
+  align-items: center;
 }
-.filter-tab {
-  background: transparent;
-  border: none;
-  padding: 10px 18px;
+
+.header-content p {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.btn-continue-shopping {
+  background: #f1f5f9;
+  color: #334155;
+  text-decoration: none;
   font-size: 14px;
   font-weight: 700;
-  color: #78655d;
-  cursor: pointer;
+  padding: 10px 18px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  transition: all 0.2s ease;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  position: relative;
-  transition: all 0.2s;
-}
-.filter-tab.active {
-  color: #d85a2a;
-}
-.filter-tab.active::after {
-  content: '';
-  position: absolute;
-  bottom: -6px;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: #d85a2a;
-  border-radius: 3px;
-}
-.count-badge {
-  font-size: 11px;
-  background: #f1e7e0;
-  color: #55443d;
-  padding: 2px 8px;
-  border-radius: 12px;
-}
-.filter-tab.active .count-badge {
-  background: #d85a2a;
-  color: #fff;
-}
-.count-badge.pulse {
-  background: #fee2e2;
-  color: #dc2626;
 }
 
-/* LOADING STATE */
-.loading-state-card {
-  background: #fff;
-  border-radius: 18px;
-  border: 1px solid #ebdcd3;
-  padding: 48px;
-  text-align: center;
-  color: #78655d;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-.spinner-ring {
-  width: 36px;
-  height: 36px;
-  border: 3px solid #ebdcd3;
-  border-top-color: #d85a2a;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+.btn-continue-shopping:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+  transform: translateY(-1px);
 }
 
-/* FEED CÁC ĐƠN HÀNG */
-.orders-feed {
+.orders-list {
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
 
-.order-panel {
+/* THẺ ĐƠN HÀNG */
+.order-card {
   background: #ffffff;
   border-radius: 18px;
-  border: 1.5px solid #ebdcd3;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
   overflow: hidden;
-  box-shadow: 0 4px 18px rgba(43, 27, 20, 0.04);
+  transition: all 0.25s ease;
 }
 
-.order-top-banner {
-  background: #fbf5f0;
-  padding: 14px 20px;
-  border-bottom: 1px solid #ebdcd3;
+.order-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.07);
+}
+
+/* TOP HEADER ĐƠN */
+.order-top {
+  background: #f8fafc;
+  padding: 14px 24px;
+  border-bottom: 1px solid #edf2f7;
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
 }
-.order-id-col {
+
+.order-meta-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.order-tag {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.order-id-code {
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.order-meta-sep {
+  color: #cbd5e1;
+}
+
+.order-date {
+  color: #64748b;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+}
+
+.order-top-badges {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.label-tiny {
-  font-size: 11px;
-  font-weight: 800;
-  color: #8c7a72;
-  letter-spacing: 0.5px;
-}
-.order-code {
-  font-size: 15px;
-  font-weight: 900;
-  color: #d85a2a;
-}
-.order-time {
-  font-size: 12.5px;
-  color: #78655d;
-}
 
-.order-badges-col {
-  display: flex;
-  gap: 8px;
-}
-.badge-delivery {
-  font-size: 11.5px;
-  font-weight: 800;
-  padding: 3px 10px;
-  border-radius: 6px;
+.badge {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-}
-.badge-delivery.express {
-  background: #fee2e2;
-  color: #dc2626;
-}
-.badge-delivery.standard {
-  background: #dcfce7;
-  color: #16a34a;
-}
-.badge-payment {
-  font-size: 11.5px;
-  font-weight: 700;
-  background: #f1f5f9;
-  color: #334155;
-  padding: 3px 10px;
-  border-radius: 6px;
 }
 
-/* SUB ORDERS */
-.sub-orders-container {
-  padding: 18px 20px;
+.payment-badge {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.delivery-badge {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+}
+
+.delivery-badge.express {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.delivery-badge.standard {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+/* BODY ĐƠN HÀNG */
+.order-body {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* BANNER CỬA HÀNG */
+.order-store-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed #e2e8f0;
+}
+
+.store-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.store-icon-wrap {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #fff7ed;
+  color: #ea580c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.store-name-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.store-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+.store-verified {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+/* STATUS PILL */
+.status-pill {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 50px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.status-pill.completed {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+.status-pill.delivering {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+
+.status-pill.processing {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+
+/* DANH SÁCH SẢN PHẨM RÕ NÉT */
+.products-list {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
-.sub-order-card {
-  background: #fcfaf8;
+
+.product-item-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #f8fafc;
+  border: 1px solid #edf2f7;
+  border-radius: 14px;
+  padding: 12px 16px;
+  transition: all 0.2s ease;
+}
+
+.product-item-card:hover {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.product-thumb-box {
+  width: 72px;
+  height: 72px;
+  min-width: 72px;
   border-radius: 12px;
-  border: 1px solid #ebdcd3;
-  padding: 14px 16px;
-}
-.sub-card-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.store-badge {
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: #2b1b14;
-}
-.km-text {
-  font-size: 12px;
-  color: #d85a2a;
-  font-weight: 700;
+  justify-content: center;
 }
 
-.status-pill {
-  font-size: 12px;
-  font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 20px;
-}
-.status-pill.delivering {
-  background: #eff6ff;
-  color: #2563eb;
-}
-.status-pill.completed {
-  background: #dcfce7;
-  color: #16a34a;
-}
-.status-pill.cancelled {
-  background: #fee2e2;
-  color: #dc2626;
+.product-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.items-summary-line {
-  margin: 6px 0;
-  font-size: 13.5px;
-  color: #44332c;
+.product-thumb-fallback {
+  color: #94a3b8;
+  font-size: 28px;
+}
+
+.product-details-col {
+  flex: 1;
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.product-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
   line-height: 1.4;
 }
-.sub-note-hint {
-  margin: 4px 0 8px 0;
+
+.product-shop-badge {
   font-size: 12px;
-  color: #8c7a72;
+  color: #64748b;
+  font-weight: 500;
 }
 
-/* SHIPPER LIVE BOX */
-.shipper-live-box {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px dashed #ebdcd3;
+.product-price-qty-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.unit-price {
+  font-size: 14px;
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.qty-badge {
+  font-size: 12px;
+  background: #e2e8f0;
+  color: #334155;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.product-subtotal-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.subtotal-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.subtotal-amount {
+  font-size: 16px;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+/* THÔNG TIN GIAO HÀNG */
+.shipping-info-box {
+  background: #fdfaf6;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.info-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: #431407;
+  line-height: 1.5;
+}
+
+.info-icon {
+  font-size: 15px;
+  margin-top: 2px;
+}
+
+.recipient-name {
+  font-weight: 700;
+  color: #7c2d12;
+}
+
+.note-row {
+  border-top: 1px dashed #fed7aa;
+  padding-top: 6px;
+}
+
+.bank-row {
+  border-top: 1px dashed #fed7aa;
+  padding-top: 6px;
+}
+
+/* FOOTER ĐƠN */
+.order-bottom {
+  padding: 16px 24px;
+  background: #ffffff;
+  border-top: 1px solid #edf2f7;
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
-  background: #ffffff;
-  border-radius: 10px;
-  padding: 10px 14px;
-}
-.shipper-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.shipper-avatar-circle {
-  width: 32px;
-  height: 32px;
-  background: #dcfce7;
-  color: #16a34a;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-}
-.shipper-title {
-  font-size: 11px;
-  color: #8c7a72;
-  display: block;
-}
-.shipper-name {
-  font-size: 13px;
-  color: #2b1b14;
-}
-.shipper-call {
-  font-size: 12.5px;
-  color: #16a34a;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  gap: 16px;
 }
 
-.sub-action-buttons {
+.items-count-text {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.bottom-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.total-price-box {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.total-label {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.total-amount {
+  font-size: 20px;
+  color: #dc2626;
+  font-weight: 800;
+}
+
+.action-buttons {
   display: flex;
   gap: 8px;
 }
-.btn-action-confirm {
-  background: #16a34a;
-  color: #ffffff;
-  border: none;
-  padding: 7px 14px;
-  border-radius: 8px;
-  font-size: 12px;
+
+.btn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  transition: all 0.2s;
-}
-.btn-action-confirm:hover {
-  background: #15803d;
-}
-.btn-action-dispute {
-  background: transparent;
-  color: #dc2626;
-  border: 1px solid #fca5a5;
-  padding: 7px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.2s;
-}
-.btn-action-dispute:hover {
-  background: #fee2e2;
 }
 
-/* FOOTER ĐƠN HÀNG */
-.order-bottom-bar {
-  background: #faf7f2;
-  padding: 14px 20px;
-  border-top: 1px solid #ebdcd3;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 12px;
+.btn-outline-primary {
+  background: #ffffff;
+  border-color: #2563eb;
+  color: #2563eb;
 }
-.total-caption {
-  font-size: 13.5px;
-  color: #78655d;
+
+.btn-outline-primary:hover {
+  background: #eff6ff;
 }
-.total-price-tag {
-  font-size: 19px;
-  font-weight: 900;
-  color: #d85a2a;
+
+.btn-success {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.btn-success:hover {
+  background: #15803d;
+}
+
+.btn-outline-secondary {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #64748b;
+}
+
+.btn-outline-secondary:hover {
+  background: #f1f5f9;
+  color: #334155;
 }
 
 /* EMPTY STATE */
-.empty-orders-view {
+.empty-orders-card {
   background: #ffffff;
   border-radius: 20px;
-  border: 1.5px solid #ebdcd3;
+  border: 1px dashed #cbd5e1;
   padding: 60px 24px;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
-.empty-orders-inner {
-  max-width: 440px;
-  margin: 0 auto;
-}
-.empty-icon-art {
-  width: 68px;
-  height: 68px;
-  background: #fdf0e8;
-  color: #d85a2a;
+
+.empty-art-circle {
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
+  background: #fff7ed;
+  color: #ea580c;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
-  margin: 0 auto 16px auto;
+  font-size: 36px;
+  margin-bottom: 18px;
 }
-.empty-orders-inner h3 {
-  margin: 0 0 8px 0;
+
+.empty-main-title {
   font-size: 20px;
   font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 10px 0;
 }
-.empty-orders-inner p {
-  margin: 0 0 24px 0;
+
+.empty-sub-text {
   font-size: 14px;
-  color: #78655d;
+  color: #64748b;
+  max-width: 460px;
+  margin: 0 0 24px 0;
+  line-height: 1.5;
 }
-.btn-go-shopping {
-  background: #d85a2a;
+
+.btn-shop-now {
+  background: #ea580c;
   color: #ffffff;
   text-decoration: none;
   padding: 12px 24px;
-  border-radius: 12px;
+  border-radius: 50px;
   font-size: 14px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.25);
   transition: all 0.2s;
 }
-.btn-go-shopping:hover {
-  background: #bf4a1f;
-}
 
-/* TOAST */
-.global-toast-bar {
-  position: fixed;
-  bottom: 28px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: #2b1b14;
-  color: #ffffff;
-  padding: 10px 20px;
-  border-radius: 50px;
-  font-size: 13.5px;
-  font-weight: 700;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  z-index: 10000;
-}
-.toast-fade-enter-active,
-.toast-fade-leave-active {
-  transition: all 0.25s ease;
-}
-.toast-fade-enter-from,
-.toast-fade-leave-to {
-  opacity: 0;
-  transform: translate(-50%, 15px);
+.btn-shop-now:hover {
+  background: #c2410c;
+  transform: translateY(-2px);
 }
 </style>

@@ -240,8 +240,35 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             </template>
           </nav>
 
-          <!-- B. Khi là Guest: 2 nút Đăng Ký và Đăng Nhập -->
+          <!-- B. Khi là Guest: Nút Giỏ hàng & 2 nút Đăng Ký, Đăng Nhập -->
           <div v-if="!auth.isLoggedIn.value" class="guest-auth-actions">
+            <router-link
+              to="/cart"
+              class="icon-btn cart-btn guest-cart-btn me-2"
+              title="Giỏ hàng"
+              aria-label="Xem giỏ hàng"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="9" cy="21" r="1"></circle>
+                <circle cx="20" cy="21" r="1"></circle>
+                <path
+                  d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
+                ></path>
+              </svg>
+              <span v-if="cart.totalCount.value > 0" class="cart-badge">{{
+                cart.totalCount.value
+              }}</span>
+            </router-link>
             <router-link to="/register" class="btn-auth-outline">
               Đăng Ký
             </router-link>
@@ -276,7 +303,9 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                   d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
                 ></path>
               </svg>
-              <span class="cart-badge">{{ cart.totalCount.value }}</span>
+              <span v-if="cart.totalCount.value > 0" class="cart-badge">{{
+                cart.totalCount.value
+              }}</span>
             </router-link>
 
             <!-- Lối tắt nhanh cho Shipper: Nút Trạng Thái Sẵn Sàng -->
@@ -397,7 +426,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                       @click="closeDropdowns"
                     >
                       <i class="bi bi-cart3 menu-icon"></i>
-                      <span>Giỏ Hàng ({{ cart.totalCount.value }})</span>
+                      <span>Giỏ Hàng<span v-if="cart.totalCount.value > 0"> ({{ cart.totalCount.value }})</span></span>
                     </router-link>
                     <router-link
                       to="/contact"
@@ -640,7 +669,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             </router-link>
             <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
               <i class="bi bi-cart3 menu-icon"></i>
-              <span>Giỏ Hàng ({{ cart.totalCount.value }})</span>
+              <span>Giỏ Hàng<span v-if="cart.totalCount.value > 0"> ({{ cart.totalCount.value }})</span></span>
             </router-link>
             <router-link
               to="/buyer-orders"
@@ -1011,7 +1040,8 @@ body {
 }
 
 .main-content {
-  flex-grow: 1;
+  flex: 1 0 auto;
+  min-height: calc(100vh - 70px);
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;

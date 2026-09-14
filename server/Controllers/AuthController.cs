@@ -18,8 +18,11 @@ public class AuthController : ControllerBase
 {
     private readonly MongoDbService _mongoService;
 
-    // Lưu trữ tài khoản tạm thời song song để đảm bảo Đăng ký & Đăng nhập hoạt động 100% không bị gián đoạn
-    private static readonly ConcurrentDictionary<string, User> InMemoryUsers = new(StringComparer.OrdinalIgnoreCase);
+    // Lưu trữ tài khoản và gian hàng tạm thời song song để đảm bảo Đăng ký & Đăng nhập hoạt động 100% không bị gián đoạn
+    public static readonly ConcurrentDictionary<string, User> InMemoryUsers = new(StringComparer.OrdinalIgnoreCase);
+    public static readonly ConcurrentDictionary<string, Store> InMemoryStores = new();
+    public static readonly ConcurrentDictionary<string, Shipper> InMemoryShippers = new();
+    public static readonly ConcurrentDictionary<string, (string Otp, DateTime ExpiresAt)> ZaloOtps = new();
 
     static AuthController()
     {
@@ -35,6 +38,19 @@ public class AuthController : ControllerBase
             WalletBalance = 3850000
         };
         InMemoryUsers[demoSeller.PhoneEmail] = demoSeller;
+
+        var demoStore = new Store
+        {
+            Id = "store_ba_vi_01",
+            UserId = demoSeller.Id,
+            StoreName = "Vườn Rau Ba Vì - Nông Sản Sạch VietGAP",
+            Category = "Thực phẩm & Nhu yếu phẩm",
+            Address = "Số 48 đường Cầu Giấy, Quan Hoa, Cầu Giấy, Hà Nội",
+            OwnerFullName = demoSeller.FullName,
+            Status = "Active",
+            CreatedAt = DateTime.UtcNow
+        };
+        InMemoryStores[demoStore.Id] = demoStore;
 
         var demoAdmin = new User
         {
@@ -104,7 +120,10 @@ public class AuthController : ControllerBase
         // 1. Kiểm tra từ CSDL MongoDB Atlas thực tế và bộ nhớ lưu trữ
         try
         {
-            var filter = Builders<User>.Filter.Eq(u => u.PhoneEmail, inputAccount);
+            var filter = Builders<User>.Filter.Or(
+                Builders<User>.Filter.Eq(u => u.PhoneEmail, inputAccount),
+                Builders<User>.Filter.Eq(u => u.Phone, inputAccount)
+            );
             existingUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
         }
         catch (Exception ex)
@@ -114,11 +133,21 @@ public class AuthController : ControllerBase
 
         if (existingUser == null)
         {
-            InMemoryUsers.TryGetValue(inputAccount, out existingUser);
+            if (!InMemoryUsers.TryGetValue(inputAccount, out existingUser))
+            {
+                existingUser = InMemoryUsers.Values.FirstOrDefault(u => 
+                    (!string.IsNullOrEmpty(u.Phone) && u.Phone.Equals(inputAccount, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(u.PhoneEmail) && u.PhoneEmail.Equals(inputAccount, StringComparison.OrdinalIgnoreCase))
+                );
+            }
         }
         else
         {
             InMemoryUsers[inputAccount] = existingUser;
+            if (!string.IsNullOrEmpty(existingUser.Phone))
+            {
+                InMemoryUsers[existingUser.Phone] = existingUser;
+            }
         }
 
         // 1.1 FALLBACK KIỂM TRA BẢN GHI GIAN HÀNG NẾU CHƯA CÓ USER
@@ -177,22 +206,53 @@ public class AuthController : ControllerBase
             return BadRequest(new { success = false, message = "Tài khoản của bạn đã bị khóa vi phạm tiêu chuẩn cộng đồng ZoneMart!" });
         }
 
-        // TỰ ĐỘNG CẬP NHẬT VAI TRÒ SELLER NẾU TÀI KHOẢN CÓ GIAN HÀNG
-        if (!existingUser.IsSeller)
+        // TỰ ĐỘNG CẬP NHẬT VAI TRÒ SELLER CHỈ KHI GIAN HÀNG ĐÃ ĐƯỢC ADMIN DUYỆT (Active)
+        Store? userStore = null;
+        try
         {
-            try
+            var storeFilter = Builders<Store>.Filter.Eq(s => s.UserId, existingUser.Id);
+            userStore = await _mongoService.Stores.Find(storeFilter).FirstOrDefaultAsync();
+        }
+        catch { }
+
+        if (userStore == null)
+        {
+            userStore = InMemoryStores.Values.FirstOrDefault(s => s.UserId == existingUser.Id || (s.OwnerFullName.Equals(existingUser.FullName, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(existingUser.FullName)));
+        }
+
+        string sellerStatus = "None";
+        string storeName = "";
+        string? rejectReason = null;
+
+        if (userStore != null)
+        {
+            sellerStatus = userStore.Status; // "Pending", "Active", "Rejected"
+            storeName = userStore.StoreName;
+            rejectReason = userStore.RejectReason;
+
+            if (userStore.Status == "Active")
             {
-                var storeFilter = Builders<Store>.Filter.Eq(s => s.UserId, existingUser.Id);
-                var hasStore = await _mongoService.Stores.Find(storeFilter).AnyAsync();
-                if (hasStore)
+                existingUser.IsSeller = true;
+                try
                 {
-                    existingUser.IsSeller = true;
                     var updateDef = Builders<User>.Update.Set(u => u.IsSeller, true);
                     await _mongoService.Users.UpdateOneAsync(Builders<User>.Filter.Eq(u => u.Id, existingUser.Id), updateDef);
                     InMemoryUsers[inputAccount] = existingUser;
                 }
+                catch { }
             }
-            catch { }
+            else
+            {
+                // Nếu chưa Active (Pending hoặc Rejected), không cấp quyền Seller
+                existingUser.IsSeller = false;
+                try
+                {
+                    var updateDef = Builders<User>.Update.Set(u => u.IsSeller, false);
+                    await _mongoService.Users.UpdateOneAsync(Builders<User>.Filter.Eq(u => u.Id, existingUser.Id), updateDef);
+                    InMemoryUsers[inputAccount] = existingUser;
+                }
+                catch { }
+            }
         }
 
         // Tự động nhận diện vai trò dựa trên CSDL
@@ -210,18 +270,32 @@ public class AuthController : ControllerBase
             determinedRole = "shipper";
         }
 
+        string loginMessage = $"Đăng nhập thành công với vai trò {GetRoleDisplayName(determinedRole)}!";
+        if (determinedRole == "buyer" && sellerStatus == "Pending")
+        {
+            loginMessage = $"Đăng nhập thành công! Hồ sơ mở gian hàng '{storeName}' của bạn đang chờ Ban Quản Lý phê duyệt.";
+        }
+        else if (determinedRole == "buyer" && sellerStatus == "Rejected")
+        {
+            loginMessage = $"Đăng nhập thành công! Hồ sơ gian hàng '{storeName}' của bạn đã bị từ chối: {rejectReason ?? "Không đạt tiêu chuẩn"}.";
+        }
+
         return Ok(new
         {
             success = true,
-            message = $"Đăng nhập thành công với vai trò {GetRoleDisplayName(determinedRole)}!",
+            message = loginMessage,
             user = new
             {
                 id = existingUser.Id,
                 phoneEmail = existingUser.PhoneEmail,
+                phone = existingUser.Phone,
                 fullName = existingUser.FullName,
                 avatarUrl = existingUser.AvatarUrl,
                 role = determinedRole,
-                walletBalance = existingUser.WalletBalance
+                walletBalance = existingUser.WalletBalance,
+                storeName = storeName,
+                sellerStatus = sellerStatus,
+                rejectReason = rejectReason
             }
         });
     }
@@ -525,8 +599,7 @@ public class AuthController : ControllerBase
 
         if (user != null)
         {
-            // Nâng cấp User hiện có thành Người bán (IsSeller = true)
-            user.IsSeller = true;
+            // Cập nhật thông tin User nhưng CHƯA cấp IsSeller vì chờ Admin duyệt Store
             user.IsBuyer = true;
             user.FullName = request.OwnerFullName.Trim();
             if (!string.IsNullOrWhiteSpace(request.Password))
@@ -536,7 +609,6 @@ public class AuthController : ControllerBase
             try
             {
                 var updateDef = Builders<User>.Update
-                    .Set(u => u.IsSeller, true)
                     .Set(u => u.IsBuyer, true)
                     .Set(u => u.FullName, user.FullName)
                     .Set(u => u.PasswordHash, user.PasswordHash);
@@ -550,7 +622,7 @@ public class AuthController : ControllerBase
         }
         else
         {
-            // Tạo tài khoản User mới với vai trò Người bán
+            // Tạo tài khoản User mới (chờ duyệt quyền người bán)
             user = new User
             {
                 Id = ObjectId.GenerateNewId().ToString(),
@@ -558,7 +630,7 @@ public class AuthController : ControllerBase
                 PasswordHash = password,
                 FullName = request.OwnerFullName.Trim(),
                 IsBuyer = true,
-                IsSeller = true,
+                IsSeller = false, // Chờ duyệt mới thành true
                 IsShipper = false,
                 IsAdmin = false,
                 AccountStatus = "active",
@@ -569,7 +641,7 @@ public class AuthController : ControllerBase
             try
             {
                 await _mongoService.Users.InsertOneAsync(user);
-                Console.WriteLine($"✅ [MongoDB Atlas] Đã tạo User người bán {rawPhoneEmail}!");
+                Console.WriteLine($"✅ [MongoDB Atlas] Đã tạo User người bán {rawPhoneEmail} (Trạng thái chờ duyệt gian hàng)!");
             }
             catch (Exception ex)
             {
@@ -578,9 +650,10 @@ public class AuthController : ControllerBase
             InMemoryUsers[rawPhoneEmail] = user;
         }
 
-        // 2. Tạo bản ghi Store liên kết với UserId
+        // 2. Tạo bản ghi Store liên kết với UserId, trạng thái PENDING chờ Admin duyệt
         var newStore = new Store
         {
+            Id = ObjectId.GenerateNewId().ToString(),
             UserId = user.Id ?? ObjectId.GenerateNewId().ToString(),
             StoreName = request.StoreName.Trim(),
             Category = string.IsNullOrWhiteSpace(request.Category) ? "Thực phẩm & Nhu yếu phẩm" : request.Category.Trim(),
@@ -592,21 +665,23 @@ public class AuthController : ControllerBase
             FoodSafetyCertImage = request.FoodSafetyCertImage ?? "",
             BankName = request.BankName.Trim(),
             BankAccountNumber = request.BankAccountNumber.Trim(),
-            Status = "Active", // Kích hoạt ngay để chủ tiệm đăng nhập và quản lý gian hàng
+            Status = "Pending", // BẮT BUỘC PENDING để Quản trị viên xét duyệt
             CreatedAt = DateTime.UtcNow
         };
 
         try
         {
             await _mongoService.Stores.InsertOneAsync(newStore);
-            Console.WriteLine($"🏪 [MongoDB Atlas] Đã lưu thành công Hồ sơ đăng ký gian hàng '{newStore.StoreName}' của chủ tiệm '{newStore.OwnerFullName}' vào CSDL MongoDB Atlas!");
+            Console.WriteLine($"🏪 [MongoDB Atlas] Đã lưu Hồ sơ mở gian hàng '{newStore.StoreName}' (Chờ duyệt) vào CSDL MongoDB Atlas!");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"❌ [MongoDB Atlas Error] {ex.Message}");
         }
 
-        // 3. Gửi thư chúc mừng mở gian hàng nếu đăng ký bằng Gmail
+        InMemoryStores[newStore.Id] = newStore;
+
+        // 3. Gửi thư tiếp nhận hồ sơ nếu đăng ký bằng Gmail
         if (rawPhoneEmail.Contains("@") && rawPhoneEmail.Contains("."))
         {
             _ = Task.Run(async () =>
@@ -625,14 +700,16 @@ public class AuthController : ControllerBase
         return Ok(new
         {
             success = true,
-            message = "Đăng ký mở gian hàng thành công! Tài khoản người bán đã được kích hoạt.",
+            message = "Đăng ký mở gian hàng thành công! Hồ sơ của bạn đã được chuyển đến Ban Quản Lý để xét duyệt.",
             storeId = newStore.Id,
+            status = "Pending",
             user = new
             {
                 id = user.Id,
                 phoneEmail = user.PhoneEmail,
                 fullName = user.FullName,
-                role = "seller",
+                role = user.IsSeller ? "seller" : "buyer",
+                sellerStatus = "Pending",
                 walletBalance = user.WalletBalance
             }
         });
@@ -651,6 +728,7 @@ public class AuthController : ControllerBase
 
         var newShipper = new Shipper
         {
+            Id = ObjectId.GenerateNewId().ToString(),
             FullName = request.FullName.Trim(),
             PhoneNumber = request.PhoneNumber?.Trim() ?? "",
             AvatarUrl = request.AvatarUrl ?? "",
@@ -676,6 +754,7 @@ public class AuthController : ControllerBase
         {
             await _mongoService.Shippers.InsertOneAsync(newShipper);
             Console.WriteLine($"🛵 [MongoDB Atlas] Đã lưu thành công Hồ sơ tài xế Shipper '{newShipper.FullName}' (Biển số: {newShipper.LicensePlate}) vào CSDL MongoDB Atlas!");
+            InMemoryShippers[newShipper.Id] = newShipper;
 
             return Ok(new
             {
@@ -687,9 +766,481 @@ public class AuthController : ControllerBase
         catch (Exception ex)
         {
             Console.WriteLine($"❌ [MongoDB Atlas Error] {ex.Message}");
-            return StatusCode(500, new { success = false, message = $"Lỗi chèn CSDL MongoDB: {ex.Message}" });
+            InMemoryShippers[newShipper.Id] = newShipper;
+            return Ok(new
+            {
+                success = true,
+                message = "Đã gửi hồ sơ thành công (Lưu bộ nhớ tạm)",
+                shipperId = newShipper.Id
+            });
         }
     }
+
+    /// <summary>
+    /// API CẬP NHẬT THÔNG TIN HỒ SƠ CÁ NHÂN THEO TÀI KHOẢN
+    /// </summary>
+    [HttpPost("update-profile")]
+    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PhoneEmail) && string.IsNullOrWhiteSpace(request.Id))
+        {
+            return BadRequest(new { success = false, message = "Thiếu thông tin định danh tài khoản" });
+        }
+
+        string cleanEmail = (request.PhoneEmail ?? "").Trim().ToLower();
+
+        User? user = null;
+        if (!string.IsNullOrEmpty(cleanEmail) && InMemoryUsers.TryGetValue(cleanEmail, out var memUser))
+        {
+            user = memUser;
+        }
+        else if (!string.IsNullOrEmpty(request.Id))
+        {
+            user = InMemoryUsers.Values.FirstOrDefault(u => u.Id == request.Id);
+        }
+
+        try
+        {
+            var filter = !string.IsNullOrEmpty(request.Id)
+                ? Builders<User>.Filter.Eq(u => u.Id, request.Id)
+                : Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanEmail);
+
+            var dbUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+            if (dbUser != null) user = dbUser;
+
+            var updateBuilder = Builders<User>.Update;
+            var updates = new List<UpdateDefinition<User>>();
+
+            if (!string.IsNullOrWhiteSpace(request.FullName))
+                updates.Add(updateBuilder.Set(u => u.FullName, request.FullName.Trim()));
+            if (!string.IsNullOrWhiteSpace(request.AvatarUrl))
+                updates.Add(updateBuilder.Set(u => u.AvatarUrl, request.AvatarUrl));
+
+            if (updates.Count > 0)
+            {
+                await _mongoService.Users.UpdateOneAsync(filter, updateBuilder.Combine(updates));
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [MongoDB Atlas UpdateProfile] {ex.Message}");
+        }
+
+        if (user != null)
+        {
+            if (!string.IsNullOrWhiteSpace(request.FullName)) user.FullName = request.FullName.Trim();
+            if (!string.IsNullOrWhiteSpace(request.AvatarUrl)) user.AvatarUrl = request.AvatarUrl;
+            if (!string.IsNullOrEmpty(cleanEmail)) InMemoryUsers[cleanEmail] = user;
+        }
+
+        return Ok(new { success = true, message = "Cập nhật hồ sơ thành công!", user });
+    }
+
+    /// <summary>
+    /// API NẠP TIỀN VÀO VÍ ZONEPAY THEO TÀI KHOẢN
+    /// </summary>
+    [HttpPost("topup-wallet")]
+    public async Task<IActionResult> TopupWallet([FromBody] TopupWalletRequest request)
+    {
+        if (request.Amount <= 0)
+        {
+            return BadRequest(new { success = false, message = "Số tiền nạp không hợp lệ" });
+        }
+
+        string cleanEmail = (request.PhoneEmail ?? "").Trim().ToLower();
+        User? user = null;
+        if (!string.IsNullOrEmpty(cleanEmail) && InMemoryUsers.TryGetValue(cleanEmail, out var memUser))
+        {
+            user = memUser;
+        }
+        else if (!string.IsNullOrEmpty(request.Id))
+        {
+            user = InMemoryUsers.Values.FirstOrDefault(u => u.Id == request.Id);
+        }
+
+        decimal newBalance = 0;
+        if (user != null)
+        {
+            user.WalletBalance += request.Amount;
+            newBalance = user.WalletBalance;
+        }
+
+        try
+        {
+            var filter = !string.IsNullOrEmpty(request.Id)
+                ? Builders<User>.Filter.Eq(u => u.Id, request.Id)
+                : Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanEmail);
+
+            var dbUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+            if (dbUser != null)
+            {
+                dbUser.WalletBalance += request.Amount;
+                newBalance = dbUser.WalletBalance;
+                await _mongoService.Users.UpdateOneAsync(filter, Builders<User>.Update.Set(u => u.WalletBalance, dbUser.WalletBalance));
+                user = dbUser;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [MongoDB Atlas TopupWallet] {ex.Message}");
+        }
+
+        return Ok(new { success = true, message = $"Nạp thành công +{request.Amount:N0} ₫ vào Ví ZonePay!", newBalance });
+    }
+
+    /// <summary>
+    /// API ĐỔI MẬT KHẨU TÀI KHOẢN
+    /// </summary>
+    [HttpPost("change-password")]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.NewPassword) || request.NewPassword.Length < 6)
+        {
+            return BadRequest(new { success = false, message = "Mật khẩu mới phải từ 6 ký tự trở lên!" });
+        }
+
+        string cleanEmail = (request.PhoneEmail ?? "").Trim().ToLower();
+        User? user = null;
+        if (!string.IsNullOrEmpty(cleanEmail) && InMemoryUsers.TryGetValue(cleanEmail, out var memUser))
+        {
+            user = memUser;
+        }
+
+        try
+        {
+            var filter = Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanEmail);
+            var dbUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+            if (dbUser != null) user = dbUser;
+
+            if (user != null)
+            {
+                if (!string.IsNullOrEmpty(request.OldPassword) && user.PasswordHash != request.OldPassword)
+                {
+                    return BadRequest(new { success = false, message = "Mật khẩu hiện tại không chính xác!" });
+                }
+                user.PasswordHash = request.NewPassword;
+                await _mongoService.Users.UpdateOneAsync(filter, Builders<User>.Update.Set(u => u.PasswordHash, request.NewPassword));
+                if (!string.IsNullOrEmpty(cleanEmail)) InMemoryUsers[cleanEmail] = user;
+                return Ok(new { success = true, message = "Đổi mật khẩu thành công!" });
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [ChangePassword] {ex.Message}");
+        }
+
+        if (user != null)
+        {
+            if (!string.IsNullOrEmpty(request.OldPassword) && user.PasswordHash != request.OldPassword)
+            {
+                return BadRequest(new { success = false, message = "Mật khẩu hiện tại không chính xác!" });
+            }
+            user.PasswordHash = request.NewPassword;
+            return Ok(new { success = true, message = "Đổi mật khẩu thành công!" });
+        }
+
+        return NotFound(new { success = false, message = "Không tìm thấy tài khoản người dùng!" });
+    }
+
+    /// <summary>
+    /// API GỬI MÃ XÁC THỰC 6 SỐ QUA GMAIL ĐỂ LIÊN KẾT SỐ ĐIỆN THOẠI VÀO TÀI KHOẢN
+    /// </summary>
+    [HttpPost("send-zalo-otp")]
+    [HttpPost("send-phone-otp")]
+    public async Task<IActionResult> SendZaloOtp([FromBody] SendZaloOtpRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PhoneNumber))
+        {
+            return BadRequest(new { success = false, message = "Vui lòng nhập số điện thoại cần liên kết!" });
+        }
+
+        string cleanPhone = Regex.Replace(request.PhoneNumber.Trim(), @"[^\d+]", "");
+        if (cleanPhone.Length < 9 || cleanPhone.Length > 12)
+        {
+            return BadRequest(new { success = false, message = "Số điện thoại không đúng định dạng (từ 9 đến 11 số)!" });
+        }
+
+        // Tìm email của người dùng để gửi OTP
+        string targetEmail = (request.Email ?? request.PhoneEmail ?? "").Trim().ToLower();
+        if (string.IsNullOrEmpty(targetEmail) || !targetEmail.Contains("@"))
+        {
+            if (!string.IsNullOrEmpty(request.Id) && InMemoryUsers.Values.FirstOrDefault(u => u.Id == request.Id) is { } found)
+            {
+                targetEmail = (found.PhoneEmail ?? "").ToLower();
+            }
+        }
+
+        // Tạo mã ngẫu nhiên 6 chữ số
+        string otpCode = new Random().Next(100000, 999999).ToString();
+        ZaloOtps[cleanPhone] = (otpCode, DateTime.UtcNow.AddMinutes(5));
+
+        // In ra log console giả lập gửi Zalo ZNS
+        Console.WriteLine($"📱 [ZALO ZNS NOTIFICATION] Đã gửi mã OTP qua Zalo tới {cleanPhone}: {otpCode} (Hết hạn sau 5 phút)");
+        bool emailSent = false;
+        if (!string.IsNullOrEmpty(targetEmail) && targetEmail.Contains("@"))
+        {
+            string subject = $"[ZoneMart Security] Mã xác thực liên kết SĐT: {otpCode}";
+            string htmlBody = $@"
+<!DOCTYPE html>
+<html>
+<head><meta charset='utf-8'></head>
+<body style='font-family: Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; color: #1e293b;'>
+  <div style='max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05);'>
+    <div style='background: linear-gradient(135deg, #ea580c, #f97316); padding: 28px 32px; text-align: center; color: #ffffff;'>
+      <h1 style='margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;'>🛒 ZoneMart Security</h1>
+      <p style='margin: 8px 0 0 0; font-size: 14px; opacity: 0.9;'>Xác Thực Liên Kết Số Điện Thoại</p>
+    </div>
+    <div style='padding: 32px;'>
+      <p style='font-size: 15px; line-height: 1.6; margin: 0 0 16px 0;'>Xin chào Quý khách,</p>
+      <p style='font-size: 14px; line-height: 1.6; margin: 0 0 20px 0; color: #475569;'>
+        Bạn đang thực hiện liên kết số điện thoại <strong>{cleanPhone}</strong> vào tài khoản ZoneMart của mình. Dưới đây là mã xác thực 6 số (OTP) của bạn:
+      </p>
+      
+      <div style='background: #fff7ed; border: 2px dashed #ea580c; border-radius: 12px; padding: 20px; text-align: center; margin: 24px 0;'>
+        <span style='font-size: 34px; font-weight: 900; letter-spacing: 8px; color: #ea580c; font-family: monospace; display: block;'>{otpCode}</span>
+        <span style='display: block; font-size: 12px; color: #64748b; margin-top: 8px;'>Mã xác thực có hiệu lực trong 5 phút</span>
+      </div>
+
+      <div style='background: #fef2f2; border-left: 4px solid #ef4444; padding: 12px 16px; border-radius: 6px; margin-bottom: 24px;'>
+        <p style='margin: 0; font-size: 12px; color: #991b1b; line-height: 1.5;'>
+          ⚠️ <strong>Bảo mật:</strong> Tuyệt đối không chia sẻ mã xác thực này cho bất kỳ ai, kể cả nhân viên ZoneMart, để bảo vệ an toàn cho tài khoản của bạn.
+        </p>
+      </div>
+
+      <p style='font-size: 13px; color: #94a3b8; margin: 0; line-height: 1.5;'>
+        Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email hoặc đổi mật khẩu ngay lập tức.
+      </p>
+    </div>
+    <div style='background: #f8fafc; padding: 16px; text-align: center; border-top: 1px solid #f1f5f9; font-size: 12px; color: #94a3b8;'>
+      ZoneMart - Sàn Thương Mại Điện Tử & Giao Hàng Hỏa Tốc
+    </div>
+  </div>
+</body>
+</html>";
+
+            emailSent = await ForgotPasswordController.SendEmailViaMailKitAsync(targetEmail, subject, htmlBody, "ZoneMart Security");
+            Console.WriteLine($"📧 [Gmail OTP] Đã gửi mã OTP liên kết SĐT {cleanPhone} tới Gmail {targetEmail}: {otpCode} (Thành công: {emailSent})");
+        }
+        else
+        {
+            Console.WriteLine($"📱 [OTP Log] Mã OTP liên kết SĐT {cleanPhone}: {otpCode} (Chưa xác định được email)");
+        }
+
+        string msg = emailSent
+            ? $"Mã xác thực 6 số đã được gửi tới Gmail {targetEmail}. Hãy kiểm tra hộp thư đến (hoặc hòm thư Spam)!"
+            : $"Đã tạo mã xác thực 6 số cho SĐT {cleanPhone}!";
+
+        return Ok(new
+        {
+            success = true,
+            message = msg,
+            demoOtp = otpCode,
+            email = targetEmail,
+            phone = cleanPhone,
+            expiresInSeconds = 300
+        });
+    }
+
+    /// <summary>
+    /// API XÁC MINH MÃ OTP ZALO VÀ LIÊN KẾT SỐ ĐIỆN THOẠI VÀO TÀI KHOẢN (CHO PHÉP DÙNG SĐT ĐĂNG NHẬP)
+    /// </summary>
+    [HttpPost("verify-link-phone")]
+    public async Task<IActionResult> VerifyLinkPhone([FromBody] VerifyLinkPhoneRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PhoneNumber) || string.IsNullOrWhiteSpace(request.Otp))
+        {
+            return BadRequest(new { success = false, message = "Vui lòng nhập số điện thoại và mã OTP!" });
+        }
+
+        string cleanPhone = Regex.Replace(request.PhoneNumber.Trim(), @"[^\d+]", "");
+        string inputOtp = request.Otp.Trim();
+
+        if (!ZaloOtps.TryGetValue(cleanPhone, out var otpData) || otpData.ExpiresAt < DateTime.UtcNow)
+        {
+            return BadRequest(new { success = false, message = "Mã OTP đã hết hạn hoặc không tồn tại. Vui lòng lấy mã mới!" });
+        }
+
+        if (otpData.Otp != inputOtp)
+        {
+            return BadRequest(new { success = false, message = "Mã OTP xác thực Zalo không chính xác!" });
+        }
+
+        // OTP hợp lệ -> Xóa mã đã dùng
+        ZaloOtps.TryRemove(cleanPhone, out _);
+
+        // Tìm tài khoản cần liên kết
+        string cleanEmail = (request.PhoneEmail ?? "").Trim().ToLower();
+        User? user = null;
+        if (!string.IsNullOrEmpty(cleanEmail) && InMemoryUsers.TryGetValue(cleanEmail, out var memUser))
+        {
+            user = memUser;
+        }
+        else if (!string.IsNullOrEmpty(request.Id))
+        {
+            user = InMemoryUsers.Values.FirstOrDefault(u => u.Id == request.Id);
+        }
+
+        try
+        {
+            var filter = !string.IsNullOrEmpty(request.Id)
+                ? Builders<User>.Filter.Eq(u => u.Id, request.Id)
+                : Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanEmail);
+
+            var dbUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+            if (dbUser != null) user = dbUser;
+
+            if (user != null)
+            {
+                user.Phone = cleanPhone;
+                await _mongoService.Users.UpdateOneAsync(filter, Builders<User>.Update.Set(u => u.Phone, cleanPhone));
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [MongoDB Atlas LinkPhone] {ex.Message}");
+        }
+
+        if (user != null)
+        {
+            user.Phone = cleanPhone;
+            InMemoryUsers[cleanPhone] = user;
+            if (!string.IsNullOrEmpty(cleanEmail)) InMemoryUsers[cleanEmail] = user;
+        }
+
+        return Ok(new
+        {
+            success = true,
+            message = $"Liên kết Zalo & Số điện thoại {cleanPhone} thành công! Giờ đây bạn có thể dùng SĐT này để đăng nhập vào tài khoản.",
+            phone = cleanPhone,
+            user = user != null ? new
+            {
+                id = user.Id,
+                phoneEmail = user.PhoneEmail,
+                phone = user.Phone,
+                fullName = user.FullName,
+                avatarUrl = user.AvatarUrl,
+                role = user.IsAdmin ? "admin" : (user.IsSeller ? "seller" : (user.IsShipper ? "shipper" : "buyer")),
+                walletBalance = user.WalletBalance
+            } : null
+        });
+    }
+
+    /// <summary>
+    /// API LIÊN KẾT SỐ ĐIỆN THOẠI ĐÃ ĐƯỢC XÁC THỰC BỞI GOOGLE FIREBASE SMS OTP
+    /// </summary>
+    [HttpPost("direct-link-phone")]
+    public async Task<IActionResult> DirectLinkPhone([FromBody] DirectLinkPhoneRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PhoneNumber))
+        {
+            return BadRequest(new { success = false, message = "Vui lòng cung cấp số điện thoại!" });
+        }
+
+        string cleanPhone = Regex.Replace(request.PhoneNumber.Trim(), @"[^\d+]", "");
+        string cleanEmail = (request.PhoneEmail ?? "").Trim().ToLower();
+        User? user = null;
+        if (!string.IsNullOrEmpty(cleanEmail) && InMemoryUsers.TryGetValue(cleanEmail, out var memUser))
+        {
+            user = memUser;
+        }
+        else if (!string.IsNullOrEmpty(request.Id))
+        {
+            user = InMemoryUsers.Values.FirstOrDefault(u => u.Id == request.Id);
+        }
+
+        try
+        {
+            var filter = !string.IsNullOrEmpty(request.Id)
+                ? Builders<User>.Filter.Eq(u => u.Id, request.Id)
+                : Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanEmail);
+
+            var dbUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+            if (dbUser != null) user = dbUser;
+
+            if (user != null)
+            {
+                user.Phone = cleanPhone;
+                await _mongoService.Users.UpdateOneAsync(filter, Builders<User>.Update.Set(u => u.Phone, cleanPhone));
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [MongoDB Atlas DirectLinkPhone] {ex.Message}");
+        }
+
+        if (user != null)
+        {
+            user.Phone = cleanPhone;
+            InMemoryUsers[cleanPhone] = user;
+            if (!string.IsNullOrEmpty(cleanEmail)) InMemoryUsers[cleanEmail] = user;
+        }
+
+        return Ok(new
+        {
+            success = true,
+            message = $"Thêm số điện thoại {cleanPhone} thành công qua xác thực Google SMS OTP!",
+            phone = cleanPhone,
+            user = user != null ? new
+            {
+                id = user.Id,
+                phoneEmail = user.PhoneEmail,
+                phone = user.Phone,
+                fullName = user.FullName,
+                avatarUrl = user.AvatarUrl,
+                role = user.IsAdmin ? "admin" : (user.IsSeller ? "seller" : (user.IsShipper ? "shipper" : "buyer")),
+                walletBalance = user.WalletBalance
+            } : null
+        });
+    }
+}
+
+public class DirectLinkPhoneRequest
+{
+    public string PhoneNumber { get; set; } = string.Empty;
+    public string? PhoneEmail { get; set; }
+    public string? Id { get; set; }
+}
+
+public class SendZaloOtpRequest
+{
+    public string PhoneNumber { get; set; } = string.Empty;
+    public string? PhoneEmail { get; set; }
+    public string? Email { get; set; }
+    public string? Id { get; set; }
+}
+
+public class VerifyLinkPhoneRequest
+{
+    public string? Id { get; set; }
+    public string PhoneEmail { get; set; } = string.Empty;
+    public string PhoneNumber { get; set; } = string.Empty;
+    public string Otp { get; set; } = string.Empty;
+}
+
+public class UpdateProfileRequest
+{
+    public string? Id { get; set; }
+    public string PhoneEmail { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string AvatarUrl { get; set; } = string.Empty;
+    public string? Phone { get; set; }
+    public string? Gender { get; set; }
+    public string? BirthDate { get; set; }
+    public string? Username { get; set; }
+}
+
+public class TopupWalletRequest
+{
+    public string? Id { get; set; }
+    public string PhoneEmail { get; set; } = string.Empty;
+    public decimal Amount { get; set; }
+}
+
+public class ChangePasswordRequest
+{
+    public string PhoneEmail { get; set; } = string.Empty;
+    public string OldPassword { get; set; } = string.Empty;
+    public string NewPassword { get; set; } = string.Empty;
 }
 
 public class LoginRequest

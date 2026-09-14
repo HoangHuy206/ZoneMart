@@ -28,3 +28,10 @@ dist-ssr
 .agent/
 _agents/
 _agent/
+skills/
+**/skills/
+GEMINI.md
+**/GEMINI.md
+AGENTS.md
+**/AGENTS.md
+

@@ -1,7 +1,50 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
+import { useCart } from '../../composables/useCart';
 
 const router = useRouter();
+const cart = useCart();
+
+let observer: IntersectionObserver | null = null;
+
+onMounted(async () => {
+  await nextTick();
+  if (typeof window !== 'undefined' && 'IntersectionObserver' in window) {
+    observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-revealed');
+            observer?.unobserve(entry.target);
+          }
+        });
+      },
+      {
+        root: null,
+        rootMargin: '0px 0px -40px 0px',
+        threshold: 0.08,
+      }
+    );
+
+    const revealElements = document.querySelectorAll('.scroll-reveal');
+    revealElements.forEach((el) => {
+      observer?.observe(el);
+    });
+  } else if (typeof document !== 'undefined') {
+    document.querySelectorAll('.scroll-reveal').forEach((el) => {
+      el.classList.add('is-revealed');
+    });
+  }
+});
+
+onUnmounted(() => {
+  if (observer) {
+    observer.disconnect();
+    observer = null;
+  }
+});
+
 
 // 1. Dữ liệu 3 thẻ cổng thông tin vai trò (Role Portals)
 const portalCards = [
@@ -269,6 +312,26 @@ const formatPrice = (value: number) => {
 const goToRoute = (path: string) => {
   router.push(path);
 };
+
+const handleAddToCartHome = (item: any) => {
+  cart.addItem(
+    {
+      storeId: 'store_' + (item.farm || 'default').toLowerCase().replace(/\s+/g, '_'),
+      storeName: item.farm || 'ZoneMart Đối Tác',
+      distanceKm: parseFloat(item.distance) || 1.5,
+      deliveryTime: item.deliveryTime || '25 phút',
+    },
+    {
+      id: 'prod_' + item.id,
+      name: item.name,
+      price: item.price,
+      originalPrice: item.originalPrice,
+      unit: item.tag || 'Phần',
+      image: item.image,
+    }
+  );
+  alert(`Đã thêm "${item.name}" vào giỏ hàng của bạn!`);
+};
 </script>
 
 <template>
@@ -330,7 +393,11 @@ const goToRoute = (path: string) => {
       <!-- 3 THẺ ROLE PORTALS ĐÈ LÊN CHÂN HERO THEO MẪU MOCKUP -->
       <section class="portals-section">
         <div class="portals-grid">
-          <div v-for="card in portalCards" :key="card.id" class="portal-card">
+          <div
+            v-for="card in portalCards"
+            :key="card.id"
+            class="portal-card"
+          >
             <div class="portal-icon-box">
               <svg
                 v-if="card.iconType === 'user'"
@@ -394,7 +461,7 @@ const goToRoute = (path: string) => {
          2. DANH MỤC NỔI BẬT (FEATURED CATEGORIES)
          ========================================================== -->
     <section class="section-container">
-      <div class="section-header">
+      <div class="section-header scroll-reveal">
         <div class="header-left">
           <h2 class="section-title">Danh Mục Nổi Bật</h2>
           <p class="section-subtitle">
@@ -408,9 +475,10 @@ const goToRoute = (path: string) => {
 
       <div class="categories-grid">
         <div
-          v-for="cat in featuredCategories"
+          v-for="(cat, idx) in featuredCategories"
           :key="cat.id"
-          class="category-card"
+          class="category-card scroll-reveal"
+          :style="{ '--reveal-delay': `${idx * 0.08}s` }"
           @click="goToRoute('/products')"
         >
           <div class="category-img-wrap">
@@ -438,7 +506,7 @@ const goToRoute = (path: string) => {
          3. SẢN PHẨM BÁN CHẠY TRONG BÁN KÍNH 10KM (HOT PRODUCTS)
          ========================================================== -->
     <section class="section-container">
-      <div class="section-header">
+      <div class="section-header scroll-reveal">
         <div class="header-left">
           <div class="badge-tag-hot"><i class="bi bi-fire me-1" aria-hidden="true"></i> GIAO HỎA TỐC 10KM</div>
           <h2 class="section-title">Nông Sản Tươi Mới Hôm Nay</h2>
@@ -454,9 +522,10 @@ const goToRoute = (path: string) => {
 
       <div class="products-grid">
         <div
-          v-for="item in featuredProducts"
+          v-for="(item, idx) in featuredProducts"
           :key="item.id"
-          class="product-card"
+          class="product-card scroll-reveal"
+          :style="{ '--reveal-delay': `${idx * 0.08}s` }"
           @click="goToRoute('/products')"
         >
           <!-- Ảnh sản phẩm kèm Tag khuyến mãi -->
@@ -492,7 +561,7 @@ const goToRoute = (path: string) => {
                   formatPrice(item.originalPrice)
                 }}</span>
               </div>
-              <button class="btn-add-cart" title="Xem chi tiết & Mua" aria-label="Chọn mua sản phẩm">
+              <button class="btn-add-cart" title="Thêm vào giỏ hàng" aria-label="Chọn mua sản phẩm" @click.stop="handleAddToCartHome(item)">
                 <i class="bi bi-bag-plus-fill"></i> Chọn Mua
               </button>
             </div>
@@ -505,7 +574,7 @@ const goToRoute = (path: string) => {
          4. QUY TRÌNH HOẠT ĐỘNG 4 BƯỚC (HOW ZONEMART WORKS)
          ========================================================== -->
     <section class="section-container how-it-works-section">
-      <div class="how-header">
+      <div class="how-header scroll-reveal">
         <span class="how-badge">MÔ HÌNH VẬN HÀNH THÔNG MINH</span>
         <h2 class="section-title text-center">
           ZoneMart Hoạt Động Như Thế Nào?
@@ -517,7 +586,12 @@ const goToRoute = (path: string) => {
       </div>
 
       <div class="how-steps-grid">
-        <div v-for="step in howItWorks" :key="step.step" class="step-card">
+        <div
+          v-for="(step, idx) in howItWorks"
+          :key="step.step"
+          class="step-card scroll-reveal"
+          :style="{ '--reveal-delay': `${idx * 0.1}s` }"
+        >
           <div class="step-number">{{ step.step }}</div>
           <div class="step-icon">
             <i class="bi" :class="step.icon" aria-hidden="true"></i>
@@ -532,7 +606,7 @@ const goToRoute = (path: string) => {
          5. NHÀ VƯỜN & GIAN HÀNG TIÊU BIỂU ĐỊA PHƯƠNG
          ========================================================== -->
     <section class="section-container">
-      <div class="section-header">
+      <div class="section-header scroll-reveal">
         <div class="header-left">
           <h2 class="section-title">Gian Hàng Đối Tác Tiêu Biểu</h2>
           <p class="section-subtitle">
@@ -548,9 +622,10 @@ const goToRoute = (path: string) => {
 
       <div class="vendors-grid">
         <div
-          v-for="v in featuredVendors"
+          v-for="(v, idx) in featuredVendors"
           :key="v.id"
-          class="vendor-card"
+          class="vendor-card scroll-reveal"
+          :style="{ '--reveal-delay': `${idx * 0.1}s` }"
           @click="goToRoute('/products')"
         >
           <div class="vendor-cover-wrap">
@@ -585,7 +660,7 @@ const goToRoute = (path: string) => {
          6. ĐÁNH GIÁ THỰC TẾ TỪ CỘNG ĐỒNG (TESTIMONIALS)
          ========================================================== -->
     <section class="section-container testimonials-section">
-      <div class="section-header text-center-header">
+      <div class="section-header text-center-header scroll-reveal">
         <span class="how-badge">Ý KIẾN KHÁCH HÀNG</span>
         <h2 class="section-title">Cộng Đồng Nói Gì Về ZoneMart?</h2>
         <p class="section-subtitle">
@@ -595,7 +670,12 @@ const goToRoute = (path: string) => {
       </div>
 
       <div class="testimonials-grid">
-        <div v-for="t in testimonials" :key="t.id" class="testimonial-card">
+        <div
+          v-for="(t, idx) in testimonials"
+          :key="t.id"
+          class="testimonial-card scroll-reveal"
+          :style="{ '--reveal-delay': `${idx * 0.1}s` }"
+        >
           <div class="stars-row">
             <i v-for="n in t.rating" :key="n" class="bi bi-star-fill text-warning"></i>
           </div>
@@ -615,7 +695,7 @@ const goToRoute = (path: string) => {
          7. BANNER KÊU GỌI HỢP TÁC (CTA BANNER)
          ========================================================== -->
     <section class="section-container">
-      <div class="partner-cta-card">
+      <div class="partner-cta-card scroll-reveal">
         <div class="partner-cta-content">
           <span class="cta-mini-tag">ĐỒNG HÀNH CÙNG ZONEMART</span>
           <h2 class="cta-title">
@@ -644,7 +724,7 @@ const goToRoute = (path: string) => {
          8. ĐIỂM NHẤN CAM KẾT 10KM
          ========================================================== -->
     <section class="section-container">
-      <div class="highlights-card">
+      <div class="highlights-card scroll-reveal">
         <div
           class="highlight-item"
           v-for="(item, idx) in highlights"
@@ -666,6 +746,43 @@ const goToRoute = (path: string) => {
    HOMEPAGE WARM HUMANIST & FULL-WIDTH STYLES
    Màu chủ đạo: Terracotta/Cam đất (#D85A2A), Nền kem ấm (#FAF7F2)
    ========================================================== */
+
+/* ==========================================================
+   SCROLL REVEAL ANIMATION SYSTEM
+   Cuộn đến đâu nội dung mượt mà xuất hiện đến đó
+   ========================================================== */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--reveal-delay, 0s);
+  will-change: opacity, transform;
+}
+
+.scroll-reveal.is-revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.portal-card.scroll-reveal.is-revealed:hover,
+.category-card.scroll-reveal.is-revealed:hover,
+.product-card.scroll-reveal.is-revealed:hover,
+.vendor-card.scroll-reveal.is-revealed:hover {
+  transform: translateY(-4px);
+}
+.step-card.scroll-reveal.is-revealed:hover,
+.testimonial-card.scroll-reveal.is-revealed:hover {
+  transform: translateY(-3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
 
 .homepage-container {
   width: 100%;
@@ -835,6 +952,29 @@ const goToRoute = (path: string) => {
 .btn-secondary-warm:hover {
   background: rgba(255, 255, 255, 0.25);
   border-color: #ffffff;
+}
+.btn-intro-replay {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  color: #ffe4d6;
+  border: 1.5px dashed rgba(255, 228, 214, 0.55);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.3px;
+  padding: 9px 18px;
+  border-radius: 50px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.22s ease;
+}
+.btn-intro-replay:hover {
+  background: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+  border-color: #ffffff;
+  border-style: solid;
+  transform: translateY(-2px);
 }
 .hero-decoration {
   position: absolute;

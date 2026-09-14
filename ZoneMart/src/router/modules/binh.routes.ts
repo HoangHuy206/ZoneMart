@@ -64,7 +64,7 @@ export const binhRoutes: RouteRecordRaw[] = [
     name: 'Admin',
     component: () => import('../../views/binh/AdminDashboardView.vue'),
     meta: {
-      title: 'Bảng Điều Khiển Admin - ZoneMart',
+      title: 'Bảng Điều Khiển Quản Trị Hệ Thống - ZoneMart Admin Portal',
       requiresAuth: true,
       roles: ['admin'],
     },

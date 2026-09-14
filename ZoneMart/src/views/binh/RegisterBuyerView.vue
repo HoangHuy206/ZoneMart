@@ -28,6 +28,8 @@ const isLoading = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
 
+const isRotatingCaptcha = ref(false);
+
 // Hàm tạo Mã Captcha ngẫu nhiên 4 ký tự
 const generateCaptcha = () => {
   const chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"; // Bỏ các ký tự dễ nhầm lẫn như 0, O, 1, I
@@ -39,7 +41,16 @@ const generateCaptcha = () => {
   form.captchaInput = "";
 };
 
+const refreshCaptchaWithAnim = () => {
+  isRotatingCaptcha.value = true;
+  generateCaptcha();
+  setTimeout(() => {
+    isRotatingCaptcha.value = false;
+  }, 600);
+};
+
 onMounted(() => {
+  document.title = "Đăng Ký Tài Khoản Khách Hàng | ZoneMart - Sàn TMĐT & Giao Hàng Hỏa Tốc";
   generateCaptcha();
 });
 
@@ -170,89 +181,123 @@ const handleRegister = async () => {
         <div v-if="errorMessage" class="msg-box error">⚠️ {{ errorMessage }}</div>
         <div v-if="successMessage" class="msg-box success">✅ {{ successMessage }}</div>
 
-        <!-- FORM NHẬP THÔNG TIN ĐĂNG KÝ -->
-        <form @submit.prevent="handleRegister" class="form-body">
+        <!-- FORM NHẬP THÔNG TIN ĐĂNG KÝ (CHUẨN SEO SEMANTIC & ACCESSIBILITY) -->
+        <form @submit.prevent="handleRegister" class="form-body" method="post" action="/api/auth/register" novalidate itemscope itemtype="https://schema.org/WebPage">
           
+          <!-- Họ và tên -->
+          <div class="field-item">
+            <label for="buyer-fullname" class="field-label">Họ và tên</label>
+            <div class="input-icon-wrapper">
+              <i class="bi bi-person-fill input-leading-icon"></i>
+              <input
+                id="buyer-fullname"
+                name="name"
+                v-model="form.fullName"
+                type="text"
+                autocomplete="name"
+                class="field-input has-leading-icon"
+                placeholder="VD: Nguyễn Văn A"
+              />
+            </div>
+          </div>
+
           <!-- Gmail -->
           <div class="field-item">
-            <label class="field-label">Địa chỉ Gmail <span class="req">*</span></label>
-            <input
-              v-model="form.email"
-              type="email"
-              class="field-input"
-              placeholder="VD: nguyenvana@gmail.com"
-              required
-            />
+            <label for="buyer-email" class="field-label">Địa chỉ Gmail <span class="req">*</span></label>
+            <div class="input-icon-wrapper">
+              <i class="bi bi-envelope-fill input-leading-icon"></i>
+              <input
+                id="buyer-email"
+                name="email"
+                v-model="form.email"
+                type="email"
+                autocomplete="email"
+                class="field-input has-leading-icon"
+                placeholder="VD: nguyenvana@gmail.com"
+                required
+                aria-required="true"
+              />
+            </div>
           </div>
 
           <!-- Mật khẩu -->
           <div class="field-item">
-            <label class="field-label">Mật khẩu <span class="req">*</span></label>
-            <div class="password-wrapper">
+            <label for="buyer-password" class="field-label">Mật khẩu <span class="req">*</span></label>
+            <div class="password-wrapper input-icon-wrapper">
+              <i class="bi bi-lock-fill input-leading-icon"></i>
               <input
+                id="buyer-password"
+                name="new-password"
                 v-model="form.password"
                 :type="showPassword ? 'text' : 'password'"
-                class="field-input"
+                autocomplete="new-password"
+                class="field-input has-leading-icon has-trailing-btn"
                 placeholder="Nhập mật khẩu (6 - 16 ký tự)..."
                 minlength="6"
                 maxlength="16"
                 required
+                aria-required="true"
               />
-              <button type="button" class="eye-toggle-btn" @click="togglePassword" title="Ẩn/Hiện mật khẩu">
-                <svg v-if="!showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-                <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2">
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                  <line x1="1" y1="1" x2="23" y2="23"></line>
-                </svg>
+              <button type="button" class="eye-toggle-btn" @click="togglePassword" :title="showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'" aria-label="Ẩn hoặc hiện mật khẩu">
+                <i :class="showPassword ? 'bi bi-eye-slash-fill' : 'bi bi-eye-fill'"></i>
               </button>
             </div>
           </div>
 
           <!-- Nhập lại mật khẩu -->
           <div class="field-item">
-            <label class="field-label">Nhập lại mật khẩu <span class="req">*</span></label>
-            <div class="password-wrapper">
+            <label for="buyer-confirm-password" class="field-label">Nhập lại mật khẩu <span class="req">*</span></label>
+            <div class="password-wrapper input-icon-wrapper">
+              <i class="bi bi-shield-lock-fill input-leading-icon"></i>
               <input
+                id="buyer-confirm-password"
+                name="confirm-password"
                 v-model="form.confirmPassword"
                 :type="showConfirmPassword ? 'text' : 'password'"
-                class="field-input"
+                autocomplete="new-password"
+                class="field-input has-leading-icon has-trailing-btn"
                 placeholder="Nhập lại mật khẩu ở trên..."
                 minlength="6"
                 maxlength="16"
                 required
+                aria-required="true"
               />
-              <button type="button" class="eye-toggle-btn" @click="toggleConfirmPassword" title="Ẩn/Hiện mật khẩu">
-                <svg v-if="!showConfirmPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                  <circle cx="12" cy="12" r="3"></circle>
-                </svg>
-                <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2">
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                  <line x1="1" y1="1" x2="23" y2="23"></line>
-                </svg>
+              <button type="button" class="eye-toggle-btn" @click="toggleConfirmPassword" :title="showConfirmPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'" aria-label="Ẩn hoặc hiện mật khẩu nhập lại">
+                <i :class="showConfirmPassword ? 'bi bi-eye-slash-fill' : 'bi bi-eye-fill'"></i>
               </button>
             </div>
           </div>
 
           <!-- Mã Captcha xác nhận -->
           <div class="field-item">
-            <label class="field-label">Mã Captcha xác nhận <span class="req">*</span></label>
+            <label for="buyer-captcha" class="field-label">Mã Captcha xác nhận <span class="req">*</span></label>
             <div class="captcha-row">
-              <input
-                v-model="form.captchaInput"
-                type="text"
-                class="field-input captcha-input"
-                placeholder="Nhập 4 ký tự..."
-                maxlength="4"
-                required
-              />
+              <div class="input-icon-wrapper flex-1">
+                <i class="bi bi-shield-check input-leading-icon"></i>
+                <input
+                  id="buyer-captcha"
+                  name="captcha"
+                  v-model="form.captchaInput"
+                  type="text"
+                  autocomplete="off"
+                  class="field-input has-leading-icon captcha-input"
+                  placeholder="Nhập 4 ký tự..."
+                  maxlength="4"
+                  required
+                  aria-required="true"
+                />
+              </div>
               <div class="captcha-badge" title="Mã xác thực Captcha">
-                <span class="captcha-text">{{ captchaCode }}</span>
-                <button type="button" class="refresh-captcha-btn" @click="generateCaptcha" title="Làm mới mã Captcha">
-                  🔄
+                <span class="captcha-text font-mono">{{ captchaCode }}</span>
+                <button
+                  type="button"
+                  class="refresh-captcha-btn"
+                  :class="{ 'is-spinning': isRotatingCaptcha }"
+                  @click="refreshCaptchaWithAnim"
+                  title="Làm mới mã Captcha"
+                  aria-label="Làm mới mã Captcha"
+                >
+                  <i class="bi bi-arrow-clockwise"></i>
                 </button>
               </div>
             </div>
@@ -260,8 +305,14 @@ const handleRegister = async () => {
 
           <!-- Nút Đăng Ký -->
           <button type="submit" class="btn-submit-orange" :disabled="isLoading">
-            <span v-if="!isLoading">ĐĂNG KÝ TÀI KHOẢN ➔</span>
-            <span v-else>ĐANG XỬ LÝ...</span>
+            <span v-if="!isLoading" class="btn-content-flex">
+              <span>ĐĂNG KÝ TÀI KHOẢN</span>
+              <i class="bi bi-arrow-right-circle-fill ms-1"></i>
+            </span>
+            <span v-else class="btn-content-flex">
+              <span class="spinner-border-sm me-2"></span>
+              <span>ĐANG XỬ LÝ...</span>
+            </span>
           </button>
 
           <!-- Đường kẻ phân cách -->
@@ -494,6 +545,18 @@ const handleRegister = async () => {
   box-sizing: border-box;
   z-index: 2;
   position: relative;
+  animation: formCardEntrance 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes formCardEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* NÚT QUAY LẠI BÊN TRÁI MÉP BẢNG */
@@ -576,6 +639,28 @@ const handleRegister = async () => {
   color: #EF4444;
 }
 
+.input-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input-leading-icon {
+  position: absolute;
+  left: 13px;
+  font-size: 14px;
+  color: #94A3B8;
+  pointer-events: none;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 2;
+}
+
+.input-icon-wrapper:focus-within .input-leading-icon {
+  color: #D94E15;
+  transform: scale(1.12);
+}
+
 .field-input {
   width: 100%;
   padding: 8.5px 12px;
@@ -587,6 +672,16 @@ const handleRegister = async () => {
   outline: none;
   box-sizing: border-box;
   transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: inherit;
+}
+
+.field-input.has-leading-icon {
+  padding-left: 36px;
+}
+
+.field-input.has-trailing-btn {
+  padding-right: 36px;
 }
 
 .field-input:focus {
@@ -608,12 +703,27 @@ const handleRegister = async () => {
 .eye-toggle-btn {
   position: absolute;
   right: 10px;
+  right: 11px;
   background: none;
   border: none;
+  color: #94A3B8;
   cursor: pointer;
   padding: 2px;
+  padding: 4px;
   display: flex;
   align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: color 0.2s ease, transform 0.15s ease;
+  z-index: 2;
+}
+
+.eye-toggle-btn:hover {
+  color: #D94E15;
+}
+
+.eye-toggle-btn:active {
+  transform: scale(0.9);
 }
 
 /* CAPTCHA ROW */
@@ -637,6 +747,7 @@ const handleRegister = async () => {
   background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%);
   border: 1.5px dashed #D94E15;
   padding: 6px 12px;
+  padding: 5px 11px;
   border-radius: 12px;
   user-select: none;
 }
@@ -644,9 +755,11 @@ const handleRegister = async () => {
 .captcha-text {
   font-family: 'Courier New', Courier, monospace !important;
   font-size: 18px;
+  font-size: 17px;
   font-weight: 900;
   color: #D94E15;
   letter-spacing: 4px;
+  letter-spacing: 3px;
   font-style: italic;
   text-decoration: line-through;
 }
@@ -657,11 +770,31 @@ const handleRegister = async () => {
   cursor: pointer;
   font-size: 14px;
   padding: 0;
+  font-size: 16px;
+  padding: 2px;
+  color: #D94E15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.2s ease;
 }
 
 .refresh-captcha-btn:hover {
   transform: rotate(180deg);
+  transform: scale(1.15);
+}
+
+.refresh-captcha-btn.is-spinning {
+  animation: rotateCaptcha 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes rotateCaptcha {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 /* SUBMIT BUTTON - WARM ORANGE PILL */
@@ -678,13 +811,27 @@ const handleRegister = async () => {
   cursor: pointer;
   box-shadow: 0 6px 16px rgba(217, 78, 21, 0.3);
   transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   margin-top: 4px;
+}
+
+.btn-content-flex {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .btn-submit-orange:hover:not(:disabled) {
   background: #C8451F;
   transform: translateY(-1px);
+  transform: translateY(-1.5px);
   box-shadow: 0 8px 20px rgba(217, 78, 21, 0.38);
+}
+
+.btn-submit-orange:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: 0 3px 8px rgba(217, 78, 21, 0.25);
 }
 
 .btn-submit-orange:disabled {

@@ -1,5 +1,7 @@
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
+import { useAuth } from './useAuth';
 import { cartService } from '../services/cartService';
+
 
 export interface CartItem {
   id: string;
@@ -57,80 +59,93 @@ export const AVAILABLE_VOUCHERS: Voucher[] = [
   },
 ];
 
-const INITIAL_CART: CartStoreGroup[] = [
-  {
-    storeId: 'st_1',
-    storeName: 'ZoneMart Bách Hóa Cầu Giấy',
-    distanceKm: 1.2,
-    deliveryTime: '15 - 20 phút',
-    note: 'Chọn khay thịt tươi mới về sáng nay giúp em nhé!',
-    items: [
-      {
-        id: 'p1',
-        name: 'Thịt Bò Mỹ Nhập Khẩu Thượng Hạng',
-        price: 185000,
-        originalPrice: 220000,
-        quantity: 2,
-        unit: 'Khay 500g',
-        image:
-          'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=600&q=80',
-        selected: true,
-      },
-      {
-        id: 'p6',
-        name: 'Gạo ST25 Ông Cua Túi 5kg Chuẩn Vị Thơm Dẻo',
-        price: 190000,
-        originalPrice: 225000,
-        quantity: 1,
-        unit: 'Túi 5kg',
-        image:
-          'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=600&q=80',
-        selected: true,
-      },
-    ],
-  },
-  {
-    storeId: 'st_2',
-    storeName: 'Siêu Thị Trái Cây Xanh',
-    distanceKm: 2.5,
-    deliveryTime: '20 - 25 phút',
-    note: 'Lấy dâu tây quả to mọng nhé tiệm.',
-    items: [
-      {
-        id: 'p2',
-        name: 'Hộp Dâu Tây Đà Lạt Tươi Ngọt Chuẩn VietGAP',
-        price: 95000,
-        originalPrice: 125000,
-        quantity: 1,
-        unit: 'Hộp 500g',
-        image:
-          'https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=600&q=80',
-        selected: true,
-      },
-    ],
-  },
-];
-
-function loadSavedCart(): CartStoreGroup[] {
+/**
+ * Xác định mã định danh giỏ hàng của chủ sở hữu hiện tại:
+ * - Nếu đã đăng nhập: user_{id_or_email}
+ * - Nếu là khách vãng lai: guest_{unique_id}
+ * Giúp mỗi người dùng có một giỏ hàng độc lập 100%, không ai giống ai.
+ */
+export function getCartOwnerKey(): string {
   try {
-    const saved = localStorage.getItem('zonemart_cart');
+    const auth = useAuth();
+    const user = auth.currentUser.value;
+    if (user && (user.id || user.phoneEmail)) {
+      const raw = user.id || user.phoneEmail;
+      return 'user_' + raw.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    }
+  } catch (e) {
+    // Có thể throw nếu gọi ngoài ngữ cảnh vue, tiếp tục fallback
+  }
+
+  try {
+    const saved =
+      localStorage.getItem('currentUser') ||
+      localStorage.getItem('zonemart_user');
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (parsed && (parsed.id || parsed.phoneEmail || parsed.email)) {
+        const raw = parsed.id || parsed.phoneEmail || parsed.email;
+        return 'user_' + raw.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  try {
+    let guestId = localStorage.getItem('zonemart_guest_id');
+    if (!guestId) {
+      guestId =
+        'guest_' +
+        Math.random().toString(36).substring(2, 9) +
+        '_' +
+        Date.now().toString(36);
+      localStorage.setItem('zonemart_guest_id', guestId);
+    }
+    return guestId;
+  } catch (e) {
+    return 'guest_default';
+  }
+}
+
+export function getStorageKeyForOwner(ownerKey?: string): string {
+  const owner = ownerKey || getCartOwnerKey();
+  return `zonemart_cart_${owner}`;
+}
+
+function loadSavedCart(): CartStoreGroup[] {
+  // Dọn dẹp cache cũ chứa 4 món mẫu nếu còn tồn tại
+  try {
+    if (localStorage.getItem('zonemart_cart')) {
+      localStorage.removeItem('zonemart_cart');
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  try {
+    const key = getStorageKeyForOwner();
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
     console.error('Lỗi đọc giỏ hàng từ localStorage:', e);
   }
-  return INITIAL_CART;
+
+  // MẶC ĐỊNH LUÔN RỖNG KHI MỚI VÀO (0 MÓN)
+  return [];
 }
 
 // Trạng thái giỏ hàng Reactive Singleton
 const cartStores = ref<CartStoreGroup[]>(loadSavedCart());
-const appliedVoucherCode = ref<string>('FREESHIP10K');
+const appliedVoucherCode = ref<string>(''); // Không tự áp dụng mã giảm giá khi giỏ hàng trống
 
 function persistCart(syncToDb = true) {
   try {
-    localStorage.setItem('zonemart_cart', JSON.stringify(cartStores.value));
+    const key = getStorageKeyForOwner();
+    localStorage.setItem(key, JSON.stringify(cartStores.value));
   } catch (e) {
     console.error('Lỗi lưu giỏ hàng vào localStorage:', e);
   }
@@ -164,6 +179,20 @@ async function loadCartFromDatabase(userId?: string) {
     console.warn('Lỗi nạp giỏ hàng từ database, tiếp tục dùng local:', e);
   }
 }
+
+// Đồng bộ chuyển đổi giỏ hàng khi người dùng đăng nhập / đăng xuất / đổi vai trò
+const auth = useAuth();
+watch(
+  () =>
+    auth.currentUser.value?.id ||
+    auth.currentUser.value?.phoneEmail ||
+    'guest_session',
+  () => {
+    cartStores.value = loadSavedCart();
+    appliedVoucherCode.value = '';
+  },
+  { immediate: false },
+);
 
 export function useCart() {
   // Tổng số lượng tất cả món trong giỏ (dùng cho Badge Header)
@@ -332,6 +361,7 @@ export function useCart() {
   };
 
   // Thêm món vào giỏ
+  // Thêm món vào giỏ (hỗ trợ số lượng tùy chọn qty)
   const addItem = (
     storeInfo: {
       storeId: string;
@@ -347,6 +377,7 @@ export function useCart() {
       image: string;
       unit?: string;
     },
+    qty: number = 1,
   ) => {
     let store = cartStores.value.find((s) => s.storeId === storeInfo.storeId);
     if (!store) {
@@ -360,14 +391,15 @@ export function useCart() {
       cartStores.value.push(store);
     }
 
+    const count = Math.max(1, qty);
     const existingItem = store.items.find((i) => i.id === itemData.id);
     if (existingItem) {
-      existingItem.quantity++;
+      existingItem.quantity += count;
       existingItem.selected = true;
     } else {
       store.items.push({
         ...itemData,
-        quantity: 1,
+        quantity: count,
         selected: true,
       });
     }
@@ -429,6 +461,7 @@ export function useCart() {
   // Xóa toàn bộ giỏ hàng
   const clearCart = () => {
     cartStores.value = [];
+    appliedVoucherCode.value = '';
     persistCart();
   };
 
@@ -452,6 +485,11 @@ export function useCart() {
       }))
       .filter((store) => store.items.length > 0);
   });
+
+  const refreshCartForUser = () => {
+    cartStores.value = loadSavedCart();
+    appliedVoucherCode.value = '';
+  };
 
   return {
     cartStores,
@@ -482,6 +520,7 @@ export function useCart() {
     clearCart,
     removeSelectedItems,
     loadCartFromDatabase,
+    refreshCartForUser,
     AVAILABLE_VOUCHERS,
   };
 }
