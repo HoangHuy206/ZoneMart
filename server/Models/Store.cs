@@ -60,6 +60,9 @@ public class Store
     [BsonElement("status")]
     public string Status { get; set; } = "Pending"; // Pending, Active, Rejected
 
+    [BsonElement("reject_reason")]
+    public string? RejectReason { get; set; }
+
     [BsonElement("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

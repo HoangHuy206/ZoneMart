@@ -288,16 +288,23 @@ const handleResetPassword = async () => {
       <div v-if="errorMessage" class="msg-box error">⚠️ {{ errorMessage }}</div>
       <div v-if="successMessage" class="msg-box success">✅ {{ successMessage }}</div>
 
-      <form @submit.prevent="handleSendOtp" class="form-body">
+      <form @submit.prevent="handleSendOtp" class="form-body" method="post" novalidate>
         <div class="field-item">
-          <label class="field-label">Địa chỉ Email của bạn</label>
-          <input
-            v-model="form.email"
-            type="email"
-            class="field-input"
-            placeholder="VD: dobinh225599@gmail.com"
-            required
-          />
+          <label for="forgot-email" class="field-label">Địa chỉ Email của bạn <span class="required-star">*</span></label>
+          <div class="input-icon-wrapper">
+            <i class="bi bi-envelope-fill input-leading-icon"></i>
+            <input
+              id="forgot-email"
+              name="email"
+              v-model="form.email"
+              type="email"
+              autocomplete="email"
+              class="field-input has-leading-icon"
+              placeholder="VD: dobinh225599@gmail.com"
+              required
+              aria-required="true"
+            />
+          </div>
         </div>
 
         <button type="submit" :class="themeConfig.btnClass" :disabled="isLoading">
@@ -325,7 +332,7 @@ const handleResetPassword = async () => {
       <div v-if="errorMessage" class="msg-box error">⚠️ {{ errorMessage }}</div>
       <div v-if="successMessage" class="msg-box success">✓ {{ successMessage }}</div>
 
-      <form @submit.prevent="handleVerifyOtp" class="form-body">
+      <form @submit.prevent="handleVerifyOtp" class="form-body" method="post" novalidate>
         <div class="field-item">
           <label class="field-label">Nhập mã xác thực (6 chữ số)</label>
           <input
@@ -368,51 +375,57 @@ const handleResetPassword = async () => {
       <div v-if="errorMessage" class="msg-box error">⚠️ {{ errorMessage }}</div>
       <div v-if="successMessage" class="msg-box success">✅ {{ successMessage }}</div>
 
-      <form @submit.prevent="handleResetPassword" class="form-body">
+      <form @submit.prevent="handleResetPassword" class="form-body" method="post" novalidate>
         <!-- Mật khẩu mới -->
         <div class="field-item">
-          <label class="field-label">Mật khẩu mới</label>
-          <div class="password-wrapper">
+          <label for="forgot-new-pass" class="field-label">Mật khẩu mới <span class="required-star">*</span></label>
+          <div class="password-wrapper input-icon-wrapper">
+            <i class="bi bi-lock-fill input-leading-icon"></i>
             <input
+              id="forgot-new-pass"
+              name="newPassword"
               v-model="form.newPassword"
               :type="showNewPass ? 'text' : 'password'"
-              class="field-input"
-              placeholder="Nhập mật khẩu mới..."
+              autocomplete="new-password"
+              class="field-input has-leading-icon has-trailing-btn"
+              placeholder="Nhập mật khẩu mới (tối thiểu 6 ký tự)..."
               required
+              aria-required="true"
             />
-            <button type="button" class="eye-toggle-btn" @click="showNewPass = !showNewPass">
-              <svg v-if="!showNewPass" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                <circle cx="12" cy="12" r="3"></circle>
-              </svg>
-              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2">
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                <line x1="1" y1="1" x2="23" y2="23"></line>
-              </svg>
+            <button 
+              type="button" 
+              class="eye-toggle-btn" 
+              @click="showNewPass = !showNewPass"
+              :title="showNewPass ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'"
+            >
+              <i :class="showNewPass ? 'bi bi-eye-slash-fill' : 'bi bi-eye-fill'"></i>
             </button>
           </div>
         </div>
 
         <!-- Nhập lại mật khẩu mới -->
         <div class="field-item">
-          <label class="field-label">Nhập lại mật khẩu mới</label>
-          <div class="password-wrapper">
+          <label for="forgot-confirm-pass" class="field-label">Nhập lại mật khẩu mới <span class="required-star">*</span></label>
+          <div class="password-wrapper input-icon-wrapper">
+            <i class="bi bi-shield-check input-leading-icon"></i>
             <input
+              id="forgot-confirm-pass"
+              name="confirmPassword"
               v-model="form.confirmPassword"
               :type="showConfirmPass ? 'text' : 'password'"
-              class="field-input"
-              placeholder="Xác nhận mật khẩu mới..."
+              autocomplete="new-password"
+              class="field-input has-leading-icon has-trailing-btn"
+              placeholder="Xác nhận lại mật khẩu mới..."
               required
+              aria-required="true"
             />
-            <button type="button" class="eye-toggle-btn" @click="showConfirmPass = !showConfirmPass">
-              <svg v-if="!showConfirmPass" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                <circle cx="12" cy="12" r="3"></circle>
-              </svg>
-              <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" stroke-width="2">
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                <line x1="1" y1="1" x2="23" y2="23"></line>
-              </svg>
+            <button 
+              type="button" 
+              class="eye-toggle-btn" 
+              @click="showConfirmPass = !showConfirmPass"
+              :title="showConfirmPass ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'"
+            >
+              <i :class="showConfirmPass ? 'bi bi-eye-slash-fill' : 'bi bi-eye-fill'"></i>
             </button>
           </div>
         </div>

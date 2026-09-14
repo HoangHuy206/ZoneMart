@@ -15,12 +15,16 @@
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
+  --font-family: 'Plus Jakarta Sans', 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --sans: var(--font-family);
+  --heading: var(--font-family);
+  --mono: ui-monospace, SFMono-Regular, Consolas, monospace;
 
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
+  color-scheme: light;
+  color: #334155;
+  background: #ffffff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -39,36 +43,23 @@
   --card-bg: #ffffff;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-body {
+html, body {
   margin: 0;
   padding: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body {
   font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-family);
   background-color: var(--bg-main);
   color: var(--text-main);
   -webkit-font-smoothing: antialiased;
@@ -76,9 +67,13 @@ body {
 }
 
 h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-family);
+  font-weight: 700;
   color: var(--text-h);
 }
 

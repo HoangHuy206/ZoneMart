@@ -423,7 +423,7 @@ public class ForgotPasswordController : ControllerBase
     /// <summary>
     /// Hàm dùng chung gửi Email thông qua MailKit (hỗ trợ tự động thử lại với tài khoản dự phòng nếu tài khoản chính gặp sự cố)
     /// </summary>
-    private static async Task<bool> SendEmailViaMailKitAsync(string toEmail, string subject, string htmlBody, string senderName = "ZoneMart Security")
+    public static async Task<bool> SendEmailViaMailKitAsync(string toEmail, string subject, string htmlBody, string senderName = "ZoneMart Security")
     {
         var accounts = new (string Email, string Password)[]
         {
@@ -447,6 +447,7 @@ public class ForgotPasswordController : ControllerBase
                 message.Body = bodyBuilder.ToMessageBody();
 
                 using var client = new SmtpClient();
+                client.Timeout = 8000;
                 await client.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.StartTls);
                 await client.AuthenticateAsync(account.Email, account.Password);
                 await client.SendAsync(message);

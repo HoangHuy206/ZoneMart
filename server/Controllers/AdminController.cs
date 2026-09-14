@@ -119,6 +119,98 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
+    /// Lấy chi tiết hồ sơ đối tác (Shop hoặc Shipper) theo ID
+    /// </summary>
+    [HttpGet("partner/{id}")]
+    public async Task<IActionResult> GetPartnerDetail(string id)
+    {
+        try
+        {
+            Store? store = null;
+            try
+            {
+                store = await _mongoService.Stores.Find(s => s.Id == id).FirstOrDefaultAsync();
+            }
+            catch { }
+
+            if (store == null && AuthController.InMemoryStores.TryGetValue(id, out var memStore))
+            {
+                store = memStore;
+            }
+
+            if (store != null)
+            {
+                return Ok(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        id = store.Id,
+                        type = "seller",
+                        name = store.StoreName,
+                        applicant = store.OwnerFullName,
+                        cccd = store.CccdNumber,
+                        address = store.Address,
+                        category = store.Category,
+                        date = store.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+                        status = store.Status,
+                        rejectReason = store.RejectReason,
+                        bankName = store.BankName,
+                        bankAccountNumber = store.BankAccountNumber,
+                        cccdFrontImage = store.CccdFrontImage,
+                        cccdBackImage = store.CccdBackImage,
+                        foodSafetyCertImage = store.FoodSafetyCertImage
+                    }
+                });
+            }
+            else
+            {
+                Shipper? shipper = null;
+                try
+                {
+                    shipper = await _mongoService.Shippers.Find(s => s.Id == id).FirstOrDefaultAsync();
+                }
+                catch { }
+
+                if (shipper == null && AuthController.InMemoryShippers.TryGetValue(id, out var memShip))
+                {
+                    shipper = memShip;
+                }
+
+                if (shipper == null) return NotFound(new { success = false, message = "Không tìm thấy hồ sơ đối tác" });
+
+                return Ok(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        id = shipper.Id,
+                        type = "shipper",
+                        name = $"Tài Xế: {shipper.FullName}",
+                        applicant = shipper.FullName,
+                        cccd = shipper.CccdNumber,
+                        address = $"{shipper.VehicleModel} - {shipper.LicensePlate}",
+                        category = shipper.VehicleType,
+                        date = shipper.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+                        status = shipper.Status,
+                        rejectReason = shipper.RejectReason,
+                        bankName = shipper.BankName,
+                        bankAccountNumber = shipper.BankAccountNumber,
+                        cccdFrontImage = shipper.CccdFrontImage,
+                        cccdBackImage = shipper.CccdBackImage,
+                        drivingLicenseImage = shipper.DrivingLicenseImage,
+                        avatarUrl = shipper.AvatarUrl
+                    }
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Tra cứu & lọc danh sách tài khoản từ MongoDB Atlas theo Smart Search (Tên người mua, Tên Cửa Hàng Shop, Shipper biển số xe, Quản lý, Gmail), Role, Status
     /// </summary>
     [HttpGet("users")]
@@ -910,6 +1002,7 @@ public class AdminController : ControllerBase
                 message.Body = bodyBuilder.ToMessageBody();
 
                 using var client = new SmtpClient();
+                client.Timeout = 8000;
                 await client.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.StartTls);
                 await client.AuthenticateAsync(account.Email, account.Password);
                 await client.SendAsync(message);

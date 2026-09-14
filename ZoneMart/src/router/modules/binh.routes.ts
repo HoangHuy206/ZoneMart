@@ -1,4 +1,4 @@
-import type { RouteRecordRaw } from "vue-router";
+import type { RouteRecordRaw } from 'vue-router';
 
 /**
  * ================================================================
@@ -12,55 +12,77 @@ import type { RouteRecordRaw } from "vue-router";
  */
 export const binhRoutes: RouteRecordRaw[] = [
   {
-    path: "/login",
-    name: "Login",
-    component: () => import("../../views/binh/LoginView.vue"),
-    meta: { title: "Đăng Nhập - ZoneMart", hideHeader: true, hideFooter: true }
+    path: '/login',
+    name: 'Login',
+    component: () => import('../../views/binh/LoginView.vue'),
+    meta: { title: 'Đăng Nhập - ZoneMart', hideHeader: true, hideFooter: true },
   },
   {
-    path: "/register",
-    name: "RegisterBuyer",
-    component: () => import("../../views/binh/RegisterBuyerView.vue"),
-    meta: { title: "Đăng Ký Khách Hàng - ZoneMart", hideHeader: true, hideFooter: true }
+    path: '/register',
+    name: 'RegisterBuyer',
+    component: () => import('../../views/binh/RegisterBuyerView.vue'),
+    meta: { title: 'Đăng Ký Khách Hàng - ZoneMart', hideHeader: true, hideFooter: true },
   },
   {
-    path: "/register-seller",
-    name: "RegisterSeller",
-    component: () => import("../../views/binh/SellerLandingView.vue"),
-    meta: { title: "ZoneMart Seller - Mở Gian Hàng Kinh Doanh", hideHeader: true, hideFooter: true }
+    path: '/register-seller',
+    name: 'RegisterSeller',
+    component: () => import('../../views/binh/SellerLandingView.vue'),
+    meta: { title: 'ZoneMart Seller - Mở Gian Hàng Kinh Doanh', hideHeader: true, hideFooter: true },
   },
   {
-    path: "/seller-landing",
-    name: "SellerLanding",
-    component: () => import("../../views/binh/SellerLandingView.vue"),
-    meta: { title: "ZoneMart Seller - Mở Gian Hàng Kinh Doanh", hideHeader: true, hideFooter: true }
+    path: '/seller-form',
+    name: 'SellerForm',
+    component: () => import('../../views/binh/RegisterSellerView.vue'),
+    meta: { title: 'Đăng Ký Mở Gian Hàng - ZoneMart', hideHeader: true, hideFooter: true },
   },
   {
-    path: "/register-shipper",
-    name: "RegisterShipper",
-    component: () => import("../../views/binh/ShipperLandingView.vue"),
-    meta: { title: "ZoneMart Driver - Gia Nhập Đội Ngũ Tài Xế", hideHeader: true, hideFooter: true }
+    path: '/seller-landing',
+    name: 'SellerLanding',
+    component: () => import('../../views/binh/SellerLandingView.vue'),
+    meta: { title: 'ZoneMart Seller - Mở Gian Hàng Kinh Doanh', hideHeader: true, hideFooter: true },
   },
   {
-    path: "/shipper-landing",
-    name: "ShipperLanding",
-    component: () => import("../../views/binh/ShipperLandingView.vue"),
-    meta: { title: "ZoneMart Driver - Gia Nhập Đội Ngũ Tài Xế", hideHeader: true, hideFooter: true }
+    path: '/register-shipper',
+    name: 'RegisterShipper',
+    component: () => import('../../views/binh/ShipperLandingView.vue'),
+    meta: { title: 'ZoneMart Driver - Gia Nhập Đội Ngũ Tài Xế', hideHeader: true, hideFooter: true },
   },
   {
-    path: "/shipper",
-    name: "Shipper",
-    component: () => import("../../views/binh/ShipperView.vue"),
+    path: '/shipper-form',
+    name: 'ShipperForm',
+    component: () => import('../../views/binh/RegisterShipperView.vue'),
+    meta: { title: 'Đăng Ký Tài Xế - ZoneMart Driver', hideHeader: true, hideFooter: true },
+  },
+  {
+    path: '/shipper-landing',
+    name: 'ShipperLanding',
+    component: () => import('../../views/binh/ShipperLandingView.vue'),
+    meta: { title: 'ZoneMart Driver - Gia Nhập Đội Ngũ Tài Xế', hideHeader: true, hideFooter: true },
+  },
+  {
+    path: '/shipper',
+    name: 'Shipper',
+    component: () => import('../../views/binh/ShipperView.vue'),
     meta: {
-      title: "Cổng Tài Xế Shipper - ZoneMart",
+      title: 'Cổng Tài Xế Shipper - ZoneMart',
       hideHeader: true,
-      hideFooter: true
-    }
+      hideFooter: true,
+    },
   },
   {
-    path: "/admin",
-    name: "Admin",
-    component: () => import("../../views/binh/AdminDashboardView.vue"),
-    meta: { title: "Bảng Điều Khiển Admin - ZoneMart", hideHeader: true, hideFooter: true }
-  }
+    path: '/seller',
+    name: 'SellerDashboard',
+    component: () => import('../../views/binh/SellerDashboardView.vue'),
+    meta: {
+      title: 'Kênh Quản Lý Bán Hàng - ZoneMart Seller',
+      hideHeader: true,
+      hideFooter: true,
+    },
+  },
+  {
+    path: '/admin',
+    name: 'Admin',
+    component: () => import('../../views/binh/AdminDashboardView.vue'),
+    meta: { title: 'Bảng Điều Khiển Quản Trị - ZoneMart Admin', hideHeader: true, hideFooter: true },
+  },
 ];

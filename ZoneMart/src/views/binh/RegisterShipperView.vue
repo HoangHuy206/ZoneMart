@@ -471,6 +471,10 @@ const closeSuccessModal = () => {
   showSuccessModal.value = false;
   router.push("/login");
 };
+
+onMounted(() => {
+  document.title = "Đăng Ký Tài Xế Shipper Giao Hàng | ZoneMart - Thu Nhập Hấp Dẫn";
+});
 </script>
 
 <template>
@@ -506,17 +510,25 @@ const closeSuccessModal = () => {
         <!-- BẢNG THEO DÕI BƯỚC (STEPPER BAR 3 BƯỚC CHUYÊN NGHIỆP) -->
         <div class="stepper-bar">
           <div class="step-item" :class="{ active: currentStep >= 1, current: currentStep === 1 }">
-            <div class="step-badge">1</div>
+            <div class="step-badge">
+              <i v-if="currentStep > 1" class="bi bi-check-lg"></i>
+              <span v-else>1</span>
+            </div>
             <span class="step-label">Thông tin cá nhân</span>
           </div>
           <div class="step-connector" :class="{ active: currentStep >= 2 }"></div>
           <div class="step-item" :class="{ active: currentStep >= 2, current: currentStep === 2 }">
-            <div class="step-badge">2</div>
+            <div class="step-badge">
+              <i v-if="currentStep > 2" class="bi bi-check-lg"></i>
+              <span v-else>2</span>
+            </div>
             <span class="step-label">Xe cộ & Bằng lái</span>
           </div>
           <div class="step-connector" :class="{ active: currentStep >= 3 }"></div>
           <div class="step-item" :class="{ active: currentStep >= 3, current: currentStep === 3 }">
-            <div class="step-badge">3</div>
+            <div class="step-badge">
+              <span>3</span>
+            </div>
             <span class="step-label">Khu vực & Ngân hàng</span>
           </div>
         </div>
@@ -569,295 +581,315 @@ const closeSuccessModal = () => {
             />
           </div>
 
-          <div class="form-group">
-            <label class="input-label">
-              Số CCCD (Căn cước công dân) <span class="req">*</span>
-              <span class="hint-text">(Đúng 12 số)</span>
-            </label>
-            <input
-              type="text"
-              v-model="form.cccdNumber"
-              placeholder="VD: 001203004005"
-              class="custom-input"
-              maxlength="12"
-              required
-            />
-          </div>
+            <div class="form-group">
+              <label for="shipper-cccd" class="input-label">
+                Số CCCD (Căn cước công dân) <span class="req">*</span>
+                <span class="hint-text">(Đúng 12 số)</span>
+              </label>
+              <div class="input-icon-wrapper">
+                <i class="bi bi-card-text input-leading-icon"></i>
+                <input
+                  id="shipper-cccd"
+                  name="cccdNumber"
+                  type="text"
+                  inputmode="numeric"
+                  v-model="form.cccdNumber"
+                  placeholder="VD: 001203004005"
+                  class="custom-input has-leading-icon font-mono"
+                  maxlength="12"
+                  required
+                  aria-required="true"
+                />
+              </div>
+            </div>
 
-          <!-- NÚT UPLOAD CCCD MẶT TRƯỚC VÀ MẶT SAU -->
-          <div class="form-group">
-            <label class="input-label">Ảnh CCCD (Mặt trước & Mặt sau) <span class="req">*</span></label>
-            <div class="upload-double-grid">
-              <!-- Upload Mặt Trước -->
+            <!-- NÚT UPLOAD CCCD MẶT TRƯỚC VÀ MẶT SAU -->
+            <div class="form-group">
+              <label class="input-label">Ảnh CCCD (Mặt trước & Mặt sau) <span class="req">*</span></label>
+              <div class="upload-double-grid">
+                <!-- Upload Mặt Trước -->
+                <div class="upload-box-wrapper">
+                  <input
+                    type="file"
+                    id="cccdFrontInput"
+                    accept="image/*"
+                    class="hidden-file-input"
+                    @change="(e) => handleFileUpload(e, 'cccdFrontImage')"
+                  />
+                  <div 
+                    class="btn-upload-box" 
+                    :class="{ 'uploaded': form.cccdFrontImage }"
+                    @click="handleShipperUploadClick('cccdFrontImage', 'cccdFrontInput', 'Ảnh CCCD Mặt trước')"
+                  >
+                    <span v-if="!form.cccdFrontImage">📷 Tải CCCD Mặt trước</span>
+                    <span v-else class="upload-success-text">✓ Đã tải Mặt trước</span>
+                  </div>
+                </div>
+
+                <!-- Upload Mặt Sau -->
+                <div class="upload-box-wrapper">
+                  <input
+                    type="file"
+                    id="cccdBackInput"
+                    accept="image/*"
+                    class="hidden-file-input"
+                    @change="(e) => handleFileUpload(e, 'cccdBackImage')"
+                  />
+                  <div 
+                    class="btn-upload-box" 
+                    :class="{ 'uploaded': form.cccdBackImage }"
+                    @click="handleShipperUploadClick('cccdBackImage', 'cccdBackInput', 'Ảnh CCCD Mặt sau')"
+                  >
+                    <span v-if="!form.cccdBackImage">📷 Tải CCCD Mặt sau</span>
+                    <span v-else class="upload-success-text">✓ Đã tải Mặt sau</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- NÚT UPLOAD ẢNH CHÂN DUNG ĐẠI DIỆN -->
+            <div class="form-group">
+              <label class="input-label">Ảnh chân dung đại diện <span class="req">*</span></label>
               <div class="upload-box-wrapper">
                 <input
                   type="file"
-                  id="cccdFrontInput"
+                  id="avatarInput"
                   accept="image/*"
                   class="hidden-file-input"
-                  @change="(e) => handleFileUpload(e, 'cccdFrontImage')"
+                  @change="(e) => handleFileUpload(e, 'avatarUrl')"
                 />
                 <div 
-                  class="btn-upload-box" 
-                  :class="{ 'uploaded': form.cccdFrontImage }"
-                  @click="handleShipperUploadClick('cccdFrontImage', 'cccdFrontInput', 'Ảnh CCCD Mặt trước')"
+                  class="btn-upload-box btn-upload-full" 
+                  :class="{ 'uploaded': form.avatarUrl }"
+                  @click="handleShipperUploadClick('avatarUrl', 'avatarInput', 'Ảnh chân dung đại diện')"
                 >
-                  <span v-if="!form.cccdFrontImage">📷 Tải CCCD Mặt trước</span>
-                  <span v-else class="upload-success-text">✓ Đã tải Mặt trước</span>
-                </div>
-              </div>
-
-              <!-- Upload Mặt Sau -->
-              <div class="upload-box-wrapper">
-                <input
-                  type="file"
-                  id="cccdBackInput"
-                  accept="image/*"
-                  class="hidden-file-input"
-                  @change="(e) => handleFileUpload(e, 'cccdBackImage')"
-                />
-                <div 
-                  class="btn-upload-box" 
-                  :class="{ 'uploaded': form.cccdBackImage }"
-                  @click="handleShipperUploadClick('cccdBackImage', 'cccdBackInput', 'Ảnh CCCD Mặt sau')"
-                >
-                  <span v-if="!form.cccdBackImage">📷 Tải CCCD Mặt sau</span>
-                  <span v-else class="upload-success-text">✓ Đã tải Mặt sau</span>
+                  <span v-if="!form.avatarUrl">👤 Tải ảnh chân dung đại diện (Tệp hình ảnh .jpg, .png)</span>
+                  <span v-else class="upload-success-text">✓ Đã tải ảnh chân dung</span>
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- NÚT UPLOAD ĂNH CHÂN DUNG ĐẠI DIỆN -->
-          <div class="form-group">
-            <label class="input-label">Ảnh chân dung đại diện <span class="req">*</span></label>
-            <div class="upload-box-wrapper">
-              <input
-                type="file"
-                id="avatarInput"
-                accept="image/*"
-                class="hidden-file-input"
-                @change="(e) => handleFileUpload(e, 'avatarUrl')"
-              />
-              <div 
-                class="btn-upload-box btn-upload-full" 
-                :class="{ 'uploaded': form.avatarUrl }"
-                @click="handleShipperUploadClick('avatarUrl', 'avatarInput', 'Ảnh chân dung đại diện')"
-              >
-                <span v-if="!form.avatarUrl">👤 Tải ảnh chân dung đại diện (Tệp hình ảnh .jpg, .png)</span>
-                <span v-else class="upload-success-text">✓ Đã tải ảnh chân dung</span>
-              </div>
-            </div>
-          </div>
-
-          <button type="submit" class="btn-submit-orange">
-            Tiếp theo ➔
-          </button>
-        </form>
-
-        <!-- ==================== BƯỚC 2: THÔNG TIN XE CỘ & BẰNG LÁI ==================== -->
-        <form v-if="currentStep === 2" @submit.prevent="goToNextStep" class="form-body">
-          <!-- Ô NHẬP BIỂN SỐ XE - TỰ ĐỘNG VIẾT HOA KHI NHẬP CHỮ -->
-          <div class="form-group">
-            <label class="input-label">
-              Biển số xe <span class="req">*</span>
-              <span class="hint-text">(Tự viết hoa, VD: 29A1-999.99 hoặc 29A199999)</span>
-            </label>
-            <input
-              type="text"
-              :value="form.licensePlate"
-              @input="(e) => form.licensePlate = (e.target as HTMLInputElement).value.toUpperCase()"
-              placeholder="Ví dụ: 29A1-999.99"
-              class="custom-input uppercase-input"
-              maxlength="12"
-              required
-            />
-          </div>
-
-          <!-- CUSTOM DROPDOWN LOẠI XE (LUÔN MỞ THẢ XUÔI XUỐNG DƯỚI) -->
-          <div class="form-group custom-select-container">
-            <label class="input-label">Loại xe <span class="req">*</span></label>
-            <div
-              class="custom-select-trigger"
-              :class="{ 'active': isVehicleTypeDropdownOpen }"
-              @click.stop="toggleVehicleTypeDropdown"
-            >
-              <span class="selected-text">{{ form.vehicleType }}</span>
-              <span class="chevron-arrow">▼</span>
-            </div>
-
-            <Transition name="fade-dropdown">
-              <div v-if="isVehicleTypeDropdownOpen" class="custom-dropdown-menu">
-                <div
-                  v-for="type in vehicleTypes"
-                  :key="type"
-                  class="dropdown-option-item"
-                  :class="{ 'selected': form.vehicleType === type }"
-                  @click.stop="selectVehicleType(type)"
-                >
-                  {{ type }}
-                </div>
-              </div>
-            </Transition>
-          </div>
-
-          <!-- CUSTOM DROPDOWN DÒNG XE / MẪU XE (LUÔN MỞ THẢ XUÔI XUỐNG DƯỚI VỚI THANH CUỘN VÀ TÍNH NĂNG CHỌN XE CÓ SẴN) -->
-          <div class="form-group custom-select-container">
-            <label class="input-label">
-              Dòng xe / Tên xe đang chạy <span class="req">*</span>
-              <span class="hint-text">(Chọn xe có sẵn)</span>
-            </label>
-            <div
-              class="custom-select-trigger"
-              :class="{ 'active': isModelDropdownOpen }"
-              @click.stop="toggleModelDropdown"
-            >
-              <span class="selected-text">{{ form.vehicleModel }}</span>
-              <span class="chevron-arrow">▼</span>
-            </div>
-
-            <!-- MENU THẢ XUÔI XUỐNG DƯỚI (TOP: 100%) CÓ THANH CUỘN MƯỢT MÀ -->
-            <Transition name="fade-dropdown">
-              <div v-if="isModelDropdownOpen" class="custom-dropdown-menu">
-                <div
-                  v-for="model in vehicleModelsMap[form.vehicleType]"
-                  :key="model"
-                  class="dropdown-option-item"
-                  :class="{ 'selected': form.vehicleModel === model }"
-                  @click.stop="selectVehicleModel(model)"
-                >
-                  {{ model }}
-                </div>
-              </div>
-            </Transition>
-          </div>
-
-          <!-- NÚT UPLOAD BẰNG LÁI XE GPLX -->
-          <div class="form-group">
-            <label class="input-label">Ảnh Bằng lái xe (GPLX) <span class="req">*</span></label>
-            <div class="upload-box-wrapper">
-              <input
-                type="file"
-                id="drivingLicenseInput"
-                accept="image/*"
-                class="hidden-file-input"
-                @change="(e) => handleFileUpload(e, 'drivingLicenseImage')"
-              />
-              <div 
-                class="btn-upload-box btn-upload-full" 
-                :class="{ 'uploaded': form.drivingLicenseImage }"
-                @click="handleShipperUploadClick('drivingLicenseImage', 'drivingLicenseInput', 'Ảnh Bằng lái xe (GPLX)')"
-              >
-                <span v-if="!form.drivingLicenseImage">🪪 Tải ảnh Bằng lái xe (GPLX mặt trước - Tệp .jpg, .png)</span>
-                <span v-else class="upload-success-text">✓ Đã tải ảnh bằng lái xe</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="btn-step-actions">
-            <button type="button" class="btn-secondary-grey" @click="goToPrevStep">
-              ← Quay lại
-            </button>
-            <button type="submit" class="btn-submit-orange btn-flex">
+            <button type="submit" class="btn-submit-orange">
               Tiếp theo ➔
             </button>
-          </div>
-        </form>
+          </form>
 
-        <!-- ==================== BƯỚC 3: KHU VỰC & NGÂN HÀNG ==================== -->
-        <form v-if="currentStep === 3" @submit.prevent="handleSubmitShipper" class="form-body">
-          <!-- CUSTOM DROPDOWN KHU VỰC CHẠY CHÍNH (LUÔN LUÔN MỞ THẢ XUÔI XUỐNG DƯỚI) -->
-          <div class="form-group custom-select-container">
-            <label class="input-label">Khu vực chạy chính <span class="req">*</span></label>
-            <div
-              class="custom-select-trigger"
-              :class="{ 'active': isAreaDropdownOpen }"
-              @click.stop="toggleAreaDropdown"
-            >
-              <span class="selected-text">{{ form.operatingArea }}</span>
-              <span class="chevron-arrow">▼</span>
+          <!-- ==================== BƯỚC 2: THÔNG TIN XE CỘ & BẰNG LÁI ==================== -->
+          <form v-else-if="currentStep === 2" key="shipper-step-2" @submit.prevent="goToNextStep" class="form-body" novalidate>
+            <!-- Ô NHẬP BIỂN SỐ XE - TỰ ĐỘNG VIẾT HOA KHI NHẬP CHỮ -->
+            <div class="form-group">
+              <label for="shipper-plate" class="input-label">
+                Biển số xe <span class="req">*</span>
+                <span class="hint-text">(Tự viết hoa, VD: 29A1-999.99 hoặc 29A199999)</span>
+              </label>
+              <div class="input-icon-wrapper">
+                <i class="bi bi-card-heading input-leading-icon"></i>
+                <input
+                  id="shipper-plate"
+                  name="licensePlate"
+                  type="text"
+                  :value="form.licensePlate"
+                  @input="(e) => form.licensePlate = (e.target as HTMLInputElement).value.toUpperCase()"
+                  placeholder="Ví dụ: 29A1-999.99"
+                  class="custom-input has-leading-icon uppercase-input font-mono"
+                  maxlength="12"
+                  required
+                  aria-required="true"
+                />
+              </div>
             </div>
 
-            <!-- MENU DROPDOWN MỞ THẢ XUÔI XUỐNG DƯỚI (TOP: 100%) -->
-            <Transition name="fade-dropdown">
-              <div v-if="isAreaDropdownOpen" class="custom-dropdown-menu">
-                <div
-                  v-for="area in operatingAreas"
-                  :key="area"
-                  class="dropdown-option-item"
-                  :class="{ 'selected': form.operatingArea === area }"
-                  @click.stop="selectOperatingArea(area)"
-                >
-                  {{ area }}
-                </div>
+            <!-- CUSTOM DROPDOWN LOẠI XE (LUÔN MỞ THẢ XUÔI XUỐNG DƯỚI) -->
+            <div class="form-group custom-select-container">
+              <label class="input-label">Loại xe <span class="req">*</span></label>
+              <div
+                class="custom-select-trigger"
+                :class="{ 'active': isVehicleTypeDropdownOpen }"
+                @click.stop="toggleVehicleTypeDropdown"
+              >
+                <span class="selected-text">{{ form.vehicleType }}</span>
+                <span class="chevron-arrow">▼</span>
               </div>
-            </Transition>
-          </div>
 
-          <div class="form-group">
-            <label class="input-label">
-              Ngân hàng & Số tài khoản nhận cước <span class="req">*</span>
-              <span class="hint-text">(STK 8 - 15 số)</span>
-            </label>
-            <div class="bank-grid">
-              <!-- CUSTOM DROPDOWN NGÂN HÀNG -->
-              <div class="custom-select-container">
-                <div
-                  class="custom-select-trigger bank-trigger"
-                  :class="{ 'active': isBankDropdownOpen }"
-                  @click.stop="toggleBankDropdown"
-                >
-                  <span class="selected-text">{{ form.bankName }}</span>
-                  <span class="chevron-arrow">▼</span>
-                </div>
-
-                <Transition name="fade-dropdown">
-                  <div v-if="isBankDropdownOpen" class="custom-dropdown-menu bank-menu">
-                    <div
-                      v-for="bank in banksList"
-                      :key="bank"
-                      class="dropdown-option-item"
-                      :class="{ 'selected': form.bankName === bank }"
-                      @click.stop="selectBank(bank)"
-                    >
-                      {{ bank }}
-                    </div>
+              <Transition name="fade-dropdown">
+                <div v-if="isVehicleTypeDropdownOpen" class="custom-dropdown-menu">
+                  <div
+                    v-for="type in vehicleTypes"
+                    :key="type"
+                    class="dropdown-option-item"
+                    :class="{ 'selected': form.vehicleType === type }"
+                    @click.stop="selectVehicleType(type)"
+                  >
+                    {{ type }}
                   </div>
-                </Transition>
+                </div>
+              </Transition>
+            </div>
+
+            <!-- CUSTOM DROPDOWN DÒNG XE / MẪU XE (LUÔN MỞ THẢ XUÔI XUỐNG DƯỚI VỚI THANH CUỘN VÀ TÍNH NĂNG CHỌN XE CÓ SẴN) -->
+            <div class="form-group custom-select-container">
+              <label class="input-label">
+                Dòng xe / Tên xe đang chạy <span class="req">*</span>
+                <span class="hint-text">(Chọn xe có sẵn)</span>
+              </label>
+              <div
+                class="custom-select-trigger"
+                :class="{ 'active': isModelDropdownOpen }"
+                @click.stop="toggleModelDropdown"
+              >
+                <span class="selected-text">{{ form.vehicleModel }}</span>
+                <span class="chevron-arrow">▼</span>
               </div>
 
-              <input
-                type="text"
-                v-model="form.bankAccountNumber"
-                placeholder="Số tài khoản (8-15 chữ số)"
-                class="custom-input bank-account-input"
-                maxlength="15"
-                required
-              />
+              <!-- MENU THẢ XUÔI XUỐNG DƯỚI (TOP: 100%) CÓ THANH CUỘN MƯỢT MÀ -->
+              <Transition name="fade-dropdown">
+                <div v-if="isModelDropdownOpen" class="custom-dropdown-menu">
+                  <div
+                    v-for="model in vehicleModelsMap[form.vehicleType]"
+                    :key="model"
+                    class="dropdown-option-item"
+                    :class="{ 'selected': form.vehicleModel === model }"
+                    @click.stop="selectVehicleModel(model)"
+                  >
+                    {{ model }}
+                  </div>
+                </div>
+              </Transition>
             </div>
-          </div>
 
-          <!-- CHECKBOX ĐỒNG Ý ĐIỀU KHOẢN -->
-          <div class="form-group checkbox-group">
-            <label class="checkbox-container">
-              <input type="checkbox" v-model="form.agreeTerms" required />
-              <span class="checkmark"></span>
-              <span class="checkbox-text">
-                Tôi đồng ý tuân thủ luật giao thông và quy tắc ứng xử ZoneMart
-              </span>
-            </label>
-          </div>
+            <!-- NÚT UPLOAD BẰNG LÁI XE GPLX -->
+            <div class="form-group">
+              <label class="input-label">Ảnh Bằng lái xe (GPLX) <span class="req">*</span></label>
+              <div class="upload-box-wrapper">
+                <input
+                  type="file"
+                  id="drivingLicenseInput"
+                  accept="image/*"
+                  class="hidden-file-input"
+                  @change="(e) => handleFileUpload(e, 'drivingLicenseImage')"
+                />
+                <div 
+                  class="btn-upload-box btn-upload-full" 
+                  :class="{ 'uploaded': form.drivingLicenseImage }"
+                  @click="handleShipperUploadClick('drivingLicenseImage', 'drivingLicenseInput', 'Ảnh Bằng lái xe (GPLX)')"
+                >
+                  <span v-if="!form.drivingLicenseImage">🪪 Tải ảnh Bằng lái xe (GPLX mặt trước - Tệp .jpg, .png)</span>
+                  <span v-else class="upload-success-text">✓ Đã tải ảnh bằng lái xe</span>
+                </div>
+              </div>
+            </div>
 
-          <div class="btn-step-actions">
-            <button type="button" class="btn-secondary-grey" @click="goToPrevStep" :disabled="isLoading">
-              ← Quay lại
-            </button>
-            <button type="submit" class="btn-submit-orange btn-flex" :disabled="isLoading">
-              <span v-if="!isLoading">Gửi hồ sơ xét duyệt ➔</span>
-              <span v-else>ĐANG GỬI HỒ SƠ...</span>
-            </button>
-          </div>
-        </form>
+            <div class="btn-step-actions">
+              <button type="button" class="btn-secondary-grey" @click="goToPrevStep">
+                ← Quay lại
+              </button>
+              <button type="submit" class="btn-submit-orange btn-flex">
+                Tiếp theo ➔
+              </button>
+            </div>
+          </form>
+
+          <!-- ==================== BƯỚC 3: KHU VỰC & NGÂN HÀNG ==================== -->
+          <form v-else-if="currentStep === 3" key="shipper-step-3" @submit.prevent="handleSubmitShipper" class="form-body" novalidate>
+            <!-- CUSTOM DROPDOWN KHU VỰC CHẠY CHÍNH (LUÔN LUÔN MỞ THẢ XUÔI XUỐNG DƯỚI) -->
+            <div class="form-group custom-select-container">
+              <label class="input-label">Khu vực chạy chính <span class="req">*</span></label>
+              <div
+                class="custom-select-trigger"
+                :class="{ 'active': isAreaDropdownOpen }"
+                @click.stop="toggleAreaDropdown"
+              >
+                <span class="selected-text">{{ form.operatingArea }}</span>
+                <span class="chevron-arrow">▼</span>
+              </div>
+
+              <!-- MENU DROPDOWN MỞ THẢ XUÔI XUỐNG DƯỚI (TOP: 100%) -->
+              <Transition name="fade-dropdown">
+                <div v-if="isAreaDropdownOpen" class="custom-dropdown-menu">
+                  <div
+                    v-for="area in operatingAreas"
+                    :key="area"
+                    class="dropdown-option-item"
+                    :class="{ 'selected': form.operatingArea === area }"
+                    @click.stop="selectOperatingArea(area)"
+                  >
+                    {{ area }}
+                  </div>
+                </div>
+              </Transition>
+            </div>
+
+            <div class="form-group">
+              <label for="shipper-bank-account" class="input-label">
+                Ngân hàng & Số tài khoản nhận cước <span class="req">*</span>
+                <span class="hint-text">(STK 8 - 15 số)</span>
+              </label>
+              <div class="bank-grid">
+                <!-- CUSTOM DROPDOWN NGÂN HÀNG -->
+                <div class="custom-select-container">
+                  <div
+                    class="custom-select-trigger bank-trigger"
+                    :class="{ 'active': isBankDropdownOpen }"
+                    @click.stop="toggleBankDropdown"
+                  >
+                    <span class="selected-text">{{ form.bankName }}</span>
+                    <span class="chevron-arrow">▼</span>
+                  </div>
+
+                  <Transition name="fade-dropdown">
+                    <div v-if="isBankDropdownOpen" class="custom-dropdown-menu bank-menu">
+                      <div
+                        v-for="bank in banksList"
+                        :key="bank"
+                        class="dropdown-option-item"
+                        :class="{ 'selected': form.bankName === bank }"
+                        @click.stop="selectBank(bank)"
+                      >
+                        {{ bank }}
+                      </div>
+                    </div>
+                  </Transition>
+                </div>
+
+                <div class="input-icon-wrapper flex-1">
+                  <i class="bi bi-credit-card-2-front-fill input-leading-icon"></i>
+                  <input
+                    id="shipper-bank-account"
+                    name="bankAccountNumber"
+                    type="text"
+                    inputmode="numeric"
+                    v-model="form.bankAccountNumber"
+                    placeholder="Số tài khoản (8-15 chữ số)"
+                    class="custom-input bank-account-input has-leading-icon font-mono"
+                    maxlength="15"
+                    required
+                    aria-required="true"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- CHECKBOX ĐỒNG Ý ĐIỀU KHOẢN -->
+            <div class="form-group checkbox-group">
+              <label class="checkbox-container">
+                <input type="checkbox" v-model="form.agreeTerms" required />
+                <span class="checkmark"></span>
+                <span class="checkbox-text">
+                  Tôi đồng ý tuân thủ luật giao thông và quy tắc ứng xử ZoneMart
+                </span>
+              </label>
+            </div>
+
+            <div class="btn-step-actions">
+              <button type="button" class="btn-secondary-grey" @click="goToPrevStep" :disabled="isLoading">
+                ← Quay lại
+              </button>
+              <button type="submit" class="btn-submit-orange btn-flex" :disabled="isLoading">
+                <span v-if="!isLoading">Gửi hồ sơ xét duyệt ➔</span>
+                <span v-else>ĐANG GỬI HỒ SƠ...</span>
+              </button>
+            </div>
+          </form>
 
         <!-- Đường kẻ phân cách & Liên kết -->
         <div class="divider-row">
@@ -1028,6 +1060,34 @@ const closeSuccessModal = () => {
   box-sizing: border-box;
   z-index: 2;
   position: relative;
+  animation: formCardEntrance 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes formCardEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* HIỆU ỨNG CHUYỂN BƯỚC MULTI-STEP */
+.step-slide-enter-active,
+.step-slide-leave-active {
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1), transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.step-slide-enter-from {
+  opacity: 0;
+  transform: translateX(18px);
+}
+
+.step-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-18px);
 }
 
 /* NÚT QUAY LẠI */
@@ -1106,6 +1166,7 @@ const closeSuccessModal = () => {
   align-items: center;
   justify-content: center;
   transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .step-label {
@@ -1188,6 +1249,29 @@ const closeSuccessModal = () => {
 
 .req {
   color: #DC2626;
+  font-weight: 800;
+}
+
+.input-icon-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input-leading-icon {
+  position: absolute;
+  left: 12px;
+  font-size: 13.5px;
+  color: #94A3B8;
+  pointer-events: none;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 2;
+}
+
+.input-icon-wrapper:focus-within .input-leading-icon {
+  color: #D94E15;
+  transform: scale(1.12);
 }
 
 .custom-input,
@@ -1201,7 +1285,13 @@ const closeSuccessModal = () => {
   color: #1E293B;
   box-sizing: border-box;
   transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   outline: none;
+  font-family: inherit;
+}
+
+.custom-input.has-leading-icon {
+  padding-left: 35px;
 }
 
 .uppercase-input {
@@ -1468,6 +1558,7 @@ const closeSuccessModal = () => {
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(2, 132, 199, 0.3);
   transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   margin-top: 4px;
 }
 
@@ -1475,6 +1566,11 @@ const closeSuccessModal = () => {
 .btn-submit-cyan:hover {
   background: linear-gradient(135deg, #0369A1 0%, #075985 100%);
   box-shadow: 0 6px 18px rgba(2, 132, 199, 0.4);
+}
+
+.btn-submit-orange:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+  box-shadow: 0 2px 6px rgba(217, 78, 21, 0.25);
 }
 
 .btn-step-actions {
@@ -1494,11 +1590,17 @@ const closeSuccessModal = () => {
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .btn-secondary-grey:hover {
   background: #E2E8F0;
   color: #1E293B;
+  transform: translateY(-1px);
+}
+
+.btn-secondary-grey:active {
+  transform: translateY(1px) scale(0.985);
 }
 
 .btn-flex {

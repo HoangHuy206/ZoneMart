@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 /**
  * ================================================================
  * PHÂN HỆ QUẢN TRỊ ADMIN & QUẢN LÝ (ADMIN DASHBOARD) - ZONEMART
@@ -20,9 +20,23 @@ const currentActorEmail = ref<string>("admin@zonemart.vn");
 // Tabs
 const activeTab = ref<"accounts" | "kyc" | "managers" | "audit">("accounts");
 
-// Loading & Notification states
+// Loading, Notification & Image Viewer states
 const isLoading = ref<boolean>(false);
-const toastMessage = ref<{ text: string; type: "success" | "danger" | "warning" } | null>(null);
+const toastMessage = ref<string>("");
+const toastType = ref<"success" | "danger" | "warning">("success");
+const showToastState = ref<boolean>(false);
+const activeZoomImage = ref<string | null>(null);
+let toastTimer: any = null;
+
+const showToast = (msg: string, type: "success" | "danger" | "warning" = "success") => {
+  toastMessage.value = msg;
+  toastType.value = type;
+  showToastState.value = true;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    showToastState.value = false;
+  }, 3500);
+};
 
 interface ChartDay {
   dayLabel: string;
@@ -118,14 +132,6 @@ const newManagerForm = ref({
   email: "",
   password: ""
 });
-
-// Toast notification helper
-const showToast = (text: string, type: "success" | "danger" | "warning" = "success") => {
-  toastMessage.value = { text, type };
-  setTimeout(() => {
-    toastMessage.value = null;
-  }, 4500);
-};
 
 // Search Selection & Document Click Outside Handler
 const handleDocumentClick = (e: MouseEvent) => {
@@ -275,7 +281,7 @@ const handleRejectKyc = async () => {
   }
 
   try {
-    const res = await fetch("http://localhost:5000/api/admin/reject-kyc", {
+    await fetch("http://localhost:5000/api/admin/reject-kyc", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -315,7 +321,7 @@ const handleApplyDiscipline = async () => {
   }
 
   try {
-    const res = await fetch("http://localhost:5000/api/admin/punish-user", {
+    await fetch("http://localhost:5000/api/admin/punish-user", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -342,7 +348,7 @@ const handleApplyDiscipline = async () => {
 
 const handleUnlockUser = async (user: UserAccount) => {
   try {
-    const res = await fetch("http://localhost:5000/api/admin/unlock-user", {
+    await fetch("http://localhost:5000/api/admin/unlock-user", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -459,12 +465,12 @@ watch([searchQuery, searchTargetTab, selectedStatusFilter], () => {
 <template>
   <div class="admin-app-wrapper">
     <!-- Toast Notification -->
-    <div v-if="toastMessage" class="toast-alert" :class="toastMessage.type">
-      <svg v-if="toastMessage.type === 'success'" width="20" height="20" viewBox="0 0 24 24" fill="none" class="me-2" xmlns="http://www.w3.org/2000/svg">
+    <div v-if="showToastState" class="toast-alert" :class="toastType">
+      <svg v-if="toastType === 'success'" width="20" height="20" viewBox="0 0 24 24" fill="none" class="me-2" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="10" fill="currentColor"/>
         <path d="M8 12L11 15L16 9" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <svg v-else-if="toastMessage.type === 'danger'" width="20" height="20" viewBox="0 0 24 24" fill="none" class="me-2" xmlns="http://www.w3.org/2000/svg">
+      <svg v-else-if="toastType === 'danger'" width="20" height="20" viewBox="0 0 24 24" fill="none" class="me-2" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="10" fill="currentColor"/>
         <path d="M12 8V12M12 16H12.01" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
       </svg>
@@ -472,7 +478,7 @@ watch([searchQuery, searchTargetTab, selectedStatusFilter], () => {
         <path d="M12 2L2 22H22L12 2Z" fill="currentColor"/>
         <path d="M12 9V13M12 17H12.01" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
       </svg>
-      <span>{{ toastMessage.text }}</span>
+      <span>{{ toastMessage }}</span>
     </div>
 
     <!-- HEADER TÌM KIẾM CHUYÊN SÂU (HEADER THAY THẾ CHUẨN ĐỒNG BỘ TRANG CHỦ) -->
@@ -1165,7 +1171,6 @@ watch([searchQuery, searchTargetTab, selectedStatusFilter], () => {
           </div>
         </div>
       </div>
-    </div>
 
     <!-- MODAL 1: KIỂM TRA HỒ SƠ KYC -->
     <div v-if="showKycModal" class="modal-overlay">
@@ -1376,6 +1381,26 @@ watch([searchQuery, searchTargetTab, selectedStatusFilter], () => {
         </div>
       </div>
     </div>
+    </div>
+
+    <!-- MODAL PHÓNG TO HÌNH ẢNH CHI TIẾT (FULLSCREEN VIEWER) -->
+    <div v-if="activeZoomImage" class="fullscreen-image-overlay" @click="activeZoomImage = null">
+      <div class="image-viewer-container">
+        <img :src="activeZoomImage" alt="Hình ảnh tài liệu phóng to" class="zoomed-image" />
+        <button type="button" class="btn-close-viewer" @click="activeZoomImage = null">✕ Đóng xem ảnh</button>
+      </div>
+    </div>
+
+    <!-- TOAST THÔNG BÁO THAO TÁC TOÀN CỤC -->
+    <Transition name="toast-slide">
+      <div v-if="showToastState" class="admin-toast-badge" :class="toastType" role="alert">
+        <i v-if="toastType === 'success'" class="bi bi-check-circle-fill me-2"></i>
+        <i v-else-if="toastType === 'danger'" class="bi bi-exclamation-octagon-fill me-2"></i>
+        <i v-else class="bi bi-info-circle-fill me-2"></i>
+        <span>{{ toastMessage }}</span>
+      </div>
+    </Transition>
+
   </div>
 </template>
 
