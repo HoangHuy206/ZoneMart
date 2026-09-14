@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue';
+import { cartService } from '../services/cartService';
 
 export interface CartItem {
   id: string;
@@ -127,11 +128,36 @@ function loadSavedCart(): CartStoreGroup[] {
 const cartStores = ref<CartStoreGroup[]>(loadSavedCart());
 const appliedVoucherCode = ref<string>('FREESHIP10K');
 
-function persistCart() {
+function persistCart(syncToDb = true) {
   try {
     localStorage.setItem('zonemart_cart', JSON.stringify(cartStores.value));
   } catch (e) {
     console.error('Lỗi lưu giỏ hàng vào localStorage:', e);
+  }
+
+  if (syncToDb) {
+    try {
+      const savedUser = localStorage.getItem('currentUser');
+      const userId = savedUser ? JSON.parse(savedUser).id : 'usr_buyer_01';
+      cartService.saveUserCart(userId, cartStores.value, appliedVoucherCode.value);
+    } catch {}
+  }
+}
+
+// Nạp giỏ hàng từ Database MongoDB Atlas
+async function loadCartFromDatabase(userId?: string) {
+  try {
+    const targetId = userId || 'usr_buyer_01';
+    const dbData = await cartService.fetchUserCart(targetId);
+    if (dbData && dbData.stores.length > 0) {
+      cartStores.value = dbData.stores;
+      if (dbData.voucherCode) {
+        appliedVoucherCode.value = dbData.voucherCode;
+      }
+      persistCart(false);
+    }
+  } catch (e) {
+    console.warn('Lỗi nạp giỏ hàng từ database, tiếp tục dùng local:', e);
   }
 }
 
@@ -451,6 +477,7 @@ export function useCart() {
     removeVoucher,
     clearCart,
     removeSelectedItems,
+    loadCartFromDatabase,
     AVAILABLE_VOUCHERS,
   };
 }

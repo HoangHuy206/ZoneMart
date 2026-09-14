@@ -1,8 +1,9 @@
-﻿using MongoDB.Bson;
+using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace ZoneMart.Server.Models;
 
+[BsonIgnoreExtraElements]
 public class Product
 {
     [BsonId]

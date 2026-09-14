@@ -107,7 +107,10 @@ export const orderService = {
         }
       }
     } catch (e) {
-      console.warn('Backend API tạm thời không phản hồi, chuyển sang lưu trữ cục bộ:', e);
+      console.warn(
+        'Backend API tạm thời không phản hồi, chuyển sang lưu trữ cục bộ:',
+        e,
+      );
     }
 
     // Fallback nếu server backend tạm thời offline
@@ -115,25 +118,28 @@ export const orderService = {
     const now = new Date();
     const dateFormatted = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-    const fallbackSubOrders: SubOrderResponse[] = payload.stores.map((s, idx) => ({
-      subId: `SUB_${localId}_${idx + 1}`,
-      storeId: s.storeId,
-      storeName: s.storeName,
-      items: s.items.map((i) => `${i.name} (x${i.quantity})`).join(', '),
-      status: 'delivering',
-      statusText: 'Shipper đang giao hàng tới bạn (Khoảng 15 - 25 phút)',
-      shipperInfo: 'Trần Văn Bình (29N1-67890)',
-      shipperPhone: '0912 888 999',
-      distanceKm: s.distanceKm,
-      note: s.note,
-    }));
+    const fallbackSubOrders: SubOrderResponse[] = payload.stores.map(
+      (s, idx) => ({
+        subId: `SUB_${localId}_${idx + 1}`,
+        storeId: s.storeId,
+        storeName: s.storeName,
+        items: s.items.map((i) => `${i.name} (x${i.quantity})`).join(', '),
+        status: 'delivering',
+        statusText: 'Shipper đang giao hàng tới bạn (Khoảng 15 - 25 phút)',
+        shipperInfo: 'Trần Văn Bình (29N1-67890)',
+        shipperPhone: '0912 888 999',
+        distanceKm: s.distanceKm,
+        note: s.note,
+      }),
+    );
 
     const fallbackOrder: OrderRecord = {
       orderId: localId,
       date: dateFormatted,
       total: payload.totalAmount,
       paymentMethod: payload.paymentMethod,
-      paymentStatus: payload.paymentMethod === 'ZONEPAY_WALLET' ? 'paid' : 'unpaid',
+      paymentStatus:
+        payload.paymentMethod === 'ZONEPAY_WALLET' ? 'paid' : 'unpaid',
       deliveryType: payload.deliveryType,
       subOrders: fallbackSubOrders,
     };
@@ -152,7 +158,9 @@ export const orderService = {
    */
   async getBuyerOrders(buyerId: string): Promise<OrderRecord[]> {
     try {
-      const response = await fetch(`${API_BASE}/buyer/${encodeURIComponent(buyerId)}`);
+      const response = await fetch(
+        `${API_BASE}/buyer/${encodeURIComponent(buyerId)}`,
+      );
       if (response.ok) {
         const data = await response.json();
         if (data.success && Array.isArray(data.data) && data.data.length > 0) {
@@ -190,14 +198,17 @@ export const orderService = {
   async updateSubOrderStatus(
     subId: string,
     status: 'completed' | 'cancelled' | 'delivering',
-    cancelReason?: string
+    cancelReason?: string,
   ): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE}/suborder/${encodeURIComponent(subId)}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, cancelReason }),
-      });
+      const response = await fetch(
+        `${API_BASE}/suborder/${encodeURIComponent(subId)}/status`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status, cancelReason }),
+        },
+      );
       if (response.ok) {
         const data = await response.json();
         return data.success;
@@ -271,7 +282,10 @@ export const orderService = {
     try {
       const existing = this.getLocalOrders();
       // Đưa đơn mới lên đầu danh sách
-      const updated = [order, ...existing.filter((o) => o.orderId !== order.orderId)];
+      const updated = [
+        order,
+        ...existing.filter((o) => o.orderId !== order.orderId),
+      ];
       localStorage.setItem('zonemart_orders', JSON.stringify(updated));
     } catch (e) {
       console.error('Lỗi lưu đơn hàng cục bộ:', e);

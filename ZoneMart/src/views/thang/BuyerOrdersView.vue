@@ -6,17 +6,17 @@
  * Phong cách thiết kế: Warm Humanist & Terracotta (Bán kính Hub 10km)
  * ================================================================
  */
-import { ref, onMounted, computed } from "vue";
-import { useAuth } from "../../composables/useAuth";
-import { orderService, type OrderRecord } from "../../services/orderService";
+import { ref, onMounted, computed } from 'vue';
+import { useAuth } from '../../composables/useAuth';
+import { orderService, type OrderRecord } from '../../services/orderService';
 
 const auth = useAuth();
 const orders = ref<OrderRecord[]>([]);
 const isLoading = ref(true);
-const filterTab = ref<"all" | "delivering" | "completed">("all");
+const filterTab = ref<'all' | 'delivering' | 'completed'>('all');
 
 // Toast thông báo
-const toastMsg = ref("");
+const toastMsg = ref('');
 const showToast = ref(false);
 const triggerToast = (msg: string) => {
   toastMsg.value = msg;
@@ -29,11 +29,11 @@ const triggerToast = (msg: string) => {
 const fetchOrders = async () => {
   isLoading.value = true;
   try {
-    const buyerId = auth.currentUser.value?.id || "usr_buyer_01";
+    const buyerId = auth.currentUser.value?.id || 'usr_buyer_01';
     const data = await orderService.getBuyerOrders(buyerId);
     orders.value = data;
   } catch (e) {
-    console.error("Lỗi tải đơn mua:", e);
+    console.error('Lỗi tải đơn mua:', e);
     orders.value = orderService.getLocalOrders();
   } finally {
     isLoading.value = false;
@@ -46,12 +46,14 @@ onMounted(() => {
 
 // Lọc đơn hàng theo Tab
 const filteredOrders = computed(() => {
-  if (filterTab.value === "all") return orders.value;
+  if (filterTab.value === 'all') return orders.value;
   return orders.value.filter((order) => {
-    if (filterTab.value === "delivering") {
-      return order.subOrders.some((s) => s.status === "delivering" || s.status === "pending");
-    } else if (filterTab.value === "completed") {
-      return order.subOrders.every((s) => s.status === "completed");
+    if (filterTab.value === 'delivering') {
+      return order.subOrders.some(
+        (s) => s.status === 'delivering' || s.status === 'pending',
+      );
+    } else if (filterTab.value === 'completed') {
+      return order.subOrders.every((s) => s.status === 'completed');
     }
     return true;
   });
@@ -59,15 +61,15 @@ const filteredOrders = computed(() => {
 
 // Xác nhận đã nhận hàng (Hoàn thành đơn con)
 const handleConfirmReceived = async (orderId: string, subId: string) => {
-  const ok = await orderService.updateSubOrderStatus(subId, "completed");
+  const ok = await orderService.updateSubOrderStatus(subId, 'completed');
   if (ok) {
     // Cập nhật trạng thái hiển thị
     orders.value.forEach((ord) => {
       if (ord.orderId === orderId) {
         ord.subOrders.forEach((sub) => {
           if (sub.subId === subId) {
-            sub.status = "completed";
-            sub.statusText = "Giao hàng thành công";
+            sub.status = 'completed';
+            sub.statusText = 'Giao hàng thành công';
           }
         });
       }
@@ -78,22 +80,30 @@ const handleConfirmReceived = async (orderId: string, subId: string) => {
 
 // Khiếu nại / Báo cáo sự cố
 const handleReportIssue = async (orderId: string, subId: string) => {
-  const reason = prompt("Vui lòng nhập lý do sự cố (Hàng dập nát, giao trễ, thiếu món...):");
+  const reason = prompt(
+    'Vui lòng nhập lý do sự cố (Hàng dập nát, giao trễ, thiếu món...):',
+  );
   if (!reason || !reason.trim()) return;
 
-  const ok = await orderService.updateSubOrderStatus(subId, "cancelled", reason);
+  const ok = await orderService.updateSubOrderStatus(
+    subId,
+    'cancelled',
+    reason,
+  );
   if (ok) {
     orders.value.forEach((ord) => {
       if (ord.orderId === orderId) {
         ord.subOrders.forEach((sub) => {
           if (sub.subId === subId) {
-            sub.status = "cancelled";
-            sub.statusText = "Đang xử lý khiếu nại (CSKH sẽ liên hệ)";
+            sub.status = 'cancelled';
+            sub.statusText = 'Đang xử lý khiếu nại (CSKH sẽ liên hệ)';
           }
         });
       }
     });
-    triggerToast(`Đã gửi khiếu nại kiện #${subId}. CSKH ZoneMart sẽ liên hệ hỗ trợ bạn ngay!`);
+    triggerToast(
+      `Đã gửi khiếu nại kiện #${subId}. CSKH ZoneMart sẽ liên hệ hỗ trợ bạn ngay!`,
+    );
   }
 };
 </script>
@@ -108,10 +118,16 @@ const handleReportIssue = async (orderId: string, subId: string) => {
           Đơn Mua Của Bạn
         </h1>
         <p class="page-subtitle">
-          Theo dõi trực tiếp hành trình đơn hàng giao hỏa tốc 10km và lịch sử mua sắm từ Database
+          Theo dõi trực tiếp hành trình đơn hàng giao hỏa tốc 10km và lịch sử
+          mua sắm từ Database
         </p>
       </div>
-      <button type="button" class="btn-refresh" @click="fetchOrders" title="Làm mới">
+      <button
+        type="button"
+        class="btn-refresh"
+        @click="fetchOrders"
+        title="Làm mới"
+      >
         <i class="bi bi-arrow-clockwise"></i>
         <span>Làm mới</span>
       </button>
@@ -136,7 +152,11 @@ const handleReportIssue = async (orderId: string, subId: string) => {
       >
         <span>Đang Giao Hỏa Tốc</span>
         <span class="count-badge pulse">
-          {{ orders.filter(o => o.subOrders.some(s => s.status === 'delivering')).length }}
+          {{
+            orders.filter((o) =>
+              o.subOrders.some((s) => s.status === 'delivering'),
+            ).length
+          }}
         </span>
       </button>
       <button
@@ -147,7 +167,11 @@ const handleReportIssue = async (orderId: string, subId: string) => {
       >
         <span>Đã Hoàn Thành</span>
         <span class="count-badge">
-          {{ orders.filter(o => o.subOrders.every(s => s.status === 'completed')).length }}
+          {{
+            orders.filter((o) =>
+              o.subOrders.every((s) => s.status === 'completed'),
+            ).length
+          }}
         </span>
       </button>
     </div>
@@ -169,15 +193,34 @@ const handleReportIssue = async (orderId: string, subId: string) => {
           <div class="order-id-col">
             <span class="label-tiny">MÃ ĐƠN HÀNG:</span>
             <strong class="order-code">#{{ order.orderId }}</strong>
-            <span class="order-time"><i class="bi bi-clock"></i> {{ order.date }}</span>
+            <span class="order-time"
+              ><i class="bi bi-clock"></i> {{ order.date }}</span
+            >
           </div>
           <div class="order-badges-col">
             <span class="badge-delivery" :class="order.deliveryType">
-              <i class="bi" :class="order.deliveryType === 'express' ? 'bi-lightning-charge-fill' : 'bi-bicycle'"></i>
-              {{ order.deliveryType === 'express' ? 'Hỏa Tốc 10km' : 'Giao Tiêu Chuẩn' }}
+              <i
+                class="bi"
+                :class="
+                  order.deliveryType === 'express'
+                    ? 'bi-lightning-charge-fill'
+                    : 'bi-bicycle'
+                "
+              ></i>
+              {{
+                order.deliveryType === 'express'
+                  ? 'Hỏa Tốc 10km'
+                  : 'Giao Tiêu Chuẩn'
+              }}
             </span>
             <span class="badge-payment">
-              {{ order.paymentMethod === 'ONLINE_QR' ? 'VietQR MB Bank' : (order.paymentMethod === 'ZONEPAY_WALLET' ? 'Ví ZonePay' : 'Tiền mặt COD') }}
+              {{
+                order.paymentMethod === 'ONLINE_QR'
+                  ? 'VietQR MB Bank'
+                  : order.paymentMethod === 'ZONEPAY_WALLET'
+                    ? 'Ví ZonePay'
+                    : 'Tiền mặt COD'
+              }}
             </span>
           </div>
         </div>
@@ -193,14 +236,19 @@ const handleReportIssue = async (orderId: string, subId: string) => {
               <div class="store-badge">
                 <i class="bi bi-shop"></i>
                 <strong>{{ sub.storeName }}</strong>
-                <span v-if="sub.distanceKm" class="km-text">({{ sub.distanceKm }} km)</span>
+                <span v-if="sub.distanceKm" class="km-text"
+                  >({{ sub.distanceKm }} km)</span
+                >
               </div>
-              <span
-                class="status-pill"
-                :class="sub.status"
-              >
-                <i v-if="sub.status === 'delivering'" class="bi bi-bicycle me-1"></i>
-                <i v-else-if="sub.status === 'completed'" class="bi bi-check-circle-fill me-1"></i>
+              <span class="status-pill" :class="sub.status">
+                <i
+                  v-if="sub.status === 'delivering'"
+                  class="bi bi-bicycle me-1"
+                ></i>
+                <i
+                  v-else-if="sub.status === 'completed'"
+                  class="bi bi-check-circle-fill me-1"
+                ></i>
                 <i v-else class="bi bi-info-circle-fill me-1"></i>
                 {{ sub.statusText }}
               </span>
@@ -224,7 +272,9 @@ const handleReportIssue = async (orderId: string, subId: string) => {
                 </div>
                 <div>
                   <span class="shipper-title">Tài xế giao hàng:</span>
-                  <strong class="shipper-name">{{ sub.shipperInfo || 'Nguyễn Văn Nam (29M1-8888)' }}</strong>
+                  <strong class="shipper-name">{{
+                    sub.shipperInfo || 'Nguyễn Văn Nam (29M1-8888)'
+                  }}</strong>
                 </div>
                 <div class="shipper-call">
                   <i class="bi bi-telephone-fill"></i>
@@ -258,7 +308,9 @@ const handleReportIssue = async (orderId: string, subId: string) => {
         <!-- FOOTER CỦA ĐƠN HÀNG TỔNG -->
         <div class="order-bottom-bar">
           <span class="total-caption">Tổng thanh toán đơn hàng:</span>
-          <strong class="total-price-tag">{{ order.total.toLocaleString("vi-VN") }} ₫</strong>
+          <strong class="total-price-tag"
+            >{{ order.total.toLocaleString('vi-VN') }} ₫</strong
+          >
         </div>
       </div>
     </div>
@@ -270,7 +322,10 @@ const handleReportIssue = async (orderId: string, subId: string) => {
           <i class="bi bi-bag-x"></i>
         </div>
         <h3>Bạn Chưa Có Đơn Hàng Nào!</h3>
-        <p>Các đơn hàng bạn đặt tại ZoneMart sẽ được lưu trữ và hiển thị trực tiếp tại đây.</p>
+        <p>
+          Các đơn hàng bạn đặt tại ZoneMart sẽ được lưu trữ và hiển thị trực
+          tiếp tại đây.
+        </p>
         <router-link to="/products" class="btn-go-shopping">
           <i class="bi bi-grid-fill"></i>
           <span>Khám Phá Sản Phẩm Ngay</span>
@@ -417,7 +472,9 @@ const handleReportIssue = async (orderId: string, subId: string) => {
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* FEED CÁC ĐƠN HÀNG */

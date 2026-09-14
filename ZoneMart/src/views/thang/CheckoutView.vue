@@ -11,7 +11,10 @@ import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
 import { useAuth } from '../../composables/useAuth';
-import { orderService, type CheckoutPayload } from '../../services/orderService';
+import {
+  orderService,
+  type CheckoutPayload,
+} from '../../services/orderService';
 
 const router = useRouter();
 const cart = useCart();
@@ -33,7 +36,9 @@ const savedAddresses = ref<DeliveryAddress[]>([
     id: 'addr_1',
     tag: 'Nhà riêng',
     recipientName: auth.currentUser.value?.fullName || 'Nguyễn Văn An',
-    phone: auth.currentUser.value?.phoneEmail?.includes('@') ? '0912 345 678' : (auth.currentUser.value?.phoneEmail || '0912 345 678'),
+    phone: auth.currentUser.value?.phoneEmail?.includes('@')
+      ? '0912 345 678'
+      : auth.currentUser.value?.phoneEmail || '0912 345 678',
     detail: 'Số 18, Ngõ 245 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội',
     isDefault: true,
     hubDistance: '1.2 km',
@@ -77,7 +82,11 @@ const openAddressModal = () => {
 };
 
 const saveCustomAddress = () => {
-  if (!editingAddress.value.recipientName.trim() || !editingAddress.value.phone.trim() || !editingAddress.value.detail.trim()) {
+  if (
+    !editingAddress.value.recipientName.trim() ||
+    !editingAddress.value.phone.trim() ||
+    !editingAddress.value.detail.trim()
+  ) {
     alert('Vui lòng điền đầy đủ họ tên, số điện thoại và địa chỉ giao hàng!');
     return;
   }
@@ -126,7 +135,9 @@ const isWalletSufficient = computed(() => {
 
 // 4. Voucher & Tính tiền
 const voucherInput = ref('');
-const voucherAlert = ref<{ type: 'success' | 'error'; text: string } | null>(null);
+const voucherAlert = ref<{ type: 'success' | 'error'; text: string } | null>(
+  null,
+);
 
 const applyVoucherCode = (code?: string) => {
   const targetCode = code || voucherInput.value;
@@ -149,7 +160,10 @@ const discountAmount = computed(() => {
 });
 
 const finalTotal = computed(() => {
-  return Math.max(0, cart.subTotal.value - discountAmount.value + deliveryFeeCalculated.value);
+  return Math.max(
+    0,
+    cart.subTotal.value - discountAmount.value + deliveryFeeCalculated.value,
+  );
 });
 
 // 5. Toast & Loading state
@@ -186,8 +200,13 @@ const handlePlaceOrder = async () => {
     return;
   }
 
-  if (selectedPaymentMethod.value === 'ZONEPAY_WALLET' && !isWalletSufficient.value) {
-    alert('Số dư Ví ZonePay không đủ! Vui lòng chọn phương thức Chuyển khoản QR hoặc Tiền mặt COD.');
+  if (
+    selectedPaymentMethod.value === 'ZONEPAY_WALLET' &&
+    !isWalletSufficient.value
+  ) {
+    alert(
+      'Số dư Ví ZonePay không đủ! Vui lòng chọn phương thức Chuyển khoản QR hoặc Tiền mặt COD.',
+    );
     return;
   }
 
@@ -202,7 +221,10 @@ const handlePlaceOrder = async () => {
       shippingAddress: currentAddress.value.detail,
       paymentMethod: selectedPaymentMethod.value,
       deliveryType: selectedDeliveryType.value,
-      deliveryTimeSlot: selectedDeliveryType.value === 'scheduled' ? scheduledTimeSlot.value : undefined,
+      deliveryTimeSlot:
+        selectedDeliveryType.value === 'scheduled'
+          ? scheduledTimeSlot.value
+          : undefined,
       voucherCode: cart.appliedVoucherCode.value || undefined,
       voucherDiscount: discountAmount.value,
       shippingFee: deliveryFeeCalculated.value,
@@ -229,10 +251,10 @@ const handlePlaceOrder = async () => {
 
     if (res.success) {
       createdOrderId.value = res.orderId || `ZM_${Date.now()}`;
-      
+
       // Xóa các món đã mua khỏi giỏ hàng
       cart.removeSelectedItems();
-      
+
       // Hiển thị modal chúc mừng đặt hàng thành công
       showSuccessModal.value = true;
     } else {
@@ -287,10 +309,16 @@ const goToOrdersTracking = () => {
               </span>
               <div>
                 <h3 class="card-main-title">1. Địa Chỉ Nhận Hàng</h3>
-                <p class="card-sub-title">Giao nhanh trong phạm vi 10km từ các Hub nông sản</p>
+                <p class="card-sub-title">
+                  Giao nhanh trong phạm vi 10km từ các Hub nông sản
+                </p>
               </div>
             </div>
-            <button type="button" class="btn-text-action" @click="openAddressModal">
+            <button
+              type="button"
+              class="btn-text-action"
+              @click="openAddressModal"
+            >
               <i class="bi bi-pencil-square"></i>
               <span>Thay đổi địa chỉ</span>
             </button>
@@ -306,7 +334,14 @@ const goToOrdersTracking = () => {
               :class="{ selected: selectedAddressId === addr.id }"
               @click="selectedAddressId = addr.id"
             >
-              <i class="bi" :class="addr.tag === 'Nhà riêng' ? 'bi-house-door-fill' : 'bi-building'"></i>
+              <i
+                class="bi"
+                :class="
+                  addr.tag === 'Nhà riêng'
+                    ? 'bi-house-door-fill'
+                    : 'bi-building'
+                "
+              ></i>
               <span>{{ addr.tag }}</span>
               <span v-if="addr.isDefault" class="default-badge">Mặc định</span>
             </button>
@@ -315,11 +350,14 @@ const goToOrdersTracking = () => {
           <!-- Thông tin địa chỉ đang chọn -->
           <div class="active-address-box">
             <div class="recipient-row">
-              <span class="recipient-name">{{ currentAddress.recipientName }}</span>
+              <span class="recipient-name">{{
+                currentAddress.recipientName
+              }}</span>
               <span class="recipient-divider">•</span>
               <span class="recipient-phone">{{ currentAddress.phone }}</span>
               <span class="hub-radius-badge">
-                <i class="bi bi-radar"></i> Bán kính: {{ currentAddress.hubDistance }}
+                <i class="bi bi-radar"></i> Bán kính:
+                {{ currentAddress.hubDistance }}
               </span>
             </div>
             <p class="recipient-address-text">{{ currentAddress.detail }}</p>
@@ -334,8 +372,16 @@ const goToOrdersTracking = () => {
                 <i class="bi bi-shop-window"></i>
               </span>
               <div>
-                <h3 class="card-main-title">2. Kiện Hàng Theo Cửa Hàng ({{ cart.activeStoresCount.value }} Quán)</h3>
-                <p class="card-sub-title">Đơn hàng được chia thành các kiện riêng để Shipper lấy nhanh nhất</p>
+                <h3 class="card-main-title">
+                  2. Kiện Hàng Theo Cửa Hàng ({{
+                    cart.activeStoresCount.value
+                  }}
+                  Quán)
+                </h3>
+                <p class="card-sub-title">
+                  Đơn hàng được chia thành các kiện riêng để Shipper lấy nhanh
+                  nhất
+                </p>
               </div>
             </div>
             <router-link to="/cart" class="btn-text-action">
@@ -358,7 +404,9 @@ const goToOrdersTracking = () => {
                 </div>
                 <div class="store-delivery-tag">
                   <i class="bi bi-clock-history"></i>
-                  <span>Dự kiến: {{ store.deliveryTime || '15 - 25 phút' }}</span>
+                  <span
+                    >Dự kiến: {{ store.deliveryTime || '15 - 25 phút' }}</span
+                  >
                   <span class="distance-text">({{ store.distanceKm }} km)</span>
                 </div>
               </div>
@@ -373,7 +421,9 @@ const goToOrdersTracking = () => {
                   <img :src="item.image" :alt="item.name" class="item-thumb" />
                   <div class="item-info-col">
                     <h4 class="item-name">{{ item.name }}</h4>
-                    <span v-if="item.unit" class="item-unit">{{ item.unit }}</span>
+                    <span v-if="item.unit" class="item-unit">{{
+                      item.unit
+                    }}</span>
                   </div>
                   <div class="item-qty-col">x{{ item.quantity }}</div>
                   <div class="item-price-col">
@@ -405,7 +455,9 @@ const goToOrdersTracking = () => {
               </span>
               <div>
                 <h3 class="card-main-title">3. Phương Thức Vận Chuyển 10km</h3>
-                <p class="card-sub-title">Đội ngũ Shipper ZoneMart giao hỏa tốc bằng thùng giữ nhiệt</p>
+                <p class="card-sub-title">
+                  Đội ngũ Shipper ZoneMart giao hỏa tốc bằng thùng giữ nhiệt
+                </p>
               </div>
             </div>
           </div>
@@ -431,11 +483,17 @@ const goToOrdersTracking = () => {
                     <strong>Giao Siêu Tốc (15 - 25 phút)</strong>
                   </div>
                   <span class="shipping-fee-val">
-                    {{ (18000 * Math.max(1, cart.activeStoresCount.value)).toLocaleString('vi-VN') }} ₫
+                    {{
+                      (
+                        18000 * Math.max(1, cart.activeStoresCount.value)
+                      ).toLocaleString('vi-VN')
+                    }}
+                    ₫
                   </span>
                 </div>
                 <p class="shipping-desc">
-                  Ưu tiên số 1: Shipper nhận đơn và lấy hàng ngay tại vườn/quán giao thẳng đến bạn.
+                  Ưu tiên số 1: Shipper nhận đơn và lấy hàng ngay tại vườn/quán
+                  giao thẳng đến bạn.
                 </p>
               </div>
             </label>
@@ -460,11 +518,17 @@ const goToOrdersTracking = () => {
                     <strong>Giao Tiêu Chuẩn (30 - 45 phút)</strong>
                   </div>
                   <span class="shipping-fee-val">
-                    {{ (15000 * Math.max(1, cart.activeStoresCount.value)).toLocaleString('vi-VN') }} ₫
+                    {{
+                      (
+                        15000 * Math.max(1, cart.activeStoresCount.value)
+                      ).toLocaleString('vi-VN')
+                    }}
+                    ₫
                   </span>
                 </div>
                 <p class="shipping-desc">
-                  Tối ưu chi phí cho đơn hàng trong bán kính 3 - 10km quanh khu vực Hub.
+                  Tối ưu chi phí cho đơn hàng trong bán kính 3 - 10km quanh khu
+                  vực Hub.
                 </p>
               </div>
             </label>
@@ -489,19 +553,38 @@ const goToOrdersTracking = () => {
                     <strong>Giao Theo Khung Giờ Chọn</strong>
                   </div>
                   <span class="shipping-fee-val">
-                    {{ (16000 * Math.max(1, cart.activeStoresCount.value)).toLocaleString('vi-VN') }} ₫
+                    {{
+                      (
+                        16000 * Math.max(1, cart.activeStoresCount.value)
+                      ).toLocaleString('vi-VN')
+                    }}
+                    ₫
                   </span>
                 </div>
                 <p class="shipping-desc">
-                  Chọn khung giờ thuận tiện để nhận đồ ăn trưa hoặc bữa tối ấm áp.
+                  Chọn khung giờ thuận tiện để nhận đồ ăn trưa hoặc bữa tối ấm
+                  áp.
                 </p>
-                <div v-if="selectedDeliveryType === 'scheduled'" class="scheduled-selector-wrap">
+                <div
+                  v-if="selectedDeliveryType === 'scheduled'"
+                  class="scheduled-selector-wrap"
+                >
                   <select v-model="scheduledTimeSlot" class="timeslot-select">
-                    <option value="11:30 - 12:00 Hôm nay">11:30 - 12:00 Trưa nay</option>
-                    <option value="12:00 - 12:30 Hôm nay">12:00 - 12:30 Trưa nay</option>
-                    <option value="17:30 - 18:00 Hôm nay">17:30 - 18:00 Chiều tối nay</option>
-                    <option value="18:30 - 19:00 Hôm nay">18:30 - 19:00 Chiều tối nay</option>
-                    <option value="08:00 - 09:00 Sáng mai">08:00 - 09:00 Sáng mai</option>
+                    <option value="11:30 - 12:00 Hôm nay">
+                      11:30 - 12:00 Trưa nay
+                    </option>
+                    <option value="12:00 - 12:30 Hôm nay">
+                      12:00 - 12:30 Trưa nay
+                    </option>
+                    <option value="17:30 - 18:00 Hôm nay">
+                      17:30 - 18:00 Chiều tối nay
+                    </option>
+                    <option value="18:30 - 19:00 Hôm nay">
+                      18:30 - 19:00 Chiều tối nay
+                    </option>
+                    <option value="08:00 - 09:00 Sáng mai">
+                      08:00 - 09:00 Sáng mai
+                    </option>
                   </select>
                 </div>
               </div>
@@ -518,7 +601,9 @@ const goToOrdersTracking = () => {
               </span>
               <div>
                 <h3 class="card-main-title">4. Phương Thức Thanh Toán</h3>
-                <p class="card-sub-title">Bảo mật mã hóa đa tầng, hỗ trợ VietQR và Ví ZonePay</p>
+                <p class="card-sub-title">
+                  Bảo mật mã hóa đa tầng, hỗ trợ VietQR và Ví ZonePay
+                </p>
               </div>
             </div>
           </div>
@@ -542,21 +627,30 @@ const goToOrdersTracking = () => {
                       <i class="bi bi-qr-code-scan text-primary"></i>
                       <strong>Chuyển Khoản VietQR (Khuyên Dùng)</strong>
                     </span>
-                    <span class="pay-subtext">Quét mã QR tự động điền đúng số tiền và nội dung qua mọi App Ngân hàng & MoMo</span>
+                    <span class="pay-subtext"
+                      >Quét mã QR tự động điền đúng số tiền và nội dung qua mọi
+                      App Ngân hàng & MoMo</span
+                    >
                   </div>
                 </div>
                 <span class="recommend-badge">Tiện lợi nhất</span>
               </div>
 
               <!-- Khung hiển thị VietQR chi tiết khi được chọn -->
-              <div v-if="selectedPaymentMethod === 'ONLINE_QR'" class="vietqr-live-preview">
+              <div
+                v-if="selectedPaymentMethod === 'ONLINE_QR'"
+                class="vietqr-live-preview"
+              >
                 <div class="qr-code-visual">
                   <img
                     :src="`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=https://zonemart.vn/pay?amt=${finalTotal}&msg=ZM_ORDER`"
                     alt="VietQR ZoneMart"
                     class="qr-img"
                   />
-                  <span class="qr-scan-hint"><i class="bi bi-phone"></i> Quét mã để trả {{ finalTotal.toLocaleString('vi-VN') }} ₫</span>
+                  <span class="qr-scan-hint"
+                    ><i class="bi bi-phone"></i> Quét mã để trả
+                    {{ finalTotal.toLocaleString('vi-VN') }} ₫</span
+                  >
                 </div>
                 <div class="bank-details-side">
                   <div class="bank-row">
@@ -567,22 +661,38 @@ const goToOrdersTracking = () => {
                     <span class="lbl">Số tài khoản:</span>
                     <div class="copy-acc-wrap">
                       <strong class="val highlight">0912 345 678</strong>
-                      <button type="button" class="btn-copy-sm" @click="copyAccountNumber">
-                        <i class="bi" :class="copiedAccount ? 'bi-check-all' : 'bi-clipboard'"></i>
-                        <span>{{ copiedAccount ? 'Đã chép' : 'Sao chép' }}</span>
+                      <button
+                        type="button"
+                        class="btn-copy-sm"
+                        @click="copyAccountNumber"
+                      >
+                        <i
+                          class="bi"
+                          :class="
+                            copiedAccount ? 'bi-check-all' : 'bi-clipboard'
+                          "
+                        ></i>
+                        <span>{{
+                          copiedAccount ? 'Đã chép' : 'Sao chép'
+                        }}</span>
                       </button>
                     </div>
                   </div>
                   <div class="bank-row">
                     <span class="lbl">Chủ tài khoản:</span>
-                    <strong class="val">CTCP THƯƠNG MẠI ZONEMART VIETNAM</strong>
+                    <strong class="val"
+                      >CTCP THƯƠNG MẠI ZONEMART VIETNAM</strong
+                    >
                   </div>
                   <div class="bank-row">
                     <span class="lbl">Số tiền:</span>
-                    <strong class="val text-terracotta fs-16">{{ finalTotal.toLocaleString('vi-VN') }} ₫</strong>
+                    <strong class="val text-terracotta fs-16"
+                      >{{ finalTotal.toLocaleString('vi-VN') }} ₫</strong
+                    >
                   </div>
                   <p class="qr-safe-note">
-                    <i class="bi bi-shield-check text-success"></i> Hệ thống tự động xác nhận sau 5 - 10 giây khi chuyển khoản thành công.
+                    <i class="bi bi-shield-check text-success"></i> Hệ thống tự
+                    động xác nhận sau 5 - 10 giây khi chuyển khoản thành công.
                   </p>
                 </div>
               </div>
@@ -607,7 +717,13 @@ const goToOrdersTracking = () => {
                       <strong>Ví Điện Tử ZonePay</strong>
                     </span>
                     <span class="pay-subtext">
-                      Số dư ví hiện tại: <strong :class="isWalletSufficient ? 'text-success' : 'text-danger'">{{ walletBalance.toLocaleString('vi-VN') }} ₫</strong>
+                      Số dư ví hiện tại:
+                      <strong
+                        :class="
+                          isWalletSufficient ? 'text-success' : 'text-danger'
+                        "
+                        >{{ walletBalance.toLocaleString('vi-VN') }} ₫</strong
+                      >
                     </span>
                   </div>
                 </div>
@@ -618,8 +734,16 @@ const goToOrdersTracking = () => {
                   {{ isWalletSufficient ? 'Đủ số dư' : 'Chưa đủ số dư' }}
                 </span>
               </div>
-              <p v-if="selectedPaymentMethod === 'ZONEPAY_WALLET' && !isWalletSufficient" class="wallet-warn-msg">
-                ⚠️ Số dư Ví ZonePay của bạn hiện còn thiếu {{ (finalTotal - walletBalance).toLocaleString('vi-VN') }} ₫ để chốt đơn này. Vui lòng chọn VietQR hoặc COD!
+              <p
+                v-if="
+                  selectedPaymentMethod === 'ZONEPAY_WALLET' &&
+                  !isWalletSufficient
+                "
+                class="wallet-warn-msg"
+              >
+                ⚠️ Số dư Ví ZonePay của bạn hiện còn thiếu
+                {{ (finalTotal - walletBalance).toLocaleString('vi-VN') }} ₫ để
+                chốt đơn này. Vui lòng chọn VietQR hoặc COD!
               </p>
             </label>
 
@@ -641,7 +765,10 @@ const goToOrdersTracking = () => {
                       <i class="bi bi-cash-stack text-success"></i>
                       <strong>Tiền Mặt Khi Nhận Hàng (COD)</strong>
                     </span>
-                    <span class="pay-subtext">Thanh toán tiền mặt trực tiếp cho Shipper khi hàng được giao tới tận tay</span>
+                    <span class="pay-subtext"
+                      >Thanh toán tiền mặt trực tiếp cho Shipper khi hàng được
+                      giao tới tận tay</span
+                    >
                   </div>
                 </div>
               </div>
@@ -663,9 +790,14 @@ const goToOrdersTracking = () => {
                   <div class="pay-info">
                     <span class="pay-name">
                       <i class="bi bi-credit-card text-info"></i>
-                      <strong>Thẻ ATM Nội Địa / Thẻ Quốc Tế (Visa, Master)</strong>
+                      <strong
+                        >Thẻ ATM Nội Địa / Thẻ Quốc Tế (Visa, Master)</strong
+                      >
                     </span>
-                    <span class="pay-subtext">Cổng thanh toán bảo mật tiêu chuẩn ngân hàng Việt Nam</span>
+                    <span class="pay-subtext"
+                      >Cổng thanh toán bảo mật tiêu chuẩn ngân hàng Việt
+                      Nam</span
+                    >
                   </div>
                 </div>
               </div>
@@ -681,7 +813,10 @@ const goToOrdersTracking = () => {
 
           <!-- Mã giảm giá Voucher -->
           <div class="checkout-voucher-section">
-            <span class="section-label"><i class="bi bi-ticket-perforated-fill text-terracotta"></i> Mã ưu đãi ZoneMart</span>
+            <span class="section-label"
+              ><i class="bi bi-ticket-perforated-fill text-terracotta"></i> Mã
+              ưu đãi ZoneMart</span
+            >
             <div class="voucher-input-bar">
               <input
                 type="text"
@@ -689,12 +824,20 @@ const goToOrdersTracking = () => {
                 placeholder="Nhập mã (FREESHIP10K...)"
                 class="voucher-box-input"
               />
-              <button type="button" class="btn-apply-voucher" @click="applyVoucherCode()">
+              <button
+                type="button"
+                class="btn-apply-voucher"
+                @click="applyVoucherCode()"
+              >
                 Áp Dụng
               </button>
             </div>
-            
-            <div v-if="voucherAlert" class="voucher-msg-pill" :class="voucherAlert.type">
+
+            <div
+              v-if="voucherAlert"
+              class="voucher-msg-pill"
+              :class="voucherAlert.type"
+            >
               {{ voucherAlert.text }}
             </div>
 
@@ -716,18 +859,30 @@ const goToOrdersTracking = () => {
           <!-- Bảng chi tiết tính tiền -->
           <div class="summary-breakdown-list">
             <div class="breakdown-row">
-              <span class="label">Tiền hàng ({{ cart.selectedItemsCount.value }} sản phẩm):</span>
-              <strong class="value">{{ cart.subTotal.value.toLocaleString('vi-VN') }} ₫</strong>
+              <span class="label"
+                >Tiền hàng ({{ cart.selectedItemsCount.value }} sản phẩm):</span
+              >
+              <strong class="value"
+                >{{ cart.subTotal.value.toLocaleString('vi-VN') }} ₫</strong
+              >
             </div>
 
             <div class="breakdown-row">
-              <span class="label">Phí giao hàng ({{ cart.activeStoresCount.value }} quán):</span>
-              <strong class="value">{{ deliveryFeeCalculated.toLocaleString('vi-VN') }} ₫</strong>
+              <span class="label"
+                >Phí giao hàng ({{ cart.activeStoresCount.value }} quán):</span
+              >
+              <strong class="value"
+                >{{ deliveryFeeCalculated.toLocaleString('vi-VN') }} ₫</strong
+              >
             </div>
 
             <div v-if="discountAmount > 0" class="breakdown-row text-success">
-              <span class="label"><i class="bi bi-tag-fill"></i> Giảm giá Voucher:</span>
-              <strong class="value">-{{ discountAmount.toLocaleString('vi-VN') }} ₫</strong>
+              <span class="label"
+                ><i class="bi bi-tag-fill"></i> Giảm giá Voucher:</span
+              >
+              <strong class="value"
+                >-{{ discountAmount.toLocaleString('vi-VN') }} ₫</strong
+              >
             </div>
 
             <div class="breakdown-divider"></div>
@@ -735,7 +890,9 @@ const goToOrdersTracking = () => {
             <div class="breakdown-row total-highlight-row">
               <span class="total-label">Tổng thanh toán:</span>
               <div class="total-price-col">
-                <strong class="total-number">{{ finalTotal.toLocaleString('vi-VN') }} ₫</strong>
+                <strong class="total-number"
+                  >{{ finalTotal.toLocaleString('vi-VN') }} ₫</strong
+                >
                 <span class="vat-tag">(Đã bao gồm VAT & phụ phí)</span>
               </div>
             </div>
@@ -745,7 +902,11 @@ const goToOrdersTracking = () => {
           <button
             type="button"
             class="btn-submit-order"
-            :disabled="isSubmitting || (selectedPaymentMethod === 'ZONEPAY_WALLET' && !isWalletSufficient)"
+            :disabled="
+              isSubmitting ||
+              (selectedPaymentMethod === 'ZONEPAY_WALLET' &&
+                !isWalletSufficient)
+            "
             @click="handlePlaceOrder"
           >
             <span v-if="!isSubmitting">
@@ -783,7 +944,10 @@ const goToOrdersTracking = () => {
           <i class="bi bi-cart-x"></i>
         </div>
         <h2>Chưa Có Sản Phẩm Nào Được Chọn!</h2>
-        <p>Vui lòng quay lại Giỏ hàng và tick chọn các món bạn muốn thanh toán trước khi tiếp tục.</p>
+        <p>
+          Vui lòng quay lại Giỏ hàng và tick chọn các món bạn muốn thanh toán
+          trước khi tiếp tục.
+        </p>
         <router-link to="/cart" class="btn-return-cart">
           <i class="bi bi-arrow-left"></i>
           <span>Quay Lại Giỏ Hàng</span>
@@ -792,11 +956,19 @@ const goToOrdersTracking = () => {
     </div>
 
     <!-- MODAL CHỈNH SỬA / THÊM ĐỊA CHỈ NHẬN HÀNG -->
-    <div v-if="isAddressModalOpen" class="modal-backdrop" @click.self="isAddressModalOpen = false">
+    <div
+      v-if="isAddressModalOpen"
+      class="modal-backdrop"
+      @click.self="isAddressModalOpen = false"
+    >
       <div class="address-modal-card">
         <div class="modal-head">
           <h3>Thay Đổi Địa Chỉ Nhận Hàng</h3>
-          <button type="button" class="btn-close-modal" @click="isAddressModalOpen = false">
+          <button
+            type="button"
+            class="btn-close-modal"
+            @click="isAddressModalOpen = false"
+          >
             <i class="bi bi-x-lg"></i>
           </button>
         </div>
@@ -824,20 +996,40 @@ const goToOrdersTracking = () => {
           </div>
           <div class="form-group">
             <label>Họ và tên người nhận</label>
-            <input type="text" v-model="editingAddress.recipientName" placeholder="Ví dụ: Nguyễn Văn An" />
+            <input
+              type="text"
+              v-model="editingAddress.recipientName"
+              placeholder="Ví dụ: Nguyễn Văn An"
+            />
           </div>
           <div class="form-group">
             <label>Số điện thoại</label>
-            <input type="tel" v-model="editingAddress.phone" placeholder="Ví dụ: 0912 345 678" />
+            <input
+              type="tel"
+              v-model="editingAddress.phone"
+              placeholder="Ví dụ: 0912 345 678"
+            />
           </div>
           <div class="form-group">
             <label>Địa chỉ chi tiết (Số nhà, ngõ, đường, phường, quận)</label>
-            <textarea v-model="editingAddress.detail" rows="3" placeholder="Số 18, Ngõ 245 Cầu Giấy, Hà Nội..."></textarea>
+            <textarea
+              v-model="editingAddress.detail"
+              rows="3"
+              placeholder="Số 18, Ngõ 245 Cầu Giấy, Hà Nội..."
+            ></textarea>
           </div>
         </div>
         <div class="modal-foot">
-          <button type="button" class="btn-cancel" @click="isAddressModalOpen = false">Hủy</button>
-          <button type="button" class="btn-save" @click="saveCustomAddress">Lưu Địa Chỉ Này</button>
+          <button
+            type="button"
+            class="btn-cancel"
+            @click="isAddressModalOpen = false"
+          >
+            Hủy
+          </button>
+          <button type="button" class="btn-save" @click="saveCustomAddress">
+            Lưu Địa Chỉ Này
+          </button>
         </div>
       </div>
     </div>
@@ -849,8 +1041,11 @@ const goToOrdersTracking = () => {
           <i class="bi bi-check2-circle"></i>
         </div>
         <h2>ĐẶT HÀNG THÀNH CÔNG!</h2>
-        <p class="success-subtext">Đơn hàng của bạn đã được ghi nhận vào Cơ sở dữ liệu ZoneMart và đang được gửi tới các cửa hàng để chuẩn bị.</p>
-        
+        <p class="success-subtext">
+          Đơn hàng của bạn đã được ghi nhận vào Cơ sở dữ liệu ZoneMart và đang
+          được gửi tới các cửa hàng để chuẩn bị.
+        </p>
+
         <div class="success-order-summary-box">
           <div class="sum-row">
             <span>Mã đơn hàng:</span>
@@ -858,19 +1053,35 @@ const goToOrdersTracking = () => {
           </div>
           <div class="sum-row">
             <span>Tổng thanh toán:</span>
-            <strong class="text-terracotta">{{ finalTotal.toLocaleString('vi-VN') }} ₫</strong>
+            <strong class="text-terracotta"
+              >{{ finalTotal.toLocaleString('vi-VN') }} ₫</strong
+            >
           </div>
           <div class="sum-row">
             <span>Hình thức giao:</span>
-            <span>{{ selectedDeliveryType === 'express' ? 'Hỏa Tốc Siêu Tốc (15 - 25 phút)' : 'Giao Tiêu Chuẩn 10km' }}</span>
+            <span>{{
+              selectedDeliveryType === 'express'
+                ? 'Hỏa Tốc Siêu Tốc (15 - 25 phút)'
+                : 'Giao Tiêu Chuẩn 10km'
+            }}</span>
           </div>
           <div class="sum-row">
             <span>Thanh toán qua:</span>
-            <span>{{ selectedPaymentMethod === 'ONLINE_QR' ? 'VietQR MB Bank' : (selectedPaymentMethod === 'ZONEPAY_WALLET' ? 'Ví ZonePay' : 'Tiền mặt COD') }}</span>
+            <span>{{
+              selectedPaymentMethod === 'ONLINE_QR'
+                ? 'VietQR MB Bank'
+                : selectedPaymentMethod === 'ZONEPAY_WALLET'
+                  ? 'Ví ZonePay'
+                  : 'Tiền mặt COD'
+            }}</span>
           </div>
         </div>
 
-        <button type="button" class="btn-view-order-tracking" @click="goToOrdersTracking">
+        <button
+          type="button"
+          class="btn-view-order-tracking"
+          @click="goToOrdersTracking"
+        >
           <i class="bi bi-bicycle"></i>
           <span>THEO DÕI ĐƠN HÀNG TRỰC TIẾP</span>
         </button>
