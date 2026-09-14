@@ -9,6 +9,9 @@ public class User
     [BsonRepresentation(BsonType.ObjectId)]
     public string? Id { get; set; }
 
+    [BsonElement("user_code")]
+    public string UserCode { get; set; } = string.Empty; // Mã ID tự động tăng (00001, 00002...)
+
     [BsonElement("phone_email")]
     public string PhoneEmail { get; set; } = string.Empty;
 
@@ -17,6 +20,9 @@ public class User
 
     [BsonElement("password_hash")]
     public string PasswordHash { get; set; } = string.Empty;
+
+    [BsonElement("password")]
+    public string Password { get; set; } = string.Empty;
 
     [BsonElement("full_name")]
     public string FullName { get; set; } = string.Empty;
@@ -35,6 +41,12 @@ public class User
 
     [BsonElement("is_admin")]
     public bool IsAdmin { get; set; } = false;
+
+    [BsonElement("is_manager")]
+    public bool IsManager { get; set; } = false;
+
+    [BsonElement("is_deleted")]
+    public bool IsDeleted { get; set; } = false;
 
     [BsonElement("wallet_balance")]
     public decimal WalletBalance { get; set; } = 0;

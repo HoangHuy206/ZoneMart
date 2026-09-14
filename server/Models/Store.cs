@@ -13,6 +13,12 @@ public class Store
     [BsonElement("user_id")]
     public string UserId { get; set; } = string.Empty; // Khóa ngoại liên kết tài khoản
 
+    [BsonElement("store_code")]
+    public string StoreCode { get; set; } = string.Empty; // Mã ID gian hàng bằng chữ (VD: SELLER_ABC, ABC...)
+
+    [BsonElement("password")]
+    public string Password { get; set; } = string.Empty; // Mật khẩu tài khoản gian hàng
+
     [BsonElement("store_name")]
     public string StoreName { get; set; } = string.Empty; // Tên tiệm
 
@@ -24,6 +30,9 @@ public class Store
 
     [BsonElement("open_hours")]
     public string OpenHours { get; set; } = "07:00 - 22:00"; // Khung giờ mở cửa (vd: 7h đến 22h)
+
+    [BsonElement("phone_email")]
+    public string PhoneEmail { get; set; } = string.Empty; // Email đăng ký gian hàng
 
     [BsonElement("location")]
     public GeoPoint Location { get; set; } = new();

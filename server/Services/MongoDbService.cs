@@ -28,4 +28,5 @@ public class MongoDbService
     public IMongoCollection<WalletTransaction> WalletTransactions => _database.GetCollection<WalletTransaction>("wallettransactions");
     public IMongoCollection<SupportTicket> SupportTickets => _database.GetCollection<SupportTicket>("support_tickets");
     public IMongoCollection<UserCart> UserCarts => _database.GetCollection<UserCart>("user_carts");
+    public IMongoCollection<AuditLog> AuditLogs => _database.GetCollection<AuditLog>("audit_logs");
 }

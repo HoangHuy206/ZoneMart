@@ -50,7 +50,7 @@ const refreshCaptchaWithAnim = () => {
 };
 
 onMounted(() => {
-  document.title = "Đăng Ký Tài Khoản Khách Hàng | ZoneMart - Sàn TMĐT & Giao Hàng Hỏa Tốc";
+  sessionStorage.removeItem("pendingRegisterTarget");
   generateCaptcha();
 });
 
@@ -70,24 +70,25 @@ const handleRegister = async () => {
   errorMessage.value = "";
   successMessage.value = "";
 
-  // 1. Kiểm tra rỗng
-  if (!form.email.trim() || !form.password.trim() || !form.confirmPassword.trim() || !form.captchaInput.trim()) {
-    modalErrorMessage.value = "Vui lòng nhập đầy đủ thông tin vào tất cả các ô!";
+  // 1. Kiểm tra Email/Gmail hợp lệ
+  const emailTrimmed = form.email.trim().toLowerCase();
+  const gmailRegex = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
+  if (!emailTrimmed || !gmailRegex.test(emailTrimmed)) {
+    modalErrorMessage.value = "Vui lòng nhập đúng định dạng Địa chỉ Gmail (ví dụ: name@gmail.com)!";
     showModal.value = true;
     return;
   }
 
-  // 2. Kiểm tra định dạng Email
-  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailPattern.test(form.email.trim())) {
-    modalErrorMessage.value = "Địa chỉ Gmail không đúng định dạng! (VD: tennguoidung@gmail.com)";
+  // 2. Kiểm tra Họ và Tên
+  if (!form.fullName.trim()) {
+    modalErrorMessage.value = "Vui lòng nhập Họ và Tên của bạn!";
     showModal.value = true;
     return;
   }
 
-  // 3. Kiểm tra độ dài mật khẩu (tối thiểu 6, tối đa 16 ký tự)
-  if (form.password.length < 6 || form.password.length > 16) {
-    modalErrorMessage.value = "Mật khẩu phải có độ dài từ 6 đến 16 ký tự!";
+  // 3. Kiểm tra độ dài Mật khẩu tối thiểu 6 ký tự
+  if (form.password.length < 6) {
+    modalErrorMessage.value = "Mật khẩu phải chứa ít nhất 6 ký tự!";
     showModal.value = true;
     return;
   }
@@ -123,6 +124,7 @@ const handleRegister = async () => {
     if (res) {
       const data = await res.json();
       if (res.ok && data.success) {
+        sessionStorage.removeItem("pendingRegisterTarget");
         successMessage.value = data.message || "Tạo tài khoản thành công! Email thông báo đã được gửi về Gmail của bạn.";
         setTimeout(() => {
           router.push("/login");
@@ -184,21 +186,16 @@ const handleRegister = async () => {
         <!-- FORM NHẬP THÔNG TIN ĐĂNG KÝ (CHUẨN SEO SEMANTIC & ACCESSIBILITY) -->
         <form @submit.prevent="handleRegister" class="form-body" method="post" action="/api/auth/register" novalidate itemscope itemtype="https://schema.org/WebPage">
           
-          <!-- Họ và tên -->
+          <!-- Họ và Tên -->
           <div class="field-item">
-            <label for="buyer-fullname" class="field-label">Họ và tên</label>
-            <div class="input-icon-wrapper">
-              <i class="bi bi-person-fill input-leading-icon"></i>
-              <input
-                id="buyer-fullname"
-                name="name"
-                v-model="form.fullName"
-                type="text"
-                autocomplete="name"
-                class="field-input has-leading-icon"
-                placeholder="VD: Nguyễn Văn A"
-              />
-            </div>
+            <label class="field-label">Họ và Tên <span class="req">*</span></label>
+            <input
+              v-model="form.fullName"
+              type="text"
+              class="field-input"
+              placeholder="VD: Nguyễn Văn A..."
+              required
+            />
           </div>
 
           <!-- Gmail -->

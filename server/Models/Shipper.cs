@@ -12,11 +12,17 @@ public class Shipper
     [BsonElement("user_id")]
     public string UserId { get; set; } = string.Empty;       // Liên kết ID tài khoản Buyer ban đầu
 
+    [BsonElement("shipper_code")]
+    public string ShipperCode { get; set; } = string.Empty;  // Mã ID định danh Tài xế (VD: ZM-DRV-8839)
+
     [BsonElement("full_name")]
     public string FullName { get; set; } = string.Empty;     // Họ tên tài xế
 
     [BsonElement("phone_number")]
     public string PhoneNumber { get; set; } = string.Empty;  // SĐT liên hệ
+
+    [BsonElement("password")]
+    public string Password { get; set; } = string.Empty;     // Mật khẩu tài khoản tài xế
 
     [BsonElement("avatar_url")]
     public string AvatarUrl { get; set; } = string.Empty;    // Link / data ảnh chân dung

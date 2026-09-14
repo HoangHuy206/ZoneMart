@@ -24,6 +24,7 @@ const form = reactive({
   category: "Thực phẩm & Nhu yếu phẩm",
   address: "",
   openHours: "07:00 - 22:00",
+  phoneEmail: "",
 
   // BƯỚC 2: XÁC THỰC CHỦ TIỆM & GIẤY TỜ
   ownerFullName: "",
@@ -34,12 +35,43 @@ const form = reactive({
   // BƯỚC 3: THANH TOÁN & TÀI KHOẢN ĐĂNG NHẬP
   bankName: "Vietcombank (VCB)",
   bankAccountNumber: "",
-  phoneEmail: "",
   password: ""
 });
 
 const isLoading = ref(false);
 const errorMessage = ref("");
+
+interface CurrentUser {
+  id?: string;
+  fullName?: string;
+  phoneEmail?: string;
+  role?: string;
+}
+
+const currentUser = ref<CurrentUser | null>(null);
+
+onMounted(() => {
+  const savedUserStr = localStorage.getItem("currentUser");
+  if (savedUserStr) {
+    try {
+      const parsed = JSON.parse(savedUserStr);
+      if (parsed && (parsed.phoneEmail || parsed.fullName)) {
+        currentUser.value = parsed;
+        if (parsed.fullName && !form.ownerFullName) {
+          form.ownerFullName = parsed.fullName;
+        }
+        if (parsed.phoneEmail && !form.phoneEmail) {
+          form.phoneEmail = parsed.phoneEmail;
+        }
+      }
+    } catch (e) {}
+  }
+});
+
+const goToLoginWithIntent = (target: "seller" | "shipper") => {
+  sessionStorage.setItem("pendingRegisterTarget", target);
+  router.push("/login");
+};
 
 // Trạng thái Modal Pop-up Thành Công giữa màn hình
 const showSuccessModal = ref(false);
@@ -404,13 +436,13 @@ const handleSubmitApplication = async () => {
         category: form.category,
         address: form.address.trim(),
         openHours: form.openHours.trim(),
+        phoneEmail: form.phoneEmail.trim(),
         ownerFullName: form.ownerFullName.trim(),
         cccdFrontImage: form.cccdFrontImage,
         cccdBackImage: form.cccdBackImage,
         foodSafetyCertImage: form.foodSafetyCertImage,
         bankName: form.bankName,
         bankAccountNumber: accountNumberTrimmed,
-        phoneEmail: phoneEmailTrimmed,
         password: form.password.trim() || "123456"
       })
     }).catch(() => null);
@@ -500,43 +532,63 @@ onMounted(() => {
         <!-- THÔNG BÁO LỖI NẾU CÓ -->
         <div v-if="errorMessage" class="msg-box error">⚠️ {{ errorMessage }}</div>
 
-        <!-- CHUYỂN BƯỚC MƯỢT MÀ VỚI TRANSITION -->
-        <Transition name="step-slide" mode="out-in">
-          <!-- ==================== BƯỚC 1: THÔNG TIN TIỆM ==================== -->
-          <form v-if="currentStep === 1" key="seller-step-1" @submit.prevent="goToNextStep" class="form-body" novalidate>
-            <!-- Tên cửa hàng -->
-            <div class="field-item">
-              <label for="seller-store-name" class="field-label">
-                Tên cửa hàng <span class="req">*</span>
-                <span class="hint-text">(12 - 30 ký tự, không ký tự đặc biệt)</span>
-              </label>
-              <div class="input-icon-wrapper">
-                <i class="bi bi-shop input-leading-icon"></i>
-                <input
-                  id="seller-store-name"
-                  name="storeName"
-                  v-model="form.storeName"
-                  type="text"
-                  class="field-input has-leading-icon"
-                  placeholder="VD: Bách Hóa Sạch ZoneMart Cầu Giấy"
-                  maxlength="30"
-                  required
-                  aria-required="true"
-                />
-              </div>
+        <!-- ==================== BƯỚC 1: THÔNG TIN TIỆM ==================== -->
+        <form v-if="currentStep === 1" @submit.prevent="goToNextStep" class="form-body">
+          
+          <!-- Ô THÔNG BÁO TÀI KHOẢN KHÁCH HÀNG LIÊN KẾT (NẰM TẠI ĐẦU BƯỚC 1 - TRÊN CỘT TÊN CỬA HÀNG) -->
+          <div v-if="currentUser" class="customer-account-banner success-linked">
+            <div class="banner-head-row">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D94E15" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+              <span class="banner-head-title">Tài khoản Khách Hàng liên kết mở Gian Hàng:</span>
             </div>
+            <div class="banner-user-detail">
+              <span class="user-display-name">Anh/Chị <b>{{ currentUser.fullName || 'Khách Hàng' }}</b></span>
+              <span class="user-display-email">(Gmail/SĐT: <b class="highlight-email">{{ currentUser.phoneEmail }}</b>)</span>
+            </div>
+          </div>
+          <div v-else class="customer-account-banner warning-not-linked">
+            <div class="banner-head-row">
+              <span class="warn-icon">⚠️</span>
+              <span class="banner-head-title">Chưa liên kết tài khoản Khách Hàng!</span>
+            </div>
+            <p class="banner-warn-desc">
+              Theo quy định ZoneMart, bạn cần đăng nhập tài khoản Khách Hàng trước khi tạo hồ sơ mở Gian Hàng.
+            </p>
+            <button type="button" class="btn-banner-login" @click="goToLoginWithIntent('seller')">
+              🔑 Đăng Nhập Tài Khoản Khách Hàng Ngay ➔
+            </button>
+          </div>
 
-            <!-- CUSTOM DROPDOWN DANH MỤC HÀNG BÁN CHÍNH (MỞ THẢ XUÔI XUỐNG DƯỚI) -->
-            <div class="field-item custom-select-container">
-              <label class="field-label">Danh mục hàng bán chính <span class="req">*</span></label>
-              <div
-                class="custom-select-trigger"
-                :class="{ 'active': isCategoryDropdownOpen }"
-                @click.stop="toggleCategoryDropdown"
-              >
-                <span class="selected-text">{{ form.category }}</span>
-                <span class="chevron-arrow">▼</span>
-              </div>
+          <!-- Tên cửa hàng -->
+          <div class="field-item">
+            <label class="field-label">
+              Tên cửa hàng <span class="req">*</span>
+              <span class="hint-text">(12 - 30 ký tự, không ký tự đặc biệt)</span>
+            </label>
+            <input
+              v-model="form.storeName"
+              type="text"
+              class="field-input"
+              placeholder="VD: Bách Hóa Sạch ZoneMart Cầu Giấy"
+              maxlength="30"
+              required
+            />
+          </div>
+
+          <!-- CUSTOM DROPDOWN DANH MỤC HÀNG BÁN CHÍNH (MỞ THẢ XUÔI XUỐNG DƯỚI) -->
+          <div class="field-item custom-select-container">
+            <label class="field-label">Danh mục hàng bán chính <span class="req">*</span></label>
+            <div
+              class="custom-select-trigger"
+              :class="{ 'active': isCategoryDropdownOpen }"
+              @click.stop="toggleCategoryDropdown"
+            >
+              <span class="selected-text">{{ form.category }}</span>
+              <span class="chevron-arrow">▼</span>
+            </div>
 
               <Transition name="fade-dropdown">
                 <div v-if="isCategoryDropdownOpen" class="custom-dropdown-menu">
@@ -872,7 +924,6 @@ onMounted(() => {
               </button>
             </div>
           </form>
-        </Transition>
 
         <!-- Đường kẻ phân cách & Liên kết -->
         <div class="divider-row">
@@ -1099,8 +1150,7 @@ onMounted(() => {
 }
 
 .back-home-btn:hover {
-  color: #D94E15;
-  transform: translateX(-2px);
+  color: #059669;
 }
 
 /* HEADER BẢNG */
@@ -1112,7 +1162,7 @@ onMounted(() => {
 .form-main-heading {
   font-size: 21px;
   font-weight: 900;
-  color: #D94E15;
+  color: #10B981;
   margin: 0 0 2px 0;
   letter-spacing: -0.5px;
 }
@@ -1166,20 +1216,18 @@ onMounted(() => {
 }
 
 .step-item.active .step-badge {
-  background: #FFEBE1;
-  color: #D94E15;
+  background: #ECFDF5;
+  color: #10B981;
 }
 
 .step-item.current .step-badge {
-  background: #D94E15;
+  background: #10B981;
   color: #FFFFFF;
-  box-shadow: 0 4px 10px rgba(217, 78, 21, 0.35);
-  box-shadow: 0 0 0 4px rgba(217, 78, 21, 0.2), 0 4px 10px rgba(217, 78, 21, 0.35);
-  transform: scale(1.06);
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.35);
 }
 
 .step-item.current .step-label {
-  color: #D94E15;
+  color: #10B981;
   font-weight: 800;
 }
 
@@ -1193,7 +1241,7 @@ onMounted(() => {
 }
 
 .step-connector.active {
-  background: #D94E15;
+  background: #10B981;
 }
 
 /* MSG ERROR */
@@ -1285,11 +1333,11 @@ onMounted(() => {
 
 .field-input:focus, .field-select:focus {
   background: #FFFFFF;
-  border-color: #D94E15;
-  box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.14);
+  border-color: #10B981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
 }
 
-/* CUSTOM DROPDOWN SELECT CONTAINER (ĐỒNG BỘ SHIPPER) */
+/* CUSTOM DROPDOWN SELECT CONTAINER (ĐỒNG BỘ SELLER) */
 .custom-select-container {
   position: relative;
 }
@@ -1313,9 +1361,9 @@ onMounted(() => {
 
 .custom-select-trigger:hover,
 .custom-select-trigger.active {
-  border-color: #D94E15;
+  border-color: #10B981;
   background: #FFFFFF;
-  box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.14);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
 }
 
 .selected-text {
@@ -1333,7 +1381,7 @@ onMounted(() => {
 
 .custom-select-trigger.active .chevron-arrow {
   transform: rotate(180deg);
-  color: #D94E15;
+  color: #10B981;
 }
 
 .custom-dropdown-menu {
@@ -1345,7 +1393,7 @@ onMounted(() => {
   max-height: 180px;
   overflow-y: auto;
   background: #FFFFFF;
-  border: 1.5px solid #D94E15;
+  border: 1.5px solid #10B981;
   border-radius: 12px;
   box-shadow: 0 10px 25px rgba(15, 23, 42, 0.18);
   z-index: 99999;
@@ -1361,13 +1409,13 @@ onMounted(() => {
 }
 
 .dropdown-option-item:hover {
-  background: #FFF5F0;
-  color: #D94E15;
+  background: #ECFDF5;
+  color: #10B981;
   font-weight: 700;
 }
 
 .dropdown-option-item.selected {
-  background: #D94E15;
+  background: #10B981;
   color: #FFFFFF;
   font-weight: 700;
 }
@@ -1414,8 +1462,8 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   height: 64px;
-  border: 1.5px dashed #D94E15;
-  background: #FFF7ED;
+  border: 1.5px dashed #10B981;
+  background: #F0FDF4;
   border-radius: 10px;
   cursor: pointer;
   overflow: hidden;
@@ -1430,8 +1478,8 @@ onMounted(() => {
 }
 
 .upload-box:hover {
-  background: #FFEDD5;
-  border-color: #C8451F;
+  background: #DCFCE7;
+  border-color: #059669;
 }
 
 .upload-box.has-preview {
@@ -1448,7 +1496,7 @@ onMounted(() => {
 .upload-text {
   font-size: 10.5px;
   font-weight: 700;
-  color: #9A3412;
+  color: #047857;
   text-align: center;
 }
 
@@ -1884,6 +1932,87 @@ onMounted(() => {
 .btn-modal-save:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(230, 81, 0, 0.35);
+}
+
+/* ================================================================
+   Ô THÔNG BÁO TÀI KHOẢN KHÁCH HÀNG LIÊN KẾT (CUSTOMER ACCOUNT BANNER)
+   ================================================================ */
+.customer-account-banner {
+  padding: 14px 16px;
+  border-radius: 16px;
+  margin-bottom: 18px;
+  font-size: 13.5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  transition: all 0.25s ease;
+}
+
+.customer-account-banner.success-linked {
+  background: #FFF7ED;
+  border: 1.5px solid #FFEDD5;
+}
+
+.customer-account-banner.warning-not-linked {
+  background: #FEF2F2;
+  border: 1.5px solid #FECACA;
+}
+
+.banner-head-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  color: #1F2937;
+  font-size: 13.5px;
+  margin-bottom: 4px;
+}
+
+.banner-head-title {
+  color: #9A3412;
+  letter-spacing: -0.2px;
+}
+
+.warning-not-linked .banner-head-title {
+  color: #991B1B;
+}
+
+.banner-user-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  color: #374151;
+  padding-left: 2px;
+}
+
+.highlight-email {
+  color: #D94E15;
+  font-weight: 700;
+}
+
+.banner-warn-desc {
+  font-size: 12.5px;
+  color: #7F1D1D;
+  margin: 4px 0 10px 0;
+  line-height: 1.5;
+}
+
+.btn-banner-login {
+  background: linear-gradient(135deg, #D94E15 0%, #EA580C 100%);
+  color: #ffffff;
+  border: none;
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 12.5px;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(217, 78, 21, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-banner-login:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(217, 78, 21, 0.35);
 }
 
 .upload-box {

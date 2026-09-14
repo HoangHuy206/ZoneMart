@@ -21,31 +21,43 @@ export const binhRoutes: RouteRecordRaw[] = [
     path: '/register',
     name: 'RegisterBuyer',
     component: () => import('../../views/binh/RegisterBuyerView.vue'),
-    meta: {
-      title: 'Đăng Ký Khách Hàng - ZoneMart',
-      hideHeader: true,
-      hideFooter: true,
-    },
+    meta: { title: 'Đăng Ký Khách Hàng - ZoneMart', hideHeader: true, hideFooter: true },
   },
   {
     path: '/register-seller',
     name: 'RegisterSeller',
+    component: () => import('../../views/binh/SellerLandingView.vue'),
+    meta: { title: 'ZoneMart Seller - Mở Gian Hàng Kinh Doanh', hideHeader: true, hideFooter: true },
+  },
+  {
+    path: '/seller-form',
+    name: 'SellerForm',
     component: () => import('../../views/binh/RegisterSellerView.vue'),
-    meta: {
-      title: 'Đăng Ký Người Bán - ZoneMart',
-      hideHeader: true,
-      hideFooter: true,
-    },
+    meta: { title: 'Đăng Ký Mở Gian Hàng - ZoneMart', hideHeader: true, hideFooter: true },
+  },
+  {
+    path: '/seller-landing',
+    name: 'SellerLanding',
+    component: () => import('../../views/binh/SellerLandingView.vue'),
+    meta: { title: 'ZoneMart Seller - Mở Gian Hàng Kinh Doanh', hideHeader: true, hideFooter: true },
   },
   {
     path: '/register-shipper',
     name: 'RegisterShipper',
+    component: () => import('../../views/binh/ShipperLandingView.vue'),
+    meta: { title: 'ZoneMart Driver - Gia Nhập Đội Ngũ Tài Xế', hideHeader: true, hideFooter: true },
+  },
+  {
+    path: '/shipper-form',
+    name: 'ShipperForm',
     component: () => import('../../views/binh/RegisterShipperView.vue'),
-    meta: {
-      title: 'Đăng Ký Tài Xế Shipper - ZoneMart',
-      hideHeader: true,
-      hideFooter: true,
-    },
+    meta: { title: 'Đăng Ký Tài Xế - ZoneMart Driver', hideHeader: true, hideFooter: true },
+  },
+  {
+    path: '/shipper-landing',
+    name: 'ShipperLanding',
+    component: () => import('../../views/binh/ShipperLandingView.vue'),
+    meta: { title: 'ZoneMart Driver - Gia Nhập Đội Ngũ Tài Xế', hideHeader: true, hideFooter: true },
   },
   {
     path: '/shipper',
@@ -55,18 +67,6 @@ export const binhRoutes: RouteRecordRaw[] = [
       title: 'Cổng Tài Xế Shipper - ZoneMart',
       hideHeader: true,
       hideFooter: true,
-      requiresAuth: true,
-      roles: ['shipper', 'admin'],
-    },
-  },
-  {
-    path: '/admin',
-    name: 'Admin',
-    component: () => import('../../views/binh/AdminDashboardView.vue'),
-    meta: {
-      title: 'Bảng Điều Khiển Quản Trị Hệ Thống - ZoneMart Admin Portal',
-      requiresAuth: true,
-      roles: ['admin'],
     },
   },
   {
@@ -74,11 +74,15 @@ export const binhRoutes: RouteRecordRaw[] = [
     name: 'SellerDashboard',
     component: () => import('../../views/binh/SellerDashboardView.vue'),
     meta: {
-      title: 'Kênh Quản Lý Bán Hàng - ZoneMart',
+      title: 'Kênh Quản Lý Bán Hàng - ZoneMart Seller',
       hideHeader: true,
       hideFooter: true,
-      requiresAuth: true,
-      roles: ['seller', 'admin'],
     },
+  },
+  {
+    path: '/admin',
+    name: 'Admin',
+    component: () => import('../../views/binh/AdminDashboardView.vue'),
+    meta: { title: 'Bảng Điều Khiển Quản Trị - ZoneMart Admin', hideHeader: true, hideFooter: true },
   },
 ];
