@@ -10,7 +10,10 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
 import { useAuth } from '../../composables/useAuth';
-import { cartService, type SuggestedProductItem } from '../../services/cartService';
+import {
+  cartService,
+  type SuggestedProductItem,
+} from '../../services/cartService';
 
 const router = useRouter();
 const cart = useCart();

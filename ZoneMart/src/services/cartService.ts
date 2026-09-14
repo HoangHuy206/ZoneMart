@@ -34,23 +34,25 @@ export const cartService = {
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.data) {
-          const stores: CartStoreGroup[] = (data.data.stores || []).map((s: any) => ({
-            storeId: s.storeId,
-            storeName: s.storeName,
-            distanceKm: s.distanceKm,
-            deliveryTime: s.deliveryTime,
-            note: s.note,
-            items: (s.items || []).map((i: any) => ({
-              id: i.id,
-              name: i.name,
-              price: i.price,
-              originalPrice: i.originalPrice,
-              quantity: i.quantity,
-              image: i.image,
-              unit: i.unit,
-              selected: i.selected ?? true,
-            })),
-          }));
+          const stores: CartStoreGroup[] = (data.data.stores || []).map(
+            (s: any) => ({
+              storeId: s.storeId,
+              storeName: s.storeName,
+              distanceKm: s.distanceKm,
+              deliveryTime: s.deliveryTime,
+              note: s.note,
+              items: (s.items || []).map((i: any) => ({
+                id: i.id,
+                name: i.name,
+                price: i.price,
+                originalPrice: i.originalPrice,
+                quantity: i.quantity,
+                image: i.image,
+                unit: i.unit,
+                selected: i.selected ?? true,
+              })),
+            }),
+          );
           return {
             stores,
             voucherCode: data.data.voucherCode || 'FREESHIP10K',
@@ -69,7 +71,7 @@ export const cartService = {
   async saveUserCart(
     userId: string,
     stores: CartStoreGroup[],
-    voucherCode?: string
+    voucherCode?: string,
   ): Promise<boolean> {
     try {
       const res = await fetch(`${API_BASE}/${encodeURIComponent(userId)}`, {
@@ -119,7 +121,10 @@ export const cartService = {
         }
       }
     } catch (e) {
-      console.warn('Lỗi tải sản phẩm gợi ý từ API, sử dụng danh sách chuẩn:', e);
+      console.warn(
+        'Lỗi tải sản phẩm gợi ý từ API, sử dụng danh sách chuẩn:',
+        e,
+      );
     }
 
     // Fallback chuẩn nếu ngắt kết nối
@@ -134,7 +139,8 @@ export const cartService = {
         price: 185000,
         originalPrice: 220000,
         unit: 'Khay 500g',
-        image: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=400&q=80',
+        image:
+          'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=400&q=80',
       },
       {
         storeId: '65f01234567890abcdef0001',
@@ -146,7 +152,8 @@ export const cartService = {
         price: 190000,
         originalPrice: 225000,
         unit: 'Túi 5kg',
-        image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=400&q=80',
+        image:
+          'https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=400&q=80',
       },
       {
         storeId: '65f01234567890abcdef0002',
@@ -158,7 +165,8 @@ export const cartService = {
         price: 95000,
         originalPrice: 125000,
         unit: 'Hộp 500g',
-        image: 'https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=400&q=80',
+        image:
+          'https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=400&q=80',
       },
       {
         storeId: '65f01234567890abcdef0003',
@@ -170,7 +178,8 @@ export const cartService = {
         price: 45000,
         originalPrice: 55000,
         unit: 'Phần 1 người',
-        image: 'https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=400&q=80',
+        image:
+          'https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=400&q=80',
       },
     ];
   },

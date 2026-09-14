@@ -139,7 +139,11 @@ function persistCart(syncToDb = true) {
     try {
       const savedUser = localStorage.getItem('currentUser');
       const userId = savedUser ? JSON.parse(savedUser).id : 'usr_buyer_01';
-      cartService.saveUserCart(userId, cartStores.value, appliedVoucherCode.value);
+      cartService.saveUserCart(
+        userId,
+        cartStores.value,
+        appliedVoucherCode.value,
+      );
     } catch {}
   }
 }
