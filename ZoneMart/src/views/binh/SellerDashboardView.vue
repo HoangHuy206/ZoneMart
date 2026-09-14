@@ -46,21 +46,31 @@ const currentUser = reactive({
 
 onMounted(() => {
   const savedUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
-  if (savedUser) {
-    try {
-      const parsed = JSON.parse(savedUser);
-      if (parsed.role && parsed.role !== 'seller' && parsed.role !== 'admin') {
-        if (parsed.sellerStatus === 'Pending') {
-          alert("Hồ sơ gian hàng của bạn đang chờ Ban Quản Lý phê duyệt. Bạn sẽ được truy cập Kênh Người Bán sau khi được duyệt!");
-        }
-        router.push('/');
-        return;
-      }
-      if (parsed.fullName) currentUser.name = parsed.fullName;
-      if (parsed.phoneEmail) currentUser.email = parsed.phoneEmail;
-      if (parsed.avatarUrl) currentUser.avatar = parsed.avatarUrl;
-    } catch { }
+  if (!savedUser) {
+    router.replace({
+      path: "/login",
+      query: { redirect: "/seller", reason: "auth_required", required: "seller" }
+    });
+    return;
   }
+  try {
+    const parsed = JSON.parse(savedUser);
+    if (!parsed || (parsed.role !== 'seller' && parsed.role !== 'admin')) {
+      router.replace({
+        path: '/403',
+        query: {
+          error: 'forbidden_role',
+          target: '/seller',
+          required: 'seller',
+          currentRole: parsed?.role || 'guest'
+        }
+      });
+      return;
+    }
+    if (parsed.fullName) currentUser.name = parsed.fullName;
+    if (parsed.phoneEmail) currentUser.email = parsed.phoneEmail;
+    if (parsed.avatarUrl) currentUser.avatar = parsed.avatarUrl;
+  } catch { }
 });
 
 // Tên hiển thị chào mừng lịch sự

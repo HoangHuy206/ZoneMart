@@ -51,7 +51,43 @@ router.beforeEach((to, _from, next) => {
     userRole = 'guest';
   }
 
-  // 1. Nếu route yêu cầu đăng nhập mà người dùng chưa đăng nhập (guest)
+  // Bỏ qua kiểm tra phân quyền cho chính trang 403 và 404
+  if (to.path === '/403' || to.path === '/404') {
+    return next();
+  }
+
+  // 1. Nếu route yêu cầu vai trò cụ thể (RBAC - Role Based Access Control)
+  if (to.meta.roles && Array.isArray(to.meta.roles)) {
+    const allowedRoles = to.meta.roles as string[];
+
+    // Nếu chưa đăng nhập mà truy cập trang phân quyền
+    if (!isLoggedIn || userRole === 'guest') {
+      return next({
+        path: '/login',
+        query: {
+          redirect: to.fullPath,
+          reason: 'auth_required',
+          required: allowedRoles.join(', '),
+        },
+      });
+    }
+
+    // Nếu đã đăng nhập nhưng SAI QUYỀN VAI TRÒ -> BÁO LỖI LUÔN, CHUYỂN ĐẾN TRANG 403
+    if (!allowedRoles.includes(userRole)) {
+      console.warn(`[RBAC] Truy cập bị từ chối vào ${to.path}. Vai trò hiện tại: [${userRole}], yêu cầu: [${allowedRoles.join(', ')}]`);
+      return next({
+        path: '/403',
+        query: {
+          error: 'forbidden_role',
+          target: to.path,
+          required: allowedRoles.join(', '),
+          currentRole: userRole,
+        },
+      });
+    }
+  }
+
+  // 2. Nếu route yêu cầu đăng nhập chung (bất kỳ tài khoản nào đã login)
   if (to.meta.requiresAuth && !isLoggedIn) {
     return next({
       path: '/login',
@@ -62,16 +98,11 @@ router.beforeEach((to, _from, next) => {
     });
   }
 
-  // 2. Nếu route yêu cầu vai trò cụ thể
-  if (to.meta.roles && Array.isArray(to.meta.roles)) {
-    const allowedRoles = to.meta.roles as string[];
-    if (!allowedRoles.includes(userRole)) {
-      return next({ path: '/' });
-    }
-  }
-
   // 3. Nếu đã đăng nhập mà truy cập lại trang Đăng Nhập hoặc Đăng Ký
   if (isLoggedIn && (to.path === '/login' || to.path === '/register')) {
+    if (userRole === 'admin') return next({ path: '/admin' });
+    if (userRole === 'seller') return next({ path: '/seller' });
+    if (userRole === 'shipper') return next({ path: '/shipper' });
     return next({ path: '/' });
   }
 

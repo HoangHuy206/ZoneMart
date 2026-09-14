@@ -65,6 +65,8 @@ export const binhRoutes: RouteRecordRaw[] = [
     component: () => import('../../views/binh/ShipperView.vue'),
     meta: {
       title: 'Cổng Tài Xế Shipper - ZoneMart',
+      requiresAuth: true,
+      roles: ['shipper'],
       hideHeader: true,
       hideFooter: true,
     },
@@ -75,6 +77,8 @@ export const binhRoutes: RouteRecordRaw[] = [
     component: () => import('../../views/binh/SellerDashboardView.vue'),
     meta: {
       title: 'Kênh Quản Lý Bán Hàng - ZoneMart Seller',
+      requiresAuth: true,
+      roles: ['seller'],
       hideHeader: true,
       hideFooter: true,
     },
@@ -83,6 +87,12 @@ export const binhRoutes: RouteRecordRaw[] = [
     path: '/admin',
     name: 'Admin',
     component: () => import('../../views/binh/AdminDashboardView.vue'),
-    meta: { title: 'Bảng Điều Khiển Quản Trị - ZoneMart Admin', hideHeader: true, hideFooter: true },
+    meta: {
+      title: 'Bảng Điều Khiển Quản Trị - ZoneMart Admin',
+      requiresAuth: true,
+      roles: ['admin'],
+      hideHeader: true,
+      hideFooter: true,
+    },
   },
 ];

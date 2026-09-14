@@ -33,6 +33,12 @@ export const huyRoutes: RouteRecordRaw[] = [
     meta: { title: 'Liên Hệ & Hỗ Trợ - ZoneMart' },
   },
   {
+    path: '/403',
+    name: 'AccessDenied',
+    component: () => import('../../views/not-found/NotFoundView.vue'),
+    meta: { title: '403 - TRUY CẬP BỊ TỪ CHỐI - ZoneMart', hideHeader: true, hideFooter: true },
+  },
+  {
     path: '/404',
     name: 'NotFound',
     component: () => import('../../views/not-found/NotFoundView.vue'),

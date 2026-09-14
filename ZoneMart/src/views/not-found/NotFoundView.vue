@@ -1,7 +1,60 @@
 <script setup lang="ts">
-import { useRouter } from "vue-router";
+import { computed } from "vue";
+import { useRouter, useRoute } from "vue-router";
+import { useAuth } from "../../composables/useAuth";
 
 const router = useRouter();
+const route = useRoute();
+const auth = useAuth();
+
+const isForbidden = computed(() => {
+  return (
+    route.path === "/403" ||
+    route.query.error === "forbidden_role" ||
+    route.query.type === "403"
+  );
+});
+
+const targetPath = computed(() => (route.query.target as string) || "");
+const requiredRole = computed(() => (route.query.required as string) || "");
+const currentRole = computed(() => {
+  return (route.query.currentRole as string) || auth.currentRole.value || "guest";
+});
+
+const formatRoleName = (role: string) => {
+  const r = (role || "").toLowerCase().trim();
+  switch (r) {
+    case "admin":
+      return "Quản Trị Viên (Admin)";
+    case "seller":
+      return "Chủ Gian Hàng (Seller)";
+    case "shipper":
+      return "Tài Xế Giao Hàng (Shipper)";
+    case "buyer":
+      return "Khách Hàng (Buyer)";
+    case "guest":
+      return "Khách Vãng Lai (Chưa đăng nhập)";
+    default:
+      return role || "Người Dùng";
+  }
+};
+
+const goRoleHome = () => {
+  switch (auth.currentRole.value) {
+    case "admin":
+      router.push("/admin");
+      break;
+    case "seller":
+      router.push("/seller");
+      break;
+    case "shipper":
+      router.push("/shipper");
+      break;
+    default:
+      router.push("/");
+      break;
+  }
+};
 
 const goHome = () => {
   router.push("/");
@@ -9,6 +62,11 @@ const goHome = () => {
 
 const goProducts = () => {
   router.push("/products");
+};
+
+const handleLogout = () => {
+  auth.logout();
+  router.push("/login");
 };
 </script>
 
@@ -95,25 +153,68 @@ const goProducts = () => {
 
       <!-- Typography & Messages -->
       <div class="content-wrapper">
-        <h1 class="error-title">404 - ACCESS DENIED</h1>
-        <p class="error-desc">
-          It seems this market is temporarily closed or you do<br class="break-line" />not have permission to access it.
-        </p>
-
-        <!-- Navigation Actions -->
-        <div class="actions-row">
-          <button class="btn btn-primary" @click="goHome">
-            <i class="bi bi-arrow-left me-2" aria-hidden="true"></i> Quay Về Trang Chủ
-          </button>
-          <button class="btn btn-secondary" @click="goProducts">
-            <i class="bi bi-bag-fill me-2" aria-hidden="true"></i> Khám Phá Sản Phẩm
-          </button>
+        <div v-if="isForbidden" class="forbidden-alert-pill">
+          <i class="bi bi-shield-slash-fill me-1"></i>
+          <span>LỖI PHÂN QUYỀN TRUY CẬP (ACCESS DENIED)</span>
         </div>
 
-        <!-- Help hint -->
-        <p class="help-text">
-          Đường dẫn bạn vừa truy cập không tồn tại hoặc đã thay đổi địa chỉ.
-        </p>
+        <h1 class="error-title">
+          {{ isForbidden ? '403 - TRUY CẬP BỊ TỪ CHỐI' : '404 - ACCESS DENIED' }}
+        </h1>
+
+        <!-- Nội dung khi bị từ chối quyền truy cập (403) -->
+        <div v-if="isForbidden" class="forbidden-info-card">
+          <div class="role-compare-row">
+            <div class="role-bubble current">
+              <span class="bubble-label">Tài khoản của bạn:</span>
+              <strong class="bubble-val"><i class="bi bi-person-fill me-1"></i>{{ formatRoleName(currentRole) }}</strong>
+            </div>
+            <i class="bi bi-arrow-right-short compare-arrow"></i>
+            <div class="role-bubble required">
+              <span class="bubble-label">Quyền trang yêu cầu:</span>
+              <strong class="bubble-val"><i class="bi bi-lock-fill me-1"></i>{{ formatRoleName(requiredRole) }}</strong>
+            </div>
+          </div>
+
+          <p class="error-desc-forbidden">
+            Bạn không có quyền truy cập vào đường dẫn <code class="target-code">{{ targetPath || 'này' }}</code>. Mỗi tài khoản chỉ được phép sử dụng các tính năng đúng với quyền hạn đã đăng ký!
+          </p>
+
+          <!-- Navigation Actions -->
+          <div class="actions-row">
+            <button class="btn btn-primary" @click="goRoleHome">
+              <i class="bi bi-house-door-fill me-2" aria-hidden="true"></i> Về Khu Vực Của Bạn
+            </button>
+            <button class="btn btn-secondary" @click="handleLogout">
+              <i class="bi bi-box-arrow-right me-2" aria-hidden="true"></i> Đổi Tài Khoản Khác
+            </button>
+            <button class="btn btn-ghost" @click="goHome">
+              <i class="bi bi-arrow-left me-1"></i> Trang Chủ
+            </button>
+          </div>
+        </div>
+
+        <!-- Nội dung khi không tìm thấy trang (404 thông thường) -->
+        <template v-else>
+          <p class="error-desc">
+            It seems this market is temporarily closed or you do<br class="break-line" />not have permission to access it.
+          </p>
+
+          <!-- Navigation Actions -->
+          <div class="actions-row">
+            <button class="btn btn-primary" @click="goHome">
+              <i class="bi bi-arrow-left me-2" aria-hidden="true"></i> Quay Về Trang Chủ
+            </button>
+            <button class="btn btn-secondary" @click="goProducts">
+              <i class="bi bi-bag-fill me-2" aria-hidden="true"></i> Khám Phá Sản Phẩm
+            </button>
+          </div>
+
+          <!-- Help hint -->
+          <p class="help-text">
+            Đường dẫn bạn vừa truy cập không tồn tại hoặc đã thay đổi địa chỉ.
+          </p>
+        </template>
       </div>
     </div>
   </div>
@@ -262,6 +363,126 @@ const goProducts = () => {
   border-color: #fdba74;
   color: #ea580c;
   transform: translateY(-2px);
+}
+
+.forbidden-alert-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  margin-bottom: 14px;
+  animation: floatIn 0.5s ease;
+}
+
+.forbidden-info-card {
+  width: 100%;
+  max-width: 520px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  padding: 24px;
+  margin-bottom: 24px;
+  animation: floatIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.role-compare-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.role-bubble {
+  flex: 1;
+  min-width: 170px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+}
+
+.role-bubble.current {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.role-bubble.current .bubble-label {
+  color: #15803d;
+}
+
+.role-bubble.current .bubble-val {
+  color: #166534;
+}
+
+.role-bubble.required {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.role-bubble.required .bubble-label {
+  color: #b91c1c;
+}
+
+.role-bubble.required .bubble-val {
+  color: #991b1b;
+}
+
+.bubble-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.bubble-val {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.compare-arrow {
+  font-size: 24px;
+  color: #94a3b8;
+}
+
+.error-desc-forbidden {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #475569;
+  margin: 0 0 20px 0;
+  text-align: center;
+}
+
+.target-code {
+  background: #f1f5f9;
+  color: #ea580c;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-family: monospace;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #64748b;
+  border: 1px solid transparent;
+}
+
+.btn-ghost:hover {
+  background: #f1f5f9;
+  color: #0f172a;
 }
 
 .help-text {

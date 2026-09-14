@@ -10,8 +10,13 @@
  * ================================================================
  */
 import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from "vue";
+import { useRouter } from "vue-router";
+import { useAuth } from "../../composables/useAuth";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+
+const router = useRouter();
+const auth = useAuth();
 
 // 1. Trạng thái hoạt động (Mặc định: Tạm nghỉ)
 const isOnline = ref(false);
@@ -592,6 +597,19 @@ watch(isOnline, () => {
 });
 
 onMounted(() => {
+  const role = auth.currentRole.value;
+  if (role !== "shipper" && role !== "admin") {
+    router.replace({
+      path: "/403",
+      query: {
+        error: "forbidden_role",
+        target: "/shipper",
+        required: "shipper",
+        currentRole: role,
+      },
+    });
+    return;
+  }
   loadDriverProfile();
   initMap();
   // Nếu đang mở hoạt động sẵn, tự động định vị vị trí người dùng

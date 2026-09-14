@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 /**
  * ================================================================
  * PHÂN HỆ QUẢN TRỊ ADMIN & QUẢN LÝ (ADMIN DASHBOARD) - ZONEMART
@@ -12,6 +12,11 @@
  * ================================================================
  */
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { useRouter } from "vue-router";
+import { useAuth } from "../../composables/useAuth";
+
+const router = useRouter();
+const auth = useAuth();
 
 // Actor Role hiện tại (Super Admin hoặc Quản lý ca trực) để test phân quyền
 const currentActorRole = ref<"Admin" | "Manager">("Admin");
@@ -446,6 +451,19 @@ const handleCreateManager = async () => {
 };
 
 onMounted(() => {
+  const role = auth.currentRole.value;
+  if (role !== "admin") {
+    router.replace({
+      path: "/403",
+      query: {
+        error: "forbidden_role",
+        target: "/admin",
+        required: "admin",
+        currentRole: role,
+      },
+    });
+    return;
+  }
   fetchStats();
   fetchUsers();
   fetchAuditLogs();
