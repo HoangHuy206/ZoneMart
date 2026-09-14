@@ -402,8 +402,30 @@ export function useCart() {
     persistCart();
   };
 
+  // Xóa các món đã chọn sau khi đặt hàng thành công
+  const removeSelectedItems = () => {
+    cartStores.value = cartStores.value
+      .map((store) => ({
+        ...store,
+        items: store.items.filter((item) => !item.selected),
+      }))
+      .filter((store) => store.items.length > 0);
+    persistCart();
+  };
+
+  // Danh sách nhóm cửa hàng có món đang được chọn
+  const selectedStoreGroups = computed(() => {
+    return cartStores.value
+      .map((store) => ({
+        ...store,
+        items: store.items.filter((item) => item.selected),
+      }))
+      .filter((store) => store.items.length > 0);
+  });
+
   return {
     cartStores,
+    selectedStoreGroups,
     totalCount,
     selectedItemsCount,
     subTotal,
@@ -428,6 +450,7 @@ export function useCart() {
     applyVoucher,
     removeVoucher,
     clearCart,
+    removeSelectedItems,
     AVAILABLE_VOUCHERS,
   };
 }
