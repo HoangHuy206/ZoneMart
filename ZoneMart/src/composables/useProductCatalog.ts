@@ -936,6 +936,164 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
       "Bơm 1 lượng nhỏ lên miếng rửa bát ẩm để tạo bọt enzym tự nhiên."
     ],
     reviews: []
+  },
+  {
+    id: "p13",
+    name: "Thịt Gà Ta Thả Vườn Làm Sạch Nguyên Con",
+    category: "food",
+    categoryName: "Thực phẩm tươi",
+    price: 165000,
+    oldPrice: 195000,
+    discountBadge: "-15%",
+    unit: "Con 1.3 - 1.5kg",
+    image: "https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&w=800&q=80",
+    gallery: [
+      "https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&w=800&q=80"
+    ],
+    badge: "Gà ta thả đồi",
+    certification: {
+      type: "ATTP Quốc Gia",
+      certNo: "VSATTP-HN-2026",
+      issuedBy: "Chi Cục Thú Y Hà Nội",
+      issuedDate: "01/01/2026",
+      expiryDate: "01/01/2027"
+    },
+    store: {
+      id: "store_zonemart_cau_giay",
+      name: "ZoneMart Cầu Giấy",
+      address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội",
+      distanceKm: 1.2,
+      deliveryTime: "15 - 20 phút",
+      rating: 5.0,
+      totalProducts: 240,
+      isVerified: true
+    },
+    rating: 4.9,
+    reviewsCount: 52,
+    sold: 110,
+    stock: 25,
+    description: "Gà ta nuôi thả đồi tự nhiên thịt săn chắc, da giòn vàng óng, vị ngọt đậm đà. Đã được làm sạch lông mổ moi hút chân không vệ sinh an toàn thực phẩm.",
+    highlights: [
+      "Gà ta thả đồi tự nhiên thịt dai thơm ngọt",
+      "Làm sạch mổ moi đóng gói bảo quản lạnh",
+      "Giao hỏa tốc 20 phút bảo đảm tươi rói"
+    ],
+    specs: {
+      origin: "Ba Vì, Hà Nội",
+      brand: "Gà Sạch Đồi Ba Vì",
+      weight: "1.3 - 1.5kg/con",
+      shelfLife: "3 ngày ngăn mát, 30 ngày ngăn đông",
+      storage: "0-4°C trong tủ lạnh",
+      packingStandard: "Hút chân không tiêu chuẩn ATTP"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "239 kcal",
+      protein: "27.3g",
+      fat: "13.6g",
+      carbs: "0g",
+      minerals: "Sắt, Phốt pho, Vitamin A, B3"
+    },
+    cookingTips: ["Luộc lửa vừa kèm gừng hành hoa tiêu 25 phút để da giòn thịt ngọt."],
+    reviews: []
+  },
+  {
+    id: "p14",
+    name: "Cánh Gà Tươi CP Loại 1 Đóng Khay",
+    category: "food",
+    categoryName: "Thực phẩm tươi",
+    price: 82000,
+    oldPrice: 95000,
+    discountBadge: "-14%",
+    unit: "Khay 500g",
+    image: "https://images.unsplash.com/photo-1527477321055-43615b629c5e?auto=format&fit=crop&w=800&q=80",
+    gallery: [
+      "https://images.unsplash.com/photo-1527477321055-43615b629c5e?auto=format&fit=crop&w=800&q=80"
+    ],
+    badge: "Tươi mổ trong ngày",
+    store: {
+      id: "store_zonemart_cau_giay",
+      name: "ZoneMart Cầu Giấy",
+      address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội",
+      distanceKm: 1.2,
+      deliveryTime: "15 - 20 phút",
+      rating: 5.0,
+      totalProducts: 240,
+      isVerified: true
+    },
+    rating: 4.8,
+    reviewsCount: 38,
+    sold: 145,
+    stock: 40,
+    description: "Cánh gà tươi CP chuẩn thịt sạch, lớp da mỏng ít mỡ, thích hợp chiên nước mắm, nướng mật ong hoặc rim me.",
+    highlights: ["Cánh gà tươi sạch mổ trong ngày", "Chuẩn thịt sạch CP an toàn tuyệt đối"],
+    specs: {
+      origin: "CP Foods Việt Nam",
+      brand: "CP Fresh Meat",
+      weight: "500g (khoảng 4-6 khúc cánh)",
+      shelfLife: "3 ngày ngăn mát",
+      storage: "0-4°C",
+      packingStandard: "Khay màng bọc thực phẩm hút ẩm"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "203 kcal",
+      protein: "18.3g",
+      fat: "14.2g",
+      carbs: "0g",
+      minerals: "Canxi, Sắt"
+    },
+    cookingTips: ["Khứa nhẹ thân cánh ướp gia vị 15 phút trước khi nướng hoặc chiên."],
+    reviews: []
+  },
+  {
+    id: "p15",
+    name: "Cơm Gà Xối Mỡ Da Giòn Nóng Hổi Kèm Canh",
+    category: "fastfood",
+    categoryName: "Món ăn nóng",
+    price: 55000,
+    oldPrice: 65000,
+    discountBadge: "-15%",
+    unit: "Phần",
+    image: "https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?auto=format&fit=crop&w=800&q=80",
+    gallery: [
+      "https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?auto=format&fit=crop&w=800&q=80"
+    ],
+    badge: "Nóng giòn thơm nức",
+    store: {
+      id: "store_bep_com_nieu",
+      name: "Bếp Cơm Niêu & Cơm Tấm",
+      address: "15 Nguyễn Khang, Trung Hòa, Cầu Giấy, Hà Nội",
+      distanceKm: 2.1,
+      deliveryTime: "15 - 25 phút",
+      rating: 4.9,
+      totalProducts: 45,
+      isVerified: true
+    },
+    rating: 4.9,
+    reviewsCount: 76,
+    sold: 230,
+    stock: 60,
+    description: "Cơm gà xối mỡ hạt cơm vàng óng nấu từ nước luộc gà, đùi góc tư gà xối mỡ nóng hổi da giòn rụm, thịt mềm ngọt nước kèm dưa chua và canh rong biển.",
+    highlights: ["Gà xối mỡ da giòn rụm nóng hổi", "Cơm nấu nước luộc gà béo ngậy vàng ươm"],
+    specs: {
+      origin: "Chế biến tại bếp đạt chuẩn VSATTP",
+      brand: "Bếp Cơm Niêu & Cơm Tấm",
+      weight: "1 Suất ăn đầy đặn",
+      shelfLife: "Dùng nóng trong vòng 2 giờ",
+      storage: "Giữ ấm trong hộp bảo ôn",
+      packingStandard: "Hộp bã mía thân thiện môi trường giữ nhiệt"
+    },
+    nutrition: {
+      servingSize: "1 suất (450g)",
+      calories: "680 kcal",
+      protein: "38g",
+      fat: "24g",
+      carbs: "78g",
+      minerals: "Đầy đủ dinh dưỡng"
+    },
+    cookingTips: ["Dùng ngay khi còn nóng để cảm nhận trọn vẹn độ giòn của da gà."],
+    reviews: []
   }
 ];
 
@@ -1104,7 +1262,6 @@ export function useProductCatalog() {
     allProducts,
     allStores,
     getProductById,
-    getRelatedProducts
     getRelatedProducts,
     getStoreByIdOrName,
   };

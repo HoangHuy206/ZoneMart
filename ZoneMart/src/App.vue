@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref } from 'vue';
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import logoImg from './assets/logo.png';
@@ -75,8 +74,6 @@ const closeDropdowns = () => {
   isSuggestionsOpen.value = false;
 };
 
-const handleHeaderSearch = () => {
-  if (searchQuery.value.trim()) {
 const handleHeaderSearch = (forcedTarget?: 'product' | 'store') => {
   const target = forcedTarget || searchTarget.value;
   isSuggestionsOpen.value = false;
@@ -85,11 +82,9 @@ const handleHeaderSearch = (forcedTarget?: 'product' | 'store') => {
   if (q) {
     router.push({
       path: '/products',
-      query: { search: searchQuery.value.trim() },
       query: { search: q, q, type: target },
     });
   } else {
-    router.push('/products');
     router.push({
       path: '/products',
       query: { type: target },
@@ -123,7 +118,6 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 </script>
 
 <template>
-  <div class="app-wrapper" @click="isUserDropdownOpen = false">
   <div class="app-wrapper" @click="closeDropdowns">
     <!-- Header chuẩn theo hình Sample Mockup (Tự động ẩn ở trang 404 qua meta.hideHeader) -->
     <header v-if="!$route.meta.hideHeader" class="navbar">
@@ -139,9 +133,6 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
           </div>
         </router-link>
 
-        <!-- 2. Thanh tìm kiếm chính giữa -->
-        <div class="header-search-wrap">
-          <i class="bi bi-search search-icon" aria-hidden="true"></i>
         <!-- 2. Thanh tìm kiếm chính giữa: Tìm Sản Phẩm HOẶC Gian Hàng -->
         <div class="header-search-wrap" @click.stop>
           <!-- Nút chọn chế độ tìm: Sản phẩm / Gian hàng -->
@@ -201,9 +192,6 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
           <input
             v-model="searchQuery"
             type="text"
-            placeholder="Tìm kiếm nông sản, thực phẩm tươi..."
-            aria-label="Tìm kiếm sản phẩm"
-            @keyup.enter="handleHeaderSearch"
             :placeholder="searchPlaceholder"
             aria-label="Tìm kiếm trên ZoneMart"
             @focus="isSuggestionsOpen = true"
@@ -1288,16 +1276,13 @@ body {
 /* 2. SEARCH BAR CHÍNH GIỮA */
 .header-search-wrap {
   flex: 1;
-  max-width: 440px;
   max-width: 480px;
   position: relative;
   display: flex;
   align-items: center;
   background: #fbf5ef;
-  border: 1px solid #ebd9ce;
   border: 1.5px solid #ebd9ce;
   border-radius: 50px;
-  padding: 6px 16px;
   padding: 4px 14px 4px 6px;
   transition: all 0.25s ease;
 }
@@ -1424,7 +1409,6 @@ body {
 
 .header-search-wrap .search-icon {
   font-size: 15px;
-  margin-right: 10px;
   margin-right: 8px;
   color: #968379;
   flex-shrink: 0;

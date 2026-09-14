@@ -1,17 +1,13 @@
 <script setup lang="ts">
 /**
  * ============================================================================
- * TRANG DANH SÁCH SẢN PHẨM (PRODUCT LIST VIEW) - ZONE MART
  * TRANG DANH SÁCH SẢN PHẨM & GIAN HÀNG (CATALOG & STORES VIEW) - ZONE MART
  * Thiết kế áp dụng Taste-Skill: Anti-Slop, Bento Asymmetry, Frameless, Tactile
- * Design Read: Hyper-local on-demand grocery & dining catalog with appetizing
- * editorial commerce language, warm terracotta tones, and tactile interactions.
  * Hỗ trợ tìm kiếm linh hoạt: Sản phẩm HOẶC Gian hàng
  * ============================================================================
  */
 import { ref, computed, watch, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { useProductCatalog } from "../../composables/useProductCatalog";
 import { useProductCatalog, type CatalogStore } from "../../composables/useProductCatalog";
 import { useCart } from "../../composables/useCart";
 
@@ -38,34 +34,33 @@ const showNotification = (msg: string) => {
   }, 2400);
 };
 
-// Đọc query từ URL (khi chuyển từ Home hoặc tìm kiếm)
-onMounted(() => {
-  if (route.query.q) {
-    searchQuery.value = String(route.query.q);
+// Hàm chuẩn hóa chuỗi tiếng Việt không dấu để tìm kiếm không dấu / có dấu đều khớp
+function removeVietnameseTones(str: string): string {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase();
+}
+
 // Đồng bộ từ URL query params (hỗ trợ cả search, q, cat, type, store)
 const syncFromRoute = () => {
   const qVal = route.query.search !== undefined ? route.query.search : route.query.q;
   if (qVal !== undefined) {
     searchQuery.value = String(qVal || "");
   }
-  if (route.query.cat) {
-    selectedCategory.value = String(route.query.cat);
   if (route.query.cat !== undefined) {
     selectedCategory.value = String(route.query.cat || "all");
+  } else if (qVal) {
+    // Khi người dùng tìm kiếm từ khóa mới mà URL không gán cố định danh mục, tự động reset về "all"
+    selectedCategory.value = "all";
   }
-});
-
-watch(
-  () => route.query,
-  (newQuery) => {
-    if (newQuery.q !== undefined) searchQuery.value = String(newQuery.q || "");
-    if (newQuery.cat !== undefined) selectedCategory.value = String(newQuery.cat || "all");
   if (route.query.type === "store") {
     activeSearchTab.value = "store";
   } else if (route.query.type === "product") {
     activeSearchTab.value = "product";
   }
-);
   if (route.query.store) {
     selectedStoreFilter.value = String(route.query.store);
     activeSearchTab.value = "product";
@@ -77,14 +72,14 @@ watch(
 onMounted(syncFromRoute);
 watch(() => route.query, syncFromRoute);
 
-// Danh mục ngành hàng với biểu tượng Bootstrap Icons chuẩn nhận diện
-const categories = [
-  { id: "all", name: "Tất cả", icon: "bi-grid-fill", count: 12 },
-  { id: "food", name: "Thực phẩm tươi", icon: "bi-fire", count: 4 },
-  { id: "veggie", name: "Rau củ VietGAP", icon: "bi-flower1", count: 3 },
-  { id: "fastfood", name: "Món ăn nóng", icon: "bi-cup-hot-fill", count: 2 },
-  { id: "beverage", name: "Đồ uống & Trái cây", icon: "bi-cup-straw", count: 3 },
-  { id: "household", name: "Nhu yếu phẩm", icon: "bi-basket2-fill", count: 2 }
+// Danh mục ngành hàng gốc
+const categoryDefinitions = [
+  { id: "all", name: "Tất cả", icon: "bi-grid-fill" },
+  { id: "food", name: "Thực phẩm tươi", icon: "bi-fire" },
+  { id: "veggie", name: "Rau củ VietGAP", icon: "bi-flower1" },
+  { id: "fastfood", name: "Món ăn nóng", icon: "bi-cup-hot-fill" },
+  { id: "beverage", name: "Đồ uống & Trái cây", icon: "bi-cup-straw" },
+  { id: "household", name: "Nhu yếu phẩm", icon: "bi-basket2-fill" }
 ];
 
 // Danh sách sản phẩm đầy đủ với dữ liệu chân thực
@@ -107,10 +102,8 @@ interface ProductItem {
   image: string;
 }
 
-
-// Lọc và sắp xếp theo điều kiện
-const filteredProducts = computed(() => {
-  const combined: ProductItem[] = catalog.allProducts.value.map((p) => ({
+const allProductItems = computed<ProductItem[]>(() => {
+  return catalog.allProducts.value.map((p) => ({
     id: p.id,
     name: p.name,
     category: p.category,
@@ -128,22 +121,86 @@ const filteredProducts = computed(() => {
     unit: p.unit,
     image: p.image,
   }));
+});
 
+// Danh mục ngành hàng với số lượng ĐỘNG theo đúng từ khóa tìm kiếm và bộ lọc hiện tại
+const categories = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
+  const qNoTone = removeVietnameseTones(q);
 
-  let result = combined.filter((p) => {
-    const matchCategory =
-      selectedCategory.value === "all" || p.category === selectedCategory.value;
+  // Lấy các sản phẩm thỏa mãn điều kiện tìm kiếm, bán kính và gian hàng (chưa lọc theo category)
+  const baseItems = allProductItems.value.filter((p) => {
     const matchQuery =
-      !searchQuery.value.trim() ||
-      p.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-      p.storeName.toLowerCase().includes(searchQuery.value.toLowerCase());
       !q ||
       p.name.toLowerCase().includes(q) ||
       p.categoryName.toLowerCase().includes(q) ||
-      p.storeName.toLowerCase().includes(q);
+      p.storeName.toLowerCase().includes(q) ||
+      removeVietnameseTones(p.name).includes(qNoTone) ||
+      removeVietnameseTones(p.categoryName).includes(qNoTone) ||
+      removeVietnameseTones(p.storeName).includes(qNoTone);
+
     const matchDistance = p.distanceKm <= maxRadiusKm.value;
-    return matchCategory && matchQuery && matchDistance;
+    const matchStore =
+      !selectedStoreFilter.value ||
+      p.storeName.toLowerCase() === selectedStoreFilter.value.toLowerCase();
+
+    return matchQuery && matchDistance && matchStore;
+  });
+
+  return categoryDefinitions.map((cat) => {
+    const count =
+      cat.id === "all"
+        ? baseItems.length
+        : baseItems.filter((p) => p.category === cat.id).length;
+    return {
+      ...cat,
+      count,
+    };
+  });
+});
+
+// Tổng số sản phẩm khớp từ khóa nếu không bị giới hạn bởi category hiện tại
+const totalMatchesWithoutCategory = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  const qNoTone = removeVietnameseTones(q);
+
+  return allProductItems.value.filter((p) => {
+    const matchQuery =
+      !q ||
+      p.name.toLowerCase().includes(q) ||
+      p.categoryName.toLowerCase().includes(q) ||
+      p.storeName.toLowerCase().includes(q) ||
+      removeVietnameseTones(p.name).includes(qNoTone) ||
+      removeVietnameseTones(p.categoryName).includes(qNoTone) ||
+      removeVietnameseTones(p.storeName).includes(qNoTone);
+
+    const matchDistance = p.distanceKm <= maxRadiusKm.value;
+    const matchStore =
+      !selectedStoreFilter.value ||
+      p.storeName.toLowerCase() === selectedStoreFilter.value.toLowerCase();
+
+    return matchQuery && matchDistance && matchStore;
+  }).length;
+});
+
+// Lọc và sắp xếp sản phẩm
+const filteredProducts = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  const qNoTone = removeVietnameseTones(q);
+
+  let result = allProductItems.value.filter((p) => {
+    const matchCategory =
+      selectedCategory.value === "all" || p.category === selectedCategory.value;
+    const matchQuery =
+      !q ||
+      p.name.toLowerCase().includes(q) ||
+      p.categoryName.toLowerCase().includes(q) ||
+      p.storeName.toLowerCase().includes(q) ||
+      removeVietnameseTones(p.name).includes(qNoTone) ||
+      removeVietnameseTones(p.categoryName).includes(qNoTone) ||
+      removeVietnameseTones(p.storeName).includes(qNoTone);
+
+    const matchDistance = p.distanceKm <= maxRadiusKm.value;
     const matchStore =
       !selectedStoreFilter.value ||
       p.storeName.toLowerCase() === selectedStoreFilter.value.toLowerCase();
@@ -171,17 +228,26 @@ const filteredProducts = computed(() => {
 // Lọc gian hàng theo điều kiện
 const filteredStores = computed<CatalogStore[]>(() => {
   const q = searchQuery.value.trim().toLowerCase();
+  const qNoTone = removeVietnameseTones(q);
   let list = catalog.allStores.value;
 
   if (q) {
     list = list.filter((s) => {
-      const matchName = s.name.toLowerCase().includes(q);
-      const matchAddress = s.address.toLowerCase().includes(q);
-      const matchCategory = s.categoryName ? s.categoryName.toLowerCase().includes(q) : false;
+      const matchName =
+        s.name.toLowerCase().includes(q) ||
+        removeVietnameseTones(s.name).includes(qNoTone);
+      const matchAddress =
+        s.address.toLowerCase().includes(q) ||
+        removeVietnameseTones(s.address).includes(qNoTone);
+      const matchCategory = s.categoryName
+        ? s.categoryName.toLowerCase().includes(q) ||
+          removeVietnameseTones(s.categoryName).includes(qNoTone)
+        : false;
       const matchProduct = s.products.some(
         (p) =>
           p.name.toLowerCase().includes(q) ||
-          p.categoryName.toLowerCase().includes(q)
+          p.categoryName.toLowerCase().includes(q) ||
+          removeVietnameseTones(p.name).includes(qNoTone)
       );
       return matchName || matchAddress || matchCategory || matchProduct;
     });
@@ -325,10 +391,8 @@ const resetFilters = () => {
               <input
                 v-model="searchQuery"
                 type="text"
-                placeholder="Tìm thịt tươi, rau sạch, bún chả, cơm tấm..."
                 :placeholder="activeSearchTab === 'store' ? 'Tìm tên gian hàng, quán ăn, siêu thị gần bạn...' : 'Tìm thịt tươi, rau sạch, bún chả, cơm tấm...'"
                 class="spotlight-input"
-                aria-label="Tìm kiếm sản phẩm thực phẩm"
                 aria-label="Tìm kiếm sản phẩm hoặc gian hàng"
               />
               <button
@@ -392,7 +456,6 @@ const resetFilters = () => {
         </div>
       </section>
 
-      <!-- 2. BỘ LỌC DANH MỤC & ĐIỀU KHIỂN SẮP XẾP (FRAMELESS BAR) -->
       <!-- 2. BỘ CHUYỂN ĐỔI CHẾ ĐỘ TÌM KIẾM: SẢN PHẨM HOẶC GIAN HÀNG -->
       <section class="search-mode-nav-section">
         <div class="search-mode-tabs-wrap">
@@ -459,8 +522,6 @@ const resetFilters = () => {
 
       <!-- 3. BỘ LỌC DANH MỤC & ĐIỀU KHIỂN SẮP XẾP (FRAMELESS BAR) -->
       <section class="filter-controls-bar">
-        <!-- Category Pills -->
-        <div class="category-pills-row">
         <!-- Category Pills (Chỉ hiện khi ở tab Sản Phẩm) -->
         <div v-if="activeSearchTab === 'product'" class="category-pills-row">
           <button
@@ -481,12 +542,6 @@ const resetFilters = () => {
         <!-- Sort controls -->
         <div class="sort-action-group">
           <label class="sort-label" for="sort-select">Sắp xếp:</label>
-          <select id="sort-select" v-model="sortBy" class="sort-dropdown-select" aria-label="Sắp xếp sản phẩm">
-            <option value="popular">Bán chạy nhất</option>
-            <option value="distance">Gần bạn nhất</option>
-            <option value="rating">Đánh giá cao nhất</option>
-            <option value="price-asc">Giá: Thấp đến cao</option>
-            <option value="price-desc">Giá: Cao đến thấp</option>
           <select id="sort-select" v-model="sortBy" class="sort-dropdown-select" aria-label="Sắp xếp">
             <template v-if="activeSearchTab === 'product'">
               <option value="popular">Bán chạy nhất</option>
@@ -504,10 +559,8 @@ const resetFilters = () => {
         </div>
       </section>
 
-      <!-- 3. KẾT QUẢ ĐANG HIỂN THỊ -->
       <!-- 4. KẾT QUẢ ĐANG HIỂN THỊ -->
       <div class="filter-meta-status">
-        <span class="found-text">
         <span v-if="activeSearchTab === 'product'" class="found-text">
           Tìm thấy <strong>{{ filteredProducts.length }}</strong> sản phẩm phù hợp trong bán kính <strong>{{ maxRadiusKm }}km</strong>
         </span>
@@ -516,7 +569,6 @@ const resetFilters = () => {
         </span>
 
         <button
-          v-if="selectedCategory !== 'all' || searchQuery || maxRadiusKm < 10 || sortBy !== 'popular'"
           v-if="(activeSearchTab === 'product' && selectedCategory !== 'all') || searchQuery || selectedStoreFilter || maxRadiusKm < 10 || sortBy !== 'popular'"
           class="btn-reset-filter"
           @click="resetFilters"
@@ -526,17 +578,6 @@ const resetFilters = () => {
         </button>
       </div>
 
-      <!-- 4. LƯỚI SẢN PHẨM KHÔNG KHUNG VIỀN (TASTE-SKILL PRODUCT GRID) -->
-      <div v-if="filteredProducts.length > 0" class="products-tactile-grid">
-        <div
-          v-for="p in filteredProducts"
-          :key="p.id"
-          class="product-tactile-card"
-          @click="goToDetail(p.id)"
-        >
-          <!-- Media Wrapper -->
-          <div class="product-media-wrap">
-            <img :src="p.image" :alt="p.name" class="product-thumb-photo" loading="lazy" />
       <!-- 5A. TAB SẢN PHẨM: LƯỚI SẢN PHẨM KHÔNG KHUNG VIỀN (TASTE-SKILL PRODUCT GRID) -->
       <div v-if="activeSearchTab === 'product'">
         <div v-if="filteredProducts.length > 0" class="products-tactile-grid">
@@ -550,48 +591,23 @@ const resetFilters = () => {
             <div class="product-media-wrap">
               <img :src="p.image" :alt="p.name" class="product-thumb-photo" loading="lazy" />
 
-            <!-- Live Distance Chip -->
-            <div class="badge-distance-live">
-              <span class="pulse-dot"></span>
-              <span>{{ p.distanceKm }} km • {{ p.deliveryTime }}</span>
-            </div>
               <!-- Live Distance Chip -->
               <div class="badge-distance-live">
                 <span class="pulse-dot"></span>
                 <span>{{ p.distanceKm }} km • {{ p.deliveryTime }}</span>
               </div>
 
-            <!-- Discount Badge -->
-            <span v-if="p.discountBadge" class="badge-discount-ribbon">
-              {{ p.discountBadge }}
-            </span>
               <!-- Discount Badge -->
               <span v-if="p.discountBadge" class="badge-discount-ribbon">
                 {{ p.discountBadge }}
               </span>
 
-            <!-- Feature Tag -->
-            <span v-if="p.badge" class="badge-fresh-tag">
-              {{ p.badge }}
-            </span>
-          </div>
-
-          <!-- Card Body -->
-          <div class="product-card-body">
-            <div class="store-info-line">
-              <span class="store-name-text">
-                <i class="bi bi-shop store-inline-icon" aria-hidden="true"></i>
-                {{ p.storeName }}
               <!-- Feature Tag -->
               <span v-if="p.badge" class="badge-fresh-tag">
                 {{ p.badge }}
               </span>
-              <span class="category-name-chip">{{ p.categoryName }}</span>
             </div>
 
-            <h3 class="product-item-title" :title="p.name">
-              {{ p.name }}
-            </h3>
             <!-- Card Body -->
             <div class="product-card-body">
               <div class="store-info-line">
@@ -602,23 +618,10 @@ const resetFilters = () => {
                 <span class="category-name-chip">{{ p.categoryName }}</span>
               </div>
 
-            <div class="product-rating-meta">
-              <span class="star-rating">
-                <i class="bi bi-star-fill star-icon" aria-hidden="true"></i>
-                {{ p.rating.toFixed(1) }}
-              </span>
-              <span class="sold-stat">Đã bán {{ p.sold }}</span>
-              <span class="unit-stat">• {{ p.unit }}</span>
-            </div>
               <h3 class="product-item-title" :title="p.name">
                 {{ p.name }}
               </h3>
 
-            <div class="product-price-bottom-row">
-              <div class="pricing-wrap">
-                <span class="price-val">{{ p.price.toLocaleString("vi-VN") }} ₫</span>
-                <span v-if="p.oldPrice" class="old-price-val">
-                  {{ p.oldPrice.toLocaleString("vi-VN") }} ₫
               <div class="product-rating-meta">
                 <span class="star-rating">
                   <i class="bi bi-star-fill star-icon" aria-hidden="true"></i>
@@ -628,15 +631,6 @@ const resetFilters = () => {
                 <span class="unit-stat">• {{ p.unit }}</span>
               </div>
 
-              <button
-                class="btn-add-tactile"
-                title="Thêm vào giỏ hàng"
-                aria-label="Thêm vào giỏ hàng"
-                @click.stop="onAddToCart(p)"
-              >
-                <i class="bi bi-bag-plus-fill" aria-hidden="true"></i>
-                <span>Thêm</span>
-              </button>
               <div class="product-price-bottom-row">
                 <div class="pricing-wrap">
                   <span class="price-val">{{ p.price.toLocaleString("vi-VN") }} ₫</span>
@@ -668,6 +662,18 @@ const resetFilters = () => {
           <p>
             Không có sản phẩm nào khớp với tìm kiếm "<strong>{{ searchQuery }}</strong>" hoặc trong bán kính <strong>{{ maxRadiusKm }}km</strong>.
           </p>
+          <!-- Nếu đang lọc danh mục khác mà có kết quả ở các danh mục còn lại -->
+          <div v-if="selectedCategory !== 'all' && totalMatchesWithoutCategory.length > 0" class="empty-cross-action-box mb-3">
+            <p class="cross-hint-msg">
+              <i class="bi bi-info-circle-fill text-orange me-1"></i> Có <strong>{{ totalMatchesWithoutCategory.length }}</strong> sản phẩm khớp từ khóa ở các danh mục khác!
+            </p>
+            <button class="btn-switch-cross-tab" @click="selectedCategory = 'all'">
+              <i class="bi bi-grid-fill me-1"></i>
+              <span>Xem tất cả danh mục ({{ totalMatchesWithoutCategory.length }} món)</span>
+              <i class="bi bi-arrow-right ms-1"></i>
+            </button>
+          </div>
+
           <!-- Gợi ý xem gian hàng nếu có gian hàng khớp -->
           <div v-if="filteredStores.length > 0" class="empty-cross-action-box">
             <p class="cross-hint-msg">
@@ -679,17 +685,16 @@ const resetFilters = () => {
               <i class="bi bi-arrow-right ms-1"></i>
             </button>
           </div>
-          <button v-else class="btn-restore-filters" @click="resetFilters">
-            <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
-            <span>Xem tất cả sản phẩm</span>
-          </button>
+
+          <div v-if="selectedCategory === 'all' || totalMatchesWithoutCategory.length === 0" class="mt-3">
+            <button class="btn-restore-filters" @click="resetFilters">
+              <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
+              <span>Xem tất cả sản phẩm</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      <!-- Empty State khi không tìm thấy món -->
-      <div v-else class="empty-results-box">
-        <div class="empty-icon-circle">
-          <i class="bi bi-search" aria-hidden="true"></i>
       <!-- 5B. TAB GIAN HÀNG: LƯỚI GIAN HÀNG TẬN NƠI (TASTE-SKILL STORE CARDS) -->
       <div v-else>
         <div v-if="filteredStores.length > 0" class="stores-tactile-grid">
@@ -769,14 +774,6 @@ const resetFilters = () => {
             </div>
           </div>
         </div>
-        <h3>Không tìm thấy sản phẩm nào!</h3>
-        <p>
-          Không có sản phẩm nào khớp với tìm kiếm "<strong>{{ searchQuery }}</strong>" hoặc trong bán kính <strong>{{ maxRadiusKm }}km</strong>.
-        </p>
-        <button class="btn-restore-filters" @click="resetFilters">
-          <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
-          <span>Xem tất cả sản phẩm</span>
-        </button>
 
         <!-- Empty State khi không tìm thấy gian hàng -->
         <div v-else class="empty-results-box">
@@ -930,10 +927,6 @@ const resetFilters = () => {
 .spotlight-search-bar {
   display: flex;
   align-items: center;
-  background: #f1f5f9;
-  border-radius: 16px;
-  padding: 10px 16px;
-  border: none;
   background: #ffffff;
   border-radius: 18px;
   padding: 6px 16px 6px 8px;
@@ -2020,7 +2013,6 @@ const resetFilters = () => {
    RESPONSIVE
    ========================================================================== */
 @media (max-width: 1200px) {
-  .products-tactile-grid {
   .products-tactile-grid,
   .stores-tactile-grid {
     grid-template-columns: repeat(3, 1fr);
@@ -2031,7 +2023,6 @@ const resetFilters = () => {
   .bento-spotlight-section {
     grid-template-columns: 1fr;
   }
-  .products-tactile-grid {
   .products-tactile-grid,
   .stores-tactile-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -2046,7 +2037,6 @@ const resetFilters = () => {
   .bento-visual-side {
     height: 160px;
   }
-  .products-tactile-grid {
   .products-tactile-grid,
   .stores-tactile-grid {
     grid-template-columns: 1fr;
