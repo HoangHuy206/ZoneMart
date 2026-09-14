@@ -974,6 +974,8 @@ public class AuthController : ControllerBase
         string otpCode = new Random().Next(100000, 999999).ToString();
         ZaloOtps[cleanPhone] = (otpCode, DateTime.UtcNow.AddMinutes(5));
 
+        // In ra log console giả lập gửi Zalo ZNS
+        Console.WriteLine($"📱 [ZALO ZNS NOTIFICATION] Đã gửi mã OTP qua Zalo tới {cleanPhone}: {otpCode} (Hết hạn sau 5 phút)");
         bool emailSent = false;
         if (!string.IsNullOrEmpty(targetEmail) && targetEmail.Contains("@"))
         {
@@ -1032,6 +1034,7 @@ public class AuthController : ControllerBase
         {
             success = true,
             message = msg,
+            demoOtp = otpCode,
             email = targetEmail,
             phone = cleanPhone,
             expiresInSeconds = 300

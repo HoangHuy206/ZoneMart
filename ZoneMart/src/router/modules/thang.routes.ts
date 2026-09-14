@@ -1,4 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router';
+import HomeView from '../../views/thang/HomeView.vue';
 
 /**
  * ================================================================
@@ -13,7 +14,7 @@ export const thangRoutes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'Home',
-    component: () => import('../../views/thang/HomeView.vue'),
+    component: HomeView,
     meta: { title: 'Trang Chủ - ZoneMart' },
   },
   {

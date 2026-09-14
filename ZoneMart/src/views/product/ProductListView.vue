@@ -9,10 +9,13 @@
  */
 import { ref, computed, watch, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { useProductModeration } from "../../composables/useProductModeration";
+import { useProductCatalog } from "../../composables/useProductCatalog";
+import { useCart } from "../../composables/useCart";
 
 const router = useRouter();
 const route = useRoute();
+const cart = useCart();
+const catalog = useProductCatalog();
 
 // State lọc & tìm kiếm
 const searchQuery = ref("");
@@ -78,255 +81,27 @@ interface ProductItem {
   image: string;
 }
 
-const allProducts = ref<ProductItem[]>([
-  {
-    id: "p1",
-    name: "Thịt Bò Mỹ Nhập Khẩu Thượng Hạng",
-    category: "food",
-    categoryName: "Thực phẩm tươi",
-    price: 185000,
-    oldPrice: 220000,
-    discountBadge: "-16%",
-    storeName: "ZoneMart Cầu Giấy",
-    distanceKm: 1.2,
-    deliveryTime: "15 - 20 phút",
-    rating: 5.0,
-    reviews: 84,
-    sold: 142,
-    badge: "Bán chạy nhất",
-    unit: "Khay 500g",
-    image: "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=600&q=80"
-  },
-  {
-    id: "p2",
-    name: "Hộp Dâu Tây Đà Lạt Tươi Ngọt Chuẩn VietGAP",
-    category: "beverage",
-    categoryName: "Trái cây tươi",
-    price: 95000,
-    oldPrice: 125000,
-    discountBadge: "-24%",
-    storeName: "Siêu Thị Trái Cây Xanh",
-    distanceKm: 2.5,
-    deliveryTime: "20 - 25 phút",
-    rating: 4.9,
-    reviews: 128,
-    sold: 218,
-    badge: "Mới hái sáng nay",
-    unit: "Hộp 500g",
-    image: "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=600&q=80"
-  },
-  {
-    id: "p3",
-    name: "Combo Bánh Mì Chảo Nóng Hổi Kèm Pate & Xúc Xích",
-    category: "fastfood",
-    categoryName: "Món ăn nóng",
-    price: 45000,
-    oldPrice: 55000,
-    discountBadge: "-18%",
-    storeName: "Tiệm Bánh Mì Zone",
-    distanceKm: 2.8,
-    deliveryTime: "15 - 20 phút",
-    rating: 4.8,
-    reviews: 210,
-    sold: 340,
-    badge: "Giao nóng giòn",
-    unit: "Phần 1 người",
-    image: "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=600&q=80"
-  },
-  {
-    id: "p4",
-    name: "Nước Ép Cam Sành Tươi Nguyên Chất 100%",
-    category: "beverage",
-    categoryName: "Đồ uống",
-    price: 32000,
-    oldPrice: 40000,
-    discountBadge: "-20%",
-    storeName: "Siêu Thị Trái Cây Xanh",
-    distanceKm: 2.5,
-    deliveryTime: "15 - 20 phút",
-    rating: 4.9,
-    reviews: 95,
-    sold: 180,
-    badge: "Vắt tươi trực tiếp",
-    unit: "Chai 350ml",
-    image: "https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=600&q=80"
-  },
-  {
-    id: "p5",
-    name: "Bộ Nồi Inox 3 Đáy Cao Cấp Nấu Bếp Từ",
-    category: "household",
-    categoryName: "Đồ gia dụng",
-    price: 420000,
-    oldPrice: 520000,
-    discountBadge: "-19%",
-    storeName: "Tổng Kho Gia Dụng Mỹ Đình",
-    distanceKm: 5.4,
-    deliveryTime: "30 - 35 phút",
-    rating: 4.7,
-    reviews: 42,
-    sold: 65,
-    unit: "Bộ 3 nồi",
-    image: "https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&w=600&q=80"
-  },
-  {
-    id: "p6",
-    name: "Gạo ST25 Ông Cua Túi 5kg Chuẩn Vị Thơm Dẻo",
-    category: "food",
-    categoryName: "Nhu yếu phẩm",
-    price: 190000,
-    oldPrice: 225000,
-    discountBadge: "-15%",
-    storeName: "ZoneMart Cầu Giấy",
-    distanceKm: 1.2,
-    deliveryTime: "15 - 20 phút",
-    rating: 5.0,
-    reviews: 64,
-    sold: 96,
-    badge: "Gạo ngon thế giới",
-    unit: "Túi 5kg",
-    image: "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=600&q=80"
-  },
-  {
-    id: "p7",
-    name: "Rau Xà Lách Xoăn Thủy Canh Hữu Cơ Đà Lạt",
-    category: "veggie",
-    categoryName: "Rau củ sạch",
-    price: 25000,
-    oldPrice: 32000,
-    discountBadge: "-22%",
-    storeName: "Siêu Thị Trái Cây Xanh",
-    distanceKm: 2.5,
-    deliveryTime: "20 - 25 phút",
-    rating: 4.9,
-    reviews: 58,
-    sold: 110,
-    unit: "Gói 300g",
-    image: "https://images.unsplash.com/photo-1550411294-b3b1bf5bece1?auto=format&fit=crop&w=600&q=80"
-  },
-  {
-    id: "p8",
-    name: "Cá Hồi Na Uy Tươi Phi Lê Cắt Miếng",
-    category: "food",
-    categoryName: "Thực phẩm tươi",
-    price: 245000,
-    oldPrice: 280000,
-    discountBadge: "-12%",
-    storeName: "ZoneMart Cầu Giấy",
-    distanceKm: 1.2,
-    deliveryTime: "15 - 20 phút",
-    rating: 5.0,
-    reviews: 76,
-    sold: 88,
-    badge: "Tươi sống bảo quản lạnh",
-    unit: "Khay 300g",
-    image: "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=600&q=80"
-  },
-  {
-    id: "p9",
-    name: "Cà Chua Bi Socola Ngọt Đậm Vị VietGAP",
-    category: "veggie",
-    categoryName: "Rau củ sạch",
-    price: 35000,
-    oldPrice: 45000,
-    discountBadge: "-22%",
-    storeName: "Siêu Thị Trái Cây Xanh",
-    distanceKm: 2.5,
-    deliveryTime: "20 - 25 phút",
-    rating: 4.8,
-    reviews: 90,
-    sold: 165,
-    unit: "Hộp 500g",
-    image: "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=600&q=80"
-  },
-  {
-    id: "p10",
-    name: "Cơm Tấm Sườn Bì Chả Đặc Biệt Nóng Hổi",
-    category: "fastfood",
-    categoryName: "Món ăn nóng",
-    price: 52000,
-    oldPrice: 60000,
-    discountBadge: "-13%",
-    storeName: "Bếp Cơm Niêu & Cơm Tấm",
-    distanceKm: 3.4,
-    deliveryTime: "20 - 25 phút",
-    rating: 4.9,
-    reviews: 142,
-    sold: 310,
-    badge: "Kèm canh & nước mắm",
-    unit: "Hộp 1 suất",
-    image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80"
-  },
-  {
-    id: "p11",
-    name: "Bơ Sáp 034 Đặc Sản Lâm Đồng Dẻo Béo",
-    category: "beverage",
-    categoryName: "Trái cây tươi",
-    price: 65000,
-    oldPrice: 85000,
-    discountBadge: "-23%",
-    storeName: "Siêu Thị Trái Cây Xanh",
-    distanceKm: 2.5,
-    deliveryTime: "20 - 25 phút",
-    rating: 4.9,
-    reviews: 67,
-    sold: 130,
-    unit: "Kg",
-    image: "https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&w=600&q=80"
-  },
-  {
-    id: "p12",
-    name: "Nước Rửa Bát Hữu Cơ Quế & Chanh Gừng 800ml",
-    category: "household",
-    categoryName: "Đồ dùng gia đình",
-    price: 48000,
-    oldPrice: 60000,
-    discountBadge: "-20%",
-    storeName: "Tổng Kho Gia Dụng Mỹ Đình",
-    distanceKm: 5.4,
-    deliveryTime: "30 - 35 phút",
-    rating: 4.8,
-    reviews: 35,
-    sold: 95,
-    unit: "Chai 800ml",
-    image: "https://images.unsplash.com/photo-1585670270608-b404fb8802a6?auto=format&fit=crop&w=600&q=80"
-  }
-]);
-
-const productModeration = useProductModeration();
 
 // Lọc và sắp xếp theo điều kiện
 const filteredProducts = computed(() => {
-  // Đồng bộ các sản phẩm đã được AI / Manager duyệt bán (Luồng 2: B7)
-  const dynamicActive = productModeration.activeProducts.value.map(p => {
-    let catKey = "food";
-    if (p.category === "Rau củ quả") catKey = "veggie";
-    else if (p.category === "Thịt cá tươi") catKey = "food";
-    else if (p.category === "Trái cây tươi") catKey = "beverage";
-    else if (p.category === "Món ăn nóng") catKey = "fastfood";
-    else catKey = "household";
-
-    return {
-      id: p.id,
-      name: p.name,
-      category: catKey,
-      categoryName: p.category,
-      price: p.price,
-      storeName: p.storeName || "Nông Sản Sạch Ba Vì",
-      distanceKm: 1.8,
-      deliveryTime: "20 - 30 phút",
-      rating: 5.0,
-      reviews: 14,
-      sold: 42,
-      unit: p.unit || "Phần",
-      image: p.image,
-      badge: "Đã AI Kiểm Duyệt"
-    } as ProductItem;
-  });
-
-  const combined = [
-    ...dynamicActive.filter(dp => !allProducts.value.some(p => p.id === dp.id)),
-    ...allProducts.value
-  ];
+  const combined: ProductItem[] = catalog.allProducts.value.map((p) => ({
+    id: p.id,
+    name: p.name,
+    category: p.category,
+    categoryName: p.categoryName,
+    price: p.price,
+    oldPrice: p.oldPrice,
+    discountBadge: p.discountBadge,
+    storeName: p.store?.name || "ZoneMart Cầu Giấy",
+    distanceKm: p.store?.distanceKm || 1.5,
+    deliveryTime: p.store?.deliveryTime || "15 - 20 phút",
+    rating: p.rating,
+    reviews: p.reviewsCount,
+    sold: p.sold,
+    badge: p.badge,
+    unit: p.unit,
+    image: p.image,
+  }));
 
   let result = combined.filter((p) => {
     const matchCategory =
@@ -361,9 +136,25 @@ const goToDetail = (id: string) => {
   router.push(`/products/${id}`);
 };
 
-// Thêm vào giỏ hàng với Toast tương tác mượt mà
-const onAddToCart = (name: string) => {
-  showNotification(`Đã thêm "${name}" vào giỏ hàng!`);
+// Thêm vào giỏ hàng thực tế với Toast tương tác mượt mà
+const onAddToCart = (p: ProductItem) => {
+  cart.addItem(
+    {
+      storeId: 'store_' + (p.storeName || 'default').toLowerCase().replace(/\s+/g, '_'),
+      storeName: p.storeName || 'ZoneMart Đối Tác',
+      distanceKm: p.distanceKm || 1.5,
+      deliveryTime: p.deliveryTime || '15 - 20 phút',
+    },
+    {
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      originalPrice: p.oldPrice,
+      unit: p.unit,
+      image: p.image,
+    }
+  );
+  showNotification(`Đã thêm "${p.name}" vào giỏ hàng!`);
 };
 
 // Reset bộ lọc
@@ -582,7 +373,7 @@ const resetFilters = () => {
                 class="btn-add-tactile"
                 title="Thêm vào giỏ hàng"
                 aria-label="Thêm vào giỏ hàng"
-                @click.stop="onAddToCart(p.name)"
+                @click.stop="onAddToCart(p)"
               >
                 <i class="bi bi-bag-plus-fill" aria-hidden="true"></i>
                 <span>Thêm</span>
