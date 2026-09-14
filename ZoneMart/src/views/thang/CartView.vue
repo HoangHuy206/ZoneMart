@@ -6,12 +6,35 @@
  * Phụ trách: Thắng
  * ============================================================================
  */
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
+import { useAuth } from '../../composables/useAuth';
+import {
+  cartService,
+  type SuggestedProductItem,
+} from '../../services/cartService';
 
 const router = useRouter();
 const cart = useCart();
+const auth = useAuth();
+
+// Danh sách sản phẩm gợi ý mua kèm (Cross-sell) nạp trực tiếp từ Database MongoDB
+const suggestedProducts = ref<SuggestedProductItem[]>([]);
+const isLoadingDatabase = ref(false);
+
+onMounted(async () => {
+  isLoadingDatabase.value = true;
+  try {
+    const userId = auth.currentUser.value?.id || 'usr_buyer_01';
+    await cart.loadCartFromDatabase(userId);
+    suggestedProducts.value = await cartService.fetchSuggestedProducts();
+  } catch (e) {
+    console.warn('Lỗi nạp dữ liệu database cho CartView:', e);
+  } finally {
+    isLoadingDatabase.value = false;
+  }
+});
 
 // State nhập mã giảm giá
 const voucherInput = ref('');
@@ -47,62 +70,6 @@ const handleApplyVoucher = (code?: string) => {
     voucherAlert.value = { type: 'error', text: res.message };
   }
 };
-
-// Danh sách 4 sản phẩm gợi ý mua kèm (Cross-sell)
-const suggestedProducts = [
-  {
-    storeId: 'st_1',
-    storeName: 'ZoneMart Bách Hóa Cầu Giấy',
-    distanceKm: 1.2,
-    deliveryTime: '15 - 20 phút',
-    id: 'p_egg',
-    name: 'Trứng Gà Ta Ăn Thóc Chuẩn Sạch (Hộp 10 quả)',
-    price: 38000,
-    originalPrice: 48000,
-    unit: 'Hộp 10 quả',
-    image:
-      'https://images.unsplash.com/photo-1582722872445-44dc5f7e3c8f?auto=format&fit=crop&w=400&q=80',
-  },
-  {
-    storeId: 'st_2',
-    storeName: 'Siêu Thị Trái Cây Xanh',
-    distanceKm: 2.5,
-    deliveryTime: '20 - 25 phút',
-    id: 'p4',
-    name: 'Nước Ép Cam Sành Tươi Nguyên Chất 100%',
-    price: 32000,
-    originalPrice: 40000,
-    unit: 'Chai 350ml',
-    image:
-      'https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=400&q=80',
-  },
-  {
-    storeId: 'st_1',
-    storeName: 'ZoneMart Bách Hóa Cầu Giấy',
-    distanceKm: 1.2,
-    deliveryTime: '15 - 20 phút',
-    id: 'p_veg',
-    name: 'Rau Muống Hữu Cơ Ba Vì Chuẩn VietGAP',
-    price: 18000,
-    originalPrice: 22000,
-    unit: 'Bó 500g',
-    image:
-      'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80',
-  },
-  {
-    storeId: 'st_3',
-    storeName: 'Tiệm Bánh Mì Zone',
-    distanceKm: 2.8,
-    deliveryTime: '15 - 20 phút',
-    id: 'p3',
-    name: 'Combo Bánh Mì Chảo Nóng Hổi Kèm Pate',
-    price: 45000,
-    originalPrice: 55000,
-    unit: 'Phần 1 người',
-    image:
-      'https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=400&q=80',
-  },
-];
 
 const handleAddSuggested = (prod: any) => {
   cart.addItem(

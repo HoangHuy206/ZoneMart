@@ -8,7 +8,7 @@ import crypto from 'node:crypto'
 import { execSync } from 'node:child_process'
 
 // File lưu trữ lịch sử giao dịch tiền vào thực tế để không bị mất khi restart server
-const PAID_ORDERS_FILE = path.resolve(import.meta.dirname || process.cwd(), '.paid_orders.json')
+const PAID_ORDERS_FILE = path.resolve(__dirname, '.paid_orders.json')
 
 interface PaidTransaction {
   code?: string

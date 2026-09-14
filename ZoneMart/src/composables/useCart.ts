@@ -1,5 +1,6 @@
 import { ref, computed, watch } from 'vue';
 import { useAuth } from './useAuth';
+import { cartService } from '../services/cartService';
 
 export interface CartItem {
   id: string;
@@ -140,12 +141,41 @@ function loadSavedCart(): CartStoreGroup[] {
 const cartStores = ref<CartStoreGroup[]>(loadSavedCart());
 const appliedVoucherCode = ref<string>(''); // Không tự áp dụng mã giảm giá khi giỏ hàng trống
 
-function persistCart() {
+function persistCart(syncToDb = true) {
   try {
     const key = getStorageKeyForOwner();
     localStorage.setItem(key, JSON.stringify(cartStores.value));
   } catch (e) {
     console.error('Lỗi lưu giỏ hàng vào localStorage:', e);
+  }
+
+  if (syncToDb) {
+    try {
+      const savedUser = localStorage.getItem('currentUser');
+      const userId = savedUser ? JSON.parse(savedUser).id : 'usr_buyer_01';
+      cartService.saveUserCart(
+        userId,
+        cartStores.value,
+        appliedVoucherCode.value,
+      );
+    } catch {}
+  }
+}
+
+// Nạp giỏ hàng từ Database MongoDB Atlas
+async function loadCartFromDatabase(userId?: string) {
+  try {
+    const targetId = userId || 'usr_buyer_01';
+    const dbData = await cartService.fetchUserCart(targetId);
+    if (dbData && dbData.stores.length > 0) {
+      cartStores.value = dbData.stores;
+      if (dbData.voucherCode) {
+        appliedVoucherCode.value = dbData.voucherCode;
+      }
+      persistCart(false);
+    }
+  } catch (e) {
+    console.warn('Lỗi nạp giỏ hàng từ database, tiếp tục dùng local:', e);
   }
 }
 
@@ -434,6 +464,27 @@ export function useCart() {
     persistCart();
   };
 
+  // Xóa các món đã chọn sau khi đặt hàng thành công
+  const removeSelectedItems = () => {
+    cartStores.value = cartStores.value
+      .map((store) => ({
+        ...store,
+        items: store.items.filter((item) => !item.selected),
+      }))
+      .filter((store) => store.items.length > 0);
+    persistCart();
+  };
+
+  // Danh sách nhóm cửa hàng có món đang được chọn
+  const selectedStoreGroups = computed(() => {
+    return cartStores.value
+      .map((store) => ({
+        ...store,
+        items: store.items.filter((item) => item.selected),
+      }))
+      .filter((store) => store.items.length > 0);
+  });
+
   const refreshCartForUser = () => {
     cartStores.value = loadSavedCart();
     appliedVoucherCode.value = '';
@@ -441,6 +492,7 @@ export function useCart() {
 
   return {
     cartStores,
+    selectedStoreGroups,
     totalCount,
     selectedItemsCount,
     subTotal,
@@ -465,6 +517,8 @@ export function useCart() {
     applyVoucher,
     removeVoucher,
     clearCart,
+    removeSelectedItems,
+    loadCartFromDatabase,
     refreshCartForUser,
     AVAILABLE_VOUCHERS,
   };
