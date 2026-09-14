@@ -9,7 +9,7 @@
  * 4. Thống kê thu nhập ca làm việc hôm nay
  * ================================================================
  */
-import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
+import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from "vue";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -60,6 +60,67 @@ const shiftStats = ref({
   onlineHours: "0h 00m",
   totalKm: 0.0
 });
+
+// Dynamic thông tin tài xế shipper đăng nhập từ localStorage & Backend MongoDB
+const driverProfile = reactive({
+  fullName: "Tài xế ZoneMart",
+  phoneEmail: "",
+  licensePlate: "Chưa cập nhật",
+  vehicleType: "Xe máy xăng",
+  vehicleModel: "Xe máy",
+  operatingArea: "Quận Cầu Giấy, Hà Nội (Bán kính 10km)",
+  avatarUrl: "",
+  shipperCode: "00001",
+  status: "Pending"
+});
+
+const loadDriverProfile = async () => {
+  const savedUserStr = localStorage.getItem("currentUser");
+  if (savedUserStr) {
+    try {
+      const u = JSON.parse(savedUserStr);
+      if (u.fullName) driverProfile.fullName = u.fullName;
+      if (u.phoneEmail) driverProfile.phoneEmail = u.phoneEmail;
+      if (u.avatarUrl) driverProfile.avatarUrl = u.avatarUrl;
+
+      if (u.shipperDetails) {
+        if (u.shipperDetails.fullName) driverProfile.fullName = u.shipperDetails.fullName;
+        if (u.shipperDetails.licensePlate) driverProfile.licensePlate = u.shipperDetails.licensePlate;
+        if (u.shipperDetails.vehicleModel) driverProfile.vehicleModel = u.shipperDetails.vehicleModel;
+        if (u.shipperDetails.vehicleType) driverProfile.vehicleType = u.shipperDetails.vehicleType;
+        if (u.shipperDetails.operatingArea) driverProfile.operatingArea = u.shipperDetails.operatingArea;
+        if (u.shipperDetails.shipperCode) driverProfile.shipperCode = u.shipperDetails.shipperCode;
+        if (u.shipperDetails.status) driverProfile.status = u.shipperDetails.status;
+        if (u.shipperDetails.avatarUrl) driverProfile.avatarUrl = u.shipperDetails.avatarUrl;
+      }
+
+      // Query API endpoint để đồng bộ thông tin mới nhất từ CSDL MongoDB Atlas
+      const accountQuery = u.phoneEmail || u.phoneNumber || driverProfile.phoneEmail;
+      if (accountQuery) {
+        const res = await fetch(`http://localhost:5000/api/auth/shipper-profile?account=${encodeURIComponent(accountQuery)}`).catch(() => null);
+        if (res && res.ok) {
+          const data = await res.json();
+          if (data.success && data.shipper) {
+            const sh = data.shipper;
+            if (sh.fullName) driverProfile.fullName = sh.fullName;
+            if (sh.licensePlate) driverProfile.licensePlate = sh.licensePlate;
+            if (sh.vehicleModel) driverProfile.vehicleModel = sh.vehicleModel;
+            if (sh.vehicleType) driverProfile.vehicleType = sh.vehicleType;
+            if (sh.operatingArea) driverProfile.operatingArea = sh.operatingArea;
+            if (sh.shipperCode) driverProfile.shipperCode = sh.shipperCode;
+            if (sh.status) driverProfile.status = sh.status;
+            if (sh.avatarUrl) driverProfile.avatarUrl = sh.avatarUrl;
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Lỗi khi nạp thông tin tài xế:", e);
+    }
+  }
+};
+
+// Nạp ngay thông tin tài xế đã đăng nhập từ localStorage & MongoDB
+loadDriverProfile();
 
 // Toast thông báo
 const toastMsg = ref("");
@@ -531,6 +592,7 @@ watch(isOnline, () => {
 });
 
 onMounted(() => {
+  loadDriverProfile();
   initMap();
   // Nếu đang mở hoạt động sẵn, tự động định vị vị trí người dùng
   if (isOnline.value) {
@@ -580,12 +642,13 @@ onUnmounted(() => {
       <!-- Left: Driver Mini Pill -->
       <div class="driver-mini-pill" @click="switchTab('profile')" title="Xem chi tiết hồ sơ tài xế">
         <div class="driver-pill-avatar">
-          <i class="bi bi-bicycle text-success"></i>
+          <img v-if="driverProfile.avatarUrl" :src="driverProfile.avatarUrl" class="avatar-img-circle" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />
+          <i v-else class="bi bi-bicycle text-success"></i>
           <span class="pill-dot" :class="{ 'online': isOnline }"></span>
         </div>
         <div class="driver-pill-info">
           <div class="pill-name-row">
-            <strong class="pill-name">Trần Văn Bình</strong>
+            <strong class="pill-name">{{ driverProfile.fullName }}</strong>
             <span class="pill-rating"><i class="bi bi-star-fill text-warning"></i> 5.0</span>
           </div>
           <span class="pill-status-text">
@@ -593,6 +656,7 @@ onUnmounted(() => {
           </span>
         </div>
       </div>
+
 
       <!-- Right: Map Controls Stack (Traffic, Satellite, GPS Recenter) -->
       <div class="map-floating-actions">
@@ -877,10 +941,13 @@ onUnmounted(() => {
         <div v-else-if="currentTab === 'profile'" class="tab-profile-wrapper">
           <div class="profile-card">
             <div class="profile-avatar-row">
-              <div class="p-avatar"><i class="bi bi-bicycle"></i></div>
+              <div class="p-avatar">
+                <img v-if="driverProfile.avatarUrl" :src="driverProfile.avatarUrl" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />
+                <i v-else class="bi bi-bicycle"></i>
+              </div>
               <div class="p-info">
-                <h3>Trần Văn Bình</h3>
-                <p>Tài xế Hỏa Tốc ZoneMart • <i class="bi bi-star-fill text-warning"></i> 5.0</p>
+                <h3>{{ driverProfile.fullName }}</h3>
+                <p>Tài xế Hỏa Tốc ZoneMart • Mã ID: <b style="color: #0284C7;">#{{ driverProfile.shipperCode }}</b> • <i class="bi bi-star-fill text-warning"></i> 5.0</p>
                 <span class="verified-badge"><i class="bi bi-patch-check-fill text-primary me-1"></i> Đã xác thực CCCD & Bằng lái</span>
               </div>
             </div>
@@ -888,21 +955,22 @@ onUnmounted(() => {
             <div class="profile-details-grid">
               <div class="detail-item">
                 <span class="dt-label">Phương tiện:</span>
-                <strong>Honda Airblade 150</strong>
+                <strong>{{ driverProfile.vehicleModel || driverProfile.vehicleType || "Xe máy" }}</strong>
               </div>
               <div class="detail-item">
                 <span class="dt-label">Biển kiểm soát:</span>
-                <strong>29M1-9999</strong>
+                <strong>{{ driverProfile.licensePlate || "Chưa cập nhật" }}</strong>
               </div>
               <div class="detail-item">
                 <span class="dt-label">Khu vực hoạt động:</span>
-                <strong>Cầu Giấy, Hà Nội (Bán kính 10km)</strong>
+                <strong>{{ driverProfile.operatingArea || "Quận Cầu Giấy, Hà Nội (Bán kính 10km)" }}</strong>
               </div>
               <div class="detail-item">
                 <span class="dt-label">Trạng thái tài xế:</span>
-                <strong class="text-green">Đang hoạt động chuẩn</strong>
+                <strong class="text-green">{{ driverProfile.status === "Approved" ? "Đã duyệt chính thức" : "Đang chờ Ban quản lý thẩm định (24h)" }}</strong>
               </div>
             </div>
+
 
             <div class="profile-support-box">
               <h4>Tổng Đài Hỗ Trợ Tài Xế 24/7</h4>

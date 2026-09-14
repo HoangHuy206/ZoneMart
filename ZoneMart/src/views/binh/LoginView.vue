@@ -2,18 +2,79 @@
 /**
  * ================================================================
  * ĐĂNG NHẬP (LOGIN VIEW) - Phụ trách: Bình
- * Giao diện Bảng Đăng Nhập Đơn Giản & Tự Động Nhận Diện Vai Trò
- * Tích hợp Bảng Quên Mật Khẩu với Gmail OTP 120s (dobinh225599@gmail.com)
+ * Hỗ trợ 3 Vai Trò Tách Biệt:
+ * 1. Khách Hàng (Customer Login) -> ?role=customer / mặc định
+ * 2. Gian Hàng (Seller Login) -> ?role=seller
+ * 3. Tài Xế Shipper (Driver Login) -> ?role=shipper
  * ================================================================
  */
-import { ref, reactive } from "vue";
-import { useRouter } from "vue-router";
+import { ref, reactive, computed } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import ForgotPasswordForm from "./ForgotPasswordForm.vue";
 
 const router = useRouter();
+const route = useRoute();
 
 // Chế độ xem: false = Đăng nhập, true = Quên mật khẩu
 const isForgotPasswordMode = ref(false);
+
+// Nhận diện vai trò từ Query Param (?role=shipper | ?role=seller | ?role=customer)
+const activeRole = computed(() => {
+  const r = (route.query.role as string || "").toLowerCase();
+  if (r === "shipper" || r === "driver") return "shipper";
+  if (r === "seller" || r === "shop") return "seller";
+  return "customer";
+});
+
+// Cấu hình linh hoạt giao diện & màu sắc theo vai trò
+const config = computed(() => {
+  if (activeRole.value === "shipper") {
+    return {
+      roleKey: "shipper",
+      title: "ĐĂNG NHẬP TÀI XẾ DRIVER",
+      titleColor: "#0284C7",
+      subtitle: "Nhập thông tin tài khoản tài xế để bắt đầu bật app & chạy đơn ZoneMart",
+      illustrationImg: "/images/anhxoanendkyshipper_clean.png",
+      illustrationAlt: "ZoneMart Driver Scooter Illustration",
+      bgStyle: "linear-gradient(180deg, #F0F9FF 0%, #E0F2FE 40%, #F8FAFC 100%)",
+      btnClass: "btn-submit-cyan",
+      backTarget: "/register-shipper",
+      backLabel: "Quay lại trang ZoneMart Driver",
+      registerText: "Đăng ký Tài khoản Tài xế",
+      registerLink: "/register-shipper#shipper-register-card"
+    };
+  } else if (activeRole.value === "seller") {
+    return {
+      roleKey: "seller",
+      title: "ĐĂNG NHẬP GIAN HÀNG SELLER",
+      titleColor: "#10B981",
+      subtitle: "Nhập thông tin tài khoản gian hàng để quản lý cửa hàng ZoneMart",
+      illustrationImg: "/images/anhxoanendkybanhang_clean.png",
+      illustrationAlt: "ZoneMart Seller Illustration",
+      bgStyle: "radial-gradient(circle at 40% 30%, #F0FDF4 0%, #DCFCE7 60%, #F0FDF4 100%)",
+      btnClass: "btn-submit-emerald",
+      backTarget: "/register-seller",
+      backLabel: "Quay lại trang ZoneMart Seller",
+      registerText: "Đăng ký Gian hàng Seller",
+      registerLink: "/register-seller"
+    };
+  } else {
+    return {
+      roleKey: "customer",
+      title: "ĐĂNG NHẬP KHÁCH HÀNG",
+      titleColor: "#D94E15",
+      subtitle: "Nhập thông tin tài khoản của bạn để truy cập ZoneMart",
+      illustrationImg: "/images/anhxoanen_clean.png",
+      illustrationAlt: "ZoneMart Giao Hàng Hỏa Tốc",
+      bgStyle: "radial-gradient(circle at 40% 30%, #FFFDF9 0%, #FAF5EF 60%, #F3ECE2 100%)",
+      btnClass: "btn-submit-orange",
+      backTarget: "/",
+      backLabel: "Quay lại Trang Chủ ZoneMart",
+      registerText: "Tạo tài khoản Khách Hàng",
+      registerLink: "/register"
+    };
+  }
+});
 
 // Form State
 const form = reactive({
@@ -35,6 +96,34 @@ const togglePassword = () => {
   showPassword.value = !showPassword.value;
 };
 
+const handleBackHome = () => {
+  router.push(config.value.backTarget);
+};
+
+const handleRegisterClick = (e: MouseEvent) => {
+  if (activeRole.value === "shipper") {
+    e.preventDefault();
+    router.push({ path: "/register-shipper", hash: "#shipper-register-card", query: { register: "true" } }).then(() => {
+      setTimeout(() => {
+        const el = document.getElementById("shipper-register-card");
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 200);
+    });
+  } else if (activeRole.value === "seller") {
+    e.preventDefault();
+    router.push({ path: "/register-seller", hash: "#seller-register-card", query: { register: "true" } }).then(() => {
+      setTimeout(() => {
+        const el = document.getElementById("seller-register-card");
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 200);
+    });
+  }
+};
+
 // Xử lý Đăng Nhập
 const handleLogin = async () => {
   errorMessage.value = "";
@@ -50,26 +139,33 @@ const handleLogin = async () => {
   isLoading.value = true;
 
   try {
-    // Kết nối API Backend (Backend kiểm tra CSDL MongoDB Atlas để trả về đúng loại lỗi)
     const res = await fetch("http://localhost:5000/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         account: form.account.trim(),
-        password: form.password
+        password: form.password,
+        role: activeRole.value
       })
     }).catch(() => null);
 
     if (res) {
       const data = await res.json();
       if (res.ok && data.success) {
+        localStorage.setItem("isLoggedIn", "true");
+        if (data.user) {
+          localStorage.setItem("currentUser", JSON.stringify(data.user));
+        }
+
         successMessage.value = data.message || "Đăng nhập thành công! Đang chuyển hướng...";
-        const detectedRole = data.user?.role || "buyer";
+        const detectedRole = data.user?.role || activeRole.value;
         setTimeout(() => {
-          if (detectedRole === "seller" || detectedRole === "admin") {
-            router.push("/admin");
-          } else if (detectedRole === "shipper") {
+          if (activeRole.value === "shipper" || detectedRole === "shipper") {
             router.push("/shipper");
+          } else if (activeRole.value === "seller" || detectedRole === "seller") {
+            router.push("/register-seller");
+          } else if (detectedRole === "admin") {
+            router.push("/admin");
           } else {
             router.push("/");
           }
@@ -100,35 +196,36 @@ const handleLogin = async () => {
 </script>
 
 <template>
-  <div class="login-page-container">
+  <div class="login-page-container" :style="{ background: config.bgStyle }">
     <!-- KHUNG TỔNG THỂ 2 CỘT: ẢNH BÊN TRÁI + BẢNG ĐĂNG NHẬP BÊN PHẢI -->
     <div class="login-hero-layout">
       
-      <!-- CỘT TRÁI: ẢNH MINH HỌA XE ZONEMART TÁCH SẠCH NỀN -->
+      <!-- CỘT TRÁI: ẢNH MINH HỌA (XE SHIPPER DÀNH CHO TÀI XẾ, XE THỰC PHẨM DÀNH CHO KHÁCH HÀNG/SELLER) -->
       <div class="login-illustration-side">
         <img
-          src="/images/anhxoanen_clean.png"
-          alt="ZoneMart Giao Hàng Hỏa Tốc"
+          :src="config.illustrationImg"
+          :alt="config.illustrationAlt"
           class="illustration-img"
+          :class="{ 'driver-img-style': config.roleKey === 'shipper' }"
         />
       </div>
 
-      <!-- CỘT PHẢI: BẢNG ĐĂNG NHẬP / QUÊN MẬT KHẨU TRÔI NỔI (FLOATING CARD) -->
-      <div class="login-card-floating">
+      <!-- CỘT PHẢI: BẢNG ĐĂNG NHẬP FLOATING CARD -->
+      <div class="login-card-floating" :class="`role-${config.roleKey}`">
         
         <!-- TRẠNG THÁI 1: FORM ĐĂNG NHẬP -->
         <template v-if="!isForgotPasswordMode">
-          <!-- THANH ĐIỀU HƯỚNG QUAY LẠI TRANG CHỦ Ở MÉP TRÁI BẢNG -->
+          <!-- THANH ĐIỀU HƯỚNG QUAY LẠI TRANG CHỦ RIÊNG -->
           <div class="card-top-bar">
-            <button type="button" class="back-home-btn" @click="router.push('/')" title="Về trang chủ">
+            <button type="button" class="back-home-btn" @click="handleBackHome" :title="config.backLabel">
               ← Quay lại
             </button>
           </div>
 
           <!-- TIÊU ĐỀ ĐĂNG NHẬP -->
           <div class="card-brand-header">
-            <h1 class="form-main-heading">ĐĂNG NHẬP</h1>
-            <p class="form-sub-heading">Nhập thông tin tài khoản của bạn để truy cập ZoneMart</p>
+            <h1 class="form-main-heading" :style="{ color: config.titleColor }">{{ config.title }}</h1>
+            <p class="form-sub-heading">{{ config.subtitle }}</p>
           </div>
 
           <!-- THÔNG BÁO THÀNH CÔNG -->
@@ -152,7 +249,7 @@ const handleLogin = async () => {
             <div class="field-item">
               <div class="label-row-between">
                 <label class="field-label">Mật khẩu</label>
-                <a href="#" @click.prevent="isForgotPasswordMode = true" class="forgot-pass-link">Quên mật khẩu?</a>
+                <a href="#" @click.prevent="isForgotPasswordMode = true" class="forgot-pass-link" :style="{ color: config.titleColor }">Quên mật khẩu?</a>
               </div>
               <div class="password-wrapper">
                 <input
@@ -178,13 +275,13 @@ const handleLogin = async () => {
             <!-- Checkbox Ghi nhớ -->
             <div class="form-options-row">
               <label class="custom-checkbox-label">
-                <input type="checkbox" v-model="form.rememberMe" class="custom-checkbox" />
+                <input type="checkbox" v-model="form.rememberMe" class="custom-checkbox" :style="{ accentColor: config.titleColor }" />
                 <span>Ghi nhớ đăng nhập trên thiết bị này</span>
               </label>
             </div>
 
             <!-- Nút Đăng Nhập -->
-            <button type="submit" class="btn-submit-orange" :disabled="isLoading">
+            <button type="submit" :class="config.btnClass" :disabled="isLoading">
               <span v-if="!isLoading">ĐĂNG NHẬP NGAY ➔</span>
               <span v-else>ĐANG XỬ LÝ...</span>
             </button>
@@ -200,24 +297,24 @@ const handleLogin = async () => {
             <div class="register-cta-box">
               <div class="cta-line">
                 <span>Bạn chưa có tài khoản? </span>
-                <router-link to="/register" class="link-orange-bold">Tạo tài khoản Khách Hàng</router-link>
-              </div>
-              <div class="cta-sub-line">
-                <span>Muốn mở gian hàng? </span>
-                <router-link to="/register-seller" class="link-secondary">Đăng ký bán hàng với ZoneMart</router-link>
-              </div>
-              <div class="cta-sub-line" style="margin-top: 2px;">
-                <span>Đăng ký làm shipper? </span>
-                <router-link to="/register-shipper" class="link-secondary">Đăng ký đối tác giao hàng</router-link>
+                <router-link
+                  :to="config.registerLink"
+                  class="link-role-bold"
+                  :style="{ color: config.titleColor }"
+                  @click="handleRegisterClick"
+                >
+                  {{ config.registerText }}
+                </router-link>
               </div>
             </div>
           </form>
         </template>
 
-        <!-- TRẠNG THÁI 2: FORM QUÊN MẬT KHẨU WITH GMAIL OTP -->
+        <!-- TRẠNG THÁI 2: FORM QUÊN MẬT KHẨU -->
         <template v-else>
           <ForgotPasswordForm 
             :initial-email="form.account"
+            :role="activeRole"
             @back-to-login="isForgotPasswordMode = false"
             @success="isForgotPasswordMode = false; successMessage = 'Đổi mật khẩu thành công! Bạn có thể đăng nhập ngay với mật khẩu mới.';"
           />
@@ -227,37 +324,28 @@ const handleLogin = async () => {
 
     </div>
 
-    <!-- MODAL THÔNG BÁO TÀI KHOẢN / MẬT KHẨU (BÓNG MỜ NỀN ĐÈ GIỮA MÀN HÌNH) -->
+    <!-- MODAL THÔNG BÁO TÀI KHOẢN / MẬT KHẨU KHÔNG ĐÚNG -->
     <Transition name="fade-modal">
       <div v-if="showNotFoundModal" class="modal-backdrop-overlay" @click.self="showNotFoundModal = false">
         <div class="modal-pop-card">
-          
-          <!-- TH 1: MẬT KHẨU KHÔNG ĐÚNG (ICON DẤU TRÒN CÓ CHỮ X) -->
           <div v-if="modalErrorType === 'INCORRECT_PASSWORD'" class="modal-icon-badge error-x-badge">
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2.5">
               <circle cx="12" cy="12" r="10"></circle>
               <line x1="15" y1="9" x2="9" y2="15"></line>
               <line x1="9" y1="9" x2="15" y2="15"></line>
             </svg>
           </div>
-
-          <!-- TH 2: KHÔNG TÌM THẤY TÀI KHOẢN (ICON KÍNH LÚP) -->
           <div v-else class="modal-icon-badge">
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#D94E15" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" :stroke="config.titleColor" stroke-width="2.2">
               <circle cx="11" cy="11" r="8"></circle>
               <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
               <line x1="8" y1="11" x2="14" y2="11"></line>
             </svg>
           </div>
-
           <h3 class="modal-heading-title">
             {{ modalErrorType === 'INCORRECT_PASSWORD' ? 'Mật khẩu không đúng' : 'Không tìm thấy tài khoản' }}
           </h3>
-          
-          <p class="modal-body-text">
-            {{ modalErrorMessage }}
-          </p>
-
+          <p class="modal-body-text">{{ modalErrorMessage }}</p>
           <div class="modal-action-buttons">
             <button type="button" class="btn-modal-close" @click="showNotFoundModal = false">
               Đóng thông báo
@@ -270,26 +358,23 @@ const handleLogin = async () => {
 </template>
 
 <style scoped>
-/* ÉP NỔI FONT CHỮ CHUẨN KHÔNG BỊ LỖI FONT */
 *, input, button, select, textarea, label {
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
 }
 
-/* PAGE CONTAINER VỪA KHÍT 1 MÀN HÌNH (NO SCROLLBAR, LÙI ẢNH SÁT LỀ TRÁI) */
 .login-page-container {
   width: 100vw;
   height: 100vh;
   max-height: 100vh;
   overflow: hidden;
-  background: radial-gradient(circle at 40% 30%, #FFFDF9 0%, #FAF5EF 60%, #F3ECE2 100%);
   display: flex;
   align-items: center;
   justify-content: flex-start;
   padding: 16px 40px 16px 24px;
   box-sizing: border-box;
+  transition: background 0.3s ease;
 }
 
-/* HERO LAYOUT 2 CỘT: ẢNH SIÊU TO LÙI TRÁI + BẢNG DỊCH THEO VỀ TRÁI */
 .login-hero-layout {
   display: flex;
   align-items: center;
@@ -301,7 +386,6 @@ const handleLogin = async () => {
   max-height: 580px;
 }
 
-/* CỘT TRÁI - ẢNH MINH HỌA SIÊU TO & LÙI SÁT MÉP TRÁI */
 .login-illustration-side {
   flex: 1.4;
   max-width: 700px;
@@ -319,9 +403,14 @@ const handleLogin = async () => {
   position: relative;
   z-index: 1;
   filter: drop-shadow(0 16px 32px rgba(217, 78, 21, 0.15));
+  transition: all 0.3s ease;
 }
 
-/* CỘT PHẢI - BẢNG ĐĂNG NHẬP TRÔI NỔI */
+.illustration-img.driver-img-style {
+  max-width: 660px;
+  filter: drop-shadow(0 16px 32px rgba(2, 132, 199, 0.18));
+}
+
 .login-card-floating {
   width: 100%;
   max-width: 430px;
@@ -330,8 +419,8 @@ const handleLogin = async () => {
   padding: 24px 28px 22px 28px;
   box-shadow: 
     0 20px 45px -10px rgba(15, 23, 42, 0.12),
-    0 8px 20px -5px rgba(217, 78, 21, 0.08),
-    0 0 0 1px rgba(240, 230, 220, 0.8);
+    0 8px 20px -5px rgba(2, 132, 199, 0.08),
+    0 0 0 1px rgba(186, 230, 253, 0.8);
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -339,7 +428,6 @@ const handleLogin = async () => {
   position: relative;
 }
 
-/* NÚT QUAY LẠI BÊN TRÁI MÉP BẢNG */
 .card-top-bar {
   display: flex;
   justify-content: flex-start;
@@ -361,31 +449,29 @@ const handleLogin = async () => {
 }
 
 .back-home-btn:hover {
-  color: #D94E15;
+  color: #0284C7;
   transform: translateX(-2px);
 }
 
-/* HEADER BẢNG ĐĂNG NHẬP */
 .card-brand-header {
   text-align: center;
   margin-bottom: 18px;
 }
 
 .form-main-heading {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 900;
-  color: #D94E15;
   margin: 0 0 4px 0;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.5px;
 }
 
 .form-sub-heading {
   font-size: 12.5px;
   color: #64748B;
   margin: 0;
+  line-height: 1.4;
 }
 
-/* MESSAGES */
 .msg-box {
   padding: 8px 12px;
   border-radius: 10px;
@@ -396,7 +482,6 @@ const handleLogin = async () => {
 .msg-box.error { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; }
 .msg-box.success { background: #F0FDF4; color: #15803D; border: 1px solid #BBF7D0; }
 
-/* FORM FIELDS */
 .form-body {
   display: flex;
   flex-direction: column;
@@ -423,25 +508,11 @@ const handleLogin = async () => {
 
 .forgot-pass-link {
   font-size: 11.5px;
-  color: #D94E15;
   font-weight: 700;
   text-decoration: none;
 }
 .forgot-pass-link:hover {
   text-decoration: underline;
-}
-
-.input-icon-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.input-leading-icon {
-  position: absolute;
-  left: 12px;
-  font-size: 14px;
-  pointer-events: none;
 }
 
 .field-input {
@@ -455,10 +526,21 @@ const handleLogin = async () => {
   outline: none;
   box-sizing: border-box;
   transition: all 0.2s ease;
-  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
 }
 
-.field-input:focus {
+.role-seller .field-input:focus {
+  background: #FFFFFF;
+  border-color: #10B981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
+}
+
+.role-shipper .field-input:focus {
+  background: #FFFFFF;
+  border-color: #0284C7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.14);
+}
+
+.role-customer .field-input:focus {
   background: #FFFFFF;
   border-color: #D94E15;
   box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.14);
@@ -486,7 +568,6 @@ const handleLogin = async () => {
   align-items: center;
 }
 
-/* CHECKBOX ROW */
 .form-options-row {
   margin-top: 1px;
 }
@@ -502,13 +583,12 @@ const handleLogin = async () => {
 }
 
 .custom-checkbox {
-  accent-color: #D94E15;
   width: 15px;
   height: 15px;
   cursor: pointer;
 }
 
-/* SUBMIT BUTTON - WARM ORANGE PILL */
+/* BUTTON VARIANTS FOR 3 ROLES */
 .btn-submit-orange {
   width: 100%;
   padding: 11px;
@@ -518,25 +598,57 @@ const handleLogin = async () => {
   border-radius: 30px;
   font-size: 13.5px;
   font-weight: 800;
-  letter-spacing: 0.5px;
   cursor: pointer;
   box-shadow: 0 6px 16px rgba(217, 78, 21, 0.3);
   transition: all 0.2s ease;
   margin-top: 2px;
 }
-
 .btn-submit-orange:hover:not(:disabled) {
   background: #C8451F;
   transform: translateY(-1px);
   box-shadow: 0 8px 20px rgba(217, 78, 21, 0.38);
 }
 
-.btn-submit-orange:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
+.btn-submit-cyan {
+  width: 100%;
+  padding: 11px;
+  background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 30px;
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.3);
+  transition: all 0.2s ease;
+  margin-top: 2px;
+}
+.btn-submit-cyan:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0369A1 0%, #075985 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(2, 132, 199, 0.4);
 }
 
-/* DIVIDER */
+.btn-submit-emerald {
+  width: 100%;
+  padding: 11px;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 30px;
+  font-size: 13.5px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+  transition: all 0.2s ease;
+  margin-top: 2px;
+}
+.btn-submit-emerald:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+}
+
 .divider-row {
   display: flex;
   align-items: center;
@@ -557,7 +669,6 @@ const handleLogin = async () => {
   letter-spacing: 0.5px;
 }
 
-/* REGISTER CTA BOX */
 .register-cta-box {
   display: flex;
   flex-direction: column;
@@ -567,25 +678,14 @@ const handleLogin = async () => {
   color: #64748B;
 }
 
-.link-orange-bold {
-  color: #D94E15;
+.link-role-bold {
   font-weight: 800;
   text-decoration: none;
 }
-.link-orange-bold:hover {
+.link-role-bold:hover {
   text-decoration: underline;
 }
 
-.link-secondary {
-  color: #2563EB;
-  font-weight: 700;
-  text-decoration: none;
-}
-.link-secondary:hover {
-  text-decoration: underline;
-}
-
-/* MODAL THÔNG BÁO ĐÈ MÀN HÌNH VỚI BÓNG MỜ MỜ (CENTRED OVERLAY) */
 .modal-backdrop-overlay {
   position: fixed;
   top: 0;
@@ -609,43 +709,27 @@ const handleLogin = async () => {
   width: 100%;
   max-width: 380px;
   text-align: center;
-  box-shadow: 
-    0 25px 50px -12px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(240, 230, 220, 0.9);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
   align-items: center;
-  animation: modalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes modalScaleUp {
-  from {
-    opacity: 0;
-    transform: scale(0.88) translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
 }
 
 .modal-icon-badge {
   width: 60px;
   height: 60px;
-  background: #FFF7ED;
+  background: #F0F9FF;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 12px;
-  border: 2px solid #FFEDD5;
-  box-shadow: 0 4px 12px rgba(217, 78, 21, 0.15);
+  border: 2px solid #BAE6FD;
 }
 
 .modal-icon-badge.error-x-badge {
   background: #FEF2F2;
   border: 2px solid #FEE2E2;
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.18);
 }
 
 .modal-heading-title {
@@ -653,7 +737,6 @@ const handleLogin = async () => {
   font-weight: 900;
   color: #0F172A;
   margin: 0 0 8px 0;
-  letter-spacing: 0.3px;
 }
 
 .modal-body-text {
@@ -665,28 +748,6 @@ const handleLogin = async () => {
 
 .modal-action-buttons {
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.btn-modal-register {
-  width: 100%;
-  padding: 11px;
-  background: #D94E15;
-  color: #FFFFFF;
-  border: none;
-  border-radius: 30px;
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(217, 78, 21, 0.3);
-  transition: all 0.2s ease;
-}
-
-.btn-modal-register:hover {
-  background: #C8451F;
-  transform: translateY(-1px);
 }
 
 .btn-modal-close {
@@ -698,14 +759,12 @@ const handleLogin = async () => {
   font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
-  transition: color 0.2s ease;
 }
 
 .btn-modal-close:hover {
   color: #0F172A;
 }
 
-/* TRANSITION FADE */
 .fade-modal-enter-active,
 .fade-modal-leave-active {
   transition: opacity 0.25s ease;

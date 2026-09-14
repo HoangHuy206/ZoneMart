@@ -214,11 +214,25 @@ public class ForgotPasswordController : ControllerBase
 
         try
         {
-            // Cập nhật Mật khẩu mới trong CSDL MongoDB Atlas
+            // Cập nhật Mật khẩu mới trong CSDL MongoDB Atlas (Users collection)
             var filter = Builders<User>.Filter.Eq(u => u.PhoneEmail, email);
-            var update = Builders<User>.Update.Set(u => u.PasswordHash, request.NewPassword);
+            var update = Builders<User>.Update
+                .Set(u => u.PasswordHash, request.NewPassword)
+                .Set(u => u.Password, request.NewPassword);
 
             var result = await _mongoService.Users.UpdateOneAsync(filter, update);
+
+            // Đồng bộ cập nhật mật khẩu trong collection Shippers nếu là tài khoản Shipper
+            try
+            {
+                var shFilter = Builders<Shipper>.Filter.Eq(sh => sh.PhoneNumber, email);
+                var shUpdate = Builders<Shipper>.Update.Set(sh => sh.Password, request.NewPassword);
+                await _mongoService.Shippers.UpdateOneAsync(shFilter, shUpdate);
+            }
+            catch (Exception exSh)
+            {
+                Console.WriteLine($"⚠️ [MongoDB Shipper Sync Warning] {exSh.Message}");
+            }
 
             // Xóa mã đã dùng
             OtpStore.TryRemove(email, out _);

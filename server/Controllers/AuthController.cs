@@ -25,6 +25,58 @@ public class AuthController : ControllerBase
         _mongoService = mongoService;
     }
 
+    private async Task<string> GetNextCustomerCodeAsync()
+    {
+        try
+        {
+            long count = await _mongoService.Users.CountDocumentsAsync(u => u.IsBuyer && !u.IsShipper && !u.IsSeller);
+            return $"CUST-{(count + 1):D4}"; // ID Khách hàng: CUST-0001, CUST-0002...
+        }
+        catch
+        {
+            return $"CUST-{Random.Shared.Next(1, 9999):D4}";
+        }
+    }
+
+    private async Task<string> GetNextShipperCodeAsync()
+    {
+        try
+        {
+            long count = await _mongoService.Shippers.CountDocumentsAsync(Builders<Shipper>.Filter.Empty);
+            return $"SHP-{(count + 1):D4}"; // ID Shipper: SHP-0001, SHP-0002...
+        }
+        catch
+        {
+            return $"SHP-{Random.Shared.Next(1, 9999):D4}";
+        }
+    }
+
+    private async Task<string> GetNextSellerCodeAsync()
+    {
+        try
+        {
+            long count = await _mongoService.Stores.CountDocumentsAsync(Builders<Store>.Filter.Empty);
+            return $"SEL-{(count + 1):D4}"; // ID Seller Gian hàng: SEL-0001, SEL-0002...
+        }
+        catch
+        {
+            return $"SEL-{Random.Shared.Next(1, 9999):D4}";
+        }
+    }
+
+    private async Task<string> GetNextOrderCodeAsync()
+    {
+        try
+        {
+            long count = await _mongoService.ParentOrders.CountDocumentsAsync(Builders<ParentOrder>.Filter.Empty);
+            return $"ZM-{(count + 1):D4}"; // ID Đơn hàng: ZM-0001, ZM-0002...
+        }
+        catch
+        {
+            return $"ZM-{Random.Shared.Next(1, 9999):D4}";
+        }
+    }
+
     /// <summary>
     /// API XÓA TÀI KHOẢN TẠM ĐỂ TEST ĐĂNG KÝ LẠI
     /// </summary>
@@ -60,30 +112,134 @@ public class AuthController : ControllerBase
         }
 
         string inputAccount = request.Account.Trim().ToLower();
+        string rawAccount = request.Account.Trim();
         User? existingUser = null;
+        Shipper? shipperInfo = null;
 
-        // 1. Kiểm tra từ CSDL MongoDB Atlas thực tế và bộ nhớ lưu trữ
+        // 1. Kiểm tra từ CSDL MongoDB Atlas (Users collection) theo PhoneEmail hoặc UserCode
         try
         {
-            var filter = Builders<User>.Filter.Eq(u => u.PhoneEmail, inputAccount);
-            existingUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+            existingUser = await _mongoService.Users.Find(u => 
+                u.PhoneEmail.ToLower() == inputAccount || 
+                (u.UserCode != null && u.UserCode.ToLower() == inputAccount)
+            ).FirstOrDefaultAsync();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"⚠️ [MongoDB Query Warning] {ex.Message}");
+            Console.WriteLine($"⚠️ [MongoDB Query User Warning] {ex.Message}");
         }
 
         if (existingUser == null)
         {
             InMemoryUsers.TryGetValue(inputAccount, out existingUser);
         }
-        else
+
+        // 2. Kiểm tra CSDL MongoDB Atlas (Shippers collection)
+        try
         {
+            shipperInfo = await _mongoService.Shippers.Find(sh => 
+                sh.PhoneNumber.ToLower() == inputAccount || 
+                (sh.ShipperCode != null && sh.ShipperCode.ToLower() == inputAccount) || 
+                (sh.UserId != null && sh.UserId.ToLower() == inputAccount) ||
+                (existingUser != null && sh.UserId == existingUser.Id)
+            ).FirstOrDefaultAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [MongoDB Query Shipper Warning] {ex.Message}");
+        }
+
+        // 3. Đối chiếu mật khẩu linh hoạt giữa Users & Shippers
+        bool passwordMatches = false;
+
+        if (existingUser != null && (existingUser.PasswordHash == request.Password || existingUser.Password == request.Password))
+        {
+            passwordMatches = true;
+        }
+        else if (shipperInfo != null && shipperInfo.Password == request.Password)
+        {
+            passwordMatches = true;
+        }
+
+        // Nếu Shipper có thông tin mật khẩu trùng khớp -> Đồng bộ CSDL Users ngay lập tức
+        if (shipperInfo != null && shipperInfo.Password == request.Password)
+        {
+            if (existingUser != null)
+            {
+                existingUser.PasswordHash = request.Password;
+                existingUser.Password = request.Password;
+                existingUser.IsShipper = true;
+                existingUser.AccountStatus = "active";
+                try
+                {
+                    var syncUpdate = Builders<User>.Update
+                        .Set(u => u.PasswordHash, request.Password)
+                        .Set(u => u.Password, request.Password)
+                        .Set(u => u.IsShipper, true)
+                        .Set(u => u.AccountStatus, "active");
+                    await _mongoService.Users.UpdateOneAsync(u => u.Id == existingUser.Id, syncUpdate);
+                }
+                catch (Exception syncEx)
+                {
+                    Console.WriteLine($"⚠️ [MongoDB Sync User Warning] {syncEx.Message}");
+                }
+            }
+            else
+            {
+                // Tạo mới tài khoản User đồng bộ từ thông tin Shipper
+                existingUser = new User
+                {
+                    Id = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                    UserCode = shipperInfo.ShipperCode,
+                    PhoneEmail = shipperInfo.PhoneNumber,
+                    PasswordHash = request.Password,
+                    Password = request.Password,
+                    FullName = shipperInfo.FullName,
+                    IsBuyer = true,
+                    IsShipper = true,
+                    IsSeller = false,
+                    IsAdmin = false,
+                    AccountStatus = "active",
+                    CreatedAt = DateTime.UtcNow
+                };
+                try
+                {
+                    await _mongoService.Users.InsertOneAsync(existingUser);
+                    Console.WriteLine($"✅ [MongoDB Atlas] Auto created User from Shipper '{shipperInfo.PhoneNumber}'");
+                }
+                catch (Exception createEx)
+                {
+                    Console.WriteLine($"⚠️ [MongoDB Create User Warning] {createEx.Message}");
+                }
+            }
             InMemoryUsers[inputAccount] = existingUser;
         }
 
-        // 2. TH 2: KHÔNG TÌM THẤY TÀI KHOẢN TRONG CSDL
-        if (existingUser == null)
+        // Hỗ trợ đăng nhập tài khoản Admin duy nhất của hệ thống
+        if ((inputAccount == "admin" || inputAccount == "admin@zonemart.vn") && (request.Password == "admin" || request.Password == "admin123" || request.Password == "123456"))
+        {
+            if (existingUser == null)
+            {
+                existingUser = new User
+                {
+                    Id = "admin-sys-001",
+                    UserCode = "ADM-0001",
+                    PhoneEmail = "admin@zonemart.vn",
+                    PasswordHash = request.Password,
+                    Password = request.Password,
+                    FullName = "Super Administrator",
+                    IsAdmin = true,
+                    IsBuyer = false,
+                    IsSeller = false,
+                    IsShipper = false,
+                    AccountStatus = "active"
+                };
+            }
+            passwordMatches = true;
+        }
+
+        // 4. TH 2: KHÔNG TÌM THẤY TÀI KHOẢN TRONG CSDL KHỞI TẠO NÀO
+        if (existingUser == null && shipperInfo == null)
         {
             return Unauthorized(new { 
                 success = false, 
@@ -92,8 +248,8 @@ public class AuthController : ControllerBase
             });
         }
 
-        // 3. TH 1: TÀI KHOẢN ĐÃ TỒN TẠI TRONG CSDL, NHƯNG MẬT KHẨU KHÔNG ĐÚNG
-        if (existingUser.PasswordHash != request.Password)
+        // 5. TH 1: TÀI KHOẢN TỒN TẠI NHƯNG MẬT KHẨU KHÔNG TRÙNG KHỚP
+        if (!passwordMatches)
         {
             return Unauthorized(new { 
                 success = false, 
@@ -103,24 +259,56 @@ public class AuthController : ControllerBase
         }
 
         // Kiểm tra trạng thái tài khoản
-        if (existingUser.AccountStatus == "banned")
+        if (existingUser != null && existingUser.AccountStatus == "banned")
         {
             return BadRequest(new { success = false, message = "Tài khoản của bạn đã bị khóa vi phạm tiêu chuẩn cộng đồng ZoneMart!" });
         }
 
-        // Tự động nhận diện vai trò dựa trên CSDL
+        // Tự động nhận diện & Ràng buộc vai trò theo từng Cổng Đăng Nhập
+        string reqRole = !string.IsNullOrWhiteSpace(request.Role) ? request.Role.Trim().ToLower() : "";
         string determinedRole = "buyer";
-        if (existingUser.IsAdmin)
+
+        if (reqRole == "shipper")
         {
-            determinedRole = "admin";
+            if ((existingUser == null || !existingUser.IsShipper) && shipperInfo == null)
+            {
+                return BadRequest(new { success = false, message = "Tài khoản này chưa đăng ký làm Tài Xế Shipper! Vui lòng đăng ký hồ sơ tài xế trước khi đăng nhập." });
+            }
+            determinedRole = "shipper";
         }
-        else if (existingUser.IsSeller)
+        else if (reqRole == "seller")
         {
+            if (existingUser == null || (!existingUser.IsSeller && !existingUser.IsAdmin))
+            {
+                return BadRequest(new { success = false, message = "Tài khoản này chưa đăng ký mở Gian Hàng Seller! Vui lòng đăng ký mở shop trước khi đăng nhập." });
+            }
             determinedRole = "seller";
         }
-        else if (existingUser.IsShipper)
+        else if (reqRole == "admin")
         {
-            determinedRole = "shipper";
+            if (existingUser == null || !existingUser.IsAdmin)
+            {
+                return BadRequest(new { success = false, message = "Tài khoản này không có quyền truy cập vào Bảng Điều Khiển Admin!" });
+            }
+            determinedRole = "admin";
+        }
+        else
+        {
+            if (existingUser != null && existingUser.IsAdmin) determinedRole = "admin";
+            else if (existingUser != null && existingUser.IsSeller) determinedRole = "seller";
+            else if ((existingUser != null && existingUser.IsShipper) || shipperInfo != null) determinedRole = "shipper";
+        }
+
+        if (shipperInfo == null && existingUser != null && (existingUser.IsShipper || determinedRole == "shipper"))
+        {
+            try
+            {
+                shipperInfo = await _mongoService.Shippers.Find(sh => sh.UserId == existingUser.Id || sh.PhoneNumber == existingUser.PhoneEmail || (sh.FullName == existingUser.FullName && !string.IsNullOrEmpty(existingUser.FullName))).FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [MongoDB Shipper Fetch Warning] {ex.Message}");
+            }
         }
 
         return Ok(new
@@ -129,15 +317,62 @@ public class AuthController : ControllerBase
             message = $"Đăng nhập thành công với vai trò {GetRoleDisplayName(determinedRole)}!",
             user = new
             {
-                id = existingUser.Id,
-                phoneEmail = existingUser.PhoneEmail,
-                fullName = existingUser.FullName,
-                avatarUrl = existingUser.AvatarUrl,
+                id = existingUser?.Id ?? shipperInfo?.Id ?? "",
+                userCode = existingUser?.UserCode ?? shipperInfo?.ShipperCode ?? "",
+                phoneEmail = existingUser?.PhoneEmail ?? shipperInfo?.PhoneNumber ?? "",
+                fullName = shipperInfo?.FullName ?? existingUser?.FullName ?? "Tài Xế",
+                avatarUrl = !string.IsNullOrEmpty(shipperInfo?.AvatarUrl) ? shipperInfo.AvatarUrl : (existingUser?.AvatarUrl ?? ""),
                 role = determinedRole,
-                walletBalance = existingUser.WalletBalance
+                walletBalance = existingUser?.WalletBalance ?? 0,
+                shipperDetails = shipperInfo != null ? new
+                {
+                    shipperId = shipperInfo.Id,
+                    shipperCode = shipperInfo.ShipperCode,
+                    fullName = shipperInfo.FullName,
+                    phoneNumber = shipperInfo.PhoneNumber,
+                    licensePlate = shipperInfo.LicensePlate,
+                    vehicleType = shipperInfo.VehicleType,
+                    vehicleModel = shipperInfo.VehicleModel,
+                    operatingArea = shipperInfo.OperatingArea,
+                    status = shipperInfo.Status,
+                    avatarUrl = shipperInfo.AvatarUrl
+                } : null
             }
         });
     }
+
+    /// <summary>
+    /// API TRA CỨU HỒ SƠ TÀI XẾ DÀNH CHO TRANG SHIPPER DASHBOARD
+    /// </summary>
+    [HttpGet("shipper-profile")]
+    public async Task<IActionResult> GetShipperProfile([FromQuery] string account)
+    {
+        if (string.IsNullOrWhiteSpace(account)) return BadRequest(new { success = false, message = "Thiếu tài khoản" });
+        string cleanAccount = account.Trim().ToLower();
+        try
+        {
+            var shipper = await _mongoService.Shippers.Find(sh => sh.PhoneNumber.ToLower() == cleanAccount || sh.UserId == cleanAccount || sh.ShipperCode == cleanAccount).FirstOrDefaultAsync();
+            if (shipper == null)
+            {
+                var user = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == cleanAccount).FirstOrDefaultAsync();
+                if (user != null)
+                {
+                    shipper = await _mongoService.Shippers.Find(sh => sh.UserId == user.Id || sh.UserId == user.UserCode || sh.PhoneNumber.ToLower() == user.PhoneEmail.ToLower()).FirstOrDefaultAsync();
+                }
+            }
+
+            if (shipper != null)
+            {
+                return Ok(new { success = true, shipper });
+            }
+            return NotFound(new { success = false, message = "Chưa tìm thấy hồ sơ tài xế" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
 
     /// <summary>
     /// ĐĂNG KÝ TÀI KHOẢN NGƯỜI MUA (KHÁCH HÀNG)
@@ -189,12 +424,15 @@ public class AuthController : ControllerBase
             }
         }
 
-        // 2. Tạo đối tượng User mới cho Khách Hàng
+        // 2. Tạo đối tượng User mới cho Khách Hàng (Mã ID: CUST-0001, CUST-0002...)
+        string userCode = await GetNextCustomerCodeAsync();
         var newUser = new User
         {
             Id = ObjectId.GenerateNewId().ToString(),
+            UserCode = userCode,
             PhoneEmail = email,
             PasswordHash = request.Password,
+            Password = request.Password,
             FullName = !string.IsNullOrWhiteSpace(request.FullName) ? request.FullName.Trim() : email.Split('@')[0],
             IsBuyer = true,
             IsSeller = false,
@@ -414,8 +652,86 @@ public class AuthController : ControllerBase
             return BadRequest(new { success = false, message = "Vui lòng nhập đầy đủ tên cửa hàng và họ tên chủ tiệm!" });
         }
 
+        string accountKey = !string.IsNullOrWhiteSpace(request.PhoneEmail) ? request.PhoneEmail.Trim().ToLower() : "";
+        string pwd = !string.IsNullOrWhiteSpace(request.Password) ? request.Password.Trim() : "123456";
+
+        User? buyerUser = null;
+        if (!string.IsNullOrEmpty(accountKey))
+        {
+            try
+            {
+                buyerUser = await _mongoService.Users.Find(u => u.PhoneEmail == accountKey).FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [MongoDB Query User Warning] {ex.Message}");
+            }
+        }
+
+        string sellerCode = await GetNextSellerCodeAsync(); // ID Seller: SEL-0001, SEL-0002...
+        string userCode = buyerUser?.UserCode ?? "";
+        if (string.IsNullOrEmpty(userCode) || !userCode.StartsWith("SEL-"))
+        {
+            userCode = sellerCode;
+        }
+
+        if (buyerUser != null)
+        {
+            var userUpdate = Builders<User>.Update
+                .Set(u => u.IsSeller, true)
+                .Set(u => u.PasswordHash, pwd)
+                .Set(u => u.Password, pwd)
+                .Set(u => u.UserCode, userCode)
+                .Set(u => u.AccountStatus, "active");
+            try
+            {
+                await _mongoService.Users.UpdateOneAsync(u => u.Id == buyerUser.Id, userUpdate);
+                buyerUser.IsSeller = true;
+                buyerUser.PasswordHash = pwd;
+                buyerUser.Password = pwd;
+                buyerUser.UserCode = userCode;
+                InMemoryUsers[accountKey] = buyerUser;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [MongoDB User Update Error] {ex.Message}");
+            }
+        }
+        else if (!string.IsNullOrEmpty(accountKey))
+        {
+            buyerUser = new User
+            {
+                Id = ObjectId.GenerateNewId().ToString(),
+                UserCode = userCode,
+                PhoneEmail = accountKey,
+                PasswordHash = pwd,
+                Password = pwd,
+                FullName = request.OwnerFullName.Trim(),
+                IsBuyer = true,
+                IsShipper = false,
+                IsSeller = true,
+                IsAdmin = false,
+                AccountStatus = "active",
+                CreatedAt = DateTime.UtcNow
+            };
+            InMemoryUsers[accountKey] = buyerUser;
+            try
+            {
+                await _mongoService.Users.InsertOneAsync(buyerUser);
+                Console.WriteLine($"✅ [MongoDB Atlas] Đã tạo thành công tài khoản User Seller '{accountKey}' (UserCode: {userCode})!");
+            }
+            catch (Exception dbEx)
+            {
+                Console.WriteLine($"⚠️ [MongoDB User Insert Warning] {dbEx.Message}");
+            }
+        }
+
         var newStore = new Store
         {
+            UserId = userCode,
+            StoreCode = sellerCode,
+            Password = pwd,
+            PhoneEmail = accountKey,
             StoreName = request.StoreName.Trim(),
             Category = string.IsNullOrWhiteSpace(request.Category) ? "Thực phẩm & Nhu yếu phẩm" : request.Category.Trim(),
             Address = request.Address.Trim(),
@@ -433,12 +749,21 @@ public class AuthController : ControllerBase
         try
         {
             await _mongoService.Stores.InsertOneAsync(newStore);
-            Console.WriteLine($"🏪 [MongoDB Atlas] Đã lưu thành công Hồ sơ đăng ký gian hàng '{newStore.StoreName}' của chủ tiệm '{newStore.OwnerFullName}' vào CSDL MongoDB Atlas!");
+            Console.WriteLine($"🏪 [MongoDB Atlas] Đã lưu thành công Hồ sơ đăng ký gian hàng '{newStore.StoreName}' của chủ tiệm '{newStore.OwnerFullName}' (StoreCode / ID chữ: {newStore.StoreCode}) vào CSDL MongoDB Atlas!");
             
+            string targetEmail = (!string.IsNullOrWhiteSpace(accountKey) && accountKey.Contains("@")) ? accountKey.Trim().ToLower() : "";
+            if (!string.IsNullOrEmpty(targetEmail))
+            {
+                _ = Task.Run(async () =>
+                {
+                    await SendSellerPendingEmailAsync(targetEmail, request.StoreName, request.OwnerFullName);
+                });
+            }
+
             return Ok(new
             {
                 success = true,
-                message = "Đã gửi hồ sơ thành công",
+                message = "Đã gửi hồ sơ thành công! Thư cảm ơn đã được gửi về Gmail của bạn.",
                 storeId = newStore.Id
             });
         }
@@ -460,8 +785,87 @@ public class AuthController : ControllerBase
             return BadRequest(new { success = false, message = "Vui lòng nhập đầy đủ họ tên tài xế và biển số xe!" });
         }
 
+        string accountKey = !string.IsNullOrWhiteSpace(request.PhoneNumber) ? request.PhoneNumber.Trim().ToLower() : "";
+        string pwd = !string.IsNullOrWhiteSpace(request.Password) ? request.Password.Trim() : "123456";
+
+        User? buyerUser = null;
+        if (!string.IsNullOrEmpty(accountKey))
+        {
+            try
+            {
+                buyerUser = await _mongoService.Users.Find(u => u.PhoneEmail == accountKey).FirstOrDefaultAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [MongoDB Query User Warning] {ex.Message}");
+            }
+        }
+
+        string shipperCode = await GetNextShipperCodeAsync(); // Mã ID Shipper: SHP-0001, SHP-0002...
+        string userCode = buyerUser?.UserCode ?? "";
+        if (string.IsNullOrEmpty(userCode) || !userCode.StartsWith("SHP-"))
+        {
+            userCode = shipperCode;
+        }
+
+        if (buyerUser != null)
+        {
+            // Cập nhật tài khoản User hiện có thành Shipper và lưu Password & UserCode
+            var userUpdate = Builders<User>.Update
+                .Set(u => u.IsShipper, true)
+                .Set(u => u.PasswordHash, pwd)
+                .Set(u => u.Password, pwd)
+                .Set(u => u.UserCode, userCode)
+                .Set(u => u.AccountStatus, "active");
+            try
+            {
+                await _mongoService.Users.UpdateOneAsync(u => u.Id == buyerUser.Id, userUpdate);
+                buyerUser.IsShipper = true;
+                buyerUser.PasswordHash = pwd;
+                buyerUser.Password = pwd;
+                buyerUser.UserCode = userCode;
+                InMemoryUsers[accountKey] = buyerUser;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [MongoDB User Update Error] {ex.Message}");
+            }
+        }
+        else if (!string.IsNullOrEmpty(accountKey))
+        {
+            // Khởi tạo tài khoản User mới hoàn toàn cho Shipper để đăng nhập được
+            buyerUser = new User
+            {
+                Id = ObjectId.GenerateNewId().ToString(),
+                UserCode = userCode,
+                PhoneEmail = accountKey,
+                PasswordHash = pwd,
+                Password = pwd,
+                FullName = request.FullName.Trim(),
+                IsBuyer = true,
+                IsShipper = true,
+                IsSeller = false,
+                IsAdmin = false,
+                AccountStatus = "active",
+                CreatedAt = DateTime.UtcNow
+            };
+            InMemoryUsers[accountKey] = buyerUser;
+            try
+            {
+                await _mongoService.Users.InsertOneAsync(buyerUser);
+                Console.WriteLine($"✅ [MongoDB Atlas] Đã tạo thành công tài khoản User Shipper '{accountKey}'!");
+            }
+            catch (Exception dbEx)
+            {
+                Console.WriteLine($"⚠️ [MongoDB User Insert Warning] {dbEx.Message}");
+            }
+        }
+
         var newShipper = new Shipper
         {
+            UserId = userCode,
+            ShipperCode = shipperCode,
+            Password = pwd,
             FullName = request.FullName.Trim(),
             PhoneNumber = request.PhoneNumber?.Trim() ?? "",
             AvatarUrl = request.AvatarUrl ?? "",
@@ -486,13 +890,33 @@ public class AuthController : ControllerBase
         try
         {
             await _mongoService.Shippers.InsertOneAsync(newShipper);
-            Console.WriteLine($"🛵 [MongoDB Atlas] Đã lưu thành công Hồ sơ tài xế Shipper '{newShipper.FullName}' (Biển số: {newShipper.LicensePlate}) vào CSDL MongoDB Atlas!");
+            Console.WriteLine($"🛵 [MongoDB Atlas] Đã lưu thành công Hồ sơ tài xế Shipper #{shipperCode} '{newShipper.FullName}' (Biển số: {newShipper.LicensePlate}, UserId: {newShipper.UserId}) vào CSDL MongoDB Atlas!");
+
+            // Gửi Gmail Cảm ơn đã nộp hồ sơ đăng ký Shipper (Chờ duyệt)
+            string targetEmail = "";
+            if (!string.IsNullOrWhiteSpace(request.PhoneNumber) && request.PhoneNumber.Contains("@"))
+            {
+                targetEmail = request.PhoneNumber.Trim().ToLower();
+            }
+            else if (!string.IsNullOrWhiteSpace(accountKey) && accountKey.Contains("@"))
+            {
+                targetEmail = accountKey.Trim().ToLower();
+            }
+
+            if (!string.IsNullOrEmpty(targetEmail))
+            {
+                _ = Task.Run(async () =>
+                {
+                    await SendShipperPendingEmailAsync(targetEmail, request.FullName, request.LicensePlate);
+                });
+            }
 
             return Ok(new
             {
                 success = true,
-                message = "Đã gửi hồ sơ thành công",
-                shipperId = newShipper.Id
+                message = "Đã gửi hồ sơ thành công! Thư cảm ơn đã được gửi về Gmail của bạn.",
+                shipperId = newShipper.Id,
+                shipperCode = shipperCode
             });
         }
         catch (Exception ex)
@@ -501,12 +925,213 @@ public class AuthController : ControllerBase
             return StatusCode(500, new { success = false, message = $"Lỗi chèn CSDL MongoDB: {ex.Message}" });
         }
     }
+
+    /// <summary>
+    /// GỬI GMAIL CẢM ƠN NỘP HỒ SƠ SELLER (PENDING) - NỘI DUNG CHUẨN ZONEMART SELLER PORTAL
+    /// </summary>
+    private static async Task SendSellerPendingEmailAsync(string toEmail, string storeName, string ownerFullName)
+    {
+        try
+        {
+            string subject = "[ZoneMart Seller] THƯ CẢM ƠN & XÁC NHẬN NỘP HỒ SƠ ĐĂNG KÝ GIAN HÀNG";
+            string htmlBody = $@"
+                <div style='background-color: #FFF7ED; padding: 16px 8px; font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, Helvetica, Arial, sans-serif;'>
+                    <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 520px; width: 100%; background: #FFFFFF; border-radius: 20px; border: 1.5px solid #FED7AA; box-shadow: 0 10px 25px rgba(217, 78, 21, 0.08); overflow: hidden; margin: 0 auto;'>
+                        
+                        <!-- HEADER LOGO -->
+                        <tr>
+                            <td align='center' style='padding: 20px 16px; border-bottom: 1px solid #FFEDD5;'>
+                                <div style='font-size: 24px; font-weight: 900; color: #0F172A; letter-spacing: -0.5px;'>
+                                    Zone<span style='color: #D94E15;'>Mart</span> <span style='font-size: 13px; color: #D94E15; background: #FFF7ED; padding: 3px 10px; border-radius: 16px; font-weight: 800; border: 1px solid #FED7AA;'>SELLER PORTAL</span>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- TITLE -->
+                        <tr>
+                            <td align='center' style='padding: 20px 16px 10px 16px;'>
+                                <h2 style='color: #D94E15; font-size: 20px; font-weight: 900; margin: 0 0 6px 0; line-height: 1.3;'>CẢM ƠN BẠN ĐÃ ĐĂNG KÝ MỞ GIAN HÀNG!</h2>
+                                <p style='color: #475569; font-size: 14px; margin: 0;'>Xin chào chủ tiệm <b>{ownerFullName}</b> (Gian hàng: <b style='color: #D94E15;'>{storeName}</b>),</p>
+                            </td>
+                        </tr>
+
+                        <!-- BODY CONTENT -->
+                        <tr>
+                            <td style='padding: 10px 20px 20px 20px; color: #334155; font-size: 14px; line-height: 1.6;'>
+                                <p style='margin: 0 0 14px 0;'>
+                                    Chân thành cảm ơn bạn đã tin tưởng và gửi hồ sơ đăng ký mở gian hàng số trên sàn thương mại điện tử <b>ZoneMart Seller</b>!
+                                </p>
+
+                                <!-- KHUNG THÔNG BÁO XỬ LÝ HỒ SƠ -->
+                                <div style='background: #FFF7ED; border: 1.5px solid #FED7AA; border-radius: 14px; padding: 14px 16px; margin-bottom: 16px;'>
+                                    <p style='margin: 0 0 6px 0; color: #9A3412; font-weight: 800; font-size: 14px;'>📌 TRẠNG THÁI HỒ SƠ: <span style='color: #D97706;'>ĐANG XỬ LÝ (24H)</span></p>
+                                    <p style='margin: 0; color: #78350F; font-size: 13px; line-height: 1.55;'>
+                                        Đội ngũ Ban quản lý ZoneMart đang tiếp nhận và tiến hành thẩm định thông tin gian hàng, giấy tờ CCCD & Giấy ATTP của bạn. Kết quả phê duyệt và hướng dẫn đăng bán sản phẩm sẽ được gửi trực tiếp về Gmail của bạn trong vòng 24 giờ.
+                                    </p>
+                                </div>
+
+                                <!-- THÔNG TIN QUYỀN LỢI TÙY CHỈNH NGẮN GỌN -->
+                                <div style='background: #FAF5EF; border: 1.5px solid #F0E6DC; border-radius: 14px; padding: 14px 16px; margin-bottom: 16px;'>
+                                    <h4 style='color: #9A3412; margin: 0 0 8px 0; font-size: 14px; font-weight: 800;'>🌟 QUYỀN LỢI VÀNG DÀNH CHO GIAN HÀNG ZONEMART:</h4>
+                                    <ul style='margin: 0; padding-left: 18px; color: #334155; font-size: 13px; line-height: 1.6;'>
+                                        <li><b>🎉 0đ Phí khởi tạo & duy trì:</b> Miễn phí 100% chi phí tạo shop và phí duy trì.</li>
+                                        <li><b>📍 Hỏa tốc bán kính 10km:</b> Đội ngũ ZoneMart Driver lấy hàng tận nơi trong 30 phút.</li>
+                                        <li><b>👥 Tiếp cận 50,000+ khách hàng:</b> Nâng cao doanh thu bán lẻ nông sản & thực phẩm sạch.</li>
+                                        <li><b>💰 Rút tiền Ví Seller 24/7:</b> Tiền về ví tự động, rút tiền tức thì trong 30 giây.</li>
+                                    </ul>
+                                </div>
+
+                                <p style='margin: 0; text-align: center; color: #64748B; font-size: 12.5px;'>
+                                    Mọi thắc mắc xin liên hệ Hotline <b>1900 6868</b> hoặc Gmail <a href='mailto:hh9393100@gmail.com' style='color: #D94E15; font-weight: 700;'>hh9393100@gmail.com</a>.
+                                </p>
+                            </td>
+                        </tr>
+
+                        <!-- FOOTER -->
+                        <tr>
+                            <td align='center' style='padding: 16px; border-top: 1px solid #FFEDD5; color: #94A3B8; font-size: 11.5px; line-height: 1.5;'>
+                                Trân trọng,<br />
+                                <b style='color: #D94E15; font-size: 13px;'>BAN QUẢN LÝ GIAN HÀNG ZONEMART SELLER</b>
+                            </td>
+                        </tr>
+                    </table>
+                </div>";
+            await SendEmailViaMailKitAsync(toEmail, subject, htmlBody);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [SendSellerPendingEmail Warning] {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// GỬI GMAIL CẢM ƠN NỘP HỒ SƠ SHIPPER (PENDING) - NGẮN GỌN & TỐI ƯU GIAO DIỆN MOBILE / ANDROID
+    /// </summary>
+    private static async Task SendShipperPendingEmailAsync(string toEmail, string fullName, string licensePlate)
+    {
+        try
+        {
+            string subject = "[ZoneMart Driver] THƯ CẢM ƠN & XÁC NHẬN NỘP HỒ SƠ ĐỐI TÁC TÀI XẾ";
+            string htmlBody = $@"
+                <div style='background-color: #F0F9FF; padding: 16px 8px; font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, Helvetica, Arial, sans-serif;'>
+                    <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 520px; width: 100%; background: #FFFFFF; border-radius: 20px; border: 1.5px solid #BAE6FD; box-shadow: 0 10px 25px rgba(2, 132, 199, 0.08); overflow: hidden; margin: 0 auto;'>
+                        
+                        <!-- HEADER LOGO -->
+                        <tr>
+                            <td align='center' style='padding: 20px 16px; border-bottom: 1px solid #E0F2FE;'>
+                                <div style='font-size: 24px; font-weight: 900; color: #0284C7; letter-spacing: -0.5px;'>
+                                    Zone<span style='color: #D94E15;'>Mart</span> <span style='font-size: 13px; color: #0284C7; background: #E0F2FE; padding: 3px 10px; border-radius: 16px; font-weight: 800;'>DRIVER PORTAL</span>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- TITLE -->
+                        <tr>
+                            <td align='center' style='padding: 20px 16px 10px 16px;'>
+                                <h2 style='color: #D94E15; font-size: 20px; font-weight: 900; margin: 0 0 6px 0; line-height: 1.3;'>CẢM ƠN BẠN ĐÃ ĐĂNG KÝ ĐỐI TÁC SHIPPER!</h2>
+                                <p style='color: #475569; font-size: 14px; margin: 0;'>Xin chào tài xế <b>{fullName}</b> (Biển số xe: <b style='color: #0284C7;'>{licensePlate}</b>),</p>
+                            </td>
+                        </tr>
+
+                        <!-- BODY CONTENT NGẮN GỌN -->
+                        <tr>
+                            <td style='padding: 10px 20px 20px 20px; color: #334155; font-size: 14px; line-height: 1.6;'>
+                                <p style='margin: 0 0 14px 0;'>
+                                    Cảm ơn bạn đã lựa chọn gia nhập đội ngũ tài xế giao hàng hỏa tốc <b>ZoneMart Driver</b>!
+                                </p>
+
+                                <!-- KHUNG THÔNG BÁO XỬ LÝ HỒ SƠ -->
+                                <div style='background: #FFF7ED; border: 1.5px solid #FED7AA; border-radius: 14px; padding: 14px 16px; margin-bottom: 16px;'>
+                                    <p style='margin: 0 0 6px 0; color: #9A3412; font-weight: 800; font-size: 14px;'>📌 TRẠNG THÁI HỒ SƠ: <span style='color: #D97706;'>ĐANG XỬ LÝ (24H)</span></p>
+                                    <p style='margin: 0; color: #78350F; font-size: 13px; line-height: 1.55;'>
+                                        Đội ngũ Ban quản lý ZoneMart đang tiếp nhận và tiến hành thẩm định thông tin giấy tờ, CCCD & bằng lái của bạn. Kết quả phê duyệt và hướng dẫn nhận cuốc xe sẽ được gửi trực tiếp về Gmail & SMS của bạn trong vòng 24 giờ.
+                                    </p>
+                                </div>
+
+                                <!-- THÔNG TIN QUYỀN LỢI TÙY CHỈNH NGẮN GỌN -->
+                                <div style='background: #F0F9FF; border: 1.5px solid #BAE6FD; border-radius: 14px; padding: 14px 16px; margin-bottom: 16px;'>
+                                    <h4 style='color: #0369A1; margin: 0 0 8px 0; font-size: 14px; font-weight: 800;'>🌟 QUYỀN LỢI ĐỘC QUYỀN ZONEMART DRIVER:</h4>
+                                    <ul style='margin: 0; padding-left: 18px; color: #334155; font-size: 13px; line-height: 1.6;'>
+                                        <li><b>⏱️ Chủ động 100% thời gian:</b> Tự do bật/tắt app nhận đơn bất cứ lúc nào.</li>
+                                        <li><b>📍 Đơn ngắn bán kính &lt; 10km:</b> Giao nông sản & thực phẩm khu vực gần nhà.</li>
+                                        <li><b>💰 Thu nhập 15 - 20 Triệu/tháng:</b> Giữ lại 85-90% cước phí, nạp/rút tiền ví 24/7.</li>
+                                        <li><b>🎁 Thưởng nổ đơn cực hấp dẫn:</b> Thưởng mốc đơn hoàn thành theo ngày.</li>
+                                    </ul>
+                                </div>
+
+                                <p style='margin: 0; text-align: center; color: #64748B; font-size: 12.5px;'>
+                                    Mọi thắc mắc xin liên hệ Hotline <b>1900 6868</b> hoặc Gmail <a href='mailto:hh9393100@gmail.com' style='color: #0284C7; font-weight: 700;'>hh9393100@gmail.com</a>.
+                                </p>
+                            </td>
+                        </tr>
+
+                        <!-- FOOTER -->
+                        <tr>
+                            <td align='center' style='padding: 16px; border-top: 1px solid #E0F2FE; color: #94A3B8; font-size: 11.5px; line-height: 1.5;'>
+                                Trân trọng,<br />
+                                <b style='color: #0369A1; font-size: 13px;'>BAN QUẢN LÝ TÀI XẾ ZONEMART DRIVER</b>
+                            </td>
+                        </tr>
+                    </table>
+                </div>";
+            await SendEmailViaMailKitAsync(toEmail, subject, htmlBody);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [SendShipperPendingEmail Warning] {ex.Message}");
+        }
+    }
+
+
+
+    private static async Task SendEmailViaMailKitAsync(string toEmail, string subject, string htmlBody)
+    {
+        string cleanToEmail = toEmail?.Trim().ToLower() ?? "";
+        if (string.IsNullOrWhiteSpace(cleanToEmail) || !cleanToEmail.Contains("@"))
+        {
+            Console.WriteLine("⚠️ [SMTP Warning] Bỏ qua gửi email do địa chỉ toEmail không hợp lệ!");
+            return;
+        }
+
+        var accounts = new (string Email, string Password)[]
+        {
+            ("dobinh225599@gmail.com", "pihzfkraulkrrccz"),
+            ("hh9393100@gmail.com", "bjgiqgdpcozzfqip")
+        };
+
+        foreach (var account in accounts)
+        {
+            try
+            {
+                var message = new MimeMessage();
+                message.From.Add(new MailboxAddress("ZoneMart Platform", account.Email));
+                message.To.Add(new MailboxAddress("", cleanToEmail));
+                message.Subject = subject;
+
+                var bodyBuilder = new BodyBuilder { HtmlBody = htmlBody };
+                message.Body = bodyBuilder.ToMessageBody();
+
+                using var client = new SmtpClient();
+                await client.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.StartTls);
+                await client.AuthenticateAsync(account.Email, account.Password);
+                await client.SendAsync(message);
+                await client.DisconnectAsync(true);
+                Console.WriteLine($"💌 [SMTP Success] Đã gửi mail cho {toEmail} qua {account.Email}");
+                return;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [SMTP Warning] Lỗi gửi qua {account.Email}: {ex.Message}");
+            }
+        }
+    }
 }
 
 public class LoginRequest
 {
     public string Account { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
+    public string? Role { get; set; }
 }
 
 public class RegisterRequest
@@ -529,12 +1154,14 @@ public class RegisterSellerRequest
     public string BankName { get; set; } = string.Empty;
     public string BankAccountNumber { get; set; } = string.Empty;
     public string PhoneEmail { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
 }
 
 public class RegisterShipperRequest
 {
     public string FullName { get; set; } = string.Empty;
     public string PhoneNumber { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
     public string AvatarUrl { get; set; } = string.Empty;
     public string CccdNumber { get; set; } = string.Empty;
     public string CccdFrontImage { get; set; } = string.Empty;

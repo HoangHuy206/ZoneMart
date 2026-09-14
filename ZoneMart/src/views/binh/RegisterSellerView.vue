@@ -24,6 +24,7 @@ const form = reactive({
   category: "Thực phẩm & Nhu yếu phẩm",
   address: "",
   openHours: "07:00 - 22:00",
+  phoneEmail: "",
 
   // BƯỚC 2: XÁC THỰC CHỦ TIỆM & GIẤY TỜ
   ownerFullName: "",
@@ -38,6 +39,38 @@ const form = reactive({
 
 const isLoading = ref(false);
 const errorMessage = ref("");
+
+interface CurrentUser {
+  id?: string;
+  fullName?: string;
+  phoneEmail?: string;
+  role?: string;
+}
+
+const currentUser = ref<CurrentUser | null>(null);
+
+onMounted(() => {
+  const savedUserStr = localStorage.getItem("currentUser");
+  if (savedUserStr) {
+    try {
+      const parsed = JSON.parse(savedUserStr);
+      if (parsed && (parsed.phoneEmail || parsed.fullName)) {
+        currentUser.value = parsed;
+        if (parsed.fullName && !form.ownerFullName) {
+          form.ownerFullName = parsed.fullName;
+        }
+        if (parsed.phoneEmail && !form.phoneEmail) {
+          form.phoneEmail = parsed.phoneEmail;
+        }
+      }
+    } catch (e) {}
+  }
+});
+
+const goToLoginWithIntent = (target: "seller" | "shipper") => {
+  sessionStorage.setItem("pendingRegisterTarget", target);
+  router.push("/login");
+};
 
 // Trạng thái Modal Pop-up Thành Công giữa màn hình
 const showSuccessModal = ref(false);
@@ -388,6 +421,7 @@ const handleSubmitApplication = async () => {
         category: form.category,
         address: form.address.trim(),
         openHours: form.openHours.trim(),
+        phoneEmail: form.phoneEmail.trim(),
         ownerFullName: form.ownerFullName.trim(),
         cccdFrontImage: form.cccdFrontImage,
         cccdBackImage: form.cccdBackImage,
@@ -472,6 +506,34 @@ const closeSuccessModal = () => {
 
         <!-- ==================== BƯỚC 1: THÔNG TIN TIỆM ==================== -->
         <form v-if="currentStep === 1" @submit.prevent="goToNextStep" class="form-body">
+          
+          <!-- Ô THÔNG BÁO TÀI KHOẢN KHÁCH HÀNG LIÊN KẾT (NẰM TẠI ĐẦU BƯỚC 1 - TRÊN CỘT TÊN CỬA HÀNG) -->
+          <div v-if="currentUser" class="customer-account-banner success-linked">
+            <div class="banner-head-row">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D94E15" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+              <span class="banner-head-title">Tài khoản Khách Hàng liên kết mở Gian Hàng:</span>
+            </div>
+            <div class="banner-user-detail">
+              <span class="user-display-name">Anh/Chị <b>{{ currentUser.fullName || 'Khách Hàng' }}</b></span>
+              <span class="user-display-email">(Gmail/SĐT: <b class="highlight-email">{{ currentUser.phoneEmail }}</b>)</span>
+            </div>
+          </div>
+          <div v-else class="customer-account-banner warning-not-linked">
+            <div class="banner-head-row">
+              <span class="warn-icon">⚠️</span>
+              <span class="banner-head-title">Chưa liên kết tài khoản Khách Hàng!</span>
+            </div>
+            <p class="banner-warn-desc">
+              Theo quy định ZoneMart, bạn cần đăng nhập tài khoản Khách Hàng trước khi tạo hồ sơ mở Gian Hàng.
+            </p>
+            <button type="button" class="btn-banner-login" @click="goToLoginWithIntent('seller')">
+              🔑 Đăng Nhập Tài Khoản Khách Hàng Ngay ➔
+            </button>
+          </div>
+
           <!-- Tên cửa hàng -->
           <div class="field-item">
             <label class="field-label">
@@ -964,7 +1026,7 @@ const closeSuccessModal = () => {
 }
 
 .back-home-btn:hover {
-  color: #D94E15;
+  color: #059669;
 }
 
 /* HEADER BẢNG */
@@ -976,7 +1038,7 @@ const closeSuccessModal = () => {
 .form-main-heading {
   font-size: 21px;
   font-weight: 900;
-  color: #D94E15;
+  color: #10B981;
   margin: 0 0 2px 0;
   letter-spacing: -0.5px;
 }
@@ -1029,18 +1091,18 @@ const closeSuccessModal = () => {
 }
 
 .step-item.active .step-badge {
-  background: #FFEBE1;
-  color: #D94E15;
+  background: #ECFDF5;
+  color: #10B981;
 }
 
 .step-item.current .step-badge {
-  background: #D94E15;
+  background: #10B981;
   color: #FFFFFF;
-  box-shadow: 0 4px 10px rgba(217, 78, 21, 0.35);
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.35);
 }
 
 .step-item.current .step-label {
-  color: #D94E15;
+  color: #10B981;
   font-weight: 800;
 }
 
@@ -1054,7 +1116,7 @@ const closeSuccessModal = () => {
 }
 
 .step-connector.active {
-  background: #D94E15;
+  background: #10B981;
 }
 
 /* MSG ERROR */
@@ -1118,11 +1180,11 @@ const closeSuccessModal = () => {
 
 .field-input:focus, .field-select:focus {
   background: #FFFFFF;
-  border-color: #D94E15;
-  box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.14);
+  border-color: #10B981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
 }
 
-/* CUSTOM DROPDOWN SELECT CONTAINER (ĐỒNG BỘ SHIPPER) */
+/* CUSTOM DROPDOWN SELECT CONTAINER (ĐỒNG BỘ SELLER) */
 .custom-select-container {
   position: relative;
 }
@@ -1146,9 +1208,9 @@ const closeSuccessModal = () => {
 
 .custom-select-trigger:hover,
 .custom-select-trigger.active {
-  border-color: #D94E15;
+  border-color: #10B981;
   background: #FFFFFF;
-  box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.14);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.14);
 }
 
 .selected-text {
@@ -1166,7 +1228,7 @@ const closeSuccessModal = () => {
 
 .custom-select-trigger.active .chevron-arrow {
   transform: rotate(180deg);
-  color: #D94E15;
+  color: #10B981;
 }
 
 .custom-dropdown-menu {
@@ -1178,7 +1240,7 @@ const closeSuccessModal = () => {
   max-height: 180px;
   overflow-y: auto;
   background: #FFFFFF;
-  border: 1.5px solid #D94E15;
+  border: 1.5px solid #10B981;
   border-radius: 12px;
   box-shadow: 0 10px 25px rgba(15, 23, 42, 0.18);
   z-index: 99999;
@@ -1194,13 +1256,13 @@ const closeSuccessModal = () => {
 }
 
 .dropdown-option-item:hover {
-  background: #FFF5F0;
-  color: #D94E15;
+  background: #ECFDF5;
+  color: #10B981;
   font-weight: 700;
 }
 
 .dropdown-option-item.selected {
-  background: #D94E15;
+  background: #10B981;
   color: #FFFFFF;
   font-weight: 700;
 }
@@ -1247,8 +1309,8 @@ const closeSuccessModal = () => {
   align-items: center;
   justify-content: center;
   height: 64px;
-  border: 1.5px dashed #D94E15;
-  background: #FFF7ED;
+  border: 1.5px dashed #10B981;
+  background: #F0FDF4;
   border-radius: 10px;
   cursor: pointer;
   overflow: hidden;
@@ -1263,8 +1325,8 @@ const closeSuccessModal = () => {
 }
 
 .upload-box:hover {
-  background: #FFEDD5;
-  border-color: #C8451F;
+  background: #DCFCE7;
+  border-color: #059669;
 }
 
 .upload-box.has-preview {
@@ -1281,7 +1343,7 @@ const closeSuccessModal = () => {
 .upload-text {
   font-size: 10.5px;
   font-weight: 700;
-  color: #9A3412;
+  color: #047857;
   text-align: center;
 }
 
@@ -1703,6 +1765,87 @@ const closeSuccessModal = () => {
 .btn-modal-save:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(230, 81, 0, 0.35);
+}
+
+/* ================================================================
+   Ô THÔNG BÁO TÀI KHOẢN KHÁCH HÀNG LIÊN KẾT (CUSTOMER ACCOUNT BANNER)
+   ================================================================ */
+.customer-account-banner {
+  padding: 14px 16px;
+  border-radius: 16px;
+  margin-bottom: 18px;
+  font-size: 13.5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  transition: all 0.25s ease;
+}
+
+.customer-account-banner.success-linked {
+  background: #FFF7ED;
+  border: 1.5px solid #FFEDD5;
+}
+
+.customer-account-banner.warning-not-linked {
+  background: #FEF2F2;
+  border: 1.5px solid #FECACA;
+}
+
+.banner-head-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  color: #1F2937;
+  font-size: 13.5px;
+  margin-bottom: 4px;
+}
+
+.banner-head-title {
+  color: #9A3412;
+  letter-spacing: -0.2px;
+}
+
+.warning-not-linked .banner-head-title {
+  color: #991B1B;
+}
+
+.banner-user-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  color: #374151;
+  padding-left: 2px;
+}
+
+.highlight-email {
+  color: #D94E15;
+  font-weight: 700;
+}
+
+.banner-warn-desc {
+  font-size: 12.5px;
+  color: #7F1D1D;
+  margin: 4px 0 10px 0;
+  line-height: 1.5;
+}
+
+.btn-banner-login {
+  background: linear-gradient(135deg, #D94E15 0%, #EA580C 100%);
+  color: #ffffff;
+  border: none;
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-weight: 800;
+  font-size: 12.5px;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(217, 78, 21, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-banner-login:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(217, 78, 21, 0.35);
 }
 
 .upload-box {

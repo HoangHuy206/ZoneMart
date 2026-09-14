@@ -26,14 +26,26 @@ export const binhRoutes: RouteRecordRaw[] = [
   {
     path: "/register-seller",
     name: "RegisterSeller",
-    component: () => import("../../views/binh/RegisterSellerView.vue"),
-    meta: { title: "Đăng Ký Người Bán - ZoneMart", hideHeader: true, hideFooter: true }
+    component: () => import("../../views/binh/SellerLandingView.vue"),
+    meta: { title: "ZoneMart Seller - Mở Gian Hàng Kinh Doanh", hideHeader: true, hideFooter: true }
+  },
+  {
+    path: "/seller-landing",
+    name: "SellerLanding",
+    component: () => import("../../views/binh/SellerLandingView.vue"),
+    meta: { title: "ZoneMart Seller - Mở Gian Hàng Kinh Doanh", hideHeader: true, hideFooter: true }
   },
   {
     path: "/register-shipper",
     name: "RegisterShipper",
-    component: () => import("../../views/binh/RegisterShipperView.vue"),
-    meta: { title: "Đăng Ký Tài Xế Shipper - ZoneMart", hideHeader: true, hideFooter: true }
+    component: () => import("../../views/binh/ShipperLandingView.vue"),
+    meta: { title: "ZoneMart Driver - Gia Nhập Đội Ngũ Tài Xế", hideHeader: true, hideFooter: true }
+  },
+  {
+    path: "/shipper-landing",
+    name: "ShipperLanding",
+    component: () => import("../../views/binh/ShipperLandingView.vue"),
+    meta: { title: "ZoneMart Driver - Gia Nhập Đội Ngũ Tài Xế", hideHeader: true, hideFooter: true }
   },
   {
     path: "/shipper",
@@ -49,6 +61,6 @@ export const binhRoutes: RouteRecordRaw[] = [
     path: "/admin",
     name: "Admin",
     component: () => import("../../views/binh/AdminDashboardView.vue"),
-    meta: { title: "Bảng Điều Khiển Admin - ZoneMart" }
+    meta: { title: "Bảng Điều Khiển Admin - ZoneMart", hideHeader: true, hideFooter: true }
   }
 ];
