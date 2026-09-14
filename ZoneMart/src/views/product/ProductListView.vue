@@ -663,13 +663,13 @@ const resetFilters = () => {
             Không có sản phẩm nào khớp với tìm kiếm "<strong>{{ searchQuery }}</strong>" hoặc trong bán kính <strong>{{ maxRadiusKm }}km</strong>.
           </p>
           <!-- Nếu đang lọc danh mục khác mà có kết quả ở các danh mục còn lại -->
-          <div v-if="selectedCategory !== 'all' && totalMatchesWithoutCategory.length > 0" class="empty-cross-action-box mb-3">
+          <div v-if="selectedCategory !== 'all' && totalMatchesWithoutCategory > 0" class="empty-cross-action-box mb-3">
             <p class="cross-hint-msg">
-              <i class="bi bi-info-circle-fill text-orange me-1"></i> Có <strong>{{ totalMatchesWithoutCategory.length }}</strong> sản phẩm khớp từ khóa ở các danh mục khác!
+              <i class="bi bi-info-circle-fill text-orange me-1"></i> Có <strong>{{ totalMatchesWithoutCategory }}</strong> sản phẩm khớp từ khóa ở các danh mục khác!
             </p>
             <button class="btn-switch-cross-tab" @click="selectedCategory = 'all'">
               <i class="bi bi-grid-fill me-1"></i>
-              <span>Xem tất cả danh mục ({{ totalMatchesWithoutCategory.length }} món)</span>
+              <span>Xem tất cả danh mục ({{ totalMatchesWithoutCategory }} món)</span>
               <i class="bi bi-arrow-right ms-1"></i>
             </button>
           </div>
@@ -686,7 +686,7 @@ const resetFilters = () => {
             </button>
           </div>
 
-          <div v-if="selectedCategory === 'all' || totalMatchesWithoutCategory.length === 0" class="mt-3">
+          <div v-if="selectedCategory === 'all' || totalMatchesWithoutCategory === 0" class="mt-3">
             <button class="btn-restore-filters" @click="resetFilters">
               <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
               <span>Xem tất cả sản phẩm</span>

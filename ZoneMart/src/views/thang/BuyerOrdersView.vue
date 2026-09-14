@@ -5,15 +5,25 @@
  * Hiển thị đầy đủ hình ảnh, tên, giá, số lượng, cửa hàng và địa chỉ
  * ================================================================
  */
-import { ref, onMounted } from "vue";
-import { useRouter } from "vue-router";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
 import { useProductCatalog, type CatalogProduct } from "../../composables/useProductCatalog";
 
 const auth = useAuth();
 const router = useRouter();
+const route = useRoute();
 const catalog = useProductCatalog();
+
 const orders = ref<any[]>([]);
+const isLoading = ref<boolean>(true);
+let loadingTimer: any = null;
+
+const currentAccount = computed(() => auth.currentUser.value);
+const currentAccountName = computed(() => {
+  const acc = auth.currentUser.value;
+  return acc?.fullName || acc?.phoneEmail || acc?.phone || "Khách Hàng";
+});
 
 interface OrderProductItem {
   id?: string;
@@ -123,88 +133,180 @@ const handleImgError = (e: Event) => {
   target.src = "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=300&q=80";
 };
 
+// Đọc chính xác đơn hàng thuộc về tài khoản đang đăng nhập
 const loadBuyerOrders = () => {
   const acc = auth.currentUser.value;
-  const ownerKey = (acc?.phoneEmail || acc?.id || "guest").toLowerCase().trim();
-  const isNew = !acc || !["usr_buyer_01", "usr_seller_01", "usr_shipper_01", "usr_admin_01"].includes(acc.id);
-  const key = "zonemart_profile_orders_" + ownerKey;
+  const isDemo = Boolean(
+    acc &&
+    acc.id &&
+    ["usr_buyer_01", "usr_seller_01", "usr_shipper_01", "usr_admin_01"].includes(acc.id)
+  );
 
-  const raw = localStorage.getItem(key);
-  if (raw) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        if (isNew && parsed.every((o: any) => o.id === "ZM-9982" || o.id === "ZM-9812" || o.orderId === "ORD_98213")) {
-          orders.value = [];
-          return;
-        }
-        orders.value = parsed;
-        return;
-      }
-    } catch {}
+  const candidateKeys = new Set<string>();
+  if (acc) {
+    if (acc.phoneEmail) candidateKeys.add("zonemart_profile_orders_" + acc.phoneEmail.toLowerCase().trim());
+    if (acc.id) candidateKeys.add("zonemart_profile_orders_" + acc.id.toLowerCase().trim());
+    if (acc.phone) candidateKeys.add("zonemart_profile_orders_" + acc.phone.toLowerCase().trim());
+  } else {
+    candidateKeys.add("zonemart_profile_orders_guest");
   }
 
-  // Nếu là tài khoản mới: Mặc định 0 đơn hàng
-  if (isNew) {
-    orders.value = [];
-    return;
-  }
+  const collectedOrders: any[] = [];
+  const seenIds = new Set<string>();
 
-  // Chỉ nạp đơn mẫu cho tài khoản demo
-  orders.value = [
-    {
-      orderId: "ORD_98213",
-      date: "07/09/2026 18:30",
-      total: 395000,
-      paymentMethod: "Chuyển khoản TPBank",
-      shippingMethod: "Hỏa Tốc Siêu Tốc (10km)",
-      deliveryType: "express",
-      status: "delivering",
-      statusText: "Shipper đang giao hàng tới bạn",
-      store: "ZoneMart Nông Sản Sạch Cầu Giấy",
-      items: [
-        {
-          name: "Thịt Bò Mỹ Nhập Khẩu Tươi Ngon",
-          price: 150000,
-          quantity: 2,
-          image: "https://images.unsplash.com/photo-1551028150-64b9f398f678?auto=format&fit=crop&w=400&q=80",
-          shop: "ZoneMart Nông Sản Sạch Cầu Giấy"
-        },
-        {
-          name: "Gạo ST25 Ông Cua Thơm Thượng Hạng (5kg)",
-          price: 95000,
-          quantity: 1,
-          image: "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=400&q=80",
-          shop: "ZoneMart Nông Sản Sạch Cầu Giấy"
+  // 1. Quét các key cụ thể của tài khoản này
+  candidateKeys.forEach((key) => {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((ord: any) => {
+            const id = ord.orderId || ord.id;
+            if (id && !seenIds.has(id)) {
+              seenIds.add(id);
+              collectedOrders.push(ord);
+            }
+          });
         }
-      ]
-    },
-    {
-      orderId: "ORD_97842",
-      date: "05/09/2026 12:15",
-      total: 125000,
-      paymentMethod: "Tiền mặt khi nhận hàng (COD)",
-      shippingMethod: "Giao Hàng Tiêu Chuẩn",
-      deliveryType: "standard",
-      status: "completed",
-      statusText: "Giao hàng thành công",
-      store: "Siêu Thị Trái Cây Xanh",
-      items: [
-        {
-          name: "Dâu Tây Đà Lạt Giống Nhật Hộp 500g",
-          price: 125000,
-          quantity: 1,
-          image: "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=400&q=80",
-          shop: "Siêu Thị Trái Cây Xanh"
-        }
-      ]
+      } catch (e) {}
     }
-  ];
+  });
+
+  // 2. Tìm thêm các đơn liên quan đến tài khoản này trong các phân vùng lưu trữ khác (theo SĐT, họ tên hoặc mã KH)
+  if (acc) {
+    const userPhone = (acc.phone || acc.phoneEmail || "").toLowerCase().trim();
+    const userName = (acc.fullName || "").toLowerCase().trim();
+    const userId = (acc.id || "").toLowerCase().trim();
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("zonemart_profile_orders_")) {
+        try {
+          const raw = localStorage.getItem(k);
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              list.forEach((ord: any) => {
+                const id = ord.orderId || ord.id;
+                if (id && !seenIds.has(id)) {
+                  const ordPhone = (ord.recipientPhone || "").toLowerCase().trim();
+                  const ordName = (ord.recipientName || "").toLowerCase().trim();
+                  const ordBuyerId = (ord.buyerId || "").toLowerCase().trim();
+
+                  if (
+                    (userPhone && ordPhone && (ordPhone === userPhone || ordPhone.includes(userPhone) || userPhone.includes(ordPhone))) ||
+                    (userName && ordName && ordName === userName) ||
+                    (userId && ordBuyerId && ordBuyerId === userId)
+                  ) {
+                    seenIds.add(id);
+                    collectedOrders.push(ord);
+                  }
+                }
+              });
+            }
+          }
+        } catch (e) {}
+      }
+    }
+  }
+
+  // 3. Nếu là tài khoản Demo (usr_buyer_01...) và chưa có đơn thực tế nào, nạp đơn mẫu
+  if (isDemo && collectedOrders.length === 0) {
+    collectedOrders.push(
+      {
+        orderId: "ORD_98213",
+        date: "07/09/2026 18:30",
+        total: 395000,
+        paymentMethod: "Chuyển khoản QR",
+        shippingMethod: "Hỏa Tốc Siêu Tốc (10km)",
+        deliveryType: "express",
+        status: "delivering",
+        statusText: "Shipper đang giao hàng tới bạn",
+        store: "ZoneMart Nông Sản Sạch Cầu Giấy",
+        items: [
+          {
+            name: "Thịt Bò Mỹ Nhập Khẩu Tươi Ngon",
+            price: 150000,
+            quantity: 2,
+            image: "https://images.unsplash.com/photo-1551028150-64b9f398f678?auto=format&fit=crop&w=400&q=80",
+            shop: "ZoneMart Nông Sản Sạch Cầu Giấy"
+          },
+          {
+            name: "Gạo ST25 Ông Cua Thơm Thượng Hạng (5kg)",
+            price: 95000,
+            quantity: 1,
+            image: "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=400&q=80",
+            shop: "ZoneMart Nông Sản Sạch Cầu Giấy"
+          }
+        ]
+      },
+      {
+        orderId: "ORD_97842",
+        date: "05/09/2026 12:15",
+        total: 125000,
+        paymentMethod: "Tiền mặt khi nhận hàng (COD)",
+        shippingMethod: "Giao Hàng Tiêu Chuẩn",
+        deliveryType: "standard",
+        status: "completed",
+        statusText: "Giao hàng thành công",
+        store: "Siêu Thị Trái Cây Xanh",
+        items: [
+          {
+            name: "Dâu Tây Đà Lạt Giống Nhật Hộp 500g",
+            price: 125000,
+            quantity: 1,
+            image: "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=400&q=80",
+            shop: "Siêu Thị Trái Cây Xanh"
+          }
+        ]
+      }
+    );
+  }
+
+  orders.value = collectedOrders;
+};
+
+// Hiệu ứng Loading mô phỏng tải dữ liệu chân thực và mượt mà
+const fetchOrdersWithLoading = (delayMs: number = 650) => {
+  isLoading.value = true;
+  if (loadingTimer) clearTimeout(loadingTimer);
+
+  loadingTimer = setTimeout(() => {
+    loadBuyerOrders();
+    isLoading.value = false;
+  }, delayMs);
+};
+
+const handleGlobalRefresh = () => {
+  fetchOrdersWithLoading(550);
 };
 
 onMounted(() => {
-  loadBuyerOrders();
+  fetchOrdersWithLoading(650);
+  window.addEventListener("zonemart:refresh_buyer_orders", handleGlobalRefresh);
 });
+
+onUnmounted(() => {
+  if (loadingTimer) clearTimeout(loadingTimer);
+  window.removeEventListener("zonemart:refresh_buyer_orders", handleGlobalRefresh);
+});
+
+// Tự động tải lại và hiển thị hiệu ứng loading khi chuyển tài khoản
+watch(
+  () => [auth.currentUser.value?.id, auth.currentUser.value?.phoneEmail],
+  () => {
+    fetchOrdersWithLoading(500);
+  }
+);
+
+// Tải lại khi route query thay đổi
+watch(
+  () => [route.fullPath, route.query.refresh],
+  () => {
+    fetchOrdersWithLoading(500);
+  }
+);
 
 const handleConfirmReceived = (id: string) => {
   alert(`Cảm ơn bạn đã xác nhận nhận hàng cho đơn #${id}! Đơn hàng đã hoàn tất.`);
@@ -303,15 +405,87 @@ const handleReportIssue = (order: any) => {
     <div class="header">
       <div class="header-content">
         <h2><i class="bi bi-box-seam-fill me-2 text-primary"></i>Đơn Mua Của Bạn</h2>
-        <p>Theo dõi trực tiếp chi tiết sản phẩm, hình ảnh và trạng thái các đơn hàng của bạn.</p>
+        <div class="account-meta-line" v-if="currentAccount">
+          <span class="user-chip">
+            <i class="bi bi-person-circle text-primary"></i>
+            <span>Đơn hàng của tài khoản: <strong>{{ currentAccountName }}</strong></span>
+            <span class="role-subpill">{{ auth.roleLabel.value }}</span>
+          </span>
+          <span class="orders-count-indicator" v-if="!isLoading">
+            • <strong>{{ orders.length }}</strong> đơn hàng
+          </span>
+        </div>
+        <p v-else>Theo dõi trực tiếp chi tiết sản phẩm, hình ảnh và trạng thái các đơn hàng của bạn.</p>
       </div>
-      <router-link to="/products" class="btn-continue-shopping">
-        <i class="bi bi-cart-plus me-1"></i> Mua thêm nông sản
-      </router-link>
+      <div class="header-actions">
+        <button class="btn-refresh-orders" @click="fetchOrdersWithLoading(500)" :disabled="isLoading" title="Tải lại đơn mua">
+          <i class="bi bi-arrow-clockwise" :class="{ 'spin-icon': isLoading }"></i>
+          <span>{{ isLoading ? 'Đang tải...' : 'Làm mới' }}</span>
+        </button>
+        <router-link to="/products" class="btn-continue-shopping">
+          <i class="bi bi-cart-plus me-1"></i> Mua thêm nông sản
+        </router-link>
+      </div>
+    </div>
+
+    <!-- HIỆU ỨNG LOADING SKELETON (TASTE-SKILL TACTILE SHIMMER) -->
+    <div v-if="isLoading" class="skeleton-orders-wrap">
+      <div class="sync-status-indicator">
+        <span class="sync-spinner-ring"></span>
+        <span class="sync-text">
+          Đang đồng bộ đơn mua của tài khoản <strong>{{ currentAccountName }}</strong>...
+        </span>
+      </div>
+
+      <div v-for="i in 2" :key="i" class="order-card-skeleton">
+        <!-- Top Bar Skeleton -->
+        <div class="skeleton-row skeleton-top-bar">
+          <div class="skeleton-item sk-pill-code"></div>
+          <div class="skeleton-right-badges">
+            <div class="skeleton-item sk-pill-sm"></div>
+            <div class="skeleton-item sk-pill-sm"></div>
+          </div>
+        </div>
+
+        <!-- Store Banner Skeleton -->
+        <div class="skeleton-row skeleton-store-row">
+          <div class="skeleton-item sk-circle-avatar"></div>
+          <div class="skeleton-col">
+            <div class="skeleton-item sk-line-title"></div>
+            <div class="skeleton-item sk-line-sub"></div>
+          </div>
+          <div class="skeleton-item sk-status-pill ms-auto"></div>
+        </div>
+
+        <!-- Product Row Skeleton -->
+        <div class="skeleton-product-item">
+          <div class="skeleton-item sk-thumb"></div>
+          <div class="skeleton-col flex-grow-1">
+            <div class="skeleton-item sk-line-prod-name"></div>
+            <div class="skeleton-item sk-line-prod-meta"></div>
+          </div>
+          <div class="skeleton-item sk-price-block"></div>
+        </div>
+
+        <!-- Address Skeleton -->
+        <div class="skeleton-row skeleton-addr-row">
+          <div class="skeleton-item sk-line-full"></div>
+        </div>
+
+        <!-- Bottom Bar Skeleton -->
+        <div class="skeleton-row skeleton-bottom-row">
+          <div class="skeleton-item sk-line-sm"></div>
+          <div class="skeleton-col-actions ms-auto">
+            <div class="skeleton-item sk-price-total"></div>
+            <div class="skeleton-item sk-btn"></div>
+            <div class="skeleton-item sk-btn"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- DANH SÁCH ĐƠN HÀNG -->
-    <div v-if="orders.length > 0" class="orders-list">
+    <div v-else-if="orders.length > 0" class="orders-list">
       <div v-for="order in orders" :key="order.orderId || order.id" class="order-card">
         <!-- HEADER ĐƠN HÀNG -->
         <div class="order-top">
@@ -504,6 +678,78 @@ const handleReportIssue = (order: any) => {
   font-size: 14px;
 }
 
+.account-meta-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.role-subpill {
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-left: 4px;
+}
+
+.orders-count-indicator {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-refresh-orders {
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.btn-refresh-orders:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+.btn-refresh-orders:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.spin-icon {
+  animation: spin 0.8s linear infinite;
+  color: #f97316;
+}
+
 .btn-continue-shopping {
   background: #f1f5f9;
   color: #334155;
@@ -522,6 +768,191 @@ const handleReportIssue = (order: any) => {
   background: #e2e8f0;
   color: #0f172a;
   transform: translateY(-1px);
+}
+
+/* ================================================================
+   HIỆU ỨNG SKELETON LOADING (TASTE-SKILL TACTILE SHIMMER)
+   ================================================================ */
+.skeleton-orders-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sync-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: #475569;
+  align-self: flex-start;
+  margin-bottom: 4px;
+}
+
+.sync-spinner-ring {
+  width: 15px;
+  height: 15px;
+  border: 2.5px solid #e2e8f0;
+  border-top-color: #ea580c;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.order-card-skeleton {
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid #e2e8f0;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+}
+
+.skeleton-item {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: shimmerWave 1.4s ease infinite;
+  border-radius: 8px;
+}
+
+@keyframes shimmerWave {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.skeleton-top-bar {
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.sk-pill-code {
+  width: 140px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.skeleton-right-badges {
+  display: flex;
+  gap: 8px;
+}
+
+.sk-pill-sm {
+  width: 90px;
+  height: 24px;
+  border-radius: 8px;
+}
+
+.skeleton-store-row {
+  padding-top: 4px;
+}
+
+.sk-circle-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+}
+
+.skeleton-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sk-line-title {
+  width: 200px;
+  height: 16px;
+}
+
+.sk-line-sub {
+  width: 120px;
+  height: 12px;
+}
+
+.sk-status-pill {
+  width: 110px;
+  height: 28px;
+  border-radius: 999px;
+}
+
+.skeleton-product-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #f8fafc;
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.sk-thumb {
+  width: 68px;
+  height: 68px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.sk-line-prod-name {
+  width: 65%;
+  height: 16px;
+}
+
+.sk-line-prod-meta {
+  width: 35%;
+  height: 14px;
+}
+
+.sk-price-block {
+  width: 90px;
+  height: 22px;
+  margin-left: auto;
+}
+
+.sk-line-full {
+  width: 100%;
+  height: 14px;
+}
+
+.skeleton-bottom-row {
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.sk-line-sm {
+  width: 120px;
+  height: 14px;
+}
+
+.skeleton-col-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sk-price-total {
+  width: 120px;
+  height: 22px;
+}
+
+.sk-btn {
+  width: 78px;
+  height: 32px;
+  border-radius: 8px;
 }
 
 .orders-list {

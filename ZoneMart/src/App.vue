@@ -1,15 +1,23 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import logoImg from './assets/logo.png';
 import { useAuth, type UserRole } from './composables/useAuth';
 import { useCart } from './composables/useCart';
 import { useProductCatalog } from './composables/useProductCatalog';
 
 const router = useRouter();
+const route = useRoute();
 const auth = useAuth();
 const cart = useCart();
 const catalog = useProductCatalog();
+
+const navigateToBuyerOrders = () => {
+  closeDropdowns();
+  if (route.path === '/buyer-orders') {
+    window.dispatchEvent(new CustomEvent('zonemart:refresh_buyer_orders', { detail: { time: Date.now() } }));
+  }
+};
 
 const isMobileMenuOpen = ref(false);
 const isUserDropdownOpen = ref(false);
@@ -331,6 +339,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                 to="/buyer-orders"
                 class="quick-link"
                 active-class="active"
+                @click="navigateToBuyerOrders"
               >
                 <i class="bi bi-bag-check menu-mini-icon"></i>
                 <span>Đơn Mua</span>
@@ -621,7 +630,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                     <router-link
                       to="/buyer-orders"
                       class="dropdown-item"
-                      @click="closeDropdowns"
+                      @click="navigateToBuyerOrders"
                     >
                       <i class="bi bi-bag-check menu-icon"></i>
                       <span>Đơn Mua Của Bạn</span>
@@ -834,7 +843,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             <router-link
               to="/buyer-orders"
               class="mobile-link"
-              @click="closeDropdowns"
+              @click="navigateToBuyerOrders"
             >
               <i class="bi bi-bag-check menu-icon"></i>
               <span>Đơn Mua</span>
@@ -926,9 +935,9 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
           </template>
 
           <router-link
-            to="/contact"
+            to="/buyer-orders"
             class="mobile-link"
-            @click="closeDropdowns"
+            @click="navigateToBuyerOrders"
           >
             <i class="bi bi-bag-check menu-icon" aria-hidden="true"></i>
             <span>Đơn Mua</span>
