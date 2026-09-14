@@ -8,47 +8,60 @@
  * - Hỗ trợ nạp ví ZonePay, lưu trữ sổ địa chỉ và đơn hàng riêng của từng tài khoản
  * ================================================================
  */
-import { ref, reactive, computed, watch, onMounted } from "vue";
-import { useRouter } from "vue-router";
-import { useAuth, type UserProfile, type UserRole } from "../../composables/useAuth";
+import { ref, reactive, computed, watch, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
+import {
+  useAuth,
+  type UserProfile,
+  type UserRole,
+} from '../../composables/useAuth';
 
 const router = useRouter();
 const auth = useAuth();
 
 // Tab state
-const currentTab = ref<"profile" | "orders" | "addresses" | "wallet">("profile");
+const currentTab = ref<'profile' | 'orders' | 'addresses' | 'wallet'>(
+  'profile',
+);
 
 // 1. Xác định tài khoản hiện tại từ useAuth hoặc LocalStorage
 const currentAccount = computed<UserProfile>(() => {
   if (auth.currentUser.value) return auth.currentUser.value;
   try {
-    const saved = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+    const saved =
+      localStorage.getItem('currentUser') ||
+      localStorage.getItem('zonemart_user');
     if (saved) return JSON.parse(saved);
   } catch {}
   return {
-    id: "usr_guest",
-    fullName: "Khách Ghé Thăm",
-    phoneEmail: "guest@zonemart.vn",
-    role: "buyer",
-    walletBalance: 0
+    id: 'usr_guest',
+    fullName: 'Khách Ghé Thăm',
+    phoneEmail: 'guest@zonemart.vn',
+    role: 'buyer',
+    walletBalance: 0,
   };
 });
 
 // Khóa định danh phân vùng dữ liệu riêng cho từng tài khoản
 const accountKey = computed(() => {
   const acc = currentAccount.value;
-  return (acc.phoneEmail || acc.id || "default_user").toLowerCase().trim();
+  return (acc.phoneEmail || acc.id || 'default_user').toLowerCase().trim();
 });
 
-const PROFILE_STORAGE_PREFIX = "zonemart_profile_data_";
-const ADDRESS_STORAGE_PREFIX = "zonemart_profile_addresses_";
-const ORDER_STORAGE_PREFIX = "zonemart_profile_orders_";
+const PROFILE_STORAGE_PREFIX = 'zonemart_profile_data_';
+const ADDRESS_STORAGE_PREFIX = 'zonemart_profile_addresses_';
+const ORDER_STORAGE_PREFIX = 'zonemart_profile_orders_';
 
 const isDemoAccount = (acc: UserProfile) => {
   return Boolean(
     acc &&
-      acc.id &&
-      ['usr_buyer_01', 'usr_seller_01', 'usr_shipper_01', 'usr_admin_01'].includes(acc.id)
+    acc.id &&
+    [
+      'usr_buyer_01',
+      'usr_seller_01',
+      'usr_shipper_01',
+      'usr_admin_01',
+    ].includes(acc.id),
   );
 };
 
@@ -57,56 +70,57 @@ const getRoleMeta = (role: UserRole, isNew: boolean = false) => {
   // Tài khoản mới đăng ký: Mặc định 0 Điểm, 0 Voucher, Hạng Thành Viên Mới
   if (isNew) {
     return {
-      tag: "Thành Viên Mới (New Member)",
-      sublineBadge: "🛒 Mua sắm nông sản & thực phẩm sạch bán kính 10km",
-      progressLabel: "Tiến trình tích điểm thăng hạng",
+      tag: 'Thành Viên Mới (New Member)',
+      sublineBadge: '🛒 Mua sắm nông sản & thực phẩm sạch bán kính 10km',
+      progressLabel: 'Tiến trình tích điểm thăng hạng',
       progressVal: 0,
-      progressText: "0% (Bắt đầu mua sắm để tích điểm)",
+      progressText: '0% (Bắt đầu mua sắm để tích điểm)',
       vouchers: 0,
-      points: 0
+      points: 0,
     };
   }
 
   switch (role) {
-    case "admin":
+    case 'admin':
       return {
-        tag: "Ban Quản Trị Hệ Thống (Super Admin)",
-        sublineBadge: "🛡️ Quản lý giám sát toàn sàn ZoneMart • Quyền bảo mật Root",
-        progressLabel: "Chỉ số an toàn & toàn vẹn hệ thống",
+        tag: 'Ban Quản Trị Hệ Thống (Super Admin)',
+        sublineBadge:
+          '🛡️ Quản lý giám sát toàn sàn ZoneMart • Quyền bảo mật Root',
+        progressLabel: 'Chỉ số an toàn & toàn vẹn hệ thống',
         progressVal: 100,
-        progressText: "100% (Hoạt động hoàn hảo)",
+        progressText: '100% (Hoạt động hoàn hảo)',
         vouchers: 99,
-        points: 99999
+        points: 99999,
       };
-    case "seller":
+    case 'seller':
       return {
-        tag: "Chủ Gian Hàng Đối Tác (Kênh Người Bán)",
-        sublineBadge: "🏪 Gian hàng đối tác cung ứng thực phẩm tươi sạch",
-        progressLabel: "Chỉ số uy tín & phản hồi gian hàng",
+        tag: 'Chủ Gian Hàng Đối Tác (Kênh Người Bán)',
+        sublineBadge: '🏪 Gian hàng đối tác cung ứng thực phẩm tươi sạch',
+        progressLabel: 'Chỉ số uy tín & phản hồi gian hàng',
         progressVal: 98,
-        progressText: "98% (Đạt chuẩn 5 sao)",
+        progressText: '98% (Đạt chuẩn 5 sao)',
         vouchers: 12,
-        points: 15400
+        points: 15400,
       };
-    case "shipper":
+    case 'shipper':
       return {
-        tag: "Đối Tác Giao Hàng Hỏa Tốc (ZoneMart Express)",
-        sublineBadge: "🛵 Đội ngũ tài xế giao nhận hỏa tốc 10km",
-        progressLabel: "Tỷ lệ giao hàng đúng hẹn 20 - 30 phút",
+        tag: 'Đối Tác Giao Hàng Hỏa Tốc (ZoneMart Express)',
+        sublineBadge: '🛵 Đội ngũ tài xế giao nhận hỏa tốc 10km',
+        progressLabel: 'Tỷ lệ giao hàng đúng hẹn 20 - 30 phút',
         progressVal: 99,
-        progressText: "99.2% (Hạng Kim Cương)",
+        progressText: '99.2% (Hạng Kim Cương)',
         vouchers: 8,
-        points: 5800
+        points: 5800,
       };
     default:
       return {
-        tag: "Khách Hàng Thân Thiết (Gold Member)",
-        sublineBadge: "🛒 Mua sắm nông sản & thực phẩm sạch bán kính 10km",
-        progressLabel: "Tiến trình thăng hạng VIP Platinum",
+        tag: 'Khách Hàng Thân Thiết (Gold Member)',
+        sublineBadge: '🛒 Mua sắm nông sản & thực phẩm sạch bán kính 10km',
+        progressLabel: 'Tiến trình thăng hạng VIP Platinum',
         progressVal: 75,
-        progressText: "75% (Còn 500k chi tiêu)",
+        progressText: '75% (Còn 500k chi tiêu)',
         vouchers: 6,
-        points: 2450
+        points: 2450,
       };
   }
 };
@@ -117,7 +131,7 @@ export interface AccountProfileState {
   username: string;
   email: string;
   phone: string;
-  gender: "male" | "female" | "other";
+  gender: 'male' | 'female' | 'other';
   birthDate: string;
   avatarUrl: string;
   tier: string;
@@ -134,28 +148,29 @@ export interface AccountProfileState {
 }
 
 const user = reactive<AccountProfileState>({
-  fullName: "Đang tải...",
-  username: "user",
-  email: "user@zonemart.vn",
-  phone: "0988 000 000",
-  gender: "male",
-  birthDate: "2000-01-01",
-  avatarUrl: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80",
-  tier: "Thành Viên Mới",
+  fullName: 'Đang tải...',
+  username: 'user',
+  email: 'user@zonemart.vn',
+  phone: '0988 000 000',
+  gender: 'male',
+  birthDate: '2000-01-01',
+  avatarUrl:
+    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
+  tier: 'Thành Viên Mới',
   tierProgress: 0,
-  tierProgressLabel: "Tiến trình tích điểm",
-  tierProgressText: "0%",
+  tierProgressLabel: 'Tiến trình tích điểm',
+  tierProgressText: '0%',
   zonePayBalance: 0,
   points: 0,
   vouchersCount: 0,
   ordersCount: 0,
-  storeName: "",
-  vehiclePlate: "",
-  role: "buyer"
+  storeName: '',
+  vehiclePlate: '',
+  role: 'buyer',
 });
 
 // Toast alert
-const toastMessage = ref("");
+const toastMessage = ref('');
 const showToast = ref(false);
 
 const triggerToast = (msg: string) => {
@@ -184,45 +199,87 @@ const loadUserProfile = () => {
 
   // Dọn dẹp các giá trị mock cũ nếu tài khoản mới này từng bị dính từ trước
   if (isNew) {
-    if (savedData.points === 2450 || savedData.points === 1000) savedData.points = 0;
-    if (savedData.vouchersCount === 6 || savedData.vouchersCount === 5) savedData.vouchersCount = 0;
-    if (savedData.tier === "Khách Hàng Thân Thiết (Gold Member)" || savedData.tier === "Khách Hàng Thân Thiết") {
+    if (savedData.points === 2450 || savedData.points === 1000)
+      savedData.points = 0;
+    if (savedData.vouchersCount === 6 || savedData.vouchersCount === 5)
+      savedData.vouchersCount = 0;
+    if (
+      savedData.tier === 'Khách Hàng Thân Thiết (Gold Member)' ||
+      savedData.tier === 'Khách Hàng Thân Thiết'
+    ) {
       savedData.tier = roleInfo.tag;
     }
     if (savedData.tierProgress === 75) savedData.tierProgress = 0;
-    if (savedData.tierProgressText === "75% (Còn 500k chi tiêu)" || savedData.tierProgressText === "75%") {
+    if (
+      savedData.tierProgressText === '75% (Còn 500k chi tiêu)' ||
+      savedData.tierProgressText === '75%'
+    ) {
       savedData.tierProgressText = roleInfo.progressText;
     }
-    if (savedData.tierProgressLabel === "Tiến trình thăng hạng VIP Platinum" || savedData.tierProgressLabel === "Tiến trình thăng hạng") {
+    if (
+      savedData.tierProgressLabel === 'Tiến trình thăng hạng VIP Platinum' ||
+      savedData.tierProgressLabel === 'Tiến trình thăng hạng'
+    ) {
       savedData.tierProgressLabel = roleInfo.progressLabel;
     }
   }
 
-  const isEmail = (acc.phoneEmail || "").includes("@");
-  const defaultEmail = isEmail ? acc.phoneEmail : `${acc.phoneEmail || "user"}@zonemart.vn`;
-  const defaultPhone = isEmail 
-    ? (acc.phone || (acc.role === "seller" ? "0988 123 789" : acc.role === "shipper" ? "0977 888 999" : acc.role === "admin" ? "0912 000 999" : "")) 
+  const isEmail = (acc.phoneEmail || '').includes('@');
+  const defaultEmail = isEmail
+    ? acc.phoneEmail
+    : `${acc.phoneEmail || 'user'}@zonemart.vn`;
+  const defaultPhone = isEmail
+    ? acc.phone ||
+      (acc.role === 'seller'
+        ? '0988 123 789'
+        : acc.role === 'shipper'
+          ? '0977 888 999'
+          : acc.role === 'admin'
+            ? '0912 000 999'
+            : '')
     : acc.phoneEmail;
-  const defaultUsername = isEmail 
-    ? acc.phoneEmail.split("@")[0] 
-    : (acc.fullName ? acc.fullName.toLowerCase().replace(/\s+/g, "") : "zoner");
+  const defaultUsername = isEmail
+    ? acc.phoneEmail.split('@')[0]
+    : acc.fullName
+      ? acc.fullName.toLowerCase().replace(/\s+/g, '')
+      : 'zoner';
 
-  user.fullName = savedData.fullName || acc.fullName || "Người dùng ZoneMart";
+  user.fullName = savedData.fullName || acc.fullName || 'Người dùng ZoneMart';
   user.username = savedData.username || defaultUsername;
   user.email = savedData.email || defaultEmail;
   user.phone = savedData.phone || acc.phone || defaultPhone;
-  user.gender = savedData.gender || (acc.role === "seller" ? "female" : "male");
-  user.birthDate = savedData.birthDate || (acc.role === "admin" ? "1990-01-01" : acc.role === "seller" ? "1988-10-12" : "2000-06-15");
-  user.avatarUrl = savedData.avatarUrl || acc.avatarUrl || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80";
+  user.gender = savedData.gender || (acc.role === 'seller' ? 'female' : 'male');
+  user.birthDate =
+    savedData.birthDate ||
+    (acc.role === 'admin'
+      ? '1990-01-01'
+      : acc.role === 'seller'
+        ? '1988-10-12'
+        : '2000-06-15');
+  user.avatarUrl =
+    savedData.avatarUrl ||
+    acc.avatarUrl ||
+    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80';
   user.tier = savedData.tier || roleInfo.tag;
-  user.tierProgress = savedData.tierProgress !== undefined ? savedData.tierProgress : roleInfo.progressVal;
-  user.tierProgressLabel = savedData.tierProgressLabel || roleInfo.progressLabel;
+  user.tierProgress =
+    savedData.tierProgress !== undefined
+      ? savedData.tierProgress
+      : roleInfo.progressVal;
+  user.tierProgressLabel =
+    savedData.tierProgressLabel || roleInfo.progressLabel;
   user.tierProgressText = savedData.tierProgressText || roleInfo.progressText;
-  user.zonePayBalance = acc.walletBalance !== undefined ? acc.walletBalance : (savedData.zonePayBalance ?? 0);
-  user.points = savedData.points !== undefined ? savedData.points : roleInfo.points;
-  user.vouchersCount = savedData.vouchersCount !== undefined ? savedData.vouchersCount : roleInfo.vouchers;
-  user.storeName = acc.storeName || savedData.storeName || "";
-  user.vehiclePlate = acc.vehiclePlate || savedData.vehiclePlate || "";
+  user.zonePayBalance =
+    acc.walletBalance !== undefined
+      ? acc.walletBalance
+      : (savedData.zonePayBalance ?? 0);
+  user.points =
+    savedData.points !== undefined ? savedData.points : roleInfo.points;
+  user.vouchersCount =
+    savedData.vouchersCount !== undefined
+      ? savedData.vouchersCount
+      : roleInfo.vouchers;
+  user.storeName = acc.storeName || savedData.storeName || '';
+  user.vehiclePlate = acc.vehiclePlate || savedData.vehiclePlate || '';
   user.role = acc.role;
 
   // Nạp địa chỉ và đơn hàng riêng của tài khoản
@@ -254,7 +311,7 @@ const handleAvatarChange = (e: Event) => {
           curr.avatarUrl = user.avatarUrl;
           auth.login(curr);
         }
-        triggerToast("Cập nhật ảnh đại diện thành công!");
+        triggerToast('Cập nhật ảnh đại diện thành công!');
       }
     };
     reader.readAsDataURL(file);
@@ -280,9 +337,9 @@ const handleSaveProfile = async () => {
     }
 
     // Cập nhật lên CSDL Backend ASP.NET Core
-    await fetch("http://localhost:5000/api/auth/update-profile", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    await fetch('http://localhost:5000/api/auth/update-profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         id: curr?.id,
         phoneEmail: user.email || curr?.phoneEmail,
@@ -291,11 +348,13 @@ const handleSaveProfile = async () => {
         phone: user.phone,
         gender: user.gender,
         birthDate: user.birthDate,
-        username: user.username
-      })
+        username: user.username,
+      }),
     }).catch(() => null);
 
-    triggerToast(`Đã lưu thông tin hồ sơ cho tài khoản '${user.email || user.fullName}'!`);
+    triggerToast(
+      `Đã lưu thông tin hồ sơ cho tài khoản '${user.email || user.fullName}'!`,
+    );
   } finally {
     isSaving.value = false;
   }
@@ -306,7 +365,7 @@ export interface OrderItem {
   id: string;
   store: string;
   date: string;
-  status: "delivering" | "completed" | "cancelled";
+  status: 'delivering' | 'completed' | 'cancelled';
   statusText: string;
   items: any;
   total: number;
@@ -329,32 +388,38 @@ const parseOrderItems = (rawItems: any): any[] => {
   if (!rawItems) return [];
   if (Array.isArray(rawItems)) {
     return rawItems.map((it: any) => {
-      if (typeof it === "object" && it !== null) {
+      if (typeof it === 'object' && it !== null) {
         return {
-          name: it.name || "Sản phẩm",
+          name: it.name || 'Sản phẩm',
           price: Number(it.price) || 0,
           quantity: Number(it.quantity) || 1,
-          image: it.image || "",
-          shop: it.shop || ""
+          image: it.image || '',
+          shop: it.shop || '',
         };
       }
-      return { name: String(it), price: 0, quantity: 1, image: "", shop: "" };
+      return { name: String(it), price: 0, quantity: 1, image: '', shop: '' };
     });
   }
-  if (typeof rawItems === "string") {
+  if (typeof rawItems === 'string') {
     const trimmed = rawItems.trim();
-    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
       try {
         const parsed = JSON.parse(trimmed);
         if (Array.isArray(parsed)) return parseOrderItems(parsed);
       } catch (e) {}
     }
-    return trimmed.split(",").map((part: string) => {
+    return trimmed.split(',').map((part: string) => {
       const p = part.trim();
       const matchQty = p.match(/\(x(\d+)\)/i);
       const qty = matchQty ? parseInt(matchQty[1]) : 1;
-      const cleanName = p.replace(/\(x\d+\)/i, "").trim();
-      return { name: cleanName || p, price: 0, quantity: qty, image: "", shop: "" };
+      const cleanName = p.replace(/\(x\d+\)/i, '').trim();
+      return {
+        name: cleanName || p,
+        price: 0,
+        quantity: qty,
+        image: '',
+        shop: '',
+      };
     });
   }
   return [];
@@ -370,7 +435,15 @@ const loadOrders = () => {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         // Nếu là tài khoản mới và chỉ chứa các đơn mock cũ, xóa dọn sạch về []
-        if (isNew && parsed.every((o: any) => o.id === 'ZM-9982' || o.id === 'ZM-9812' || o.store?.includes("Cơm Tấm Sài Gòn"))) {
+        if (
+          isNew &&
+          parsed.every(
+            (o: any) =>
+              o.id === 'ZM-9982' ||
+              o.id === 'ZM-9812' ||
+              o.store?.includes('Cơm Tấm Sài Gòn'),
+          )
+        ) {
           orders.value = [];
           saveOrders();
           return;
@@ -391,67 +464,68 @@ const loadOrders = () => {
   }
 
   // Chỉ tài khoản demo mới nạp sẵn các đơn mẫu
-  if (acc.role === "buyer") {
+  if (acc.role === 'buyer') {
     orders.value = [
       {
-        id: "ZM-9982",
-        store: "Cơm Tấm Sài Gòn 10km",
-        date: "Hôm nay, 11:30",
-        status: "delivering",
-        statusText: "Tài xế đang giao (Khoảng 12 phút nữa)",
-        items: "1x Cơm sườn bì chả đặc biệt, 1x Canh rong biển thịt bằm",
+        id: 'ZM-9982',
+        store: 'Cơm Tấm Sài Gòn 10km',
+        date: 'Hôm nay, 11:30',
+        status: 'delivering',
+        statusText: 'Tài xế đang giao (Khoảng 12 phút nữa)',
+        items: '1x Cơm sườn bì chả đặc biệt, 1x Canh rong biển thịt bằm',
         total: 85000,
-        storeDistance: "1.8 km"
+        storeDistance: '1.8 km',
       },
       {
-        id: "ZM-9812",
-        store: "Rau Củ Tươi VietGAP Cầu Giấy",
-        date: "07/09/2026, 17:45",
-        status: "completed",
-        statusText: "Giao thành công",
-        items: "1kg Cải ngọt VietGAP, 500g Cà chua bi, 1 nải Chuối tiêu",
+        id: 'ZM-9812',
+        store: 'Rau Củ Tươi VietGAP Cầu Giấy',
+        date: '07/09/2026, 17:45',
+        status: 'completed',
+        statusText: 'Giao thành công',
+        items: '1kg Cải ngọt VietGAP, 500g Cà chua bi, 1 nải Chuối tiêu',
         total: 115000,
-        storeDistance: "2.4 km"
-      }
+        storeDistance: '2.4 km',
+      },
     ];
-  } else if (acc.role === "seller") {
+  } else if (acc.role === 'seller') {
     orders.value = [
       {
-        id: "SUP-1049",
-        store: "Tổng Kho Hạt Giống & Khay Hữu Cơ Ba Vì",
-        date: "09/09/2026, 09:15",
-        status: "completed",
-        statusText: "Đã nhập kho gian hàng",
-        items: "500 Túi phân hủy sinh học VietGAP, 10 Gói hạt mầm",
+        id: 'SUP-1049',
+        store: 'Tổng Kho Hạt Giống & Khay Hữu Cơ Ba Vì',
+        date: '09/09/2026, 09:15',
+        status: 'completed',
+        statusText: 'Đã nhập kho gian hàng',
+        items: '500 Túi phân hủy sinh học VietGAP, 10 Gói hạt mầm',
         total: 450000,
-        storeDistance: "3.2 km"
-      }
+        storeDistance: '3.2 km',
+      },
     ];
-  } else if (acc.role === "shipper") {
+  } else if (acc.role === 'shipper') {
     orders.value = [
       {
-        id: "EQP-2024",
-        store: "Trạm Tiếp Vận & Đồng Phục ZoneMart Express",
-        date: "05/09/2026, 14:00",
-        status: "completed",
-        statusText: "Đã nhận trang thiết bị",
-        items: "1x Áo khoác phản quang ZoneMart, 1x Thùng giữ nhiệt thực phẩm 10km",
+        id: 'EQP-2024',
+        store: 'Trạm Tiếp Vận & Đồng Phục ZoneMart Express',
+        date: '05/09/2026, 14:00',
+        status: 'completed',
+        statusText: 'Đã nhận trang thiết bị',
+        items:
+          '1x Áo khoác phản quang ZoneMart, 1x Thùng giữ nhiệt thực phẩm 10km',
         total: 320000,
-        storeDistance: "0.8 km"
-      }
+        storeDistance: '0.8 km',
+      },
     ];
   } else {
     orders.value = [
       {
-        id: "SYS-8891",
-        store: "Hạ Tầng Cloud & Bảo Mật ZoneMart Data Center",
-        date: "01/09/2026, 00:00",
-        status: "completed",
-        statusText: "Gia hạn tự động hạ tầng",
-        items: "Gói bảo mật đám mây và máy chủ C# ASP.NET Core",
+        id: 'SYS-8891',
+        store: 'Hạ Tầng Cloud & Bảo Mật ZoneMart Data Center',
+        date: '01/09/2026, 00:00',
+        status: 'completed',
+        statusText: 'Gia hạn tự động hạ tầng',
+        items: 'Gói bảo mật đám mây và máy chủ C# ASP.NET Core',
         total: 1200000,
-        storeDistance: "Cloud"
-      }
+        storeDistance: 'Cloud',
+      },
     ];
   }
   saveOrders();
@@ -485,7 +559,14 @@ const loadAddresses = () => {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         // Nếu là tài khoản mới và chỉ chứa địa chỉ mock cũ thì reset về []
-        if (isNew && parsed.some((a: any) => a.detail?.includes("245 Cầu Giấy") || a.detail?.includes("Tech Tower"))) {
+        if (
+          isNew &&
+          parsed.some(
+            (a: any) =>
+              a.detail?.includes('245 Cầu Giấy') ||
+              a.detail?.includes('Tech Tower'),
+          )
+        ) {
           addresses.value = [];
           saveAddresses();
           return;
@@ -503,102 +584,107 @@ const loadAddresses = () => {
     return;
   }
 
-  const receiverName = user.fullName || acc.fullName || "Người dùng";
-  const receiverPhone = user.phone || (acc.phoneEmail.includes("@") ? "0988 776 655" : acc.phoneEmail);
+  const receiverName = user.fullName || acc.fullName || 'Người dùng';
+  const receiverPhone =
+    user.phone ||
+    (acc.phoneEmail.includes('@') ? '0988 776 655' : acc.phoneEmail);
 
-  if (acc.role === "seller") {
+  if (acc.role === 'seller') {
     addresses.value = [
       {
         id: 1,
-        title: "Cửa Hàng / Kho Nông Sản",
+        title: 'Cửa Hàng / Kho Nông Sản',
         receiver: receiverName,
         phone: receiverPhone,
-        detail: "Số 48 đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội",
+        detail: 'Số 48 đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội',
         isDefault: true,
-        distanceTag: "Bán kính Hub: 0.8km"
-      }
+        distanceTag: 'Bán kính Hub: 0.8km',
+      },
     ];
-  } else if (acc.role === "shipper") {
+  } else if (acc.role === 'shipper') {
     addresses.value = [
       {
         id: 1,
-        title: "Trạm Hub Nhận Đơn Shipper",
+        title: 'Trạm Hub Nhận Đơn Shipper',
         receiver: receiverName,
         phone: receiverPhone,
-        detail: "Tòa nhà Tech Tower, Phố Duy Tân, Phường Dịch Vọng Hậu, Quận Cầu Giấy, Hà Nội",
+        detail:
+          'Tòa nhà Tech Tower, Phố Duy Tân, Phường Dịch Vọng Hậu, Quận Cầu Giấy, Hà Nội',
         isDefault: true,
-        distanceTag: "Bán kính Hub: 1.5km"
-      }
+        distanceTag: 'Bán kính Hub: 1.5km',
+      },
     ];
-  } else if (acc.role === "admin") {
+  } else if (acc.role === 'admin') {
     addresses.value = [
       {
         id: 1,
-        title: "Trụ sở Quản trị ZoneMart",
+        title: 'Trụ sở Quản trị ZoneMart',
         receiver: receiverName,
         phone: receiverPhone,
-        detail: "ZoneMart HQ - Tòa nhà Tech Tower, Cầu Giấy, Hà Nội",
+        detail: 'ZoneMart HQ - Tòa nhà Tech Tower, Cầu Giấy, Hà Nội',
         isDefault: true,
-        distanceTag: "Bán kính Hub: 0.5km"
-      }
+        distanceTag: 'Bán kính Hub: 0.5km',
+      },
     ];
   } else {
     addresses.value = [
       {
         id: 1,
-        title: "Nhà riêng",
+        title: 'Nhà riêng',
         receiver: receiverName,
         phone: receiverPhone,
-        detail: "Số 18, Ngõ 245 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội",
+        detail:
+          'Số 18, Ngõ 245 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội',
         isDefault: true,
-        distanceTag: "Bán kính Hub: 1.2km"
+        distanceTag: 'Bán kính Hub: 1.2km',
       },
       {
         id: 2,
-        title: "Văn phòng công ty",
+        title: 'Văn phòng công ty',
         receiver: receiverName,
         phone: receiverPhone,
-        detail: "Tầng 8, Tòa nhà Tech Tower, Phố Duy Tân, Quận Cầu Giấy, Hà Nội",
+        detail:
+          'Tầng 8, Tòa nhà Tech Tower, Phố Duy Tân, Quận Cầu Giấy, Hà Nội',
         isDefault: false,
-        distanceTag: "Bán kính Hub: 3.5km"
-      }
+        distanceTag: 'Bán kính Hub: 3.5km',
+      },
     ];
   }
   saveAddresses();
 };
 
 const setDefaultAddress = (id: number) => {
-  addresses.value.forEach(a => (a.isDefault = a.id === id));
+  addresses.value.forEach((a) => (a.isDefault = a.id === id));
   saveAddresses();
-  triggerToast("Đã đặt làm địa chỉ giao hàng mặc định!");
+  triggerToast('Đã đặt làm địa chỉ giao hàng mặc định!');
 };
 
 const deleteAddress = (id: number) => {
-  addresses.value = addresses.value.filter(a => a.id !== id);
-  if (addresses.value.length > 0 && !addresses.value.some(a => a.isDefault)) {
+  addresses.value = addresses.value.filter((a) => a.id !== id);
+  if (addresses.value.length > 0 && !addresses.value.some((a) => a.isDefault)) {
     addresses.value[0].isDefault = true;
   }
   saveAddresses();
-  triggerToast("Đã xóa địa chỉ thành công!");
+  triggerToast('Đã xóa địa chỉ thành công!');
 };
 
 // Modal Thêm / Sửa Địa Chỉ
 const isAddressModalOpen = ref(false);
 const editingAddressId = ref<number | null>(null);
 const addressForm = reactive({
-  title: "Nhà riêng",
-  receiver: "",
-  phone: "",
-  detail: "",
-  isDefault: false
+  title: 'Nhà riêng',
+  receiver: '',
+  phone: '',
+  detail: '',
+  isDefault: false,
 });
 
 const openAddAddressModal = () => {
   editingAddressId.value = null;
-  addressForm.title = "Nhà riêng";
+  addressForm.title = 'Nhà riêng';
   addressForm.receiver = user.fullName;
   addressForm.phone = user.phone;
-  addressForm.detail = "";
+  addressForm.detail = '';
   addressForm.isDefault = addresses.value.length === 0;
   isAddressModalOpen.value = true;
 };
@@ -614,27 +700,31 @@ const editAddress = (addr: AddressItem) => {
 };
 
 const handleSaveAddressForm = () => {
-  if (!addressForm.receiver.trim() || !addressForm.phone.trim() || !addressForm.detail.trim()) {
-    triggerToast("Vui lòng điền đầy đủ người nhận, SĐT và địa chỉ!");
+  if (
+    !addressForm.receiver.trim() ||
+    !addressForm.phone.trim() ||
+    !addressForm.detail.trim()
+  ) {
+    triggerToast('Vui lòng điền đầy đủ người nhận, SĐT và địa chỉ!');
     return;
   }
 
   if (editingAddressId.value !== null) {
-    const target = addresses.value.find(a => a.id === editingAddressId.value);
+    const target = addresses.value.find((a) => a.id === editingAddressId.value);
     if (target) {
       target.title = addressForm.title;
       target.receiver = addressForm.receiver.trim();
       target.phone = addressForm.phone.trim();
       target.detail = addressForm.detail.trim();
       if (addressForm.isDefault) {
-        addresses.value.forEach(a => (a.isDefault = a.id === target.id));
+        addresses.value.forEach((a) => (a.isDefault = a.id === target.id));
       }
     }
-    triggerToast("Đã cập nhật địa chỉ thành công!");
+    triggerToast('Đã cập nhật địa chỉ thành công!');
   } else {
     const newId = Date.now();
     if (addressForm.isDefault) {
-      addresses.value.forEach(a => (a.isDefault = false));
+      addresses.value.forEach((a) => (a.isDefault = false));
     }
     addresses.value.unshift({
       id: newId,
@@ -643,9 +733,9 @@ const handleSaveAddressForm = () => {
       phone: addressForm.phone.trim(),
       detail: addressForm.detail.trim(),
       isDefault: addressForm.isDefault || addresses.value.length === 0,
-      distanceTag: "Bán kính Hub: 1.5km"
+      distanceTag: 'Bán kính Hub: 1.5km',
     });
-    triggerToast("Đã thêm địa chỉ nhận hàng mới!");
+    triggerToast('Đã thêm địa chỉ nhận hàng mới!');
   }
 
   saveAddresses();
@@ -668,68 +758,73 @@ const quickTopUp = async (amount: number) => {
 
   // Gửi API lên Backend C#
   try {
-    const res = await fetch("http://localhost:5000/api/auth/topup-wallet", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const res = await fetch('http://localhost:5000/api/auth/topup-wallet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         id: curr?.id,
         phoneEmail: user.email || curr?.phoneEmail,
-        amount
-      })
+        amount,
+      }),
     });
     if (res.ok) {
       const data = await res.json();
-      triggerToast(data.message || `Nạp thành công +${amount.toLocaleString("vi-VN")} ₫ vào Ví ZonePay!`);
+      triggerToast(
+        data.message ||
+          `Nạp thành công +${amount.toLocaleString('vi-VN')} ₫ vào Ví ZonePay!`,
+      );
       return;
     }
   } catch {}
 
-  triggerToast(`Nạp thành công +${amount.toLocaleString("vi-VN")} ₫ vào Ví ZonePay!`);
+  triggerToast(
+    `Nạp thành công +${amount.toLocaleString('vi-VN')} ₫ vào Ví ZonePay!`,
+  );
 };
 
 // 8. Modal Đổi Mật Khẩu
 const isPasswordModalOpen = ref(false);
 const pwdForm = reactive({
-  oldPassword: "",
-  newPassword: "",
-  confirmPassword: ""
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: '',
 });
 const isSubmittingPwd = ref(false);
 
 const openChangePwdModal = () => {
-  pwdForm.oldPassword = "";
-  pwdForm.newPassword = "";
-  pwdForm.confirmPassword = "";
+  pwdForm.oldPassword = '';
+  pwdForm.newPassword = '';
+  pwdForm.confirmPassword = '';
   isPasswordModalOpen.value = true;
 };
 
 const handleChangePasswordSubmit = async () => {
   if (!pwdForm.newPassword || pwdForm.newPassword.length < 6) {
-    triggerToast("Mật khẩu mới phải từ 6 ký tự trở lên!");
+    triggerToast('Mật khẩu mới phải từ 6 ký tự trở lên!');
     return;
   }
   if (pwdForm.newPassword !== pwdForm.confirmPassword) {
-    triggerToast("Mật khẩu nhập lại không trùng khớp!");
+    triggerToast('Mật khẩu nhập lại không trùng khớp!');
     return;
   }
 
   isSubmittingPwd.value = true;
   try {
-    const res = await fetch("http://localhost:5000/api/auth/change-password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const res = await fetch('http://localhost:5000/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         phoneEmail: user.email,
         oldPassword: pwdForm.oldPassword,
-        newPassword: pwdForm.newPassword
-      })
+        newPassword: pwdForm.newPassword,
+      }),
     }).catch(() => null);
 
     if (res && res.ok) {
-      triggerToast("Đổi mật khẩu thành công!");
+      triggerToast('Đổi mật khẩu thành công!');
       isPasswordModalOpen.value = false;
     } else {
-      triggerToast("Đã cập nhật mật khẩu mới cho tài khoản!");
+      triggerToast('Đã cập nhật mật khẩu mới cho tài khoản!');
       isPasswordModalOpen.value = false;
     }
   } finally {
@@ -739,46 +834,56 @@ const handleChangePasswordSubmit = async () => {
 
 // 8.5. Liên Kết Số Điện Thoại Qua Zalo OTP & Cho Phép Đăng Nhập
 const isZaloModalOpen = ref(false);
-const zaloPhoneInput = ref("");
-const zaloOtpInput = ref("");
+const zaloPhoneInput = ref('');
+const zaloOtpInput = ref('');
 const isSendingZaloOtp = ref(false);
 const isVerifyingZaloOtp = ref(false);
 const zaloCountdown = ref(0);
 let zaloTimer: any = null;
 
 const openLinkZaloModal = () => {
-  zaloPhoneInput.value = (user.phone && user.phone !== "0988 000 000") ? user.phone.replace(/\s+/g, '') : "";
-  zaloOtpInput.value = "";
+  zaloPhoneInput.value =
+    user.phone && user.phone !== '0988 000 000'
+      ? user.phone.replace(/\s+/g, '')
+      : '';
+  zaloOtpInput.value = '';
   isZaloModalOpen.value = true;
 };
 
 const handleSendZaloOtp = async () => {
-  const clean = zaloPhoneInput.value.replace(/[^0-9]/g, "");
+  const clean = zaloPhoneInput.value.replace(/[^0-9]/g, '');
   if (!clean || clean.length < 9 || clean.length > 11) {
-    triggerToast("Vui lòng nhập số điện thoại hợp lệ (9 - 11 chữ số)!");
+    triggerToast('Vui lòng nhập số điện thoại hợp lệ (9 - 11 chữ số)!');
     return;
   }
 
   const acc = currentAccount.value;
-  const targetEmail = user.email || (acc.phoneEmail.includes("@") ? acc.phoneEmail : "hh9393100@gmail.com");
+  const targetEmail =
+    user.email ||
+    (acc.phoneEmail.includes('@') ? acc.phoneEmail : 'hh9393100@gmail.com');
 
   isSendingZaloOtp.value = true;
   try {
-    const res = await fetch("http://localhost:5000/api/auth/send-phone-otp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const res = await fetch('http://localhost:5000/api/auth/send-phone-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         phoneNumber: clean,
         email: targetEmail,
-        id: acc.id
-      })
+        id: acc.id,
+      }),
     }).catch(() => null);
 
     if (res && res.ok) {
       const data = await res.json();
-      triggerToast(data.message || `Đã gửi mã xác thực 6 số tới Gmail ${targetEmail}. Hãy mở Gmail để lấy mã!`);
+      triggerToast(
+        data.message ||
+          `Đã gửi mã xác thực 6 số tới Gmail ${targetEmail}. Hãy mở Gmail để lấy mã!`,
+      );
     } else {
-      triggerToast(`Đã gửi mã xác thực 6 số tới Gmail ${targetEmail}. Hãy kiểm tra hộp thư đến!`);
+      triggerToast(
+        `Đã gửi mã xác thực 6 số tới Gmail ${targetEmail}. Hãy kiểm tra hộp thư đến!`,
+      );
     }
 
     zaloCountdown.value = 60;
@@ -796,36 +901,39 @@ const handleSendZaloOtp = async () => {
 };
 
 const handleVerifyZaloOtp = async () => {
-  const cleanPhone = zaloPhoneInput.value.replace(/[^0-9]/g, "");
+  const cleanPhone = zaloPhoneInput.value.replace(/[^0-9]/g, '');
   const otp = zaloOtpInput.value.trim();
   if (!cleanPhone) {
-    triggerToast("Vui lòng nhập số điện thoại!");
+    triggerToast('Vui lòng nhập số điện thoại!');
     return;
   }
   if (!otp || otp.length < 6) {
-    triggerToast("Vui lòng nhập đầy đủ mã xác thực 6 số!");
+    triggerToast('Vui lòng nhập đầy đủ mã xác thực 6 số!');
     return;
   }
 
   isVerifyingZaloOtp.value = true;
   try {
     const acc = currentAccount.value;
-    const res = await fetch("http://localhost:5000/api/auth/verify-link-phone", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        phoneNumber: cleanPhone,
-        otp: otp,
-        phoneEmail: user.email || acc.phoneEmail,
-        id: acc.id
-      })
-    }).catch(() => null);
+    const res = await fetch(
+      'http://localhost:5000/api/auth/verify-link-phone',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: cleanPhone,
+          otp: otp,
+          phoneEmail: user.email || acc.phoneEmail,
+          id: acc.id,
+        }),
+      },
+    ).catch(() => null);
 
     if (res && res.ok) {
       const data = await res.json();
       if (data.success) {
         user.phone = cleanPhone;
-        
+
         const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
         localStorage.setItem(savedKey, JSON.stringify(user));
 
@@ -835,24 +943,30 @@ const handleVerifyZaloOtp = async () => {
           auth.login(curr);
         }
         try {
-          const savedUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+          const savedUser =
+            localStorage.getItem('currentUser') ||
+            localStorage.getItem('zonemart_user');
           if (savedUser) {
             const parsed = JSON.parse(savedUser);
             parsed.phone = cleanPhone;
-            localStorage.setItem("currentUser", JSON.stringify(parsed));
-            localStorage.setItem("zonemart_user", JSON.stringify(parsed));
+            localStorage.setItem('currentUser', JSON.stringify(parsed));
+            localStorage.setItem('zonemart_user', JSON.stringify(parsed));
           }
         } catch {}
 
-        triggerToast(`🎉 Đã thêm số điện thoại ${cleanPhone} thành công! Giờ bạn có thể dùng SĐT này để đăng nhập.`);
+        triggerToast(
+          `🎉 Đã thêm số điện thoại ${cleanPhone} thành công! Giờ bạn có thể dùng SĐT này để đăng nhập.`,
+        );
         isZaloModalOpen.value = false;
         return;
       } else {
-        triggerToast(data.message || "Mã xác thực không chính xác!");
+        triggerToast(data.message || 'Mã xác thực không chính xác!');
         return;
       }
     } else {
-      triggerToast("Mã xác thực không chính xác hoặc đã hết hạn. Vui lòng kiểm tra lại Gmail!");
+      triggerToast(
+        'Mã xác thực không chính xác hoặc đã hết hạn. Vui lòng kiểm tra lại Gmail!',
+      );
     }
   } finally {
     isVerifyingZaloOtp.value = false;
@@ -864,7 +978,7 @@ watch(
   () => accountKey.value,
   () => {
     loadUserProfile();
-  }
+  },
 );
 
 watch(
@@ -873,7 +987,7 @@ watch(
     if (newBal !== undefined && newBal !== user.zonePayBalance) {
       user.zonePayBalance = newBal;
     }
-  }
+  },
 );
 
 onMounted(() => {
@@ -902,7 +1016,11 @@ onMounted(() => {
       <section class="profile-hero-card">
         <div class="hero-user-details">
           <!-- Avatar with tactile badge -->
-          <div class="avatar-container" @click="triggerAvatarUpload" title="Nhấp để đổi ảnh đại diện">
+          <div
+            class="avatar-container"
+            @click="triggerAvatarUpload"
+            title="Nhấp để đổi ảnh đại diện"
+          >
             <img :src="user.avatarUrl" alt="Avatar" class="user-avatar-img" />
             <button class="camera-btn" type="button">
               <i class="bi bi-camera-fill"></i>
@@ -924,11 +1042,16 @@ onMounted(() => {
               <span>{{ user.phone }}</span>
               <template v-if="user.storeName">
                 <span class="divider-dot">•</span>
-                <span class="text-orange"><i class="bi bi-shop me-1"></i>{{ user.storeName }}</span>
+                <span class="text-orange"
+                  ><i class="bi bi-shop me-1"></i>{{ user.storeName }}</span
+                >
               </template>
               <template v-if="user.vehiclePlate">
                 <span class="divider-dot">•</span>
-                <span class="text-blue"><i class="bi bi-bicycle me-1"></i>{{ user.vehiclePlate }}</span>
+                <span class="text-blue"
+                  ><i class="bi bi-bicycle me-1"></i
+                  >{{ user.vehiclePlate }}</span
+                >
               </template>
               <span class="divider-dot">•</span>
               <span class="text-green">Đã xác minh KYC 100%</span>
@@ -941,7 +1064,10 @@ onMounted(() => {
                 <span>{{ user.tierProgressText }}</span>
               </div>
               <div class="progress-track">
-                <div class="progress-fill" :style="{ width: user.tierProgress + '%' }"></div>
+                <div
+                  class="progress-fill"
+                  :style="{ width: user.tierProgress + '%' }"
+                ></div>
               </div>
             </div>
           </div>
@@ -955,27 +1081,43 @@ onMounted(() => {
             </div>
             <div class="stat-content">
               <span class="stat-label">Số dư Ví ZonePay</span>
-              <strong class="stat-value text-orange">{{ user.zonePayBalance.toLocaleString('vi-VN') }} ₫</strong>
+              <strong class="stat-value text-orange"
+                >{{ user.zonePayBalance.toLocaleString('vi-VN') }} ₫</strong
+              >
             </div>
           </div>
 
-          <div class="stat-box" @click="triggerToast(`Bạn đang có ${user.vouchersCount} mã ưu đãi`)">
+          <div
+            class="stat-box"
+            @click="triggerToast(`Bạn đang có ${user.vouchersCount} mã ưu đãi`)"
+          >
             <div class="stat-icon-wrap bg-blue">
               <i class="bi bi-ticket-perforated-fill"></i>
             </div>
             <div class="stat-content">
               <span class="stat-label">Voucher Giảm Giá</span>
-              <strong class="stat-value">{{ user.vouchersCount }} Mã khả dụng</strong>
+              <strong class="stat-value"
+                >{{ user.vouchersCount }} Mã khả dụng</strong
+              >
             </div>
           </div>
 
-          <div class="stat-box" @click="triggerToast(`Điểm thưởng tích lũy: ${user.points.toLocaleString('vi-VN')} điểm`)">
+          <div
+            class="stat-box"
+            @click="
+              triggerToast(
+                `Điểm thưởng tích lũy: ${user.points.toLocaleString('vi-VN')} điểm`,
+              )
+            "
+          >
             <div class="stat-icon-wrap bg-amber">
               <i class="bi bi-stars"></i>
             </div>
             <div class="stat-content">
               <span class="stat-label">Điểm Thưởng Zone</span>
-              <strong class="stat-value">{{ user.points.toLocaleString('vi-VN') }} Điểm</strong>
+              <strong class="stat-value"
+                >{{ user.points.toLocaleString('vi-VN') }} Điểm</strong
+              >
             </div>
           </div>
         </div>
@@ -999,7 +1141,9 @@ onMounted(() => {
         >
           <i class="bi bi-bag-check-fill"></i>
           <span>Đơn Hàng Gần Đây</span>
-          <span v-if="orders.length > 0" class="badge-count">{{ orders.length }}</span>
+          <span v-if="orders.length > 0" class="badge-count">{{
+            orders.length
+          }}</span>
         </button>
 
         <button
@@ -1028,9 +1172,16 @@ onMounted(() => {
           <div class="pane-header">
             <div>
               <h2 class="pane-title">Hồ Sơ Cá Nhân</h2>
-              <p class="pane-subtitle">Quản lý thông tin tài khoản, bảo mật và thông tin liên hệ của bạn.</p>
+              <p class="pane-subtitle">
+                Quản lý thông tin tài khoản, bảo mật và thông tin liên hệ của
+                bạn.
+              </p>
             </div>
-            <button class="btn-save-primary" :disabled="isSaving" @click="handleSaveProfile">
+            <button
+              class="btn-save-primary"
+              :disabled="isSaving"
+              @click="handleSaveProfile"
+            >
               <span v-if="isSaving" class="spinner-small"></span>
               <span v-else>
                 <i class="bi bi-check2-circle"></i>
@@ -1050,32 +1201,68 @@ onMounted(() => {
               <div class="fields-grid-2">
                 <div class="form-group">
                   <label class="form-label">Họ và tên đầy đủ</label>
-                  <input v-model="user.fullName" type="text" class="form-input" />
+                  <input
+                    v-model="user.fullName"
+                    type="text"
+                    class="form-input"
+                  />
                 </div>
 
                 <div class="form-group">
                   <label class="form-label">Tên hiển thị (Username)</label>
-                  <input v-model="user.username" type="text" class="form-input" />
+                  <input
+                    v-model="user.username"
+                    type="text"
+                    class="form-input"
+                  />
                 </div>
 
                 <div class="form-group">
                   <label class="form-label">Ngày sinh</label>
-                  <input v-model="user.birthDate" type="date" class="form-input" />
+                  <input
+                    v-model="user.birthDate"
+                    type="date"
+                    class="form-input"
+                  />
                 </div>
 
                 <div class="form-group">
                   <label class="form-label">Giới tính</label>
                   <div class="gender-pill-group">
-                    <label class="gender-pill" :class="{ selected: user.gender === 'male' }">
-                      <input type="radio" v-model="user.gender" value="male" class="hidden-radio" />
+                    <label
+                      class="gender-pill"
+                      :class="{ selected: user.gender === 'male' }"
+                    >
+                      <input
+                        type="radio"
+                        v-model="user.gender"
+                        value="male"
+                        class="hidden-radio"
+                      />
                       <span>Nam</span>
                     </label>
-                    <label class="gender-pill" :class="{ selected: user.gender === 'female' }">
-                      <input type="radio" v-model="user.gender" value="female" class="hidden-radio" />
+                    <label
+                      class="gender-pill"
+                      :class="{ selected: user.gender === 'female' }"
+                    >
+                      <input
+                        type="radio"
+                        v-model="user.gender"
+                        value="female"
+                        class="hidden-radio"
+                      />
                       <span>Nữ</span>
                     </label>
-                    <label class="gender-pill" :class="{ selected: user.gender === 'other' }">
-                      <input type="radio" v-model="user.gender" value="other" class="hidden-radio" />
+                    <label
+                      class="gender-pill"
+                      :class="{ selected: user.gender === 'other' }"
+                    >
+                      <input
+                        type="radio"
+                        v-model="user.gender"
+                        value="other"
+                        class="hidden-radio"
+                      />
                       <span>Khác</span>
                     </label>
                   </div>
@@ -1094,11 +1281,15 @@ onMounted(() => {
               <div class="form-group">
                 <div class="label-with-badge">
                   <label class="form-label mb-0">Số điện thoại</label>
-                  <span v-if="user.phone && user.phone !== 'Chưa có'" class="zalo-status-chip linked">
+                  <span
+                    v-if="user.phone && user.phone !== 'Chưa có'"
+                    class="zalo-status-chip linked"
+                  >
                     <i class="bi bi-patch-check-fill"></i> Đã xác thực OTP
                   </span>
                   <span v-else class="zalo-status-chip unlinked">
-                    <i class="bi bi-exclamation-circle-fill"></i> Chưa thêm số điện thoại
+                    <i class="bi bi-exclamation-circle-fill"></i> Chưa thêm số
+                    điện thoại
                   </span>
                 </div>
 
@@ -1109,21 +1300,35 @@ onMounted(() => {
                     </div>
                     <div>
                       <div class="phone-number-text font-mono">
-                        {{ user.phone || "Chưa thiết lập số điện thoại" }}
+                        {{ user.phone || 'Chưa thiết lập số điện thoại' }}
                       </div>
                       <div class="phone-helper-text">
                         <span v-if="user.phone" class="text-success-bold">
-                          ✓ Dùng SĐT này và mật khẩu để đăng nhập trực tiếp (không cần Gmail)
+                          ✓ Dùng SĐT này và mật khẩu để đăng nhập trực tiếp
+                          (không cần Gmail)
                         </span>
                         <span v-else class="text-muted">
-                          Thêm số điện thoại để đăng nhập nhanh không cần Gmail (xác thực mã qua Zalo)
+                          Thêm số điện thoại để đăng nhập nhanh không cần Gmail
+                          (xác thực mã qua Zalo)
                         </span>
                       </div>
                     </div>
                   </div>
-                  <button type="button" class="btn-zalo-connect" @click="openLinkZaloModal">
-                    <i :class="user.phone ? 'bi bi-pencil-square me-1' : 'bi bi-plus-circle-fill me-1'"></i>
-                    {{ user.phone ? "Đổi Số Điện Thoại" : "Thêm Số Điện Thoại" }}
+                  <button
+                    type="button"
+                    class="btn-zalo-connect"
+                    @click="openLinkZaloModal"
+                  >
+                    <i
+                      :class="
+                        user.phone
+                          ? 'bi bi-pencil-square me-1'
+                          : 'bi bi-plus-circle-fill me-1'
+                      "
+                    ></i>
+                    {{
+                      user.phone ? 'Đổi Số Điện Thoại' : 'Thêm Số Điện Thoại'
+                    }}
                   </button>
                 </div>
               </div>
@@ -1141,8 +1346,17 @@ onMounted(() => {
               <div class="form-group">
                 <label class="form-label">Mật khẩu</label>
                 <div class="input-action-wrap">
-                  <input type="password" value="••••••••••••" readonly class="form-input font-mono" />
-                  <button type="button" class="btn-change-pwd" @click="openChangePwdModal">
+                  <input
+                    type="password"
+                    value="••••••••••••"
+                    readonly
+                    class="form-input font-mono"
+                  />
+                  <button
+                    type="button"
+                    class="btn-change-pwd"
+                    @click="openChangePwdModal"
+                  >
                     Đổi mật khẩu
                   </button>
                 </div>
@@ -1156,9 +1370,15 @@ onMounted(() => {
           <div class="pane-header">
             <div>
               <h2 class="pane-title">Đơn Mua Gần Đây</h2>
-              <p class="pane-subtitle">Theo dõi trạng thái giao hàng hỏa tốc và lịch sử đặt đồ ăn, thực phẩm.</p>
+              <p class="pane-subtitle">
+                Theo dõi trạng thái giao hàng hỏa tốc và lịch sử đặt đồ ăn, thực
+                phẩm.
+              </p>
             </div>
-            <button class="btn-secondary-action" @click="router.push('/products')">
+            <button
+              class="btn-secondary-action"
+              @click="router.push('/products')"
+            >
               <i class="bi bi-bag-plus"></i> Đặt Thêm Món Ngon
             </button>
           </div>
@@ -1170,30 +1390,40 @@ onMounted(() => {
                   <i class="bi bi-shop store-icon"></i>
                   <div>
                     <h4 class="store-name">{{ order.store }}</h4>
-                    <span class="order-meta-text">Mã đơn: <strong>{{ order.id }}</strong> • {{ order.date }} • Cách {{ order.storeDistance }}</span>
+                    <span class="order-meta-text"
+                      >Mã đơn: <strong>{{ order.id }}</strong> •
+                      {{ order.date }} • Cách {{ order.storeDistance }}</span
+                    >
                   </div>
                 </div>
 
                 <div class="order-status-badge" :class="order.status">
-                  <span v-if="order.status === 'delivering'" class="pulse-icon"></span>
+                  <span
+                    v-if="order.status === 'delivering'"
+                    class="pulse-icon"
+                  ></span>
                   <span>{{ order.statusText }}</span>
                 </div>
               </div>
 
               <!-- Danh sách sản phẩm đầy đủ hình ảnh và thông tin chi tiết -->
               <div class="profile-order-products-list">
-                <div 
-                  v-for="(item, idx) in parseOrderItems(order.items)" 
-                  :key="idx" 
+                <div
+                  v-for="(item, idx) in parseOrderItems(order.items)"
+                  :key="idx"
                   class="profile-order-product-item"
                 >
                   <div class="product-thumb-wrapper">
-                    <img 
-                      v-if="item.image" 
-                      :src="item.image" 
-                      :alt="item.name" 
-                      class="product-thumb-img" 
-                      @error="(e) => (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=150&q=80'" 
+                    <img
+                      v-if="item.image"
+                      :src="item.image"
+                      :alt="item.name"
+                      class="product-thumb-img"
+                      @error="
+                        (e) =>
+                          ((e.target as HTMLImageElement).src =
+                            'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=150&q=80')
+                      "
                     />
                     <div v-else class="product-thumb-fallback">
                       <i class="bi bi-basket2-fill"></i>
@@ -1206,13 +1436,22 @@ onMounted(() => {
                       <i class="bi bi-shop me-1"></i>{{ item.shop }}
                     </span>
                     <div class="product-pricing">
-                      <span v-if="item.price > 0" class="price-text">{{ (item.price).toLocaleString('vi-VN') }} ₫</span>
+                      <span v-if="item.price > 0" class="price-text"
+                        >{{ item.price.toLocaleString('vi-VN') }} ₫</span
+                      >
                       <span class="qty-tag">x{{ item.quantity || 1 }}</span>
                     </div>
                   </div>
 
                   <div class="product-subtotal-wrapper" v-if="item.price > 0">
-                    <span class="subtotal-amount">{{ ((item.price || 0) * (item.quantity || 1)).toLocaleString('vi-VN') }} ₫</span>
+                    <span class="subtotal-amount"
+                      >{{
+                        (
+                          (item.price || 0) * (item.quantity || 1)
+                        ).toLocaleString('vi-VN')
+                      }}
+                      ₫</span
+                    >
                   </div>
                 </div>
               </div>
@@ -1220,23 +1459,42 @@ onMounted(() => {
               <!-- Địa chỉ giao hàng nếu có -->
               <div v-if="order.shippingAddress" class="profile-shipping-info">
                 <i class="bi bi-geo-alt-fill text-danger me-1"></i>
-                <span><strong>Giao đến:</strong> {{ order.recipientName ? `${order.recipientName} (${order.recipientPhone}) - ` : '' }}{{ order.shippingAddress }}</span>
+                <span
+                  ><strong>Giao đến:</strong>
+                  {{
+                    order.recipientName
+                      ? `${order.recipientName} (${order.recipientPhone}) - `
+                      : ''
+                  }}{{ order.shippingAddress }}</span
+                >
               </div>
 
               <div class="order-card-footer">
                 <div class="order-total-price">
                   <span class="total-label">Tổng tiền:</span>
-                  <strong class="price-val">{{ order.total.toLocaleString('vi-VN') }} ₫</strong>
+                  <strong class="price-val"
+                    >{{ order.total.toLocaleString('vi-VN') }} ₫</strong
+                  >
                 </div>
 
                 <div class="order-actions">
-                  <button v-if="order.status === 'delivering'" class="btn-action-primary" @click="router.push('/map')">
+                  <button
+                    v-if="order.status === 'delivering'"
+                    class="btn-action-primary"
+                    @click="router.push('/map')"
+                  >
                     <i class="bi bi-cursor-fill"></i> Theo Dõi Shipper
                   </button>
-                  <button class="btn-action-secondary" @click="triggerToast('Đã thêm lại món vào giỏ hàng!')">
+                  <button
+                    class="btn-action-secondary"
+                    @click="triggerToast('Đã thêm lại món vào giỏ hàng!')"
+                  >
                     <i class="bi bi-arrow-repeat"></i> Mua Lại
                   </button>
-                  <button class="btn-action-ghost" @click="router.push('/contact')">
+                  <button
+                    class="btn-action-ghost"
+                    @click="router.push('/contact')"
+                  >
                     Khiếu nại
                   </button>
                 </div>
@@ -1249,10 +1507,12 @@ onMounted(() => {
             </div>
             <h3 class="empty-feed-title">Bạn Chưa Có Đơn Mua Nào</h3>
             <p class="empty-feed-subtitle">
-              Lịch sử đặt đồ ăn và thực phẩm tươi giao hỏa tốc 10km sẽ được hiển thị và cập nhật trực tiếp tại đây.
+              Lịch sử đặt đồ ăn và thực phẩm tươi giao hỏa tốc 10km sẽ được hiển
+              thị và cập nhật trực tiếp tại đây.
             </p>
             <button class="btn-explore-shop" @click="router.push('/products')">
-              <i class="bi bi-bag-plus-fill me-1"></i> Khám Phá Nông Sản Quanh Bạn
+              <i class="bi bi-bag-plus-fill me-1"></i> Khám Phá Nông Sản Quanh
+              Bạn
             </button>
           </div>
         </div>
@@ -1262,7 +1522,10 @@ onMounted(() => {
           <div class="pane-header">
             <div>
               <h2 class="pane-title">Sổ Địa Chỉ Nhận Hàng</h2>
-              <p class="pane-subtitle">Địa chỉ nhận hàng tối ưu cho thuật toán giao hỏa tốc 20 - 30 phút.</p>
+              <p class="pane-subtitle">
+                Địa chỉ nhận hàng tối ưu cho thuật toán giao hỏa tốc 20 - 30
+                phút.
+              </p>
             </div>
             <button class="btn-save-primary" @click="openAddAddressModal">
               <i class="bi bi-plus-lg"></i> Thêm Địa Chỉ Mới
@@ -1278,7 +1541,12 @@ onMounted(() => {
             >
               <div class="addr-header">
                 <div class="addr-type-tag">
-                  <i class="bi" :class="addr.id === 1 ? 'bi-house-door-fill' : 'bi-building-fill'"></i>
+                  <i
+                    class="bi"
+                    :class="
+                      addr.id === 1 ? 'bi-house-door-fill' : 'bi-building-fill'
+                    "
+                  ></i>
                   <span>{{ addr.title }}</span>
                 </div>
                 <span v-if="addr.isDefault" class="default-badge">
@@ -1286,7 +1554,9 @@ onMounted(() => {
                 </span>
               </div>
 
-              <h4 class="receiver-name">{{ addr.receiver }} <small>({{ addr.phone }})</small></h4>
+              <h4 class="receiver-name">
+                {{ addr.receiver }} <small>({{ addr.phone }})</small>
+              </h4>
               <p class="addr-detail">{{ addr.detail }}</p>
               <span class="radius-chip">
                 <i class="bi bi-radar"></i> {{ addr.distanceTag }}
@@ -1304,7 +1574,11 @@ onMounted(() => {
                   <button class="btn-icon-text" @click="editAddress(addr)">
                     <i class="bi bi-pencil"></i> Sửa
                   </button>
-                  <button v-if="!addr.isDefault" class="btn-icon-text text-danger" @click="deleteAddress(addr.id)">
+                  <button
+                    v-if="!addr.isDefault"
+                    class="btn-icon-text text-danger"
+                    @click="deleteAddress(addr.id)"
+                  >
                     <i class="bi bi-trash3"></i> Xóa
                   </button>
                 </div>
@@ -1317,7 +1591,8 @@ onMounted(() => {
             </div>
             <h3 class="empty-feed-title">Chưa Có Địa Chỉ Giao Hàng</h3>
             <p class="empty-feed-subtitle">
-              Vui lòng thêm địa chỉ nhận hàng để ZoneMart tính toán khoảng cách và kết nối shipper giao hỏa tốc trong 20-30 phút.
+              Vui lòng thêm địa chỉ nhận hàng để ZoneMart tính toán khoảng cách
+              và kết nối shipper giao hỏa tốc trong 20-30 phút.
             </p>
             <button class="btn-explore-shop" @click="openAddAddressModal">
               <i class="bi bi-plus-lg me-1"></i> Thêm Địa Chỉ Đầu Tiên
@@ -1330,7 +1605,10 @@ onMounted(() => {
           <div class="pane-header">
             <div>
               <h2 class="pane-title">Ví Điện Tử ZonePay</h2>
-              <p class="pane-subtitle">Thanh toán không tiền mặt siêu tốc, hoàn tiền tức thì khi mua thực phẩm tươi.</p>
+              <p class="pane-subtitle">
+                Thanh toán không tiền mặt siêu tốc, hoàn tiền tức thì khi mua
+                thực phẩm tươi.
+              </p>
             </div>
           </div>
 
@@ -1344,10 +1622,14 @@ onMounted(() => {
               <div class="card-chip-sim"></div>
               <div class="card-balance-box">
                 <span class="card-balance-label">Số dư khả dụng</span>
-                <div class="card-balance-number">{{ user.zonePayBalance.toLocaleString('vi-VN') }} ₫</div>
+                <div class="card-balance-number">
+                  {{ user.zonePayBalance.toLocaleString('vi-VN') }} ₫
+                </div>
               </div>
               <div class="card-bottom-row">
-                <span class="card-holder-name">{{ user.fullName.toUpperCase() }}</span>
+                <span class="card-holder-name">{{
+                  user.fullName.toUpperCase()
+                }}</span>
                 <span class="card-network">FAST 10KM PAY</span>
               </div>
             </div>
@@ -1355,13 +1637,26 @@ onMounted(() => {
             <!-- Quick Top-up Action Box -->
             <div class="topup-box">
               <h3 class="topup-title">Nạp Tiền Nhanh Vào Ví</h3>
-              <p class="topup-desc">Miễn phí nạp qua VNPay, MoMo, Vietcombank và Techcombank.</p>
+              <p class="topup-desc">
+                Miễn phí nạp qua VNPay, MoMo, Vietcombank và Techcombank.
+              </p>
 
               <div class="amount-pills">
-                <button class="amount-btn" @click="quickTopUp(100000)">+100.000 ₫</button>
-                <button class="amount-btn" @click="quickTopUp(200000)">+200.000 ₫</button>
-                <button class="amount-btn active-pill" @click="quickTopUp(500000)">+500.000 ₫</button>
-                <button class="amount-btn" @click="quickTopUp(1000000)">+1.000.000 ₫</button>
+                <button class="amount-btn" @click="quickTopUp(100000)">
+                  +100.000 ₫
+                </button>
+                <button class="amount-btn" @click="quickTopUp(200000)">
+                  +200.000 ₫
+                </button>
+                <button
+                  class="amount-btn active-pill"
+                  @click="quickTopUp(500000)"
+                >
+                  +500.000 ₫
+                </button>
+                <button class="amount-btn" @click="quickTopUp(1000000)">
+                  +1.000.000 ₫
+                </button>
               </div>
 
               <div class="payment-partners">
@@ -1380,40 +1675,97 @@ onMounted(() => {
     </div>
 
     <!-- MODAL ĐỔI MẬT KHẨU -->
-    <div v-if="isPasswordModalOpen" class="modal-backdrop" @click="isPasswordModalOpen = false">
+    <div
+      v-if="isPasswordModalOpen"
+      class="modal-backdrop"
+      @click="isPasswordModalOpen = false"
+    >
       <div class="modal-card" @click.stop>
         <div class="modal-header">
-          <h3 class="modal-title"><i class="bi bi-shield-lock-fill text-orange me-2"></i>Đổi Mật Khẩu Tài Khoản</h3>
-          <button class="modal-close-btn" @click="isPasswordModalOpen = false">✕</button>
+          <h3 class="modal-title">
+            <i class="bi bi-shield-lock-fill text-orange me-2"></i>Đổi Mật Khẩu
+            Tài Khoản
+          </h3>
+          <button class="modal-close-btn" @click="isPasswordModalOpen = false">
+            ✕
+          </button>
         </div>
         <form @submit.prevent="handleChangePasswordSubmit">
           <div class="modal-body">
-            <p class="modal-desc">Cập nhật mật khẩu bảo vệ cho tài khoản <strong>{{ user.email }}</strong>.</p>
+            <p class="modal-desc">
+              Cập nhật mật khẩu bảo vệ cho tài khoản
+              <strong>{{ user.email }}</strong
+              >.
+            </p>
             <div class="form-group mb-3">
-              <label for="pwd-old" class="form-label font-bold">Mật khẩu hiện tại</label>
+              <label for="pwd-old" class="form-label font-bold"
+                >Mật khẩu hiện tại</label
+              >
               <div class="input-icon-wrapper">
                 <i class="bi bi-lock input-leading-icon"></i>
-                <input id="pwd-old" name="current-password" v-model="pwdForm.oldPassword" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu hiện tại (nếu có)" class="form-input has-leading-icon" />
+                <input
+                  id="pwd-old"
+                  name="current-password"
+                  v-model="pwdForm.oldPassword"
+                  type="password"
+                  autocomplete="current-password"
+                  placeholder="Nhập mật khẩu hiện tại (nếu có)"
+                  class="form-input has-leading-icon"
+                />
               </div>
             </div>
             <div class="form-group mb-3">
-              <label for="pwd-new" class="form-label font-bold">Mật khẩu mới (tối thiểu 6 ký tự)</label>
+              <label for="pwd-new" class="form-label font-bold"
+                >Mật khẩu mới (tối thiểu 6 ký tự)</label
+              >
               <div class="input-icon-wrapper">
                 <i class="bi bi-key-fill input-leading-icon"></i>
-                <input id="pwd-new" name="new-password" v-model="pwdForm.newPassword" type="password" autocomplete="new-password" placeholder="Nhập mật khẩu mới" class="form-input has-leading-icon" minlength="6" required />
+                <input
+                  id="pwd-new"
+                  name="new-password"
+                  v-model="pwdForm.newPassword"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="Nhập mật khẩu mới"
+                  class="form-input has-leading-icon"
+                  minlength="6"
+                  required
+                />
               </div>
             </div>
             <div class="form-group mb-3">
-              <label for="pwd-confirm" class="form-label font-bold">Xác nhận mật khẩu mới</label>
+              <label for="pwd-confirm" class="form-label font-bold"
+                >Xác nhận mật khẩu mới</label
+              >
               <div class="input-icon-wrapper">
                 <i class="bi bi-shield-check input-leading-icon"></i>
-                <input id="pwd-confirm" name="confirm-password" v-model="pwdForm.confirmPassword" type="password" autocomplete="new-password" placeholder="Nhập lại mật khẩu mới" class="form-input has-leading-icon" minlength="6" required />
+                <input
+                  id="pwd-confirm"
+                  name="confirm-password"
+                  v-model="pwdForm.confirmPassword"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="Nhập lại mật khẩu mới"
+                  class="form-input has-leading-icon"
+                  minlength="6"
+                  required
+                />
               </div>
             </div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn-cancel" @click="isPasswordModalOpen = false">Hủy Bỏ</button>
-            <button type="submit" class="btn-confirm" :disabled="isSubmittingPwd">
+            <button
+              type="button"
+              class="btn-cancel"
+              @click="isPasswordModalOpen = false"
+            >
+              Hủy Bỏ
+            </button>
+            <button
+              type="submit"
+              class="btn-confirm"
+              :disabled="isSubmittingPwd"
+            >
               <span v-if="isSubmittingPwd" class="spinner-small me-2"></span>
               <i v-else class="bi bi-check2-circle me-1"></i>
               <span>Xác Nhận Đổi Mật Khẩu</span>
@@ -1424,20 +1776,36 @@ onMounted(() => {
     </div>
 
     <!-- MODAL THÊM / SỬA ĐỊA CHỈ NHẬN HÀNG -->
-    <div v-if="isAddressModalOpen" class="modal-backdrop" @click="isAddressModalOpen = false">
+    <div
+      v-if="isAddressModalOpen"
+      class="modal-backdrop"
+      @click="isAddressModalOpen = false"
+    >
       <div class="modal-card" @click.stop>
         <div class="modal-header">
           <h3 class="modal-title">
             <i class="bi bi-geo-alt-fill text-orange me-2"></i>
-            {{ editingAddressId !== null ? "Chỉnh Sửa Địa Chỉ" : "Thêm Địa Chỉ Mới" }}
+            {{
+              editingAddressId !== null
+                ? 'Chỉnh Sửa Địa Chỉ'
+                : 'Thêm Địa Chỉ Mới'
+            }}
           </h3>
-          <button class="modal-close-btn" @click="isAddressModalOpen = false">✕</button>
+          <button class="modal-close-btn" @click="isAddressModalOpen = false">
+            ✕
+          </button>
         </div>
         <form @submit.prevent="handleSaveAddressForm">
           <div class="modal-body">
             <div class="form-group mb-3">
-              <label for="addr-title" class="form-label font-bold">Loại địa chỉ</label>
-              <select id="addr-title" v-model="addressForm.title" class="form-input">
+              <label for="addr-title" class="form-label font-bold"
+                >Loại địa chỉ</label
+              >
+              <select
+                id="addr-title"
+                v-model="addressForm.title"
+                class="form-input"
+              >
                 <option value="Nhà riêng">Nhà riêng</option>
                 <option value="Văn phòng công ty">Văn phòng công ty</option>
                 <option value="Cửa hàng / Kho hàng">Cửa hàng / Kho hàng</option>
@@ -1446,33 +1814,73 @@ onMounted(() => {
             </div>
             <div class="fields-grid-2 mb-3">
               <div class="form-group">
-                <label for="addr-receiver" class="form-label font-bold">Tên người nhận</label>
+                <label for="addr-receiver" class="form-label font-bold"
+                  >Tên người nhận</label
+                >
                 <div class="input-icon-wrapper">
                   <i class="bi bi-person-fill input-leading-icon"></i>
-                  <input id="addr-receiver" name="name" autocomplete="name" v-model="addressForm.receiver" type="text" class="form-input has-leading-icon" placeholder="Họ và tên" required />
+                  <input
+                    id="addr-receiver"
+                    name="name"
+                    autocomplete="name"
+                    v-model="addressForm.receiver"
+                    type="text"
+                    class="form-input has-leading-icon"
+                    placeholder="Họ và tên"
+                    required
+                  />
                 </div>
               </div>
               <div class="form-group">
-                <label for="addr-phone" class="form-label font-bold">Số điện thoại</label>
+                <label for="addr-phone" class="form-label font-bold"
+                  >Số điện thoại</label
+                >
                 <div class="input-icon-wrapper">
                   <i class="bi bi-telephone-fill input-leading-icon"></i>
-                  <input id="addr-phone" name="tel" autocomplete="tel" v-model="addressForm.phone" type="tel" class="form-input has-leading-icon font-mono" placeholder="09xx xxx xxx" required />
+                  <input
+                    id="addr-phone"
+                    name="tel"
+                    autocomplete="tel"
+                    v-model="addressForm.phone"
+                    type="tel"
+                    class="form-input has-leading-icon font-mono"
+                    placeholder="09xx xxx xxx"
+                    required
+                  />
                 </div>
               </div>
             </div>
             <div class="form-group mb-3">
-              <label for="addr-detail" class="form-label font-bold">Địa chỉ chi tiết (Số nhà, Ngõ/Hẻm, Đường, Phường, Quận)</label>
-              <textarea id="addr-detail" v-model="addressForm.detail" rows="3" class="form-input" placeholder="VD: Số 18, Ngõ 245 Cầu Giấy, P. Dịch Vọng, Q. Cầu Giấy, Hà Nội" required></textarea>
+              <label for="addr-detail" class="form-label font-bold"
+                >Địa chỉ chi tiết (Số nhà, Ngõ/Hẻm, Đường, Phường, Quận)</label
+              >
+              <textarea
+                id="addr-detail"
+                v-model="addressForm.detail"
+                rows="3"
+                class="form-input"
+                placeholder="VD: Số 18, Ngõ 245 Cầu Giấy, P. Dịch Vọng, Q. Cầu Giấy, Hà Nội"
+                required
+              ></textarea>
             </div>
             <div class="form-check-wrap">
               <label class="checkbox-label">
                 <input type="checkbox" v-model="addressForm.isDefault" />
-                <span>Đặt địa chỉ này làm mặc định cho các đơn giao hỏa tốc 10km</span>
+                <span
+                  >Đặt địa chỉ này làm mặc định cho các đơn giao hỏa tốc
+                  10km</span
+                >
               </label>
             </div>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn-cancel" @click="isAddressModalOpen = false">Hủy</button>
+            <button
+              type="button"
+              class="btn-cancel"
+              @click="isAddressModalOpen = false"
+            >
+              Hủy
+            </button>
             <button type="submit" class="btn-confirm">
               <i class="bi bi-check2-circle me-1"></i>
               <span>Lưu Địa Chỉ</span>
@@ -1483,31 +1891,49 @@ onMounted(() => {
     </div>
 
     <!-- MODAL THÊM / ĐỔI SỐ ĐIỆN THOẠI (XÁC THỰC MÃ QUA GMAIL OTP) -->
-    <div v-if="isZaloModalOpen" class="modal-backdrop" @click="isZaloModalOpen = false">
+    <div
+      v-if="isZaloModalOpen"
+      class="modal-backdrop"
+      @click="isZaloModalOpen = false"
+    >
       <div class="modal-card" @click.stop>
         <div class="modal-header">
           <h3 class="modal-title">
             <i class="bi bi-shield-lock-fill text-orange me-2"></i>
-            {{ user.phone && user.phone !== 'Chưa có' ? "Thay Đổi Số Điện Thoại" : "Thêm Số Điện Thoại" }}
+            {{
+              user.phone && user.phone !== 'Chưa có'
+                ? 'Thay Đổi Số Điện Thoại'
+                : 'Thêm Số Điện Thoại'
+            }}
           </h3>
-          <button class="modal-close-btn" @click="isZaloModalOpen = false">✕</button>
+          <button class="modal-close-btn" @click="isZaloModalOpen = false">
+            ✕
+          </button>
         </div>
 
         <form @submit.prevent="handleVerifyZaloOtp">
           <div class="modal-body">
             <p class="modal-desc">
-              Nhập số điện thoại bạn muốn liên kết. Hệ thống sẽ gửi mã xác thực 6 số (OTP) tới Gmail tài khoản của bạn để bảo mật.
+              Nhập số điện thoại bạn muốn liên kết. Hệ thống sẽ gửi mã xác thực
+              6 số (OTP) tới Gmail tài khoản của bạn để bảo mật.
             </p>
 
             <!-- Email nhận mã -->
             <div class="email-target-banner mb-3">
               <i class="bi bi-envelope-check-fill text-orange me-2"></i>
-              <span>Mã OTP sẽ gửi về: <strong>{{ user.email || currentAccount.phoneEmail }}</strong></span>
+              <span
+                >Mã OTP sẽ gửi về:
+                <strong>{{
+                  user.email || currentAccount.phoneEmail
+                }}</strong></span
+              >
             </div>
 
             <!-- Ô nhập số điện thoại -->
             <div class="form-group mb-3">
-              <label for="phone-link-input" class="form-label font-bold">Số điện thoại liên kết</label>
+              <label for="phone-link-input" class="form-label font-bold"
+                >Số điện thoại liên kết</label
+              >
               <div class="phone-input-action-row">
                 <div class="phone-prefix-tag">
                   <span>🇻🇳 +84</span>
@@ -1530,18 +1956,26 @@ onMounted(() => {
                   @click="handleSendZaloOtp"
                 >
                   <span v-if="isSendingZaloOtp" class="spinner-small"></span>
-                  <span v-else-if="zaloCountdown > 0">Gửi lại ({{ zaloCountdown }}s)</span>
-                  <span v-else><i class="bi bi-envelope-arrow-up-fill me-1"></i> Gửi Mã OTP</span>
+                  <span v-else-if="zaloCountdown > 0"
+                    >Gửi lại ({{ zaloCountdown }}s)</span
+                  >
+                  <span v-else
+                    ><i class="bi bi-envelope-arrow-up-fill me-1"></i> Gửi Mã
+                    OTP</span
+                  >
                 </button>
               </div>
               <small class="text-muted mt-1 d-block">
-                Sau khi xác thực xong, bạn có thể dùng SĐT này để đăng nhập trực tiếp.
+                Sau khi xác thực xong, bạn có thể dùng SĐT này để đăng nhập trực
+                tiếp.
               </small>
             </div>
 
             <!-- Ô nhập mã OTP 6 số -->
             <div class="form-group mb-2">
-              <label for="phone-link-otp" class="form-label font-bold mb-1">Mã xác thực 6 số (Gửi qua Gmail)</label>
+              <label for="phone-link-otp" class="form-label font-bold mb-1"
+                >Mã xác thực 6 số (Gửi qua Gmail)</label
+              >
               <input
                 v-model="zaloOtpInput"
                 type="text"
@@ -1555,17 +1989,26 @@ onMounted(() => {
               />
               <small class="text-muted mt-1 d-block">
                 <i class="bi bi-shield-check text-success me-1"></i>
-                Mã có hiệu lực trong 5 phút. Hãy mở ứng dụng Gmail (hoặc thư mục Spam) để lấy mã.
+                Mã có hiệu lực trong 5 phút. Hãy mở ứng dụng Gmail (hoặc thư mục
+                Spam) để lấy mã.
               </small>
             </div>
           </div>
 
           <div class="modal-footer">
-            <button type="button" class="btn-cancel" @click="isZaloModalOpen = false">Hủy Bỏ</button>
+            <button
+              type="button"
+              class="btn-cancel"
+              @click="isZaloModalOpen = false"
+            >
+              Hủy Bỏ
+            </button>
             <button
               type="submit"
               class="btn-confirm"
-              :disabled="isVerifyingZaloOtp || !zaloOtpInput || zaloOtpInput.length < 6"
+              :disabled="
+                isVerifyingZaloOtp || !zaloOtpInput || zaloOtpInput.length < 6
+              "
             >
               <span v-if="isVerifyingZaloOtp" class="spinner-small me-2"></span>
               <i v-else class="bi bi-check2-circle me-2"></i>
@@ -1575,7 +2018,6 @@ onMounted(() => {
         </form>
       </div>
     </div>
-
   </div>
 </template>
 
@@ -1588,7 +2030,13 @@ onMounted(() => {
   min-height: calc(100vh - 72px);
   padding: 36px 32px 80px 32px;
   color: #1e293b;
-  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    'Plus Jakarta Sans',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
 }
 
 .profile-main-container {
@@ -1629,8 +2077,14 @@ onMounted(() => {
 }
 
 @keyframes slideToast {
-  from { transform: translateY(-20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 /* ==========================================================================
@@ -1819,9 +2273,18 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.bg-orange { background: #fff7ed; color: #ea580c; }
-.bg-blue { background: #eff6ff; color: #2563eb; }
-.bg-amber { background: #fefce8; color: #d97706; }
+.bg-orange {
+  background: #fff7ed;
+  color: #ea580c;
+}
+.bg-blue {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.bg-amber {
+  background: #fefce8;
+  color: #d97706;
+}
 
 .stat-content {
   display: flex;
@@ -2280,8 +2743,15 @@ onMounted(() => {
 }
 
 @keyframes pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.3); opacity: 0.6; }
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.6;
+  }
 }
 
 .profile-order-products-list {
@@ -2796,7 +3266,9 @@ onMounted(() => {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ==========================================================================
@@ -2892,8 +3364,14 @@ onMounted(() => {
 }
 
 @keyframes modalFadeIn {
-  from { opacity: 0; transform: scale(0.95) translateY(10px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .modal-header {
@@ -3042,7 +3520,7 @@ onMounted(() => {
   cursor: pointer;
 }
 
-.checkbox-label input[type="checkbox"] {
+.checkbox-label input[type='checkbox'] {
   width: 16px;
   height: 16px;
   accent-color: #ea580c;
@@ -3154,7 +3632,6 @@ onMounted(() => {
   background: #c2410c;
   transform: translateY(-1px);
 }
-
 
 /* MODAL LIÊN KẾT ZALO */
 .modal-zalo-card {

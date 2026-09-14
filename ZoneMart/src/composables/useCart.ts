@@ -2,7 +2,6 @@ import { ref, computed, watch } from 'vue';
 import { useAuth } from './useAuth';
 import { cartService } from '../services/cartService';
 
-
 export interface CartItem {
   id: string;
   name: string;
