@@ -75,6 +75,23 @@ export interface CatalogProduct {
   };
 }
 
+export interface CatalogStore {
+  id: string;
+  name: string;
+  address: string;
+  distanceKm: number;
+  deliveryTime: string;
+  rating: number;
+  reviewsCount?: number;
+  totalProducts: number;
+  isVerified: boolean;
+  categoryName?: string;
+  avatar: string;
+  coverImage: string;
+  openHours?: string;
+  products: CatalogProduct[];
+}
+
 export const CATALOG_PRODUCTS: CatalogProduct[] = [
   {
     id: "p1",
@@ -999,6 +1016,63 @@ export function useProductCatalog() {
     ];
   });
 
+  // Danh sách toàn bộ gian hàng trích xuất tự động từ sản phẩm
+  const allStores = computed<CatalogStore[]>(() => {
+    const storeMap = new Map<string, CatalogStore>();
+
+    for (const p of allProducts.value) {
+      if (!p.store || !p.store.name) continue;
+      const key = p.store.name.trim();
+
+      if (!storeMap.has(key)) {
+        let avatar = "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80";
+        let cover = p.image;
+        if (key.includes("Cầu Giấy") || key.includes("ZoneMart")) {
+          avatar = "https://images.unsplash.com/photo-1578916171728-46686eac8d58?auto=format&fit=crop&w=200&q=80";
+          cover = "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80";
+        } else if (key.includes("Trái Cây") || key.includes("Quả")) {
+          avatar = "https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=200&q=80";
+          cover = "https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=800&q=80";
+        } else if (key.includes("Bánh Mì") || key.includes("Tiệm")) {
+          avatar = "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=200&q=80";
+          cover = "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80";
+        } else if (key.includes("Gia Dụng") || key.includes("Kho")) {
+          avatar = "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=200&q=80";
+          cover = "https://images.unsplash.com/photo-1584992236310-6edddc08acff?auto=format&fit=crop&w=800&q=80";
+        } else if (key.includes("Cơm") || key.includes("Bếp")) {
+          avatar = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80";
+          cover = "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80";
+        } else if (key.includes("VietGAP") || key.includes("Nông Trại") || key.includes("Rau")) {
+          avatar = "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=200&q=80";
+          cover = "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80";
+        }
+
+        storeMap.set(key, {
+          id: p.store.id || `store_${key.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+          name: p.store.name,
+          address: p.store.address || "Hà Nội",
+          distanceKm: p.store.distanceKm || 1.5,
+          deliveryTime: p.store.deliveryTime || "15 - 20 phút",
+          rating: p.store.rating || 5.0,
+          reviewsCount: p.reviewsCount || 48,
+          totalProducts: p.store.totalProducts || 1,
+          isVerified: p.store.isVerified !== false,
+          categoryName: p.categoryName || "Thực phẩm tươi",
+          avatar,
+          coverImage: cover,
+          openHours: "07:00 - 22:00",
+          products: [p],
+        });
+      } else {
+        const store = storeMap.get(key)!;
+        store.products.push(p);
+        store.totalProducts = Math.max(store.totalProducts, store.products.length);
+      }
+    }
+
+    return Array.from(storeMap.values());
+  });
+
   // Tìm kiếm sản phẩm theo ID (hỗ trợ mã 'p1' lẫn '1')
   const getProductById = (id: string | number): CatalogProduct | undefined => {
     const targetId = String(id).trim().toLowerCase();
@@ -1019,10 +1093,20 @@ export function useProductCatalog() {
       .slice(0, limit);
   };
 
+  const getStoreByIdOrName = (idOrName: string): CatalogStore | undefined => {
+    const term = idOrName.toLowerCase().trim();
+    return allStores.value.find(
+      (s) => s.id.toLowerCase() === term || s.name.toLowerCase() === term
+    );
+  };
+
   return {
     allProducts,
+    allStores,
     getProductById,
     getRelatedProducts
+    getRelatedProducts,
+    getStoreByIdOrName,
   };
 }
 

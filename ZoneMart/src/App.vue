@@ -1,17 +1,55 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import logoImg from './assets/logo.png';
 import { useAuth, type UserRole } from './composables/useAuth';
 import { useCart } from './composables/useCart';
+import { useProductCatalog } from './composables/useProductCatalog';
 
 const router = useRouter();
 const auth = useAuth();
 const cart = useCart();
+const catalog = useProductCatalog();
 
 const isMobileMenuOpen = ref(false);
 const isUserDropdownOpen = ref(false);
 const searchQuery = ref('');
+const searchTarget = ref<'product' | 'store'>('product');
+const isSearchTargetDropdownOpen = ref(false);
+const isSuggestionsOpen = ref(false);
+
+const searchPlaceholder = computed(() => {
+  return searchTarget.value === 'store'
+    ? 'Tìm kiếm gian hàng, quán ăn, siêu thị gần bạn...'
+    : 'Tìm kiếm nông sản, thực phẩm tươi, món ngon...';
+});
+
+// Gợi ý tìm kiếm thời gian thực
+const searchSuggestions = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return { products: [], stores: [] };
+
+  const products = catalog.allProducts.value
+    .filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.categoryName.toLowerCase().includes(q) ||
+        p.store.name.toLowerCase().includes(q)
+    )
+    .slice(0, 5);
+
+  const stores = catalog.allStores.value
+    .filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.address.toLowerCase().includes(q) ||
+        (s.categoryName && s.categoryName.toLowerCase().includes(q))
+    )
+    .slice(0, 4);
+
+  return { products, stores };
+});
 
 const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value;
@@ -21,20 +59,55 @@ const toggleUserDropdown = () => {
   isUserDropdownOpen.value = !isUserDropdownOpen.value;
 };
 
+const toggleSearchTargetDropdown = () => {
+  isSearchTargetDropdownOpen.value = !isSearchTargetDropdownOpen.value;
+};
+
+const setSearchTarget = (target: 'product' | 'store') => {
+  searchTarget.value = target;
+  isSearchTargetDropdownOpen.value = false;
+};
+
 const closeDropdowns = () => {
   isUserDropdownOpen.value = false;
   isMobileMenuOpen.value = false;
+  isSearchTargetDropdownOpen.value = false;
+  isSuggestionsOpen.value = false;
 };
 
 const handleHeaderSearch = () => {
   if (searchQuery.value.trim()) {
+const handleHeaderSearch = (forcedTarget?: 'product' | 'store') => {
+  const target = forcedTarget || searchTarget.value;
+  isSuggestionsOpen.value = false;
+  isSearchTargetDropdownOpen.value = false;
+  const q = searchQuery.value.trim();
+  if (q) {
     router.push({
       path: '/products',
       query: { search: searchQuery.value.trim() },
+      query: { search: q, q, type: target },
     });
   } else {
     router.push('/products');
+    router.push({
+      path: '/products',
+      query: { type: target },
+    });
   }
+};
+
+const selectProductSuggestion = (productId: string) => {
+  isSuggestionsOpen.value = false;
+  router.push(`/products/${productId}`);
+};
+
+const selectStoreSuggestion = (storeName: string) => {
+  isSuggestionsOpen.value = false;
+  router.push({
+    path: '/products',
+    query: { store: storeName, type: 'product' },
+  });
 };
 
 const handleLogout = () => {
@@ -51,6 +124,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
 <template>
   <div class="app-wrapper" @click="isUserDropdownOpen = false">
+  <div class="app-wrapper" @click="closeDropdowns">
     <!-- Header chuẩn theo hình Sample Mockup (Tự động ẩn ở trang 404 qua meta.hideHeader) -->
     <header v-if="!$route.meta.hideHeader" class="navbar">
       <div class="nav-container">
@@ -68,12 +142,72 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
         <!-- 2. Thanh tìm kiếm chính giữa -->
         <div class="header-search-wrap">
           <i class="bi bi-search search-icon" aria-hidden="true"></i>
+        <!-- 2. Thanh tìm kiếm chính giữa: Tìm Sản Phẩm HOẶC Gian Hàng -->
+        <div class="header-search-wrap" @click.stop>
+          <!-- Nút chọn chế độ tìm: Sản phẩm / Gian hàng -->
+          <div class="search-target-selector">
+            <button
+              type="button"
+              class="target-select-btn"
+              :title="searchTarget === 'store' ? 'Đang tìm: Gian hàng' : 'Đang tìm: Sản phẩm'"
+              @click.stop="toggleSearchTargetDropdown"
+            >
+              <i :class="searchTarget === 'store' ? 'bi bi-shop' : 'bi bi-box-seam'"></i>
+              <span class="target-label">{{ searchTarget === 'store' ? 'Gian hàng' : 'Sản phẩm' }}</span>
+              <i class="bi bi-chevron-down caret-icon"></i>
+            </button>
+
+            <!-- Dropdown chọn loại tìm kiếm -->
+            <transition name="dropdown-fade">
+              <div v-if="isSearchTargetDropdownOpen" class="target-dropdown-menu">
+                <button
+                  type="button"
+                  class="target-option-btn"
+                  :class="{ active: searchTarget === 'product' }"
+                  @click="setSearchTarget('product')"
+                >
+                  <div class="opt-icon-circle product-icon">
+                    <i class="bi bi-box-seam-fill"></i>
+                  </div>
+                  <div class="target-opt-text">
+                    <strong>Sản phẩm</strong>
+                    <small>Món ăn, rau củ, thịt tươi...</small>
+                  </div>
+                  <i v-if="searchTarget === 'product'" class="bi bi-check2 check-icon"></i>
+                </button>
+
+                <button
+                  type="button"
+                  class="target-option-btn"
+                  :class="{ active: searchTarget === 'store' }"
+                  @click="setSearchTarget('store')"
+                >
+                  <div class="opt-icon-circle store-icon">
+                    <i class="bi bi-shop"></i>
+                  </div>
+                  <div class="target-opt-text">
+                    <strong>Gian hàng</strong>
+                    <small>Quán ăn, siêu thị, tiệm tạp hóa...</small>
+                  </div>
+                  <i v-if="searchTarget === 'store'" class="bi bi-check2 check-icon"></i>
+                </button>
+              </div>
+            </transition>
+          </div>
+
+          <div class="search-divider"></div>
+
+          <i class="bi bi-search search-icon" aria-hidden="true" @click="handleHeaderSearch()"></i>
           <input
             v-model="searchQuery"
             type="text"
             placeholder="Tìm kiếm nông sản, thực phẩm tươi..."
             aria-label="Tìm kiếm sản phẩm"
             @keyup.enter="handleHeaderSearch"
+            :placeholder="searchPlaceholder"
+            aria-label="Tìm kiếm trên ZoneMart"
+            @focus="isSuggestionsOpen = true"
+            @keyup.enter="handleHeaderSearch()"
           />
           <button
             v-if="searchQuery"
@@ -84,6 +218,90 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
           >
             <i class="bi bi-x-circle-fill" aria-hidden="true"></i>
           </button>
+
+          <!-- Gợi ý tìm kiếm thời gian thực (Live Search Popup) -->
+          <transition name="dropdown-fade">
+            <div
+              v-if="isSuggestionsOpen && searchQuery.trim() && (searchSuggestions.products.length > 0 || searchSuggestions.stores.length > 0)"
+              class="search-suggestions-popup"
+            >
+              <!-- 1. Gợi ý theo Sản Phẩm nếu đang ở mode Sản phẩm -->
+              <div v-if="searchTarget === 'product' && searchSuggestions.products.length > 0" class="sugg-group">
+                <div class="sugg-group-header">
+                  <span><i class="bi bi-box-seam-fill me-1"></i> Sản phẩm phù hợp</span>
+                  <span class="sugg-badge">{{ searchSuggestions.products.length }} món</span>
+                </div>
+                <div
+                  v-for="p in searchSuggestions.products"
+                  :key="p.id"
+                  class="sugg-item product-sugg-item"
+                  @click="selectProductSuggestion(p.id)"
+                >
+                  <img :src="p.image" :alt="p.name" class="sugg-thumb" />
+                  <div class="sugg-info">
+                    <div class="sugg-name">{{ p.name }}</div>
+                    <div class="sugg-meta">
+                      <span class="sugg-price">{{ p.price.toLocaleString('vi-VN') }} ₫</span>
+                      <span class="sugg-store"><i class="bi bi-shop"></i> {{ p.store.name }}</span>
+                    </div>
+                  </div>
+                  <i class="bi bi-chevron-right arrow-icon"></i>
+                </div>
+              </div>
+
+              <!-- 2. Gợi ý theo Gian Hàng nếu đang ở mode Gian hàng -->
+              <div v-if="searchTarget === 'store' && searchSuggestions.stores.length > 0" class="sugg-group">
+                <div class="sugg-group-header">
+                  <span><i class="bi bi-shop me-1"></i> Gian hàng phù hợp</span>
+                  <span class="sugg-badge">{{ searchSuggestions.stores.length }} quán</span>
+                </div>
+                <div
+                  v-for="s in searchSuggestions.stores"
+                  :key="s.id"
+                  class="sugg-item store-sugg-item"
+                  @click="selectStoreSuggestion(s.name)"
+                >
+                  <img :src="s.avatar" :alt="s.name" class="sugg-avatar" />
+                  <div class="sugg-info">
+                    <div class="sugg-name">
+                      {{ s.name }}
+                      <span v-if="s.isVerified" class="sugg-verified"><i class="bi bi-patch-check-fill"></i></span>
+                    </div>
+                    <div class="sugg-meta">
+                      <span class="sugg-address"><i class="bi bi-geo-alt"></i> {{ s.address }}</span>
+                      <span class="sugg-dist">⚡ {{ s.distanceKm }}km • {{ s.deliveryTime }}</span>
+                    </div>
+                  </div>
+                  <span class="btn-visit-mini">Ghé quán</span>
+                </div>
+              </div>
+
+              <!-- Gợi ý chéo linh hoạt -->
+              <div
+                v-if="searchTarget === 'product' && searchSuggestions.stores.length > 0"
+                class="sugg-cross-hint"
+                @click="handleHeaderSearch('store')"
+              >
+                <i class="bi bi-shop text-orange"></i>
+                <span>Tìm thấy <strong>{{ searchSuggestions.stores.length }}</strong> gian hàng liên quan. Bấm để xem gian hàng ➔</span>
+              </div>
+
+              <div
+                v-if="searchTarget === 'store' && searchSuggestions.products.length > 0"
+                class="sugg-cross-hint"
+                @click="handleHeaderSearch('product')"
+              >
+                <i class="bi bi-box-seam text-orange"></i>
+                <span>Tìm thấy <strong>{{ searchSuggestions.products.length }}</strong> sản phẩm liên quan. Bấm để xem sản phẩm ➔</span>
+              </div>
+
+              <!-- Xem tất cả trên trang tìm kiếm -->
+              <div class="sugg-footer-bar" @click="handleHeaderSearch()">
+                <span>Xem tất cả kết quả {{ searchTarget === 'store' ? 'gian hàng' : 'sản phẩm' }} cho "<strong>{{ searchQuery }}</strong>"</span>
+                <i class="bi bi-arrow-right-short arrow-big"></i>
+              </div>
+            </div>
+          </transition>
         </div>
 
         <!-- 3. Khu vực bên phải: Tự động đổi theo vai trò Khách ghé thăm (Guest) hoặc Đã đăng nhập -->
@@ -1071,12 +1289,16 @@ body {
 .header-search-wrap {
   flex: 1;
   max-width: 440px;
+  max-width: 480px;
+  position: relative;
   display: flex;
   align-items: center;
   background: #fbf5ef;
   border: 1px solid #ebd9ce;
+  border: 1.5px solid #ebd9ce;
   border-radius: 50px;
   padding: 6px 16px;
+  padding: 4px 14px 4px 6px;
   transition: all 0.25s ease;
 }
 .header-search-wrap:focus-within {
@@ -1084,11 +1306,129 @@ body {
   border-color: #d85a2a;
   box-shadow: 0 0 0 3px rgba(216, 90, 42, 0.12);
 }
+
+/* Nút chọn loại tìm kiếm (Sản phẩm / Gian hàng) */
+.search-target-selector {
+  position: relative;
+}
+.target-select-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #ebd8cd;
+  border-radius: 40px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #554137;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.target-select-btn:hover {
+  background: #fdf2eb;
+  color: #d85a2a;
+  border-color: #d85a2a;
+}
+.target-select-btn i:first-child {
+  color: #d85a2a;
+  font-size: 13px;
+}
+.target-select-btn .caret-icon {
+  font-size: 10px;
+  color: #8c776c;
+  transition: transform 0.2s ease;
+}
+
+/* Dropdown menu chọn loại */
+.target-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  background: #ffffff;
+  border: 1.5px solid #ebd8cd;
+  border-radius: 16px;
+  padding: 6px;
+  box-shadow: 0 12px 28px rgba(43, 27, 20, 0.12);
+  min-width: 220px;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.target-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+.target-option-btn:hover {
+  background: #fbf3ee;
+}
+.target-option-btn.active {
+  background: #fdf0e8;
+}
+.opt-icon-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.opt-icon-circle.product-icon {
+  background: #fff2ea;
+  color: #d85a2a;
+}
+.opt-icon-circle.store-icon {
+  background: #eef7ff;
+  color: #0284c7;
+}
+.target-opt-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.target-opt-text strong {
+  font-size: 13px;
+  color: #2b1b14;
+}
+.target-opt-text small {
+  font-size: 11px;
+  color: #7b6960;
+}
+.target-option-btn .check-icon {
+  color: #d85a2a;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* Vạch phân tách */
+.search-divider {
+  width: 1px;
+  height: 20px;
+  background: #ebd8cd;
+  margin: 0 10px 0 8px;
+  flex-shrink: 0;
+}
+
 .header-search-wrap .search-icon {
   font-size: 15px;
   margin-right: 10px;
+  margin-right: 8px;
   color: #968379;
   flex-shrink: 0;
+  cursor: pointer;
   transition: color 0.2s ease;
 }
 .header-search-wrap:focus-within .search-icon {
@@ -1116,9 +1456,181 @@ body {
   background: transparent;
   font-size: 13.5px;
   color: #2b1b14;
+  min-width: 80px;
 }
 .header-search-wrap input::placeholder {
   color: #968379;
+}
+
+/* Live Suggestions Popup */
+.search-suggestions-popup {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1.5px solid #ebd8cd;
+  border-radius: 18px;
+  box-shadow: 0 16px 36px rgba(43, 27, 20, 0.14);
+  overflow: hidden;
+  z-index: 1200;
+  max-height: 440px;
+  overflow-y: auto;
+}
+.sugg-group {
+  padding: 8px 10px;
+}
+.sugg-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #7b6960;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 4px 8px 6px 8px;
+  border-bottom: 1px dashed #f0e2d8;
+  margin-bottom: 4px;
+}
+.sugg-badge {
+  background: #fdf0e8;
+  color: #d85a2a;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 10.5px;
+}
+.sugg-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.sugg-item:hover {
+  background: #fbf5ef;
+}
+.sugg-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid #ebdcd3;
+}
+.sugg-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1.5px solid #ebdcd3;
+}
+.sugg-info {
+  flex: 1;
+  min-width: 0;
+}
+.sugg-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #2b1b14;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sugg-verified {
+  color: #16a34a;
+  font-size: 13px;
+}
+.sugg-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+  font-size: 12px;
+}
+.sugg-price {
+  color: #d85a2a;
+  font-weight: 800;
+}
+.sugg-store, .sugg-address {
+  color: #7b6960;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sugg-dist {
+  color: #059669;
+  font-weight: 600;
+  font-size: 11px;
+}
+.btn-visit-mini {
+  background: #fdf0e8;
+  color: #d85a2a;
+  border: 1px solid #f6cfbd;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.arrow-icon {
+  color: #a49187;
+  font-size: 13px;
+}
+.sugg-cross-hint {
+  padding: 10px 14px;
+  background: #fff9f5;
+  border-top: 1px solid #f5e7de;
+  font-size: 12.5px;
+  color: #554137;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s ease;
+}
+.sugg-cross-hint:hover {
+  background: #fdeee5;
+  color: #d85a2a;
+}
+.text-orange {
+  color: #d85a2a;
+}
+.sugg-footer-bar {
+  padding: 12px 16px;
+  background: #f8fafc;
+  border-top: 1px solid #ebdcd3;
+  font-size: 13px;
+  font-weight: 700;
+  color: #d85a2a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.sugg-footer-bar:hover {
+  background: #f1f5f9;
+}
+.arrow-big {
+  font-size: 18px;
+}
+
+/* Dropdown Transitions */
+.dropdown-fade-enter-active,
+.dropdown-fade-leave-active {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dropdown-fade-enter-from,
+.dropdown-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 
 /* 3. RIGHT ACTIONS */
