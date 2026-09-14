@@ -56,15 +56,7 @@ onMounted(() => {
   try {
     const parsed = JSON.parse(savedUser);
     if (!parsed || (parsed.role !== 'seller' && parsed.role !== 'admin')) {
-      router.replace({
-        path: '/403',
-        query: {
-          error: 'forbidden_role',
-          target: '/seller',
-          required: 'seller',
-          currentRole: parsed?.role || 'guest'
-        }
-      });
+      router.replace('/403');
       return;
     }
     if (parsed.fullName) currentUser.name = parsed.fullName;

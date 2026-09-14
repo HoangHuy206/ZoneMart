@@ -75,15 +75,7 @@ router.beforeEach((to, _from, next) => {
     // Nếu đã đăng nhập nhưng SAI QUYỀN VAI TRÒ -> BÁO LỖI LUÔN, CHUYỂN ĐẾN TRANG 403
     if (!allowedRoles.includes(userRole)) {
       console.warn(`[RBAC] Truy cập bị từ chối vào ${to.path}. Vai trò hiện tại: [${userRole}], yêu cầu: [${allowedRoles.join(', ')}]`);
-      return next({
-        path: '/403',
-        query: {
-          error: 'forbidden_role',
-          target: to.path,
-          required: allowedRoles.join(', '),
-          currentRole: userRole,
-        },
-      });
+      return next({ path: '/403' });
     }
   }
 

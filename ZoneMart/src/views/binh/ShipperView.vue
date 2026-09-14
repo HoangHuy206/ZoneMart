@@ -599,15 +599,7 @@ watch(isOnline, () => {
 onMounted(() => {
   const role = auth.currentRole.value;
   if (role !== "shipper" && role !== "admin") {
-    router.replace({
-      path: "/403",
-      query: {
-        error: "forbidden_role",
-        target: "/shipper",
-        required: "shipper",
-        currentRole: role,
-      },
-    });
+    router.replace("/403");
     return;
   }
   loadDriverProfile();

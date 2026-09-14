@@ -453,15 +453,7 @@ const handleCreateManager = async () => {
 onMounted(() => {
   const role = auth.currentRole.value;
   if (role !== "admin") {
-    router.replace({
-      path: "/403",
-      query: {
-        error: "forbidden_role",
-        target: "/admin",
-        required: "admin",
-        currentRole: role,
-      },
-    });
+    router.replace("/403");
     return;
   }
   fetchStats();
