@@ -40,27 +40,57 @@ public class ForgotPasswordController : ControllerBase
         }
 
         string email = request.Email.Trim().ToLower();
+        var phoneVariants = AuthController.GetPhoneVariants(request.Email);
 
         try
         {
-            // 1. Kiểm tra tài khoản trong MongoDB Atlas
-            var filter = Builders<User>.Filter.Eq(u => u.PhoneEmail, email);
+            // 1. Kiểm tra tài khoản trong MongoDB Atlas (theo PhoneEmail hoặc SĐT liên kết)
+            var filterBuilder = Builders<User>.Filter;
+            var matchFilters = new List<FilterDefinition<User>>
+            {
+                filterBuilder.Eq(u => u.PhoneEmail, email)
+            };
+            foreach (var v in phoneVariants)
+            {
+                matchFilters.Add(filterBuilder.Eq(u => u.Phone, v));
+            }
+            var filter = filterBuilder.Or(matchFilters);
             var existingUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+
+            if (existingUser == null)
+            {
+                var sh = await _mongoService.Shippers.Find(s => s.PhoneNumber == email || phoneVariants.Contains(s.PhoneNumber)).FirstOrDefaultAsync();
+                if (sh != null)
+                {
+                    existingUser = await _mongoService.Users.Find(u => u.Id == sh.UserId || u.PhoneEmail == sh.PhoneNumber).FirstOrDefaultAsync();
+                }
+            }
 
             if (existingUser == null)
             {
                 return BadRequest(new { success = false, message = "Không tìm thấy tài khoản", errorType = "ACCOUNT_NOT_FOUND" });
             }
 
+            string targetEmail = existingUser.PhoneEmail;
+            if (!targetEmail.Contains("@"))
+            {
+                targetEmail = "hh9393100@gmail.com";
+            }
+
             // 2. Tạo mã xác thực ngẫu nhiên 6 chữ số
             string otpCode = new Random().Next(100000, 999999).ToString();
             DateTime expireTime = DateTime.UtcNow.AddSeconds(120); // Hết hạn sau 120 giây
-
-            OtpStore[email] = new OtpInfo
+            var otpInfo = new OtpInfo
             {
                 OtpCode = otpCode,
                 ExpireTime = expireTime
             };
+            OtpStore[email] = otpInfo;
+            OtpStore[targetEmail.ToLower()] = otpInfo;
+            if (!string.IsNullOrEmpty(existingUser.Phone))
+            {
+                OtpStore[existingUser.Phone] = otpInfo;
+            }
 
             // 3. Gửi Email Mã Xác Thực thực tế thông qua MailKit (Chủ động gửi + Tự động chọn tài khoản dự phòng nếu có sự cố)
             _ = Task.Run(async () =>
@@ -132,13 +162,14 @@ public class ForgotPasswordController : ControllerBase
                         </table>
                     </div>";
 
-                await SendEmailViaMailKitAsync(email, subject, htmlBody, "ZoneMart Hỗ Trợ Khách Hàng");
+                await SendEmailViaMailKitAsync(targetEmail, subject, htmlBody, "ZoneMart Hỗ Trợ Khách Hàng");
             });
 
             return Ok(new
             {
                 success = true,
-                message = $"Mã xác thực đã được gửi tới email {email} (hiệu lực 120s)!",
+                message = $"Mã xác thực đã được gửi tới email {targetEmail} (hiệu lực 120s)!",
+                targetEmail = targetEmail,
                 // Trả về OTP trong response dev để tiện xem thử nếu mạng chậm
                 devOtp = otpCode
             });
@@ -215,7 +246,16 @@ public class ForgotPasswordController : ControllerBase
         try
         {
             // Cập nhật Mật khẩu mới trong CSDL MongoDB Atlas (Users collection)
-            var filter = Builders<User>.Filter.Eq(u => u.PhoneEmail, email);
+            var phoneVariants = AuthController.GetPhoneVariants(email);
+            var matchFilters = new List<FilterDefinition<User>>
+            {
+                Builders<User>.Filter.Eq(u => u.PhoneEmail, email)
+            };
+            foreach (var v in phoneVariants)
+            {
+                matchFilters.Add(Builders<User>.Filter.Eq(u => u.Phone, v));
+            }
+            var filter = Builders<User>.Filter.Or(matchFilters);
             var update = Builders<User>.Update
                 .Set(u => u.PasswordHash, request.NewPassword)
                 .Set(u => u.Password, request.NewPassword);
@@ -225,7 +265,10 @@ public class ForgotPasswordController : ControllerBase
             // Đồng bộ cập nhật mật khẩu trong collection Shippers nếu là tài khoản Shipper
             try
             {
-                var shFilter = Builders<Shipper>.Filter.Eq(sh => sh.PhoneNumber, email);
+                var shFilter = Builders<Shipper>.Filter.Or(
+                    Builders<Shipper>.Filter.Eq(sh => sh.PhoneNumber, email),
+                    Builders<Shipper>.Filter.In(sh => sh.PhoneNumber, phoneVariants)
+                );
                 var shUpdate = Builders<Shipper>.Update.Set(sh => sh.Password, request.NewPassword);
                 await _mongoService.Shippers.UpdateOneAsync(shFilter, shUpdate);
             }
@@ -234,8 +277,27 @@ public class ForgotPasswordController : ControllerBase
                 Console.WriteLine($"⚠️ [MongoDB Shipper Sync Warning] {exSh.Message}");
             }
 
+            // Đồng bộ bộ nhớ tạm
+            if (AuthController.InMemoryUsers.TryGetValue(email, out var inMemUser))
+            {
+                inMemUser.Password = request.NewPassword;
+                inMemUser.PasswordHash = request.NewPassword;
+            }
+            foreach (var v in phoneVariants)
+            {
+                if (AuthController.InMemoryUsers.TryGetValue(v, out var vUser))
+                {
+                    vUser.Password = request.NewPassword;
+                    vUser.PasswordHash = request.NewPassword;
+                }
+            }
+
             // Xóa mã đã dùng
             OtpStore.TryRemove(email, out _);
+            foreach (var v in phoneVariants)
+            {
+                OtpStore.TryRemove(v, out _);
+            }
 
             // Lấy địa chỉ IP người dùng thực hiện đổi mật khẩu
             string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";

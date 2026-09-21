@@ -29,10 +29,39 @@ public class CartController : ControllerBase
                 .Find(c => c.UserId == userId)
                 .FirstOrDefaultAsync();
 
-            // Nếu người dùng chưa có giỏ hàng trong Database, khởi tạo giỏ hàng từ sản phẩm thật của MongoDB
-            if (cart == null || cart.Stores.Count == 0)
+            // Làm sạch các giỏ hàng cũ từng bị auto-seed bởi hàm demo trước đây
+            if (cart != null && cart.Stores.Count > 0)
             {
-                cart = await GenerateDefaultCartFromRealProductsAsync(userId);
+                bool isAutoSeededCart = cart.Stores.Any(s =>
+                    s.Note == "Chọn khay thịt tươi mới về sáng nay giúp em nhé!" ||
+                    s.Note == "Lấy dâu tây quả to mọng nhé tiệm."
+                );
+
+                if (isAutoSeededCart)
+                {
+                    cart.Stores = [];
+                    cart.VoucherCode = "";
+                    await _mongoService.UserCarts.UpdateOneAsync(
+                        c => c.UserId == userId,
+                        Builders<UserCart>.Update
+                            .Set(c => c.Stores, [])
+                            .Set(c => c.VoucherCode, "")
+                            .Set(c => c.UpdatedAt, DateTime.UtcNow)
+                    );
+                }
+            }
+
+            // Nếu người dùng chưa có giỏ hàng trong Database, trả về giỏ hàng rỗng (0 món)
+            if (cart == null)
+            {
+                cart = new UserCart
+                {
+                    Id = ObjectId.GenerateNewId().ToString(),
+                    UserId = userId,
+                    Stores = [],
+                    VoucherCode = "",
+                    UpdatedAt = DateTime.UtcNow
+                };
             }
 
             return Ok(new

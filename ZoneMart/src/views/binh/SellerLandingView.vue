@@ -11,7 +11,7 @@
  * - Footer đầy đủ chuẩn ZoneMart dành riêng cho Seller.
  * ================================================================
  */
-import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 
 const router = useRouter();
@@ -264,12 +264,246 @@ const handleDocumentClick = (e: MouseEvent) => {
   }
 };
 
+// ================= MASCOT CHUẨN NILBUILD/PAGE-MASCOT (ĐẦU 3D XOAY THEO CHUỘT) =================
+const DIRECTIONS = [
+  'up-left',
+  'up',
+  'up-right',
+  'left',
+  'center',
+  'right',
+  'down-left',
+  'down',
+  'down-right',
+] as const;
+
+const REACTIONS = [
+  'blink',
+  'heart',
+  'sparkle',
+  'surprised',
+  'wink',
+  'bashful',
+  'sleepy',
+  'dizzy',
+  'delighted',
+] as const;
+
+type Direction = (typeof DIRECTIONS)[number];
+type Reaction = (typeof REACTIONS)[number];
+
+const CLOCKWISE: Direction[] = [
+  'right',
+  'down-right',
+  'down',
+  'down-left',
+  'left',
+  'up-left',
+  'up',
+  'up-right',
+];
+
+const SECTOR = (Math.PI * 2) / CLOCKWISE.length;
+const HYSTERESIS = 0.12;
+const DEAD_ZONE = 60;
+
+const PAYOFFS: Reaction[] = ['heart', 'sparkle', 'delighted', 'wink', 'surprised'];
+const BOOP_PAYOFF = 120;
+const BOOP_END = 600;
+const DIZZY_AFTER = 4;
+const DIZZY_WINDOW = 1600;
+const DIZZY_END = 1100;
+
+// Mascot character: 'chef' (tiệm ẩm thực / đối tác bán hàng)
+const activeMascot = ref<'chef' | 'cap' | 'drone' | 'otter'>('chef');
+const mascotDirectionsUrl = computed(() => `/mascots/${activeMascot.value}-directions.webp`);
+const mascotReactionsUrl = computed(() => `/mascots/${activeMascot.value}-reactions.webp`);
+
+const mascotButtonRef = ref<HTMLElement | null>(null);
+const currentDirection = ref<Direction>('center');
+const currentReaction = ref<Reaction | null>(null);
+const isSquashing = ref(false);
+
+const mascotTipsByStep: Record<number, string[]> = {
+  1: [
+    "Chào bạn! Hãy đặt tên tiệm thật độc đáo nhé! 🛒✨",
+    "Địa chỉ chi tiết giúp shipper tìm shop nhận hàng cực nhanh! 📍⚡",
+    "ZoneMart đồng hành cùng bạn tiếp cận hàng triệu khách! 🧡"
+  ],
+  2: [
+    "Chủ tiệm chụp CCCD 2 mặt thật rõ nét nha! 🪪📸",
+    "Đừng quên ảnh giấy chứng nhận an toàn thực phẩm nhé! 📑🥗",
+    "Hồ sơ của bạn được ZoneMart mã hóa bảo mật 100%! 🔒"
+  ],
+  3: [
+    "Nhập số tài khoản chính xác để nhận tiền doanh thu tự động! 💳💰",
+    "Chỉ còn bước cuối này thôi là tiệm sẽ được duyệt mở ngay! 🎉🏪",
+    "ZoneMart chúc shop khai trương buôn may bán đắt, ngập đơn! 🚀🔥"
+  ]
+};
+
+const currentTipIndex = ref(0);
+const customMascotMessage = ref<string | null>(null);
+const isBubblePopping = ref(false);
+const isMascotAlert = ref(false);
+
+const currentMascotMsg = computed(() => {
+  if (customMascotMessage.value) return customMascotMessage.value;
+  const list = mascotTipsByStep[currentStep.value] || mascotTipsByStep[1];
+  return list[currentTipIndex.value % list.length];
+});
+
+// Tính toán vị trí góc nhìn đầu trong sprite sheet 3x3
+const directionStyle = computed(() => {
+  const index = DIRECTIONS.indexOf(currentDirection.value);
+  const posX = (index % 3) * 50;
+  const posY = Math.floor(index / 3) * 50;
+  return {
+    backgroundPosition: `${posX}% ${posY}%`,
+    opacity: currentReaction.value ? 0 : 1
+  };
+});
+
+// Biểu cảm khi được click (poke / boop)
+const reactionStyle = computed(() => {
+  const index = REACTIONS.indexOf(currentReaction.value ?? 'blink');
+  const posX = (index % 3) * 50;
+  const posY = Math.floor(index / 3) * 50;
+  return {
+    backgroundPosition: `${posX}% ${posY}%`,
+    opacity: currentReaction.value ? 1 : 0
+  };
+});
+
+let boopCount = 0;
+let lastBoopAt = 0;
+let reactionTimer: any = null;
+
+const handleMascotBoop = () => {
+  if (reactionTimer) clearTimeout(reactionTimer);
+
+  const now = Date.now();
+  boopCount = now - lastBoopAt < DIZZY_WINDOW ? boopCount + 1 : 1;
+  lastBoopAt = now;
+
+  // Hiệu ứng nhún nảy (squash physics)
+  isSquashing.value = true;
+  setTimeout(() => {
+    isSquashing.value = false;
+  }, 420);
+
+  if (boopCount >= DIZZY_AFTER) {
+    boopCount = 0;
+    currentReaction.value = 'dizzy';
+    reactionTimer = setTimeout(() => {
+      currentReaction.value = null;
+    }, DIZZY_END);
+  } else {
+    currentReaction.value = 'blink';
+    reactionTimer = setTimeout(() => {
+      currentReaction.value = PAYOFFS[(boopCount - 1) % PAYOFFS.length];
+      reactionTimer = setTimeout(() => {
+        currentReaction.value = null;
+      }, BOOP_END);
+    }, BOOP_PAYOFF);
+  }
+
+  isBubblePopping.value = true;
+  currentTipIndex.value = currentTipIndex.value + 1;
+  setTimeout(() => {
+    isBubblePopping.value = false;
+  }, 250);
+};
+
+// Tự động kích hoạt Mascot hiển thị cảnh báo khi người dùng nhập thiếu hoặc sai
+watch(errorMessage, (newVal) => {
+  if (newVal) {
+    customMascotMessage.value = `⚠️ ${newVal}`;
+    isMascotAlert.value = true;
+    isBubblePopping.value = true;
+    currentReaction.value = 'surprised'; // Đầu mascot ngạc nhiên chú ý
+    isSquashing.value = true;
+    setTimeout(() => {
+      isSquashing.value = false;
+      isBubblePopping.value = false;
+    }, 380);
+    setTimeout(() => {
+      if (currentReaction.value === 'surprised') {
+        currentReaction.value = null;
+      }
+    }, 3500);
+  } else {
+    isMascotAlert.value = false;
+    customMascotMessage.value = null;
+  }
+});
+
+// Khi người dùng chỉnh sửa dữ liệu, tự động xóa cảnh báo cũ
+watch(
+  [
+    () => form.storeName,
+    () => form.address,
+    () => form.ownerFullName,
+    () => form.cccdFrontImage,
+    () => form.cccdBackImage,
+    () => form.foodSafetyCertImage,
+    () => form.bankAccountNumber
+  ],
+  () => {
+    if (isMascotAlert.value) {
+      errorMessage.value = "";
+    }
+  }
+);
+
+// Cập nhật câu nói chào mừng khi đổi bước form
+watch(currentStep, () => {
+  currentTipIndex.value = 0;
+  customMascotMessage.value = null;
+  isMascotAlert.value = false;
+  isBubblePopping.value = true;
+  setTimeout(() => {
+    isBubblePopping.value = false;
+  }, 250);
+});
+
+let lastSector = -1;
+function wrap(angle: number) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
+// Hàm xoay hướng đầu theo vị trí con trỏ chuột chuẩn nilbuild/page-mascot
+function handlePointerMove(e: PointerEvent | MouseEvent) {
+  const button = mascotButtonRef.value;
+  if (!button) return;
+
+  const box = button.getBoundingClientRect();
+  const dx = e.clientX - (box.left + box.width / 2);
+  const dy = e.clientY - (box.top + box.height / 2);
+
+  if (Math.hypot(dx, dy) < DEAD_ZONE) {
+    lastSector = -1;
+    currentDirection.value = 'center';
+    return;
+  }
+
+  const angle = Math.atan2(dy, dx);
+  if (lastSector !== -1 && Math.abs(wrap(angle - lastSector * SECTOR)) < SECTOR / 2 + HYSTERESIS) {
+    return;
+  }
+
+  lastSector = (Math.round(angle / SECTOR) + CLOCKWISE.length) % CLOCKWISE.length;
+  currentDirection.value = CLOCKWISE[lastSector];
+}
+
 onMounted(() => {
   document.addEventListener('click', handleDocumentClick);
+  window.addEventListener("pointermove", handlePointerMove, { passive: true });
 });
 
 onUnmounted(() => {
   document.removeEventListener('click', handleDocumentClick);
+  window.removeEventListener("pointermove", handlePointerMove);
 });
 
 // Xử lý Chuyển bước
@@ -364,7 +598,7 @@ const handleSubmitSeller = async () => {
   isLoading.value = true;
 
   try {
-    await fetch("http://localhost:5000/api/auth/register-seller", {
+    await fetch("/api/auth/register-seller", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -478,7 +712,7 @@ const submitSellerSupportTicket = async () => {
 
   isSupportLoading.value = true;
   try {
-    const res = await fetch("http://localhost:5000/api/support/ticket", {
+    const res = await fetch("/api/support/ticket", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -785,6 +1019,37 @@ const submitSellerSupportTicket = async () => {
     <!-- 6. FORM ĐĂNG KÝ GIAN HÀNG INTEGRATED -->
     <section id="register-form-section" class="form-section">
       <div class="form-container-card">
+        <!-- MASCOT PEELING / PEEKING OVER FORM (MÔ HÌNH 3D NHÂN VẬT XOAY ĐẦU THEO CHUỘT) -->
+        <div 
+          class="seller-mascot-peek-container" 
+          title="Nhấp vào em để xem phản ứng & nhận mẹo bán hàng!"
+        >
+          <!-- Bong bóng thoại tương tác linh hoạt: đổi giao diện cảnh báo nổi bật khi thiếu thông tin -->
+          <div class="mascot-speech-bubble" :class="{ 'bubble-pop': isBubblePopping, 'is-alert-bubble': isMascotAlert }">
+            <span class="bubble-text">{{ currentMascotMsg }}</span>
+            <span class="bubble-arrow"></span>
+          </div>
+
+          <!-- Component Mascot chuyển hướng đầu 9 hướng chuẩn sprite sheet nilbuild/page-mascot -->
+          <div 
+            ref="mascotButtonRef" 
+            class="mascot-sprite-button" 
+            @click="handleMascotBoop"
+          >
+            <div class="mascot-sprite-stage" :class="{ 'is-squashing': isSquashing }">
+              <span 
+                class="mascot-sprite-layer" 
+                :style="{ backgroundImage: `url(${mascotDirectionsUrl})`, ...directionStyle }"
+              ></span>
+              <span 
+                class="mascot-sprite-layer" 
+                :style="{ backgroundImage: `url(${mascotReactionsUrl})`, ...reactionStyle }"
+              ></span>
+            </div>
+            <div class="mascot-counter-edge"></div>
+          </div>
+        </div>
+
         <div class="form-card-header text-center">
           <h2 class="form-title-centered">BẢNG ĐĂNG KÝ MỞ GIAN HÀNG</h2>
           <p class="form-subtitle-centered">Vui lòng điền chính xác thông tin bên dưới để Ban quản lý tài xế & gian hàng thẩm định trong 24h</p>
@@ -1844,11 +2109,161 @@ const submitSellerSupportTicket = async () => {
 }
 
 .form-container-card {
+  position: relative;
   background: #ffffff;
   border-radius: 24px;
   border: 1.5px solid #A7F3D0;
   padding: 36px 32px;
   box-shadow: 0 12px 36px rgba(16, 185, 129, 0.08);
+}
+
+/* ================= MASCOT PEELING / PEEKING STYLE (MÔ HÌNH 3D NHÂN VẬT) ================= */
+.seller-mascot-peek-container {
+  position: absolute;
+  top: -46px;
+  right: 24px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  perspective: 700px;
+}
+
+.mascot-sprite-button {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  cursor: pointer;
+  user-select: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  display: block;
+  flex-shrink: 0;
+}
+
+.mascot-sprite-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 85%;
+  transition: transform 0.15s ease-out;
+  filter: drop-shadow(0 6px 14px rgba(16, 185, 129, 0.25));
+}
+
+.mascot-sprite-stage.is-squashing {
+  animation: mascotSquashBounce 0.42s ease-in-out;
+}
+
+@keyframes mascotSquashBounce {
+  0% { transform: scale(1, 1); }
+  22% { transform: scale(1.12, 0.86); }
+  55% { transform: scale(0.95, 1.07); }
+  78% { transform: scale(1.03, 0.98); }
+  100% { transform: scale(1, 1); }
+}
+
+.mascot-sprite-layer {
+  position: absolute;
+  inset: 0;
+  background-size: 300% 300%;
+  background-repeat: no-repeat;
+  image-rendering: -webkit-optimize-contrast;
+  transition: opacity 0.15s ease;
+}
+
+.mascot-counter-edge {
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 52px;
+  height: 3px;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0) 0%, rgba(16, 185, 129, 0.35) 50%, rgba(16, 185, 129, 1) 100%);
+  border-radius: 999px;
+}
+
+.mascot-speech-bubble {
+  position: relative;
+  background: #FFFFFF;
+  border: 1.5px solid #A7F3D0;
+  box-shadow: 0 8px 20px -4px rgba(16, 185, 129, 0.16), 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-radius: 12px;
+  padding: 6px 12px;
+  max-width: 275px;
+  margin-bottom: 0;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: right center;
+}
+
+.mascot-speech-bubble.bubble-pop {
+  transform: scale(0.92) translateY(2px);
+  opacity: 0.5;
+}
+
+.mascot-speech-bubble .bubble-text {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #065F46;
+  line-height: 1.35;
+  display: block;
+}
+
+.mascot-speech-bubble .bubble-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  right: -7px;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid #FFFFFF;
+}
+
+.mascot-speech-bubble .bubble-arrow::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: -9px;
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 8px solid #A7F3D0;
+  z-index: -1;
+}
+
+/* TRẠNG THÁI CẢNH BÁO KHI NHẬP THIẾU HOẶC SAI THÔNG TIN */
+.mascot-speech-bubble.is-alert-bubble {
+  background: #FEF2F2;
+  border-color: #F87171;
+  box-shadow: 0 8px 22px -3px rgba(239, 68, 68, 0.28), 0 2px 8px rgba(0, 0, 0, 0.04);
+  animation: mascotAlertWiggle 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes mascotAlertWiggle {
+  0% { transform: scale(0.95) translateX(0); }
+  20% { transform: scale(1.02) translateX(-3px); }
+  40% { transform: scale(1.02) translateX(3px); }
+  60% { transform: scale(1.01) translateX(-1px); }
+  80% { transform: scale(1.01) translateX(1px); }
+  100% { transform: scale(1) translateX(0); }
+}
+
+.mascot-speech-bubble.is-alert-bubble .bubble-text {
+  color: #B91C1C;
+  font-weight: 800;
+}
+
+.mascot-speech-bubble.is-alert-bubble .bubble-arrow {
+  border-left-color: #FEF2F2;
+}
+
+.mascot-speech-bubble.is-alert-bubble .bubble-arrow::before {
+  border-left-color: #F87171;
 }
 
 .form-card-header {
@@ -2443,5 +2858,21 @@ select.select-stylish {
   .benefits-6-grid { grid-template-columns: 1fr; }
   .form-fields-grid { grid-template-columns: 1fr; }
   .upload-cards-grid { grid-template-columns: 1fr; }
+  .seller-mascot-peek-container {
+    top: -40px;
+    right: 12px;
+  }
+  .mascot-sprite-button {
+    width: 68px;
+    height: 68px;
+  }
+  .mascot-speech-bubble {
+    max-width: 200px;
+    padding: 5px 9px;
+    margin-bottom: 0;
+  }
+  .mascot-speech-bubble .bubble-text {
+    font-size: 10px;
+  }
 }
 </style>

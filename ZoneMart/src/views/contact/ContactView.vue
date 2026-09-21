@@ -240,7 +240,7 @@ const handleSubmit = async () => {
   const fallbackTicketCode = "ZM-" + Math.floor(100000 + Math.random() * 900000);
 
   try {
-    const res = await fetch("http://localhost:5128/api/support/ticket", {
+    const res = await fetch("/api/support/ticket", {
       method: "POST",
       headers: {
         "Content-Type": "application/json; charset=utf-8"

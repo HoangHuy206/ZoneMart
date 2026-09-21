@@ -431,7 +431,7 @@ const handleSubmitShipper = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("http://localhost:5000/api/auth/register-shipper", {
+    const res = await fetch("/api/auth/register-shipper", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -9,6 +9,8 @@
  */
 import { ref, reactive, onMounted } from "vue";
 import { useRouter } from "vue-router";
+import AuthCelebrationModal from "../../components/common/AuthCelebrationModal.vue";
+import { useToast } from "../../composables/useToast";
 
 const router = useRouter();
 
@@ -27,6 +29,17 @@ const showConfirmPassword = ref(false);
 const isLoading = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
+
+// Trạng thái cho Modal Chúc mừng Hoạt Họa siêu xịn
+const toast = useToast();
+const showCelebrationModal = ref(false);
+const celebrationUserName = ref("");
+const celebrationMessage = ref("");
+
+const onCelebrationComplete = () => {
+  showCelebrationModal.value = false;
+  router.push("/login");
+};
 
 const isRotatingCaptcha = ref(false);
 
@@ -75,6 +88,7 @@ const handleRegister = async () => {
   const gmailRegex = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
   if (!emailTrimmed || !gmailRegex.test(emailTrimmed)) {
     modalErrorMessage.value = "Vui lòng nhập đúng định dạng Địa chỉ Gmail (ví dụ: name@gmail.com)!";
+    toast.warning(modalErrorMessage.value, "Email chưa hợp lệ");
     showModal.value = true;
     return;
   }
@@ -82,6 +96,7 @@ const handleRegister = async () => {
   // 2. Kiểm tra Họ và Tên
   if (!form.fullName.trim()) {
     modalErrorMessage.value = "Vui lòng nhập Họ và Tên của bạn!";
+    toast.warning(modalErrorMessage.value, "Thiếu họ tên");
     showModal.value = true;
     return;
   }
@@ -111,7 +126,7 @@ const handleRegister = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("http://localhost:5000/api/auth/register", {
+    const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -125,22 +140,26 @@ const handleRegister = async () => {
       const data = await res.json();
       if (res.ok && data.success) {
         sessionStorage.removeItem("pendingRegisterTarget");
-        successMessage.value = data.message || "Tạo tài khoản thành công! Email thông báo đã được gửi về Gmail của bạn.";
-        setTimeout(() => {
-          router.push("/login");
-        }, 1800);
+        celebrationUserName.value = form.fullName.trim() || form.email.trim().split('@')[0];
+        celebrationMessage.value = data.message || `Tạo tài khoản thành công! Thông báo xác nhận đã gửi về: ${form.email.trim()}`;
+        successMessage.value = celebrationMessage.value;
+        toast.success("Tạo tài khoản khách hàng thành công!", "Đăng Ký Thành Công");
+        showCelebrationModal.value = true;
       } else {
         modalErrorMessage.value = data.message || "Đăng ký thất bại. Vui lòng thử lại sau.";
+        toast.error(modalErrorMessage.value, "Đăng Ký Thất Bại");
         showModal.value = true;
         generateCaptcha();
       }
     } else {
-      modalErrorMessage.value = "Không thể kết nối đến máy chủ backend (http://localhost:5000). Vui lòng kiểm tra kết nối.";
+      modalErrorMessage.value = "Không thể kết nối đến máy chủ backend. Vui lòng kiểm tra kết nối mạng.";
+      toast.error(modalErrorMessage.value, "Lỗi Kết Nối");
       showModal.value = true;
       generateCaptcha();
     }
   } catch (error: any) {
     modalErrorMessage.value = error.message || "Có lỗi xảy ra trong quá trình đăng ký.";
+    toast.error(modalErrorMessage.value, "Lỗi Ngoại Lệ");
     showModal.value = true;
     generateCaptcha();
   } finally {
@@ -358,6 +377,18 @@ const handleRegister = async () => {
         </div>
       </div>
     </Transition>
+
+    <!-- MODAL CHÚC MỪNG ĐĂNG KÝ THÀNH CÔNG VỚI ANIMATION ĐẲNG CẤP -->
+    <AuthCelebrationModal
+      v-model="showCelebrationModal"
+      mode="register"
+      :user-name="celebrationUserName"
+      role-name="Khách Hàng ZoneMart"
+      title="ĐĂNG KÝ TÀI KHOẢN THÀNH CÔNG!"
+      :message="celebrationMessage"
+      :countdown-ms="2200"
+      @complete="onCelebrationComplete"
+    />
   </div>
 </template>
 
@@ -604,14 +635,29 @@ const handleRegister = async () => {
 
 /* MESSAGES */
 .msg-box {
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 12.5px;
   margin-bottom: 12px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: msgSlideDown 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
 }
-.msg-box.error { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; }
-.msg-box.success { background: #F0FDF4; color: #15803D; border: 1px solid #BBF7D0; }
+@keyframes msgSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.msg-box.error { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.12); }
+.msg-box.success { background: #F0FDF4; color: #15803D; border: 1px solid #BBF7D0; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.15); }
 
 /* FORM FIELDS */
 .form-body {

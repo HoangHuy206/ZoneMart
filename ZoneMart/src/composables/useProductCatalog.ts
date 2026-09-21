@@ -1,5 +1,18 @@
-import { computed } from "vue";
+import { ref, computed } from "vue";
 import { useProductModeration } from "./useProductModeration";
+
+const catalogVersion = ref(0);
+
+if (typeof window !== "undefined") {
+  window.addEventListener("zonemart:products-changed", () => {
+    catalogVersion.value++;
+  });
+  window.addEventListener("storage", (e) => {
+    if (e.key === "zonemart_moderated_products") {
+      catalogVersion.value++;
+    }
+  });
+}
 
 export interface ProductReview {
   id: string;
@@ -39,8 +52,13 @@ export interface CatalogProduct {
     distanceKm: number;
     deliveryTime: string;
     rating: number;
+    reviewsCount?: number;
+    openHours?: string;
     totalProducts: number;
     isVerified: boolean;
+    categoryName?: string;
+    avatar?: string;
+    coverImage?: string;
   };
   rating: number;
   reviewsCount: number;
@@ -92,110 +110,251 @@ export interface CatalogStore {
   products: CatalogProduct[];
 }
 
+// 8 GIAN HÀNG CHÍNH THỨC VỚI 32 SẢN PHẨM HOÀN TOÀN ĐỘC NHẤT, THÔNG SỐ VÀ CHỈ SỐ KHÁC BIỆT 100%
 export const CATALOG_PRODUCTS: CatalogProduct[] = [
+  // ==========================================
+  // GIAN HÀNG 1: Vườn Rau Hữu Cơ Bác Ba
+  // ==========================================
   {
     id: "p1",
-    name: "Thịt Bò Mỹ Nhập Khẩu Thượng Hạng",
-    category: "food",
-    categoryName: "Thực phẩm tươi",
-    price: 185000,
-    oldPrice: 220000,
-    discountBadge: "-16%",
-    unit: "Khay 500g",
-    image: "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=800&q=80",
+    name: "Rau Xà Lách Mỡ Thủy Canh VietGAP",
+    category: "veggie",
+    categoryName: "Rau củ sạch",
+    price: 35000,
+    oldPrice: 45000,
+    discountBadge: "-22%",
+    unit: "1kg",
+    image: "https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?auto=format&fit=crop&w=800&q=80",
     gallery: [
-      "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1558030006-450675393462?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1529692236671-f1f6cf9683ba?auto=format&fit=crop&w=800&q=80"
+      "https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80"
     ],
-    badge: "Bán chạy nhất",
+    badge: "Bán chạy #1",
     certification: {
-      type: "ATTP Quốc Gia",
-      certNo: "USDA-VN-88429/2026",
-      issuedBy: "Cục Thú Y & Kiểm Dịch Quốc Tế",
-      issuedDate: "15/01/2026",
-      expiryDate: "15/01/2027"
+      type: "VietGAP",
+      certNo: "VG-HN-2026-0812",
+      issuedBy: "Sở Nông Nghiệp & PTNT Hà Nội",
+      issuedDate: "12/01/2026",
+      expiryDate: "12/01/2027"
     },
     store: {
-      id: "store_zonemart_cau_giay",
-      name: "ZoneMart Cầu Giấy",
-      address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội",
-      distanceKm: 1.2,
-      deliveryTime: "15 - 20 phút",
+      id: "store_vuon_rau_bac_ba",
+      name: "Vườn Rau Hữu Cơ Bác Ba",
+      address: "36 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy, Hà Nội",
+      distanceKm: 0.8,
+      deliveryTime: "12 - 18 phút",
       rating: 5.0,
-      totalProducts: 240,
-      isVerified: true
+      reviewsCount: 384,
+      openHours: "06:00 - 20:30",
+      totalProducts: 42,
+      isVerified: true,
+      categoryName: "Rau củ hữu cơ VietGAP",
+      avatar: "https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800&q=80"
     },
     rating: 5.0,
-    reviewsCount: 84,
-    sold: 142,
-    stock: 45,
-    description:
-      "Thịt bò Mỹ Black Angus nhập khẩu chính ngạch từ Nebraska (Hoa Kỳ), đóng khay chân không tiêu chuẩn công nghệ MAP hiện đại. Phần thịt có vân mỡ cẩm thạch (marbling) xen kẽ đồng đều, mang lại độ mềm mọng tự nhiên và vị ngọt đậm đà đặc trưng khi áp chảo hay nướng lẩu.",
+    reviewsCount: 168,
+    sold: 389,
+    stock: 80,
+    description: "Xà lách mỡ canh tác theo phương pháp thủy canh tuần hoàn khép kín tại trang trại Ba Vì. Lá rau dày, giòn ngọt, hoàn toàn không sử dụng thuốc trừ sâu hay chất kích thích sinh trưởng.",
     highlights: [
-      "100% Thịt bò Black Angus đạt chuẩn phân hạng USDA Choice",
-      "Bảo quản dây chuyền lạnh chuẩn -2°C đến 2°C từ kho đến tận cửa",
-      "Đóng khay hút chân không 500g tiện lợi, sạch sẽ, đạt chuẩn ATTP",
-      "Giao hỏa tốc bằng thùng bảo ôn chuyên dụng trong 20 phút"
+      "Thu hoạch tươi mới 2 cữ mỗi ngày (sáng sớm & đầu giờ chiều)",
+      "Không tồn dư thuốc BVTV, đạt chuẩn VietGAP",
+      "Giữ trọn vị giòn mát, bảo quản ngăn mát 5-7 ngày"
     ],
     specs: {
-      origin: "Hoa Kỳ (Nebraska Farms)",
-      brand: "ZoneMart Fresh Selection",
-      weight: "500g (± 20g)",
-      shelfLife: "7 ngày ở ngăn mát (0-4°C), 6 tháng ở ngăn đông (-18°C)",
-      storage: "Bảo quản ở nhiệt độ từ 0°C đến 4°C trong ngăn mát tủ lạnh",
-      packingStandard: "Khay sinh học kháng khuẩn hút chân không tiêu chuẩn MAP"
+      origin: "Ba Vì, Hà Nội",
+      brand: "Vườn Rau Bác Ba",
+      weight: "1kg (3 - 4 cây)",
+      shelfLife: "5-7 ngày trong ngăn mát tủ lạnh",
+      storage: "Bọc giấy báo hoặc màng bọc thực phẩm, để ngăn rau củ",
+      packingStandard: "Túi màng thở sinh học tự phân hủy"
     },
     nutrition: {
-      servingSize: "100g thịt nạc",
-      calories: "217 kcal",
-      protein: "26.1 g",
-      fat: "11.8 g (giàu Omega-3 & CLA)",
-      carbs: "0 g",
-      minerals: "Sắt (2.6mg), Kẽm (5.3mg), Vitamin B12 (2.4mcg)"
+      servingSize: "100g",
+      calories: "15 kcal",
+      protein: "1.4 g",
+      fat: "0.2 g",
+      carbs: "2.9 g",
+      minerals: "Vitamin A (148% DV), Vitamin K, Folate"
     },
-    cookingTips: [
-      "Rã đông tự nhiên trong ngăn mát tủ lạnh từ 4-6 tiếng để giữ trọn vẹn nước ngọt tự nhiên.",
-      "Ướp với chút muối hồng Himalaya, tiêu đen xay vỡ và lá hương thảo trong 10 phút trước khi chế biến.",
-      "Áp chảo lửa lớn 2-3 phút mỗi mặt để đạt độ chín vừa (Medium-rare) mềm tan trên đầu lưỡi."
-    ],
+    cookingTips: ["Rửa nhẹ nhàng, ngâm nước đá 3 phút trước khi ăn để tăng độ giòn khi làm salad."],
     reviews: [
       {
-        id: "rv1",
-        author: "Nguyễn Hoàng Nam",
-        avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80",
+        id: "rv101",
+        author: "Chị Mai Lan",
+        avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=120&q=80",
         rating: 5,
-        date: "Hôm qua lúc 18:42",
-        comment: "Thịt cực kỳ tươi, màu đỏ hồng tự nhiên không hề bị thâm hay chảy nước. Ship từ Cầu Giấy qua Nguyễn Phong Sắc chưa tới 15 phút, giao đến tay khay thịt vẫn còn lạnh buốt. Tối làm món bò bít tết cả nhà ai cũng khen mềm ngon!",
-        photos: [
-          "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=300&q=80"
-        ],
-        helpfulCount: 18,
-        verified: true
-      },
-      {
-        id: "rv2",
-        author: "Trần Minh Thảo",
-        avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=120&q=80",
-        rating: 5,
-        date: "2 ngày trước",
-        comment: "Khay 500g đầy đặn, vân mỡ rất đẹp. Mình cuốn nấm kim châm ăn lẩu thì bá cháy luôn. Đóng gói rất xịn sò, có cả nhãn kiểm định AI.",
-        helpfulCount: 9,
+        date: "Hôm nay 08:30",
+        comment: "Rau rất tươi, cuống còn chảy mủ trắng, giao nhanh trong 15 phút là tới!",
+        helpfulCount: 15,
         verified: true
       }
-    ],
-    aiAudit: {
-      safetyScore: 99,
-      matchScore: 98,
-      verificationDate: "11/09/2026 - 08:30",
-      inspector: "ZoneMart Vision Guard AI v4.2",
-      notes: "Sản phẩm đạt độ tươi 100%, phổ màu thịt đỏ tươi tự nhiên, vân mỡ đạt chuẩn phân hạng USDA. Không phát hiện chất bảo quản hay tạp chất."
-    }
+    ]
   },
   {
     id: "p2",
-    name: "Hộp Dâu Tây Đà Lạt Tươi Ngọt Chuẩn VietGAP",
+    name: "Rau Muống Hữu Cơ Ba Vì Non Xanh",
+    category: "veggie",
+    categoryName: "Rau củ sạch",
+    price: 18000,
+    oldPrice: 24000,
+    discountBadge: "-25%",
+    unit: "Bó 500g",
+    image: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80"],
+    badge: "Mới ngắt sáng nay",
+    store: {
+      id: "store_vuon_rau_bac_ba",
+      name: "Vườn Rau Hữu Cơ Bác Ba",
+      address: "36 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy, Hà Nội",
+      distanceKm: 0.8,
+      deliveryTime: "12 - 18 phút",
+      rating: 5.0,
+      reviewsCount: 384,
+      openHours: "06:00 - 20:30",
+      totalProducts: 42,
+      isVerified: true,
+      categoryName: "Rau củ hữu cơ VietGAP",
+      avatar: "https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 5.0,
+    reviewsCount: 124,
+    sold: 520,
+    stock: 120,
+    description: "Rau muống ngọn nhỏ, thân giòn đanh, ngắt ngọn non mơn mởn. Luộc nước trong veo, xào tỏi xanh mướt không bị nát hay đen cọng.",
+    highlights: ["Tưới bằng nguồn nước giếng khoáng tự nhiên Ba Vì", "Luộc nước xanh ngọt mát tự nhiên", "Đạt chuẩn an toàn tuyệt đối"],
+    specs: {
+      origin: "Vườn rau hữu cơ Ba Vì, Hà Nội",
+      brand: "Vườn Rau Bác Ba",
+      weight: "Bó 500g (± 30g)",
+      shelfLife: "3-4 ngày",
+      storage: "Ngăn mát tủ lạnh",
+      packingStandard: "Bó dây lạt rơm truyền thống"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "19 kcal",
+      protein: "2.6 g",
+      fat: "0.2 g",
+      carbs: "3.1 g",
+      minerals: "Sắt, Canxi, Chất xơ"
+    },
+    cookingTips: ["Luộc lửa to ngập nước, cho chút muối để rau giữ màu xanh ngọc bích."],
+    reviews: []
+  },
+  {
+    id: "p3",
+    name: "Cà Chua Bi Socola Ngọt Đậm Vị Hữu Cơ",
+    category: "veggie",
+    categoryName: "Rau củ sạch",
+    price: 42000,
+    oldPrice: 52000,
+    discountBadge: "-19%",
+    unit: "Hộp 500g",
+    image: "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=800&q=80"],
+    badge: "Vị ngọt đặc biệt",
+    store: {
+      id: "store_vuon_rau_bac_ba",
+      name: "Vườn Rau Hữu Cơ Bác Ba",
+      address: "36 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy, Hà Nội",
+      distanceKm: 0.8,
+      deliveryTime: "12 - 18 phút",
+      rating: 5.0,
+      reviewsCount: 384,
+      openHours: "06:00 - 20:30",
+      totalProducts: 42,
+      isVerified: true,
+      categoryName: "Rau củ hữu cơ VietGAP",
+      avatar: "https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 92,
+    sold: 215,
+    stock: 50,
+    description: "Giống cà chua bi màu nâu sẫm socola giàu chất chống oxy hóa Anthocyanin. Vỏ mỏng căng mọng, vị ngọt đậm đà, ít hạt.",
+    highlights: ["Độ ngọt Brix 9.5 cao gấp đôi cà chua thường", "Trồng giá thể xơ dừa vi sinh sạch sẽ", "Ăn sống như trái cây tráng miệng"],
+    specs: {
+      origin: "Vườn thực nghiệm công nghệ cao Ba Vì",
+      brand: "Vườn Rau Bác Ba",
+      weight: "500g",
+      shelfLife: "7-10 ngày",
+      storage: "Nhiệt độ phòng thoáng mát hoặc ngăn mát",
+      packingStandard: "Hộp nhựa có lỗ thông gió"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "22 kcal",
+      protein: "1.1 g",
+      fat: "0.2 g",
+      carbs: "4.8 g",
+      minerals: "Lycopene, Vitamin C, Kali"
+    },
+    cookingTips: ["Ngon nhất khi rửa sạch ăn liền hoặc trộn cùng xà lách thủy canh."],
+    reviews: []
+  },
+  {
+    id: "p4",
+    name: "Bí Xanh Thơm Cắt Khoanh Tiêu Chuẩn VietGAP",
+    category: "veggie",
+    categoryName: "Rau củ sạch",
+    price: 25000,
+    oldPrice: 32000,
+    discountBadge: "-21%",
+    unit: "Trái 1kg",
+    image: "https://images.unsplash.com/photo-1598170845058-32b9d6a5da37?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1598170845058-32b9d6a5da37?auto=format&fit=crop&w=800&q=80"],
+    badge: "Đậm vị canh quê",
+    store: {
+      id: "store_vuon_rau_bac_ba",
+      name: "Vườn Rau Hữu Cơ Bác Ba",
+      address: "36 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy, Hà Nội",
+      distanceKm: 0.8,
+      deliveryTime: "12 - 18 phút",
+      rating: 5.0,
+      reviewsCount: 384,
+      openHours: "06:00 - 20:30",
+      totalProducts: 42,
+      isVerified: true,
+      categoryName: "Rau củ hữu cơ VietGAP",
+      avatar: "https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 65,
+    sold: 164,
+    stock: 40,
+    description: "Bí đao chanh thơm dẻo, ruột đặc ít hạt. Nấu canh sườn, canh tôm ngọt lịm hoặc ép nước thanh nhiệt cơ thể.",
+    highlights: ["Ruột xanh dẻo, thơm ngát mùi lá nếp", "Không xơ, không chua ruột", "Đã gọt vỏ và đóng khay hút chân không sạch sẽ"],
+    specs: {
+      origin: "Ba Vì, Hà Nội",
+      brand: "Vườn Rau Bác Ba",
+      weight: "1kg (± 50g)",
+      shelfLife: "5 ngày trong ngăn mát",
+      storage: "Ngăn mát tủ lạnh",
+      packingStandard: "Hút chân không khay thực phẩm"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "13 kcal",
+      protein: "0.6 g",
+      fat: "0.1 g",
+      carbs: "3.0 g",
+      minerals: "Nước 96%, Canxi, Magie"
+    },
+    cookingTips: ["Nấu canh với tôm nõn hoặc sườn non, rắc chút tiêu và hành ngò thơm."],
+    reviews: []
+  },
+
+  // ==========================================
+  // GIAN HÀNG 2: Nông Trại Xanh Lạc Dương
+  // ==========================================
+  {
+    id: "p5",
+    name: "Hộp Dâu Tây Giống Hana Nhật Bản Hái Sáng Nay",
     category: "beverage",
     categoryName: "Trái cây tươi",
     price: 95000,
@@ -205,239 +364,1317 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
     image: "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=800&q=80",
     gallery: [
       "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1518635017480-d471b404ab6e?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1543158266-0066955047b1?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1587393855524-087f83d95bc9?auto=format&fit=crop&w=800&q=80"
+      "https://images.unsplash.com/photo-1518635017480-d471b404ab6e?auto=format&fit=crop&w=800&q=80"
     ],
-    badge: "Mới hái sáng nay",
+    badge: "Đặc sản Lạc Dương",
     certification: {
       type: "VietGAP",
       certNo: "VG-LD-2026-0914",
-      issuedBy: "Trung Tâm Chất Lượng Nông Lâm Thủy Sản Lâm Đồng",
+      issuedBy: "Sở Nông Nghiệp Lâm Đồng",
       issuedDate: "02/02/2026",
       expiryDate: "02/02/2027"
     },
     store: {
-      id: "store_sieu_thi_trai_cay_xanh",
-      name: "Siêu Thị Trái Cây Xanh",
-      address: "112 Trần Thái Tông, Cầu Giấy, Hà Nội",
-      distanceKm: 2.5,
-      deliveryTime: "20 - 25 phút",
+      id: "store_nong_trai_lac_duong",
+      name: "Nông Trại Xanh Lạc Dương",
+      address: "112 Trần Thái Tông, Dịch Vọng Hậu, Cầu Giấy, Hà Nội",
+      distanceKm: 1.6,
+      deliveryTime: "18 - 25 phút",
       rating: 4.9,
-      totalProducts: 180,
-      isVerified: true
+      reviewsCount: 256,
+      openHours: "06:30 - 21:30",
+      totalProducts: 38,
+      isVerified: true,
+      categoryName: "Trái cây & Củ quả Đà Lạt",
+      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?auto=format&fit=crop&w=800&q=80"
     },
     rating: 4.9,
-    reviewsCount: 128,
-    sold: 218,
-    stock: 60,
-    description:
-      "Dâu tây giống Hana Nhật Bản trồng theo mô hình nhà kính thủy canh hữu cơ tại vùng đồi Lạc Dương (Đà Lạt). Từng quả dâu được hái thủ công vào sáng sớm, cuống xanh tươi mơn mởn, trái chín đỏ mọng, vị ngọt thanh và thơm nức đặc trưng.",
-    highlights: [
-      "Giống Hana Nhật Bản thơm ngọt, không bị chua gắt",
-      "Canh tác hoàn toàn không thuốc trừ sâu hóa học, đạt chuẩn VietGAP",
-      "Vận chuyển hàng không hàng ngày về Hà Nội giữ trọn phấn dâu",
-      "Từng quả được bọc xốp chống va đập, bảo quản lạnh tối ưu"
-    ],
+    reviewsCount: 142,
+    sold: 310,
+    stock: 65,
+    description: "Dâu tây giống Nhật Hana trồng nhà kính vùng cao Lạc Dương, không khí sương mờ giúp quả mọng nước, thơm lừng và ngọt sắc.",
+    highlights: ["Bay hàng không về Hà Nội trong ngày", "Cuống xanh tươi nguyên phấn dâu", "Đóng hộp chống va đập chuyên dụng"],
     specs: {
-      origin: "Lạc Dương, TP. Đà Lạt, Lâm Đồng",
-      brand: "Nông Trại Dâu Xanh Đà Lạt",
-      weight: "500g (Hộp khoảng 24-28 quả)",
-      shelfLife: "3-5 ngày trong ngăn mát tủ lạnh",
-      storage: "Không rửa trước khi cho vào tủ lạnh, giữ cuống khô ráo",
-      packingStandard: "Hộp nhựa PET chuyên dụng có lỗ thoáng khí chống đọng sương"
+      origin: "Lạc Dương, Lâm Đồng",
+      brand: "Lạc Dương Green Farm",
+      weight: "500g (24-28 quả)",
+      shelfLife: "3-5 ngày trong tủ lạnh",
+      storage: "Để ngăn mát, không rửa khi chưa ăn",
+      packingStandard: "Hộp nhựa dập lỗ thoát ẩm"
     },
     nutrition: {
-      servingSize: "100g dâu tây tươi",
+      servingSize: "100g",
       calories: "32 kcal",
       protein: "0.7 g",
       fat: "0.3 g",
-      carbs: "7.7 g (chỉ số GI thấp)",
-      minerals: "Vitamin C (58.8mg - 98% DV), Folate, Kali, Mangan"
+      carbs: "7.7 g",
+      minerals: "Vitamin C 59mg, Axit Folic"
     },
-    cookingTips: [
-      "Rửa nhẹ nhàng dưới vòi nước chảy ngay trước khi ăn, ngâm nước muối loãng 3 phút.",
-      "Thưởng thức trực tiếp để cảm nhận trọn vị ngọt thơm hoặc kết hợp sữa chua Hy Lạp buổi sáng.",
-      "Xay sinh tố dâu kèm hạt chia bổ sung năng lượng tươi lành cả ngày."
-    ],
-    reviews: [
-      {
-        id: "rv-d1",
-        author: "Vũ Phương Mai",
-        avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=120&q=80",
-        rating: 5,
-        date: "Sáng nay lúc 09:15",
-        comment: "Dâu to, đỏ đều và rất thơm. Không có quả nào bị dập cả. Con gái mình thích mê, ăn hết nửa hộp trong một nốt nhạc!",
-        helpfulCount: 14,
-        verified: true
-      }
-    ],
-    aiAudit: {
-      safetyScore: 99,
-      matchScore: 99,
-      verificationDate: "11/09/2026 - 06:15",
-      inspector: "ZoneMart Vision Guard AI v4.2",
-      notes: "Tỷ lệ quả nguyên vẹn đạt 100%, cuống tươi xanh, không phát hiện vết dập rách."
-    }
+    cookingTips: ["Ăn kèm sữa chua không đường hoặc làm bánh ngọt."],
+    reviews: []
   },
   {
-    id: "p3",
+    id: "p6",
+    name: "Bơ Sáp 034 Đặc Sản Lâm Đồng Dẻo Quánh",
+    category: "beverage",
+    categoryName: "Trái cây tươi",
+    price: 75000,
+    oldPrice: 90000,
+    discountBadge: "-16%",
+    unit: "Kg 2-3 trái",
+    image: "https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&w=800&q=80"],
+    badge: "Bơ đầu mùa tuyển chọn",
+    store: {
+      id: "store_nong_trai_lac_duong",
+      name: "Nông Trại Xanh Lạc Dương",
+      address: "112 Trần Thái Tông, Dịch Vọng Hậu, Cầu Giấy, Hà Nội",
+      distanceKm: 1.6,
+      deliveryTime: "18 - 25 phút",
+      rating: 4.9,
+      reviewsCount: 256,
+      openHours: "06:30 - 21:30",
+      totalProducts: 38,
+      isVerified: true,
+      categoryName: "Trái cây & Củ quả Đà Lạt",
+      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 88,
+    sold: 188,
+    stock: 45,
+    description: "Bơ sáp dáng dài 034 nức tiếng Bảo Lộc - Lạc Dương. Thịt quả vàng ươm dẻo như sáp, hạt tiêu nhỏ tí xíu, béo ngậy tự nhiên.",
+    highlights: ["Bơ già cây chín tự nhiên, không ngâm ủ hóa chất", "Tỷ lệ sáp đặc trên 85%", "Bao đổi trả 1 đổi 1 nếu bị sượng"],
+    specs: {
+      origin: "Lâm Đồng",
+      brand: "Lạc Dương Green Farm",
+      weight: "1kg (2-3 trái dài)",
+      shelfLife: "2-4 ngày khi chín",
+      storage: "Nhiệt độ phòng chờ chín, chín bỏ ngăn mát",
+      packingStandard: "Bọc lưới xốp từng quả"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "160 kcal",
+      protein: "2.0 g",
+      fat: "14.7 g (chất béo lành mạnh)",
+      carbs: "8.5 g",
+      minerals: "Kali, Vitamin E, Lutein"
+    },
+    cookingTips: ["Dầm cùng sữa đặc và đá xay, hoặc làm sốt bơ trứng ăn kèm bánh mì."],
+    reviews: []
+  },
+  {
+    id: "p7",
+    name: "Khoai Lang Mật Đà Lạt Nướng Chảy Mật Thơm Lừng",
+    category: "veggie",
+    categoryName: "Nông sản tươi",
+    price: 45000,
+    oldPrice: 55000,
+    discountBadge: "-18%",
+    unit: "Túi 1kg",
+    image: "https://images.unsplash.com/photo-1596097635121-14b63b7a0c19?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1596097635121-14b63b7a0c19?auto=format&fit=crop&w=800&q=80"],
+    badge: "Chảy mật ngọt lịm",
+    store: {
+      id: "store_nong_trai_lac_duong",
+      name: "Nông Trại Xanh Lạc Dương",
+      address: "112 Trần Thái Tông, Dịch Vọng Hậu, Cầu Giấy, Hà Nội",
+      distanceKm: 1.6,
+      deliveryTime: "18 - 25 phút",
+      rating: 4.9,
+      reviewsCount: 256,
+      openHours: "06:30 - 21:30",
+      totalProducts: 38,
+      isVerified: true,
+      categoryName: "Trái cây & Củ quả Đà Lạt",
+      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.8,
+    reviewsCount: 110,
+    sold: 240,
+    stock: 70,
+    description: "Khoai lang giống Nhật trồng trên đất đỏ bazan Lạc Dương, củ đã ủ đủ ngày nên nướng hoặc luộc là tứa mật óng ả ngọt bùi.",
+    highlights: ["Củ thon dài đều tay, không xơ", "Đã ủ xuống đường đạt độ ngọt tối đa", "Hấp nướng nồi chiên không dầu siêu ngon"],
+    specs: {
+      origin: "Đà Lạt, Lâm Đồng",
+      brand: "Lạc Dương Green Farm",
+      weight: "1kg (4-6 củ)",
+      shelfLife: "15 ngày",
+      storage: "Để nơi khô ráo, tránh ánh nắng trực tiếp",
+      packingStandard: "Túi lưới thông thoáng"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "86 kcal",
+      protein: "1.6 g",
+      fat: "0.1 g",
+      carbs: "20.1 g",
+      minerals: "Chất xơ, Vitamin A, Mangan"
+    },
+    cookingTips: ["Nướng nồi chiên không dầu 180°C trong 35 phút để mật tứa ra thơm ngát."],
+    reviews: []
+  },
+  {
+    id: "p8",
+    name: "Ớt Chuông Sweet Palermo Giòn Ngọt Thanh Mát",
+    category: "veggie",
+    categoryName: "Rau củ sạch",
+    price: 55000,
+    oldPrice: 70000,
+    discountBadge: "-21%",
+    unit: "Túi 500g",
+    image: "https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&w=800&q=80"],
+    badge: "Siêu giàu Vitamin C",
+    store: {
+      id: "store_nong_trai_lac_duong",
+      name: "Nông Trại Xanh Lạc Dương",
+      address: "112 Trần Thái Tông, Dịch Vọng Hậu, Cầu Giấy, Hà Nội",
+      distanceKm: 1.6,
+      deliveryTime: "18 - 25 phút",
+      rating: 4.9,
+      reviewsCount: 256,
+      openHours: "06:30 - 21:30",
+      totalProducts: 38,
+      isVerified: true,
+      categoryName: "Trái cây & Củ quả Đà Lạt",
+      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 75,
+    sold: 135,
+    stock: 35,
+    description: "Giống ớt ngọt cao cấp Palermo nhập khẩu từ Hà Lan, trồng công nghệ cao tại Lạc Dương. Không cay nồng, giòn sần sật và mọng nước ngọt thanh.",
+    highlights: ["Lượng Vitamin C gấp 3 lần quả cam", "Ăn sống chấm sốt mè rang tuyệt đỉnh", "Trẻ nhỏ cũng thích mê vì không hăng cay"],
+    specs: {
+      origin: "Lạc Dương, Lâm Đồng",
+      brand: "Lạc Dương Green Farm",
+      weight: "500g (3-4 quả mix màu)",
+      shelfLife: "7-10 ngày trong tủ lạnh",
+      storage: "Bọc màng thực phẩm để ngăn mát",
+      packingStandard: "Khay bọc màng co"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "28 kcal",
+      protein: "1.0 g",
+      fat: "0.2 g",
+      carbs: "6.0 g",
+      minerals: "Vitamin C 150mg, Vitamin B6"
+    },
+    cookingTips: ["Cắt lát xào bò hoặc ăn sống kèm sốt mè rang thanh mát."],
+    reviews: []
+  },
+
+  // ==========================================
+  // GIAN HÀNG 3: Vựa Trái Cây Sáu Thảo Miền Tây
+  // ==========================================
+  {
+    id: "p9",
+    name: "Bưởi Da Xanh Bến Tre Loại 1 Trái Mọng Tép Đỏ",
+    category: "beverage",
+    categoryName: "Trái cây tươi",
+    price: 68000,
+    oldPrice: 85000,
+    discountBadge: "-20%",
+    unit: "Trái 1.5kg",
+    image: "https://images.unsplash.com/photo-1587049352846-4a222e784d38?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1587049352846-4a222e784d38?auto=format&fit=crop&w=800&q=80"],
+    badge: "Đặc sản Bến Tre",
+    certification: {
+      type: "VietGAP",
+      certNo: "VG-BT-2026-302",
+      issuedBy: "Sở NN Bến Tre",
+      issuedDate: "10/01/2026",
+      expiryDate: "10/01/2027"
+    },
+    store: {
+      id: "store_vua_trai_cay_sau_thao",
+      name: "Vựa Trái Cây Sáu Thảo Miền Tây",
+      address: "45 Nguyễn Khang, Yên Hòa, Cầu Giấy, Hà Nội",
+      distanceKm: 2.4,
+      deliveryTime: "22 - 30 phút",
+      rating: 4.8,
+      reviewsCount: 192,
+      openHours: "07:00 - 22:00",
+      totalProducts: 30,
+      isVerified: true,
+      categoryName: "Hoa quả nhiệt đới miệt vườn",
+      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.8,
+    reviewsCount: 104,
+    sold: 295,
+    stock: 80,
+    description: "Bưởi da xanh cắt tại vườn Mỏ Cày Bắc (Bến Tre). Vỏ mỏng dính, tép bưởi màu hồng đỏ căng mọng nước, vị ngọt thanh không hề đắng hậu.",
+    highlights: ["Tuyển chọn trái từ 1.4kg - 1.6kg tròn đều", "Tép róc dễ bóc, giòn mọng ngọt lịm", "Chưng bàn thờ sang trọng, ăn bổ dưỡng"],
+    specs: {
+      origin: "Châu Thành, Bến Tre",
+      brand: "Vựa Bưởi Sáu Thảo",
+      weight: "1.4kg - 1.6kg",
+      shelfLife: "20-30 ngày",
+      storage: "Nhiệt độ phòng thoáng gió",
+      packingStandard: "Bọc túi lưới có quai xách"
+    },
+    nutrition: {
+      servingSize: "100g tép bưởi",
+      calories: "38 kcal",
+      protein: "0.8 g",
+      fat: "0.1 g",
+      carbs: "9.6 g",
+      minerals: "Vitamin C, Naringin, Kali"
+    },
+    cookingTips: ["Gọt vỏ tách tép chấm muối tôm Tây Ninh chua cay tê lưỡi."],
+    reviews: []
+  },
+  {
+    id: "p10",
+    name: "Cam Sành Hàm Yên Mọng Nước Ngọt Tự Nhiên",
+    category: "beverage",
+    categoryName: "Trái cây tươi",
+    price: 38000,
+    oldPrice: 48000,
+    discountBadge: "-21%",
+    unit: "Kg",
+    image: "https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=800&q=80"],
+    badge: "Vắt nước cực ngọt",
+    store: {
+      id: "store_vua_trai_cay_sau_thao",
+      name: "Vựa Trái Cây Sáu Thảo Miền Tây",
+      address: "45 Nguyễn Khang, Yên Hòa, Cầu Giấy, Hà Nội",
+      distanceKm: 2.4,
+      deliveryTime: "22 - 30 phút",
+      rating: 4.8,
+      reviewsCount: 192,
+      openHours: "07:00 - 22:00",
+      totalProducts: 30,
+      isVerified: true,
+      categoryName: "Hoa quả nhiệt đới miệt vườn",
+      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.8,
+    reviewsCount: 88,
+    sold: 410,
+    stock: 150,
+    description: "Cam sành trái to tròn, vỏ mỏng rám nắng đúng chuẩn cam già cây. Vắt được cực nhiều nước, vị ngọt đậm đà thơm ngát.",
+    highlights: ["Cam già cành mọng nước, không sượng xơ", "Vắt nước không cần thêm đường", "Tươi ngon bồi bổ sức khỏe hàng ngày"],
+    specs: {
+      origin: "Hàm Yên, Tuyên Quang & Vĩnh Long",
+      brand: "Vựa Sáu Thảo",
+      weight: "1kg (3-4 quả)",
+      shelfLife: "7-10 ngày",
+      storage: "Nơi râm mát hoặc ngăn mát tủ lạnh",
+      packingStandard: "Túi lưới chuyên dụng"
+    },
+    nutrition: {
+      servingSize: "100g nước cam",
+      calories: "45 kcal",
+      protein: "0.7 g",
+      fat: "0.2 g",
+      carbs: "10.4 g",
+      minerals: "Vitamin C 53mg, Hesperidin"
+    },
+    cookingTips: ["Vắt lấy nước uống cùng vài viên đá giải nhiệt sảng khoái."],
+    reviews: []
+  },
+  {
+    id: "p11",
+    name: "Xoài Cát Hòa Lộc Chín Cây Vàng Óng Thơm Lừng",
+    category: "beverage",
+    categoryName: "Trái cây tươi",
+    price: 85000,
+    oldPrice: 105000,
+    discountBadge: "-19%",
+    unit: "Kg",
+    image: "https://images.unsplash.com/photo-1553279768-865429fa0078?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1553279768-865429fa0078?auto=format&fit=crop&w=800&q=80"],
+    badge: "Vua của các loài xoài",
+    store: {
+      id: "store_vua_trai_cay_sau_thao",
+      name: "Vựa Trái Cây Sáu Thảo Miền Tây",
+      address: "45 Nguyễn Khang, Yên Hòa, Cầu Giấy, Hà Nội",
+      distanceKm: 2.4,
+      deliveryTime: "22 - 30 phút",
+      rating: 4.8,
+      reviewsCount: 192,
+      openHours: "07:00 - 22:00",
+      totalProducts: 30,
+      isVerified: true,
+      categoryName: "Hoa quả nhiệt đới miệt vườn",
+      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 96,
+    sold: 180,
+    stock: 40,
+    description: "Xoài cát Hòa Lộc Tiền Giang chuẩn gốc. Trái thuôn dài, da vàng mịn màng, thịt quả dày chắc mịn không hề có xơ, ngọt lịm sắc nét.",
+    highlights: ["Chín tự nhiên tỏa hương thơm lừng cả gian phòng", "Thịt quả dẻo mịn tan trên đầu lưỡi", "Độ ngọt sắc đặc trưng nức tiếng miền Tây"],
+    specs: {
+      origin: "Cái Bè, Tiền Giang",
+      brand: "Vựa Sáu Thảo",
+      weight: "1kg (2 trái)",
+      shelfLife: "3-5 ngày khi chín",
+      storage: "Nhiệt độ phòng",
+      packingStandard: "Bọc xốp chống trầy xước"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "60 kcal",
+      protein: "0.8 g",
+      fat: "0.4 g",
+      carbs: "15.0 g",
+      minerals: "Vitamin A, Vitamin C, Đồng"
+    },
+    cookingTips: ["Cắt hạt lựu ăn kèm xôi nếp cốt dừa béo ngậy."],
+    reviews: []
+  },
+  {
+    id: "p12",
+    name: "Dừa Xiêm Xanh Bến Tre Ngọt Mát Đã Gọt Trọc",
+    category: "beverage",
+    categoryName: "Đồ uống tươi",
+    price: 22000,
+    oldPrice: 28000,
+    discountBadge: "-21%",
+    unit: "Trái",
+    image: "https://images.unsplash.com/photo-1550258987-190a2d41a8ba?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1550258987-190a2d41a8ba?auto=format&fit=crop&w=800&q=80"],
+    badge: "Ngọt thanh tự nhiên",
+    store: {
+      id: "store_vua_trai_cay_sau_thao",
+      name: "Vựa Trái Cây Sáu Thảo Miền Tây",
+      address: "45 Nguyễn Khang, Yên Hòa, Cầu Giấy, Hà Nội",
+      distanceKm: 2.4,
+      deliveryTime: "22 - 30 phút",
+      rating: 4.8,
+      reviewsCount: 192,
+      openHours: "07:00 - 22:00",
+      totalProducts: 30,
+      isVerified: true,
+      categoryName: "Hoa quả nhiệt đới miệt vườn",
+      avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 154,
+    sold: 350,
+    stock: 90,
+    description: "Dừa xiêm xanh bánh tẻ gọt vỏ kim cương tiện lợi. Nước dừa ngọt lịm thanh mát, cùi dừa non mềm dẻo nạo ăn cực ngon miệng.",
+    highlights: ["Đã gọt sẵn chỉ cần cắm ống hút là uống", "Nước dừa ngọt thanh tự nhiên 100%", "Giàu chất điện giải bù nước thể thao"],
+    specs: {
+      origin: "Giồng Trôm, Bến Tre",
+      brand: "Vựa Sáu Thảo",
+      weight: "1 trái (300-350ml nước)",
+      shelfLife: "10-15 ngày trong tủ mát",
+      storage: "Bảo quản lạnh",
+      packingStandard: "Bọc màng co thực phẩm từng trái"
+    },
+    nutrition: {
+      servingSize: "100ml nước dừa",
+      calories: "19 kcal",
+      protein: "0.7 g",
+      fat: "0.2 g",
+      carbs: "3.7 g",
+      minerals: "Chất điện giải Kali, Natri, Magie"
+    },
+    cookingTips: ["Ướp lạnh trước 30 phút uống sảng khoái tột đỉnh."],
+    reviews: []
+  },
+
+  // ==========================================
+  // GIAN HÀNG 4: Thực Phẩm Tươi Sống ZoneMart Cầu Giấy
+  // ==========================================
+  {
+    id: "p13",
+    name: "Thịt Bò Mỹ Nhập Khẩu Thượng Hạng USDA Choice",
+    category: "food",
+    categoryName: "Thực phẩm tươi",
+    price: 185000,
+    oldPrice: 220000,
+    discountBadge: "-16%",
+    unit: "Khay 500g",
+    image: "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=800&q=80",
+    gallery: [
+      "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=800&q=80",
+      "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80"
+    ],
+    badge: "Thịt mát chuẩn USDA",
+    certification: {
+      type: "ATTP Quốc Gia",
+      certNo: "USDA-VN-88429/2026",
+      issuedBy: "Cục Thú Y & Kiểm Dịch",
+      issuedDate: "15/01/2026",
+      expiryDate: "15/01/2027"
+    },
+    store: {
+      id: "store_zonemart_cau_giay",
+      name: "Thực Phẩm Tươi Sống ZoneMart Cầu Giấy",
+      address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội",
+      distanceKm: 1.2,
+      deliveryTime: "15 - 20 phút",
+      rating: 5.0,
+      reviewsCount: 420,
+      openHours: "06:00 - 22:00",
+      totalProducts: 65,
+      isVerified: true,
+      categoryName: "Thịt cá tươi & Hải sản lạnh",
+      avatar: "https://images.unsplash.com/photo-1578916171728-46686eac8d58?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 5.0,
+    reviewsCount: 184,
+    sold: 560,
+    stock: 95,
+    description: "Thịt bò Black Angus nhập khẩu Mỹ chuẩn hạng USDA Choice. Vân mỡ cẩm thạch xen kẽ đều tăm tắp, thịt mềm mọng tan trong miệng khi áp chảo hay nướng.",
+    highlights: ["100% Thịt bò Black Angus tươi ngon", "Bảo quản công nghệ mát MAP 0-4°C", "Cắt lát dày tiêu chuẩn bít tết hoặc nhúng lẩu"],
+    specs: {
+      origin: "Hoa Kỳ (Nebraska Farms)",
+      brand: "ZoneMart Premium Beef",
+      weight: "500g",
+      shelfLife: "7 ngày ngăn mát, 6 tháng ngăn đông",
+      storage: "Nhiệt độ 0-4°C",
+      packingStandard: "Khay sinh học kháng khuẩn hút chân không"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "217 kcal",
+      protein: "26.1 g",
+      fat: "11.8 g",
+      carbs: "0 g",
+      minerals: "Sắt, Kẽm, Vitamin B12"
+    },
+    cookingTips: ["Áp chảo 2-3 phút mỗi mặt với bơ tỏi và lá hương thảo."],
+    reviews: []
+  },
+  {
+    id: "p14",
+    name: "Cá Hồi Na Uy Tươi Phi Lê Cắt Miếng Trong Ngày",
+    category: "food",
+    categoryName: "Thực phẩm tươi",
+    price: 195000,
+    oldPrice: 235000,
+    discountBadge: "-17%",
+    unit: "Khay 300g",
+    image: "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=800&q=80"],
+    badge: "Ăn sống Sashimi",
+    certification: {
+      type: "ATTP Quốc Gia",
+      certNo: "ATTP-QC-2026-99",
+      issuedBy: "Cục An Toàn Thực Phẩm",
+      issuedDate: "10/01/2026",
+      expiryDate: "10/01/2027"
+    },
+    store: {
+      id: "store_zonemart_cau_giay",
+      name: "Thực Phẩm Tươi Sống ZoneMart Cầu Giấy",
+      address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội",
+      distanceKm: 1.2,
+      deliveryTime: "15 - 20 phút",
+      rating: 5.0,
+      reviewsCount: 420,
+      openHours: "06:00 - 22:00",
+      totalProducts: 65,
+      isVerified: true,
+      categoryName: "Thịt cá tươi & Hải sản lạnh",
+      avatar: "https://images.unsplash.com/photo-1578916171728-46686eac8d58?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 5.0,
+    reviewsCount: 142,
+    sold: 320,
+    stock: 50,
+    description: "Cá hồi Đại Tây Dương nhập khẩu nguyên con từ vùng biển lạnh Na Uy, phi lê tươi mới mỗi sáng tại kho lạnh ZoneMart. Đạt chuẩn ăn gỏi Sashimi.",
+    highlights: ["Thịt cá cam óng vân mỡ trắng ngần", "Giàu Omega-3 và DHA tự nhiên", "Kèm gừng hồng Nhật và nước tương Kikkoman"],
+    specs: {
+      origin: "Na Uy (Norwegian Salmon)",
+      brand: "ZoneMart Seafood",
+      weight: "Khay 300g",
+      shelfLife: "3 ngày ngăn mát, 3 tháng ngăn đông",
+      storage: "0-2°C trong ngăn mát",
+      packingStandard: "Khay lót giấy thấm hút chân không"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "208 kcal",
+      protein: "20.4 g",
+      fat: "13.4 g (Omega-3 2.5g)",
+      carbs: "0 g",
+      minerals: "Vitamin D, B12, Selen"
+    },
+    cookingTips: ["Ăn sống chấm wasabi hoặc áp chảo sốt bơ chanh cực đỉnh."],
+    reviews: []
+  },
+  {
+    id: "p15",
+    name: "Thịt Gà Ta Thả Vườn Làm Sạch Nguyên Con",
+    category: "food",
+    categoryName: "Thực phẩm tươi",
+    price: 160000,
+    oldPrice: 195000,
+    discountBadge: "-18%",
+    unit: "Con 1.4kg",
+    image: "https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&w=800&q=80"],
+    badge: "Da vàng thịt săn",
+    store: {
+      id: "store_zonemart_cau_giay",
+      name: "Thực Phẩm Tươi Sống ZoneMart Cầu Giấy",
+      address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội",
+      distanceKm: 1.2,
+      deliveryTime: "15 - 20 phút",
+      rating: 5.0,
+      reviewsCount: 420,
+      openHours: "06:00 - 22:00",
+      totalProducts: 65,
+      isVerified: true,
+      categoryName: "Thịt cá tươi & Hải sản lạnh",
+      avatar: "https://images.unsplash.com/photo-1578916171728-46686eac8d58?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 115,
+    sold: 280,
+    stock: 40,
+    description: "Gà ta thả đồi Ba Vì ăn ngô thóc, thịt săn chắc, thơm ngọt và da vàng giòn sần sật. Đã mổ moi làm sạch lông khử khuẩn đóng túi lạnh.",
+    highlights: ["Không ăn cám tăng trọng, nuôi tự nhiên 6 tháng", "Thịt thơm không bị bở nát", "Tặng kèm lá chanh tươi và muối tiêu hảo hạng"],
+    specs: {
+      origin: "Ba Vì, Hà Nội",
+      brand: "Gà Đồi Ba Vì",
+      weight: "1.3kg - 1.5kg / con",
+      shelfLife: "3 ngày ngăn mát, 1 tháng ngăn đông",
+      storage: "Bảo quản 0-4°C",
+      packingStandard: "Đóng túi hút chân không"
+    },
+    nutrition: {
+      servingSize: "100g thịt gà",
+      calories: "165 kcal",
+      protein: "31.0 g",
+      fat: "3.6 g",
+      carbs: "0 g",
+      minerals: "Kẽm, Magie, Vitamin B6"
+    },
+    cookingTips: ["Luộc lửa nhỏ 20 phút cùng vài lát gừng, ngâm nước đá cho da giòn."],
+    reviews: []
+  },
+  {
+    id: "p16",
+    name: "Cánh Gà Tươi CP Loại 1 Đóng Khay Tiệt Trùng",
+    category: "food",
+    categoryName: "Thực phẩm tươi",
+    price: 72000,
+    oldPrice: 85000,
+    discountBadge: "-15%",
+    unit: "Khay 500g",
+    image: "https://images.unsplash.com/photo-1567620832903-9fc6debc209f?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1567620832903-9fc6debc209f?auto=format&fit=crop&w=800&q=80"],
+    badge: "Chuẩn tiệt trùng CP",
+    store: {
+      id: "store_zonemart_cau_giay",
+      name: "Thực Phẩm Tươi Sống ZoneMart Cầu Giấy",
+      address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội",
+      distanceKm: 1.2,
+      deliveryTime: "15 - 20 phút",
+      rating: 5.0,
+      reviewsCount: 420,
+      openHours: "06:00 - 22:00",
+      totalProducts: 65,
+      isVerified: true,
+      categoryName: "Thịt cá tươi & Hải sản lạnh",
+      avatar: "https://images.unsplash.com/photo-1578916171728-46686eac8d58?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 160,
+    sold: 390,
+    stock: 65,
+    description: "Cánh gà tươi giữa khúc ngon nhất, da mỏng ít mỡ. Thích hợp làm món cánh gà chiên mắm, nướng mật ong hay sốt me chua cay.",
+    highlights: ["Chuỗi khép kín 3F Feed-Farm-Food CP", "Tươi mới không đông lạnh nhiều lần", "Đều cánh, thịt dày mọng nước"],
+    specs: {
+      origin: "Việt Nam (Hệ thống CP)",
+      brand: "CP Fresh Meat",
+      weight: "Khay 500g (5-6 khúc cánh)",
+      shelfLife: "5 ngày ngăn mát",
+      storage: "Nhiệt độ 0-4°C",
+      packingStandard: "Khay MAP kín khí"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "203 kcal",
+      protein: "18.3 g",
+      fat: "14.4 g",
+      carbs: "0 g",
+      minerals: "Collagen, Phốt pho, Sắt"
+    },
+    cookingTips: ["Khứa nhẹ cánh ướp mắm tỏi ớt 20 phút chiên giòn rụm."],
+    reviews: []
+  },
+
+  // ==========================================
+  // GIAN HÀNG 5: Bếp Cơm Niêu & Ẩm Thực Nóng Cô Ba
+  // ==========================================
+  {
+    id: "p17",
+    name: "Cơm Tấm Sườn Bì Chả Đặc Biệt Kèm Canh Chua",
+    category: "fastfood",
+    categoryName: "Món ăn nóng",
+    price: 55000,
+    oldPrice: 65000,
+    discountBadge: "-15%",
+    unit: "Suất",
+    image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"],
+    badge: "Bán chạy giờ trưa",
+    certification: {
+      type: "ATTP Quốc Gia",
+      certNo: "ATTP-HN-5512",
+      issuedBy: "Chi Cục ATTP Hà Nội",
+      issuedDate: "15/12/2025",
+      expiryDate: "15/12/2026"
+    },
+    store: {
+      id: "store_bep_com_co_ba",
+      name: "Bếp Cơm Niêu & Ẩm Thực Nóng Cô Ba",
+      address: "56 Nguyễn Chánh, Trung Hòa, Cầu Giấy, Hà Nội",
+      distanceKm: 3.1,
+      deliveryTime: "20 - 30 phút",
+      rating: 4.7,
+      reviewsCount: 310,
+      openHours: "09:30 - 21:00",
+      totalProducts: 25,
+      isVerified: true,
+      categoryName: "Cơm niêu & Món ăn gia đình nóng",
+      avatar: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.8,
+    reviewsCount: 220,
+    sold: 680,
+    stock: 80,
+    description: "Đĩa cơm tấm gạo thơm dẻo, miếng sườn cốt lết nướng than hoa mật ong xém cạnh thơm nức mũi, chả trứng chưng vàng óng, bì sợi giòn dai và mỡ hành tóp mỡ béo ngậy.",
+    highlights: ["Sườn ướp công thức gia truyền nướng than hoa", "Gạo tấm thơm chuẩn vị Sài Gòn", "Đóng hộp giữ nhiệt giao nóng hổi"],
+    specs: {
+      origin: "Chế biến tươi tại Bếp Cô Ba Cầu Giấy",
+      brand: "Cơm Tấm Cô Ba",
+      weight: "Suất 550g",
+      shelfLife: "Dùng ngon trong 45 phút",
+      storage: "Dùng ngay khi còn nóng",
+      packingStandard: "Hộp bã mía giữ nhiệt 3 ngăn sạch sẽ"
+    },
+    nutrition: {
+      servingSize: "1 suất đầy đủ",
+      calories: "680 kcal",
+      protein: "32 g",
+      fat: "24 g",
+      carbs: "82 g",
+      minerals: "Đầy đủ dưỡng chất năng lượng"
+    },
+    cookingTips: ["Chan nước mắm ớt tỏi chua ngọt ngập miếng sườn để vị đậm đà nhất."],
+    reviews: []
+  },
+  {
+    id: "p18",
+    name: "Cơm Gà Xối Mỡ Da Giòn Nóng Hổi Sốt Tỏi Ớt",
+    category: "fastfood",
+    categoryName: "Món ăn nóng",
+    price: 50000,
+    oldPrice: 60000,
+    discountBadge: "-17%",
+    unit: "Suất",
+    image: "https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&w=800&q=80"],
+    badge: "Da giòn thịt mềm",
+    store: {
+      id: "store_bep_com_co_ba",
+      name: "Bếp Cơm Niêu & Ẩm Thực Nóng Cô Ba",
+      address: "56 Nguyễn Chánh, Trung Hòa, Cầu Giấy, Hà Nội",
+      distanceKm: 3.1,
+      deliveryTime: "20 - 30 phút",
+      rating: 4.7,
+      reviewsCount: 310,
+      openHours: "09:30 - 21:00",
+      totalProducts: 25,
+      isVerified: true,
+      categoryName: "Cơm niêu & Món ăn gia đình nóng",
+      avatar: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.7,
+    reviewsCount: 185,
+    sold: 510,
+    stock: 75,
+    description: "Đùi gà góc tư chiên xối mỡ giòn rụm lớp da ngoài, thịt bên trong mềm ngọt mọng nước chấm sốt tỏi ớt đặc chế ăn cùng cơm đảo cà chua đỏ au thơm nức.",
+    highlights: ["Gà xối mỡ da giòn rụm không ngấy dầu", "Cơm rang tơi xốp đỏ cam màu cà chua", "Kèm dưa chuột muối chua và canh rong biển"],
+    specs: {
+      origin: "Bếp Cô Ba Hà Nội",
+      brand: "Cơm Tấm Cô Ba",
+      weight: "Suất 500g",
+      shelfLife: "Dùng nóng trong 45 phút",
+      storage: "Dùng liền khi nhận",
+      packingStandard: "Hộp giấy giữ nhiệt thân thiện môi trường"
+    },
+    nutrition: {
+      servingSize: "1 suất",
+      calories: "650 kcal",
+      protein: "35 g",
+      fat: "22 g",
+      carbs: "75 g",
+      minerals: "Protein, Sắt, Kẽm"
+    },
+    cookingTips: ["Chấm sốt ớt chua cay tự làm của quán để giải ngấy tuyệt đối."],
+    reviews: []
+  },
+  {
+    id: "p19",
+    name: "Canh Cua Rau Đay Cà Pháo Nấu Nồi Đất Chuẩn Vị",
+    category: "fastfood",
+    categoryName: "Món ăn nóng",
+    price: 40000,
+    oldPrice: 50000,
+    discountBadge: "-20%",
+    unit: "Tô lớn",
+    image: "https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80"],
+    badge: "Món ngon quê nhà",
+    store: {
+      id: "store_bep_com_co_ba",
+      name: "Bếp Cơm Niêu & Ẩm Thực Nóng Cô Ba",
+      address: "56 Nguyễn Chánh, Trung Hòa, Cầu Giấy, Hà Nội",
+      distanceKm: 3.1,
+      deliveryTime: "20 - 30 phút",
+      rating: 4.7,
+      reviewsCount: 310,
+      openHours: "09:30 - 21:00",
+      totalProducts: 25,
+      isVerified: true,
+      categoryName: "Cơm niêu & Món ăn gia đình nóng",
+      avatar: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.8,
+    reviewsCount: 130,
+    sold: 290,
+    stock: 45,
+    description: "Cua đồng giã tay đóng gạch dày cộp nổi tảng, nấu với rau đay, mướp hương thơm nức mũi. Kèm bát cà pháo giòn tan chống ngấy ngày hè.",
+    highlights: ["100% Cua đồng tự nhiên giã tay", "Gạch cua đóng bánh dày ngọt lịm", "Kèm hũ cà muối giòn tan truyền thống"],
+    specs: {
+      origin: "Bếp Cô Ba Hà Nội",
+      brand: "Cơm Tấm Cô Ba",
+      weight: "Tô 600ml kèm cà pháo",
+      shelfLife: "Dùng trong ngày",
+      storage: "Ăn nóng",
+      packingStandard: "Tô giấy giữ nhiệt chịu nhiệt cao"
+    },
+    nutrition: {
+      servingSize: "1 tô",
+      calories: "180 kcal",
+      protein: "14 g",
+      fat: "6 g",
+      carbs: "18 g",
+      minerals: "Canxi tự nhiên dồi dào"
+    },
+    cookingTips: ["Ăn kèm cơm trắng nóng hổi và vài quả cà pháo giòn tan."],
+    reviews: []
+  },
+  {
+    id: "p20",
+    name: "Trà Tắc Mật Ong Khổng Lồ Mát Lạnh Giải Nhiệt",
+    category: "beverage",
+    categoryName: "Đồ uống",
+    price: 18000,
+    oldPrice: 25000,
+    discountBadge: "-28%",
+    unit: "Ly 700ml",
+    image: "https://images.unsplash.com/photo-1556881286-fc6915169721?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1556881286-fc6915169721?auto=format&fit=crop&w=800&q=80"],
+    badge: "Siêu giải nhiệt",
+    store: {
+      id: "store_bep_com_co_ba",
+      name: "Bếp Cơm Niêu & Ẩm Thực Nóng Cô Ba",
+      address: "56 Nguyễn Chánh, Trung Hòa, Cầu Giấy, Hà Nội",
+      distanceKm: 3.1,
+      deliveryTime: "20 - 30 phút",
+      rating: 4.7,
+      reviewsCount: 310,
+      openHours: "09:30 - 21:00",
+      totalProducts: 25,
+      isVerified: true,
+      categoryName: "Cơm niêu & Món ăn gia đình nóng",
+      avatar: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 245,
+    sold: 740,
+    stock: 120,
+    description: "Trà lài ủ lạnh thơm nức pha cùng nước cốt tắc tươi và mật ong hoa rừng nguyên chất. Chua ngọt sảng khoái, đập tan cơn khát ngày hè oi ả.",
+    highlights: ["Mật ong rừng tự nhiên thanh dịu", "Tắc tươi vắt liền không đắng vỏ", "Cốc khổng lồ 700ml uống thỏa thích"],
+    specs: {
+      origin: "Bếp Cô Ba Hà Nội",
+      brand: "Cô Ba Drinks",
+      weight: "Ly 700ml",
+      shelfLife: "Uống ngon nhất trong 3 tiếng",
+      storage: "Để lạnh",
+      packingStandard: "Ly PP nắp kín dán màng ép nhiệt"
+    },
+    nutrition: {
+      servingSize: "1 ly",
+      calories: "120 kcal",
+      protein: "0.5 g",
+      fat: "0 g",
+      carbs: "30 g",
+      minerals: "Vitamin C, Chất chống oxy hóa EGCG"
+    },
+    cookingTips: ["Lắc đều với đá lạnh trước khi cắm ống hút thưởng thức."],
+    reviews: []
+  },
+
+  // ==========================================
+  // GIAN HÀNG 6: Tiệm Bánh Mì & Cà Phê Zone Sáng
+  // ==========================================
+  {
+    id: "p21",
     name: "Combo Bánh Mì Chảo Nóng Hổi Kèm Pate & Xúc Xích",
     category: "fastfood",
     categoryName: "Món ăn nóng",
     price: 45000,
     oldPrice: 55000,
     discountBadge: "-18%",
-    unit: "Phần 1 người",
+    unit: "Phần",
     image: "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=800&q=80",
-    gallery: [
-      "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1586190848861-99aa4a171e90?auto=format&fit=crop&w=800&q=80"
-    ],
-    badge: "Giao nóng giòn",
-    certification: {
-      type: "ATTP Quốc Gia",
-      certNo: "ATTP-HN-33290",
-      issuedBy: "Chi Cục An Toàn Vệ Sinh Thực Phẩm Hà Nội",
-      issuedDate: "10/11/2025",
-      expiryDate: "10/11/2026"
-    },
+    gallery: ["https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=800&q=80"],
+    badge: "Ăn sáng điểm 10",
     store: {
       id: "store_tiem_banh_mi_zone",
-      name: "Tiệm Bánh Mì Zone",
-      address: "18 Xuân Thủy, Cầu Giấy, Hà Nội",
-      distanceKm: 2.8,
-      deliveryTime: "15 - 20 phút",
-      rating: 4.8,
-      totalProducts: 45,
-      isVerified: true
+      name: "Tiệm Bánh Mì & Cà Phê Zone Sáng",
+      address: "18 Xuân Thủy, Dịch Vọng Hậu, Cầu Giấy, Hà Nội",
+      distanceKm: 1.9,
+      deliveryTime: "12 - 18 phút",
+      rating: 4.85,
+      reviewsCount: 175,
+      openHours: "05:30 - 18:00",
+      totalProducts: 20,
+      isVerified: true,
+      categoryName: "Điểm tâm sáng & Cà phê nóng",
+      avatar: "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
     },
-    rating: 4.8,
-    reviewsCount: 210,
-    sold: 340,
-    stock: 50,
-    description:
-      "Chảo bánh mì nóng hổi gồm trứng ốp la lòng đào béo ngậy, pate gan Hải Phòng tự làm thơm lừng béo ngậy, xúc xích nướng giòn rụm, thịt băm viên sốt cà chua đậm đà kèm bánh mì nóng giòn tan và dưa leo ngâm chua ngọt giải ngấy.",
-    highlights: [
-      "Pate gan nhà làm theo công thức truyền thống, thơm bùi không tanh",
-      "Bánh mì được nướng nóng giòn ngay trước khi tài xế nhận đơn",
-      "Đựng trong hộp giấy giữ nhiệt chuyên dụng giữ độ nóng suốt 30 phút",
-      "Kèm đầy đủ sốt tương ớt Chin-su và nước tương đậm đà"
-    ],
+    rating: 4.9,
+    reviewsCount: 180,
+    sold: 490,
+    stock: 60,
+    description: "Chảo bánh mì nóng hổi gồm trứng ốp la lòng đào, pate gan Hải Phòng tự làm béo ngậy, xúc xích giòn rụm và sốt cà chua đậm đà kèm bánh mì nướng giòn tan.",
+    highlights: ["Pate nhà làm thơm bùi ngậy béo", "Bánh mì nướng nóng hổi giòn rụm", "Giao nhanh chỉ 15 phút kịp giờ làm"],
     specs: {
-      origin: "Chế biến tươi tại Bếp Tiệm Bánh Mì Zone Cầu Giấy",
-      brand: "Bánh Mì Zone",
-      weight: "1 Phần ăn nóng (450g kèm 1 ổ bánh mì)",
-      shelfLife: "Dùng ngon nhất trong vòng 45 phút sau khi nhận",
-      storage: "Nên dùng ngay khi còn nóng hổi",
-      packingStandard: "Hộp bã mía giữ nhiệt thân thiện môi trường"
+      origin: "Xuân Thủy, Cầu Giấy, Hà Nội",
+      brand: "Tiệm Bánh Mì Zone",
+      weight: "Phần 450g",
+      shelfLife: "30-40 phút",
+      storage: "Ăn nóng ngay",
+      packingStandard: "Hộp bã mía giữ nhiệt cao cấp"
     },
     nutrition: {
-      servingSize: "1 suất tiêu chuẩn",
+      servingSize: "1 suất",
       calories: "520 kcal",
       protein: "24 g",
       fat: "22 g",
       carbs: "58 g",
       minerals: "Canxi, Sắt, Vitamin A"
     },
-    cookingTips: [
-      "Nếu để nguội, có thể cho phần sốt vào lò vi sóng quay 40 giây ở mức trung bình.",
-      "Bánh mì có thể nướng lại bằng nồi chiên không dầu 160°C trong 2 phút để giòn rụm như vừa ra lò."
-    ],
-    reviews: [
-      {
-        id: "rv-bm1",
-        author: "Lê Quốc Bảo",
-        avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=80",
-        rating: 5,
-        date: "Hôm qua lúc 12:30",
-        comment: "Trưa văn phòng đói bụng đặt combo này quá hợp lý. Giao tới vẫn bốc khói nghi ngút, bánh mì giòn tan, pate ngậy thơm chấm đẫm sốt ngon nhức nách!",
-        helpfulCount: 22,
-        verified: true
-      }
-    ]
+    cookingTips: ["Chấm bánh mì ngập sốt pate trứng lòng đào béo ngậy."],
+    reviews: []
   },
   {
-    id: "p4",
-    name: "Nước Ép Cam Sành Tươi Nguyên Chất 100%",
-    category: "beverage",
-    categoryName: "Đồ uống",
-    price: 32000,
-    oldPrice: 40000,
+    id: "p22",
+    name: "Bánh Mì Kẹp Thịt Nướng Ngũ Vị Giòn Rụm",
+    category: "fastfood",
+    categoryName: "Món ăn nóng",
+    price: 28000,
+    oldPrice: 35000,
     discountBadge: "-20%",
-    unit: "Chai 350ml",
-    image: "https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=800&q=80",
-    gallery: [
-      "https://images.unsplash.com/photo-1613478223719-2ab802602423?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1600271886742-f049cd451bba?auto=format&fit=crop&w=800&q=80"
-    ],
-    badge: "Vắt tươi trực tiếp",
-    certification: {
-      type: "VietGAP",
-      certNo: "VG-HG-2026-118",
-      issuedBy: "Sở Nông Nghiệp Hậu Giang",
-      issuedDate: "05/01/2026",
-      expiryDate: "05/01/2027"
-    },
+    unit: "Ổ",
+    image: "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"],
+    badge: "Siêu đắt khách",
     store: {
-      id: "store_sieu_thi_trai_cay_xanh",
-      name: "Siêu Thị Trái Cây Xanh",
-      address: "112 Trần Thái Tông, Cầu Giấy, Hà Nội",
-      distanceKm: 2.5,
-      deliveryTime: "15 - 20 phút",
-      rating: 4.9,
-      totalProducts: 180,
-      isVerified: true
+      id: "store_tiem_banh_mi_zone",
+      name: "Tiệm Bánh Mì & Cà Phê Zone Sáng",
+      address: "18 Xuân Thủy, Dịch Vọng Hậu, Cầu Giấy, Hà Nội",
+      distanceKm: 1.9,
+      deliveryTime: "12 - 18 phút",
+      rating: 4.85,
+      reviewsCount: 175,
+      openHours: "05:30 - 18:00",
+      totalProducts: 20,
+      isVerified: true,
+      categoryName: "Điểm tâm sáng & Cà phê nóng",
+      avatar: "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
     },
-    rating: 4.9,
-    reviewsCount: 95,
-    sold: 180,
-    stock: 70,
-    description:
-      "Nước ép cam sành miền Tây nguyên chất 100%, vắt trực tiếp từ những trái cam mọng nước chọn lọc khi khách vừa bấm đặt đơn. Hoàn toàn không pha nước, không đường hóa học, không chất bảo quản, giữ trọn vẹn vị chua ngọt thanh mát và hàm lượng Vitamin C dồi dào.",
-    highlights: [
-      "100% Cam sành miền Tây tươi mọng nước",
-      "Vắt máy ép chậm lấy trọn nước ngọt không bị đắng vỏ",
-      "Đóng chai thủy tinh kháng khuẩn niêm phong nắp nhôm",
-      "Tăng cường sức đề kháng và thanh lọc cơ thể"
-    ],
+    rating: 4.8,
+    reviewsCount: 230,
+    sold: 820,
+    stock: 150,
+    description: "Ổ bánh mì đặc ruột vỏ giòn tan kẹp ngập tràn thịt nạc vai nướng sả ngũ vị thơm lừng, dưa leo giòn mát, đồ chua chua ngọt và sốt bơ trứng nhà làm.",
+    highlights: ["Thịt nướng xém cạnh thơm nức mũi", "Pate bơ mịn màng béo thơm", "Bánh giòn không bị vụn nát"],
     specs: {
-      origin: "Vùng trồng cam sành Tam Bình, Vĩnh Long",
-      brand: "Fresh Zone Drinks",
-      weight: "350ml",
-      shelfLife: "24 giờ trong ngăn mát tủ lạnh (1-4°C)",
-      storage: "Bảo quản lạnh, lắc đều trước khi uống",
-      packingStandard: "Chai thủy tinh thực phẩm có màng niêm phong"
+      origin: "Cầu Giấy, Hà Nội",
+      brand: "Tiệm Bánh Mì Zone",
+      weight: "Ổ 220g",
+      shelfLife: "Ăn ngon trong 2 tiếng",
+      storage: "Nhiệt độ phòng",
+      packingStandard: "Túi giấy thực phẩm thân thiện môi trường"
     },
     nutrition: {
-      servingSize: "1 chai 350ml",
-      calories: "140 kcal",
-      protein: "2.1 g",
-      fat: "0.2 g",
-      carbs: "33 g",
-      minerals: "Vitamin C (120mg - 200% DV), Kali, Flavonoids"
+      servingSize: "1 ổ",
+      calories: "410 kcal",
+      protein: "19 g",
+      fat: "14 g",
+      carbs: "52 g",
+      minerals: "Protein, Chất xơ"
     },
-    cookingTips: [
-      "Ngon nhất khi uống lạnh trực tiếp hoặc thêm vài viên đá nhỏ.",
-      "Uống vào buổi sáng sau bữa ăn để cơ thể hấp thu tối đa dưỡng chất."
-    ],
-    reviews: [
-      {
-        id: "rv-c1",
-        author: "Hoàng Yến",
-        avatar: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=120&q=80",
-        rating: 5,
-        date: "3 ngày trước",
-        comment: "Cam vắt rất ngọt tự nhiên, không bị khé cổ. Đóng chai thủy tinh nhìn xinh và sạch sẽ lắm!",
-        helpfulCount: 8,
-        verified: true
-      }
-    ]
+    cookingTips: ["Ăn kèm chút tương ớt cay nồng bùng nổ hương vị."],
+    reviews: []
   },
   {
-    id: "p5",
-    name: "Bộ Nồi Inox 3 Đáy Cao Cấp Nấu Bếp Từ",
+    id: "p23",
+    name: "Cà Phê Sữa Đá Pha Phin Đậm Đà Chuẩn Gu",
+    category: "beverage",
+    categoryName: "Đồ uống",
+    price: 22000,
+    oldPrice: 28000,
+    discountBadge: "-21%",
+    unit: "Cốc 450ml",
+    image: "https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?auto=format&fit=crop&w=800&q=80"],
+    badge: "Chuẩn vị pha phin",
+    store: {
+      id: "store_tiem_banh_mi_zone",
+      name: "Tiệm Bánh Mì & Cà Phê Zone Sáng",
+      address: "18 Xuân Thủy, Dịch Vọng Hậu, Cầu Giấy, Hà Nội",
+      distanceKm: 1.9,
+      deliveryTime: "12 - 18 phút",
+      rating: 4.85,
+      reviewsCount: 175,
+      openHours: "05:30 - 18:00",
+      totalProducts: 20,
+      isVerified: true,
+      categoryName: "Điểm tâm sáng & Cà phê nóng",
+      avatar: "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 190,
+    sold: 610,
+    stock: 100,
+    description: "Hạt Robusta Buôn Ma Thuột rang mộc mạc pha phin nhôm truyền thống, hòa quyện sữa đặc béo ngậy. Đậm đà đánh thức mọi giác quan bắt đầu ngày làm việc mới.",
+    highlights: ["100% Cà phê nguyên chất không tẩm bắp", "Vị đắng đầm ấm hậu ngọt sâu", "Đá riêng đảm bảo cà phê không bị nhạt"],
+    specs: {
+      origin: "Buôn Ma Thuột, Đắk Lắk",
+      brand: "Zone Morning Coffee",
+      weight: "Cốc 450ml",
+      shelfLife: "Uống ngon nhất trong ngày",
+      storage: "Bảo quản lạnh",
+      packingStandard: "Cốc giấy nắp tim quấn màng bảo vệ"
+    },
+    nutrition: {
+      servingSize: "1 cốc",
+      calories: "160 kcal",
+      protein: "3.5 g",
+      fat: "4.0 g",
+      carbs: "28 g",
+      minerals: "Caffeine 120mg"
+    },
+    cookingTips: ["Khuấy đều đá và sữa để cảm nhận độ sánh mịn đặc trưng."],
+    reviews: []
+  },
+  {
+    id: "p24",
+    name: "Bánh Bao Trứng Muối Xá Xíu Nóng Hổi Vừa Ra Lò",
+    category: "fastfood",
+    categoryName: "Món ăn nóng",
+    price: 20000,
+    oldPrice: 25000,
+    discountBadge: "-20%",
+    unit: "Cái",
+    image: "https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=800&q=80"],
+    badge: "Vỏ xốp nhân ngập",
+    store: {
+      id: "store_tiem_banh_mi_zone",
+      name: "Tiệm Bánh Mì & Cà Phê Zone Sáng",
+      address: "18 Xuân Thủy, Dịch Vọng Hậu, Cầu Giấy, Hà Nội",
+      distanceKm: 1.9,
+      deliveryTime: "12 - 18 phút",
+      rating: 4.85,
+      reviewsCount: 175,
+      openHours: "05:30 - 18:00",
+      totalProducts: 20,
+      isVerified: true,
+      categoryName: "Điểm tâm sáng & Cà phê nóng",
+      avatar: "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.8,
+    reviewsCount: 110,
+    sold: 340,
+    stock: 50,
+    description: "Vỏ bánh trắng mịn xốp mềm ngòn ngọt, nhân thịt nạc vai xá xíu đậm đà, mộc nhĩ nấm hương cùng nguyên 1 quả trứng muối bùi bùi béo ngậy.",
+    highlights: ["Hấp nóng trực tiếp trong tủ giữ nhiệt", "Nhân đầy đặn không ngấy mỡ", "Ăn sáng vừa nhanh gọn vừa chắc dạ"],
+    specs: {
+      origin: "Cầu Giấy, Hà Nội",
+      brand: "Tiệm Bánh Mì Zone",
+      weight: "Cái 180g",
+      shelfLife: "Trong ngày",
+      storage: "Ăn nóng",
+      packingStandard: "Túi giấy giữ nhiệt lót lá chuối"
+    },
+    nutrition: {
+      servingSize: "1 cái",
+      calories: "320 kcal",
+      protein: "14 g",
+      fat: "10 g",
+      carbs: "44 g",
+      minerals: "Chất đạm, Canxi"
+    },
+    cookingTips: ["Dùng ngay khi bánh còn bốc khói ngun ngút."],
+    reviews: []
+  },
+
+  // ==========================================
+  // GIAN HÀNG 7: Hợp Tác Xã Đặc Sản Vùng Cao Tây Bắc
+  // ==========================================
+  {
+    id: "p25",
+    name: "Mật Ong Rừng Hoa Cà Phê Gia Lai Nguyên Chất 100%",
+    category: "food",
+    categoryName: "Đặc sản vùng cao",
+    price: 135000,
+    oldPrice: 165000,
+    discountBadge: "-18%",
+    unit: "Chai 500ml",
+    image: "https://images.unsplash.com/photo-1587049352851-8d4e89133924?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1587049352851-8d4e89133924?auto=format&fit=crop&w=800&q=80"],
+    badge: "OCOP 4 Sao",
+    certification: {
+      type: "OCOP 4 Sao",
+      certNo: "OCOP-GL-2026-88",
+      issuedBy: "UBND Tỉnh Gia Lai",
+      issuedDate: "18/01/2026",
+      expiryDate: "18/01/2029"
+    },
+    store: {
+      id: "store_dac_san_tay_bac",
+      name: "Hợp Tác Xã Đặc Sản Vùng Cao Tây Bắc",
+      address: "88 Lê Đức Thọ, Mỹ Đình 2, Nam Từ Liêm, Hà Nội",
+      distanceKm: 4.3,
+      deliveryTime: "30 - 40 phút",
+      rating: 4.9,
+      reviewsCount: 148,
+      openHours: "07:30 - 21:30",
+      totalProducts: 32,
+      isVerified: true,
+      categoryName: "Đặc sản rừng & Nhu yếu phẩm",
+      avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 135,
+    sold: 375,
+    stock: 70,
+    description: "Mật ong hoa cà phê nguyên chất mùa hoa nở rộ đất Tây Nguyên. Màu vàng cánh gián óng ả, vị ngọt sắc thanh dịu không gắt cổ, đặc quánh thơm lừng.",
+    highlights: ["Không pha đường, không đun nấu cô đặc", "Chai thủy tinh nút bần cao cấp", "Bảo quản tự nhiên không biến đổi chất"],
+    specs: {
+      origin: "Ia Grai, Gia Lai",
+      brand: "HTX Tây Bắc Farm",
+      weight: "Chai thủy tinh 500ml",
+      shelfLife: "2 năm",
+      storage: "Để nơi thoáng mát, không để tủ lạnh",
+      packingStandard: "Chai thủy tinh niêm phong nắp thiếc"
+    },
+    nutrition: {
+      servingSize: "1 muỗng (20g)",
+      calories: "64 kcal",
+      protein: "0.1 g",
+      fat: "0 g",
+      carbs: "17.3 g",
+      minerals: "Chất kháng khuẩn tự nhiên, Enzyme"
+    },
+    cookingTips: ["Pha với nước ấm và chanh tươi uống buổi sáng thanh lọc đường ruột."],
+    reviews: []
+  },
+  {
+    id: "p26",
+    name: "Gạo ST25 Ông Cua Túi 5kg Chuẩn Vị Thơm Dẻo",
+    category: "food",
+    categoryName: "Nhu yếu phẩm",
+    price: 175000,
+    oldPrice: 210000,
+    discountBadge: "-17%",
+    unit: "Túi 5kg",
+    image: "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=800&q=80"],
+    badge: "Gạo ngon nhất thế giới",
+    store: {
+      id: "store_dac_san_tay_bac",
+      name: "Hợp Tác Xã Đặc Sản Vùng Cao Tây Bắc",
+      address: "88 Lê Đức Thọ, Mỹ Đình 2, Nam Từ Liêm, Hà Nội",
+      distanceKm: 4.3,
+      deliveryTime: "30 - 40 phút",
+      rating: 4.9,
+      reviewsCount: 148,
+      openHours: "07:30 - 21:30",
+      totalProducts: 32,
+      isVerified: true,
+      categoryName: "Đặc sản rừng & Nhu yếu phẩm",
+      avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 5.0,
+    reviewsCount: 290,
+    sold: 820,
+    stock: 110,
+    description: "Gạo ST25 lúa tôm Sóc Trăng chuẩn tem chống giả. Hạt gạo dài trắng trong, khi nấu tỏa hương lá dứa thơm nức, cơm dẻo dai ngọt hạt dù để nguội.",
+    highlights: ["Gạo đạt danh hiệu Gạo ngon nhất thế giới", "Canh tác luân canh lúa - tôm sạch an toàn", "Bao bì chống ẩm giữ trọn hương vị"],
+    specs: {
+      origin: "Mỹ Xuyên, Sóc Trăng",
+      brand: "Gạo Ông Cua Chính Hãng",
+      weight: "Túi 5kg",
+      shelfLife: "12 tháng",
+      storage: "Bảo quản nơi khô ráo, tránh ẩm ướt",
+      packingStandard: "Túi màng nhôm bảo quản có khóa zip"
+    },
+    nutrition: {
+      servingSize: "100g gạo",
+      calories: "349 kcal",
+      protein: "8.0 g",
+      fat: "0.8 g",
+      carbs: "77.5 g",
+      minerals: "Chỉ số đường huyết GI thấp"
+    },
+    cookingTips: ["Đong tỉ lệ 1 bát gạo : 1 bát nước, không cần ngâm gạo trước khi nấu."],
+    reviews: []
+  },
+  {
+    id: "p27",
+    name: "Nấm Hương Rừng Sa Pa Thơm Nức Phơi Tự Nhiên",
+    category: "food",
+    categoryName: "Nông sản khô",
+    price: 85000,
+    oldPrice: 110000,
+    discountBadge: "-23%",
+    unit: "Gói 200g",
+    image: "https://images.unsplash.com/photo-1511690656952-34342bb7c2f2?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1511690656952-34342bb7c2f2?auto=format&fit=crop&w=800&q=80"],
+    badge: "Nấm hương chân nhỏ",
+    store: {
+      id: "store_dac_san_tay_bac",
+      name: "Hợp Tác Xã Đặc Sản Vùng Cao Tây Bắc",
+      address: "88 Lê Đức Thọ, Mỹ Đình 2, Nam Từ Liêm, Hà Nội",
+      distanceKm: 4.3,
+      deliveryTime: "30 - 40 phút",
+      rating: 4.9,
+      reviewsCount: 148,
+      openHours: "07:30 - 21:30",
+      totalProducts: 32,
+      isVerified: true,
+      categoryName: "Đặc sản rừng & Nhu yếu phẩm",
+      avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.8,
+    reviewsCount: 82,
+    sold: 165,
+    stock: 45,
+    description: "Nấm hương rừng mọc tự nhiên trên thân cây gỗ mục vùng cao Sa Pa. Cánh nấm dày, viền uốn cong, khi ngâm nở thơm ngát đặc trưng không nấm trồng nào sánh được.",
+    highlights: ["Phơi nắng tự nhiên trên sườn đồi Hoàng Liên", "Thịt nấm giòn ngọt thơm nức mũi", "Nấu canh măng, xào gà hay nhồi thịt đều đỉnh"],
+    specs: {
+      origin: "Sa Pa, Lào Cai",
+      brand: "HTX Tây Bắc Farm",
+      weight: "Gói 200g",
+      shelfLife: "18 tháng",
+      storage: "Nơi khô ráo",
+      packingStandard: "Túi zip tráng bạc chống ẩm"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "296 kcal",
+      protein: "14.5 g",
+      fat: "1.2 g",
+      carbs: "65.0 g",
+      minerals: "Lentinan, Vitamin D tự nhiên"
+    },
+    cookingTips: ["Ngâm nước ấm 20 phút, giữ lại nước ngâm nấm để nấu canh ngọt lịm."],
+    reviews: []
+  },
+  {
+    id: "p28",
+    name: "Thịt Trâu Gác Bếp Sơn La Chuẩn Vị Hạt Dổi Mắc Khén",
+    category: "food",
+    categoryName: "Đặc sản vùng cao",
+    price: 240000,
+    oldPrice: 290000,
+    discountBadge: "-17%",
+    unit: "Gói 300g",
+    image: "https://images.unsplash.com/photo-1529692236671-f1f6cf9683ba?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1529692236671-f1f6cf9683ba?auto=format&fit=crop&w=800&q=80"],
+    badge: "Đặc sản Tây Bắc",
+    store: {
+      id: "store_dac_san_tay_bac",
+      name: "Hợp Tác Xã Đặc Sản Vùng Cao Tây Bắc",
+      address: "88 Lê Đức Thọ, Mỹ Đình 2, Nam Từ Liêm, Hà Nội",
+      distanceKm: 4.3,
+      deliveryTime: "30 - 40 phút",
+      rating: 4.9,
+      reviewsCount: 148,
+      openHours: "07:30 - 21:30",
+      totalProducts: 32,
+      isVerified: true,
+      categoryName: "Đặc sản rừng & Nhu yếu phẩm",
+      avatar: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 145,
+    sold: 290,
+    stock: 35,
+    description: "Thịt bắp trâu tươi ướp mắc khén, hạt dổi rừng, ớt bột và hun khói than củi nhãn theo bí quyết người Thái đen. Từng thớ thịt đỏ hồng đượm khói, xé sợi chấm chẩm chéo cực đã.",
+    highlights: ["100% Thịt bắp trâu tươi tươi ngon", "Hun khói củi nhãn truyền thống", "Tặng kèm hũ chẩm chéo ướt Tây Bắc"],
+    specs: {
+      origin: "Mộc Châu, Sơn La",
+      brand: "HTX Tây Bắc Farm",
+      weight: "Gói 300g hút chân không",
+      shelfLife: "6 tháng ngăn đông",
+      storage: "Ngăn đá tủ lạnh",
+      packingStandard: "Hút chân không túi đôi"
+    },
+    nutrition: {
+      servingSize: "100g",
+      calories: "240 kcal",
+      protein: "48 g",
+      fat: "4.5 g",
+      carbs: "2 g",
+      minerals: "Giàu đạm, ít chất béo"
+    },
+    cookingTips: ["Quay lò vi sóng 30 giây hoặc hấp cách thủy 5 phút cho mềm rồi đập dập xé sợi."],
+    reviews: []
+  },
+
+  // ==========================================
+  // GIAN HÀNG 8: Tổng Kho Đồ Gia Dụng & Tiêu Dùng Mỹ Đình
+  // ==========================================
+  {
+    id: "p29",
+    name: "Bộ Nồi Inox 3 Đáy Cao Cấp Nấu Mọi Loại Bếp Từ",
     category: "household",
     categoryName: "Đồ gia dụng",
     price: 420000,
@@ -449,650 +1686,201 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
       "https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&w=800&q=80",
       "https://images.unsplash.com/photo-1585670270608-b404fb8802a6?auto=format&fit=crop&w=800&q=80"
     ],
+    badge: "Bảo hành 5 năm",
     store: {
-      id: "store_tong_kho_gia_dung_my_dinh",
-      name: "Tổng Kho Gia Dụng Mỹ Đình",
-      address: "88 Lê Đức Thọ, Nam Từ Liêm, Hà Nội",
-      distanceKm: 5.4,
-      deliveryTime: "30 - 35 phút",
-      rating: 4.7,
-      totalProducts: 520,
-      isVerified: true
+      id: "store_tong_kho_my_dinh",
+      name: "Tổng Kho Đồ Gia Dụng & Tiêu Dùng Mỹ Đình",
+      address: "102 Hàm Nghi, Mỹ Đình 1, Nam Từ Liêm, Hà Nội",
+      distanceKm: 5.2,
+      deliveryTime: "35 - 45 phút",
+      rating: 4.75,
+      reviewsCount: 215,
+      openHours: "08:00 - 22:30",
+      totalProducts: 50,
+      isVerified: true,
+      categoryName: "Đồ gia dụng & Hóa phẩm hữu cơ",
+      avatar: "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1584992236310-6edddc08acff?auto=format&fit=crop&w=800&q=80"
     },
-    rating: 4.7,
-    reviewsCount: 42,
-    sold: 65,
+    rating: 4.8,
+    reviewsCount: 118,
+    sold: 190,
     stock: 25,
-    description:
-      "Bộ 3 nồi Inox 304 cao cấp cấu tạo 3 đáy dập nguyên khối giúp truyền nhiệt nhanh, tỏa nhiệt đều và chống khét dính đáy nồi. Thích hợp cho mọi loại bếp: bếp từ, hồng ngoại, bếp gas.",
-    highlights: [
-      "Chất liệu Inox 304 chống gỉ sét tuyệt đối",
-      "Vung kính cường lực viền inox chịu nhiệt chống va đập",
-      "Quai tán đinh chịu lực chắc chắn, cách nhiệt an toàn"
-    ],
+    description: "Bộ 3 nồi Inox SUS304 chuẩn an toàn sức khỏe kích thước 16-20-24cm. Đáy 3 lớp truyền nhiệt nhanh, tỏa nhiệt đều, chống cháy khét thức ăn trên bếp từ và bếp gas.",
+    highlights: ["Chất liệu Inox 304 sáng bóng không gỉ sét", "Đáy từ bắt nhiệt siêu nhạy", "Vung kính cường lực viền inox sang trọng"],
     specs: {
-      origin: "Việt Nam",
-      brand: "Inox Mart Cook",
-      weight: "3.2 kg (Kích thước: 16cm, 20cm, 24cm)",
-      shelfLife: "Bảo hành 5 năm",
-      storage: "Rửa sạch lau khô sau khi sử dụng",
+      origin: "Việt Nam (Tiêu chuẩn xuất khẩu Châu Âu)",
+      brand: "Mỹ Đình Smart Home",
+      weight: "Bộ 3 nồi kèm vung (3.8kg)",
+      shelfLife: "Độ bền trên 10 năm",
+      storage: "Vệ sinh lau khô sau khi sử dụng",
       packingStandard: "Thùng carton chèn xốp định hình"
     },
     nutrition: {
       servingSize: "Không áp dụng",
-      calories: "-",
-      protein: "-",
-      fat: "-",
-      carbs: "-",
-      minerals: "-"
+      calories: "0",
+      protein: "0",
+      fat: "0",
+      carbs: "0",
+      minerals: "Chứng nhận ATTP LFGB Đức"
     },
-    cookingTips: [
-      "Không đun nồi không có thực phẩm trên bếp ở nhiệt độ cao.",
-      "Sử dụng miếng rửa bát mềm để giữ độ sáng bóng của inox lâu dài."
-    ],
+    cookingTips: ["Dùng giẻ mềm lau rửa để giữ độ bóng loáng như gương."],
     reviews: []
   },
   {
-    id: "p6",
-    name: "Gạo ST25 Ông Cua Túi 5kg Chuẩn Vị Thơm Dẻo",
-    category: "food",
-    categoryName: "Nhu yếu phẩm",
-    price: 190000,
-    oldPrice: 225000,
-    discountBadge: "-15%",
-    unit: "Túi 5kg",
-    image: "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=800&q=80",
-    gallery: [
-      "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1536304993881-ff6e9eefa2a6?auto=format&fit=crop&w=800&q=80"
-    ],
-    badge: "Gạo ngon thế giới",
-    certification: {
-      type: "OCOP 4 Sao",
-      certNo: "OCOP-ST-2025-001",
-      issuedBy: "UBND Tỉnh Sóc Trăng",
-      issuedDate: "12/04/2025",
-      expiryDate: "12/04/2028"
-    },
-    store: {
-      id: "store_zonemart_cau_giay",
-      name: "ZoneMart Cầu Giấy",
-      address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội",
-      distanceKm: 1.2,
-      deliveryTime: "15 - 20 phút",
-      rating: 5.0,
-      totalProducts: 240,
-      isVerified: true
-    },
-    rating: 5.0,
-    reviewsCount: 64,
-    sold: 96,
-    stock: 80,
-    description:
-      "Gạo ST25 chính hãng kỹ sư Hồ Quang Cua, đoạt giải Gạo Ngon Nhất Thế Giới. Hạt gạo thon dài, trắng trong, khi nấu chín hạt cơm mềm dẻo, thơm ngào ngạt mùi lá dứa tự nhiên, đặc biệt cơm để nguội vẫn giữ nguyên độ dẻo ngon.",
-    highlights: [
-      "Gạo ST25 lúa tôm chính gốc Sóc Trăng",
-      "Canh tác hữu cơ trong mô hình ruộng tôm sạch, không hóa chất độc hại",
-      "Hạt cơm mềm dai, thơm hương cốm và lá dứa tinh tế"
-    ],
-    specs: {
-      origin: "Sóc Trăng, Đồng Bằng Sông Cửu Long",
-      brand: "Gạo Ông Cua (DNTN Hồ Quang Trí)",
-      weight: "5 kg",
-      shelfLife: "12 tháng kể từ ngày sản xuất",
-      storage: "Để nơi khô ráo, thoáng mát, đậy kín nắp thùng gạo",
-      packingStandard: "Túi màng nhôm PE có van thở chống mối mọt"
-    },
-    nutrition: {
-      servingSize: "100g gạo trắng nấu chín",
-      calories: "130 kcal",
-      protein: "2.7 g",
-      fat: "0.3 g",
-      carbs: "28 g",
-      minerals: "Sắt, Magie, Vitamin B1"
-    },
-    cookingTips: [
-      "Đong tỷ lệ 1 bát gạo : 1 đến 1.1 bát nước. Không cần vo gạo quá kỹ để tránh mất lớp cám dưỡng chất.",
-      "Sau khi nồi cơm bật nút chín, ủ hơi thêm 10-15 phút để cơm nở đều và thơm ngon nhất."
-    ],
-    reviews: [
-      {
-        id: "rv-g1",
-        author: "Bác Hùng - Cầu Giấy",
-        avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=120&q=80",
-        rating: 5,
-        date: "4 ngày trước",
-        comment: "Gạo chuẩn tem chống giả Ông Cua, nấu lên thơm cả gian bếp. Cả nhà tôi ăn quen gạo này mấy năm nay rồi, đặt ZoneMart giao tận cửa chung cư đỡ phải xách nặng.",
-        helpfulCount: 15,
-        verified: true
-      }
-    ]
-  },
-  {
-    id: "p7",
-    name: "Rau Xà Lách Xoăn Thủy Canh Hữu Cơ Đà Lạt",
-    category: "veggie",
-    categoryName: "Rau củ sạch",
-    price: 25000,
-    oldPrice: 32000,
-    discountBadge: "-22%",
-    unit: "Gói 300g",
-    image: "https://images.unsplash.com/photo-1550411294-b3b1bf5bece1?auto=format&fit=crop&w=800&q=80",
-    gallery: [
-      "https://images.unsplash.com/photo-1550411294-b3b1bf5bece1?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?auto=format&fit=crop&w=800&q=80"
-    ],
-    certification: {
-      type: "VietGAP",
-      certNo: "VG-DL-8821",
-      issuedBy: "Chi Cục Trồng Trọt & BVTV Lâm Đồng",
-      issuedDate: "10/01/2026",
-      expiryDate: "10/01/2027"
-    },
-    store: {
-      id: "store_sieu_thi_trai_cay_xanh",
-      name: "Siêu Thị Trái Cây Xanh",
-      address: "112 Trần Thái Tông, Cầu Giấy, Hà Nội",
-      distanceKm: 2.5,
-      deliveryTime: "20 - 25 phút",
-      rating: 4.9,
-      totalProducts: 180,
-      isVerified: true
-    },
-    rating: 4.9,
-    reviewsCount: 58,
-    sold: 110,
-    stock: 55,
-    description:
-      "Rau xà lách xoăn xanh trồng thủy canh hồi lưu trong nhà màng tự động tại Đà Lạt. Từng bẹ rau giòn tan mọng nước, không dư lượng thuốc bảo vệ thực vật, vị ngọt thanh không đắng, cực kỳ lý tưởng để làm salad hoặc cuốn thịt nướng.",
-    highlights: [
-      "Trồng thủy canh nước sạch công nghệ Israel",
-      "Lá xoăn bồng bềnh, giữ nguyên rễ tươi khi giao",
-      "Rau sạch ăn liền sau khi rửa nhẹ với nước"
-    ],
-    specs: {
-      origin: "Đà Lạt, Lâm Đồng",
-      brand: "GreenHydro Farm",
-      weight: "300g (Gói 1-2 cây nguyên rễ)",
-      shelfLife: "5-7 ngày trong ngăn mát tủ lạnh",
-      storage: "Bọc giấy báo hoặc màng bọc thực phẩm cất ngăn mát",
-      packingStandard: "Túi nilon đục lỗ thoáng khí nguyên bầu rễ"
-    },
-    nutrition: {
-      servingSize: "100g rau xà lách tươi",
-      calories: "15 kcal",
-      protein: "1.4 g",
-      fat: "0.2 g",
-      carbs: "2.9 g",
-      minerals: "Chất xơ, Vitamin A, Vitamin K, Folate"
-    },
-    cookingTips: [
-      "Ngâm nước đá lạnh 5 phút trước khi trộn salad để lá rau giòn rụm tối đa."
-    ],
-    reviews: []
-  },
-  {
-    id: "p8",
-    name: "Cá Hồi Na Uy Tươi Phi Lê Cắt Miếng",
-    category: "food",
-    categoryName: "Thực phẩm tươi",
-    price: 245000,
-    oldPrice: 280000,
-    discountBadge: "-12%",
-    unit: "Khay 300g",
-    image: "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=800&q=80",
-    gallery: [
-      "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=800&q=80"
-    ],
-    badge: "Tươi sống bảo quản lạnh",
-    certification: {
-      type: "ATTP Quốc Gia",
-      certNo: "GLOBALG.A.P-NORWAY-449",
-      issuedBy: "Cơ Quan An Toàn Thực Phẩm Na Uy (Mattilsynet)",
-      issuedDate: "01/01/2026",
-      expiryDate: "01/01/2027"
-    },
-    store: {
-      id: "store_zonemart_cau_giay",
-      name: "ZoneMart Cầu Giấy",
-      address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội",
-      distanceKm: 1.2,
-      deliveryTime: "15 - 20 phút",
-      rating: 5.0,
-      totalProducts: 240,
-      isVerified: true
-    },
-    rating: 5.0,
-    reviewsCount: 76,
-    sold: 88,
-    stock: 30,
-    description:
-      "Cá hồi Đại Tây Dương nhập khẩu tươi nguyên con bằng đường hàng không từ Na Uy, phi lê lọc xương tỉ mỉ trong phòng lạnh vô trùng. Thớ thịt màu cam tươi sáng, vân mỡ trắng béo ngậy, thích hợp ăn sống chuẩn sashimi hoặc áp chảo sốt bơ tỏi.",
-    highlights: [
-      "Cá hồi tươi bay (Fresh Air Salmon) từ Na Uy, không đông đá",
-      "Đầy ắp Omega-3, DHA, EPA tốt cho tim mạch và não bộ",
-      "Lọc sạch xương dăm 100%, an toàn cho trẻ nhỏ"
-    ],
-    specs: {
-      origin: "Vùng biển lạnh Na Uy (Leroy / SalMar)",
-      brand: "Nordic Fresh Zone",
-      weight: "300g (Cắt miếng phi lê thân dày)",
-      shelfLife: "3 ngày trong ngăn mát (0-2°C), 3 tháng trong ngăn đông",
-      storage: "Bảo quản ngăn mát lạnh nhất hoặc ướp đá vụn",
-      packingStandard: "Khay xốp thực phẩm lót giấy thấm hút chân không"
-    },
-    nutrition: {
-      servingSize: "100g cá hồi phi lê",
-      calories: "208 kcal",
-      protein: "20.4 g",
-      fat: "13.4 g (giàu Omega-3 2.5g)",
-      carbs: "0 g",
-      minerals: "Vitamin D, Vitamin B12, Selen, Kali"
-    },
-    cookingTips: [
-      "Áp chảo mặt da cá trước lửa vừa 4 phút để da giòn rụm, lật mặt thịt 2 phút kèm bơ và tỏi đập dập."
-    ],
-    reviews: []
-  },
-  {
-    id: "p9",
-    name: "Cà Chua Bi Socola Ngọt Đậm Vị VietGAP",
-    category: "veggie",
-    categoryName: "Rau củ sạch",
-    price: 35000,
-    oldPrice: 45000,
-    discountBadge: "-22%",
-    unit: "Hộp 500g",
-    image: "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=800&q=80",
-    gallery: [
-      "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=800&q=80"
-    ],
-    certification: {
-      type: "VietGAP",
-      certNo: "VG-DL-2026-901",
-      issuedBy: "Sở Nông Nghiệp Lâm Đồng",
-      issuedDate: "12/01/2026",
-      expiryDate: "12/01/2027"
-    },
-    store: {
-      id: "store_sieu_thi_trai_cay_xanh",
-      name: "Siêu Thị Trái Cây Xanh",
-      address: "112 Trần Thái Tông, Cầu Giấy, Hà Nội",
-      distanceKm: 2.5,
-      deliveryTime: "20 - 25 phút",
-      rating: 4.8,
-      totalProducts: 180,
-      isVerified: true
-    },
-    rating: 4.8,
-    reviewsCount: 90,
-    sold: 165,
-    stock: 65,
-    description:
-      "Cà chua bi socola giống Hà Lan trồng tại Đà Lạt. Vỏ ngoài màu nâu tím đặc trưng, giòn bụp khi cắn, vị ngọt đậm đà xen chút chua nhẹ tinh tế, chứa hàm lượng chất chống oxy hóa Anthocyanin cao gấp 3 lần cà chua thường.",
-    highlights: [
-      "Giống hạt F1 Hà Lan cho quả tròn mọng, ngọt đậm vị",
-      "Giàu lycopene và anthocyanin chống lão hóa",
-      "Ăn trực tiếp như trái cây tráng miệng thơm ngon"
-    ],
-    specs: {
-      origin: "Đơn Dương, Lâm Đồng",
-      brand: "Eco Berry Farm",
-      weight: "500g",
-      shelfLife: "7-10 ngày ở nhiệt độ phòng hoặc ngăn mát",
-      storage: "Bảo quản nơi thoáng mát",
-      packingStandard: "Hộp nhựa trong suốt có lỗ thông gió"
-    },
-    nutrition: {
-      servingSize: "100g cà chua bi",
-      calories: "18 kcal",
-      protein: "0.9 g",
-      fat: "0.2 g",
-      carbs: "3.9 g",
-      minerals: "Lycopene, Vitamin C, Kali"
-    },
-    cookingTips: [
-      "Rửa sạch để ráo, ăn kèm phô mai mozzarella tươi và sốt balsamic chuẩn vị Ý."
-    ],
-    reviews: []
-  },
-  {
-    id: "p10",
-    name: "Cơm Tấm Sườn Bì Chả Đặc Biệt Nóng Hổi",
-    category: "fastfood",
-    categoryName: "Món ăn nóng",
-    price: 52000,
-    oldPrice: 60000,
-    discountBadge: "-13%",
-    unit: "Hộp 1 suất",
-    image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80",
-    gallery: [
-      "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80"
-    ],
-    badge: "Kèm canh & nước mắm",
-    store: {
-      id: "store_bep_com_nieu_com_tam",
-      name: "Bếp Cơm Niêu & Cơm Tấm",
-      address: "56 Nguyễn Chánh, Cầu Giấy, Hà Nội",
-      distanceKm: 3.4,
-      deliveryTime: "20 - 25 phút",
-      rating: 4.9,
-      totalProducts: 60,
-      isVerified: true
-    },
-    rating: 4.9,
-    reviewsCount: 142,
-    sold: 310,
-    stock: 40,
-    description:
-      "Suất cơm tấm hạt tấm nhuyễn thơm dẻo, miếng sườn cốt lết nướng mật ong than hoa đậm đà thơm nức mũi, chả trứng hấp béo ngậy, bì heo trộn thính gạo rang giòn dai, mỡ hành óng ả và đồ chua củ cải cà rốt giòn ngọt.",
-    highlights: [
-      "Sườn nướng than hoa vàng ươm, đẫm sốt mật ong bí truyền",
-      "Nước mắm tỏi ớt kẹo sệt chua ngọt chuẩn vị Sài Gòn",
-      "Kèm canh rong biển thịt băm nóng hổi"
-    ],
-    specs: {
-      origin: "Chế biến tươi tại Bếp Cơm Tấm ZoneMart",
-      brand: "Bếp Cơm Tấm",
-      weight: "1 Suất đầy đặn (550g)",
-      shelfLife: "Dùng ngon nhất trong vòng 1 giờ",
-      storage: "Ăn ngay khi còn nóng",
-      packingStandard: "Hộp bã mía chia ngăn giữ nhiệt cao cấp"
-    },
-    nutrition: {
-      servingSize: "1 suất cơm tấm",
-      calories: "680 kcal",
-      protein: "32 g",
-      fat: "24 g",
-      carbs: "82 g",
-      minerals: "Đầy đủ dưỡng chất cho bữa chính"
-    },
-    cookingTips: [
-      "Rưới nước mắm tỏi ớt đều lên cơm và sườn trước khi thưởng thức."
-    ],
-    reviews: []
-  },
-  {
-    id: "p11",
-    name: "Bơ Sáp 034 Đặc Sản Lâm Đồng Dẻo Béo",
-    category: "beverage",
-    categoryName: "Trái cây tươi",
-    price: 65000,
-    oldPrice: 85000,
-    discountBadge: "-23%",
-    unit: "Kg",
-    image: "https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&w=800&q=80",
-    gallery: [
-      "https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&w=800&q=80"
-    ],
-    certification: {
-      type: "VietGAP",
-      certNo: "VG-LD-2026-034",
-      issuedBy: "Sở Nông Nghiệp Lâm Đồng",
-      issuedDate: "02/01/2026",
-      expiryDate: "02/01/2027"
-    },
-    store: {
-      id: "store_sieu_thi_trai_cay_xanh",
-      name: "Siêu Thị Trái Cây Xanh",
-      address: "112 Trần Thái Tông, Cầu Giấy, Hà Nội",
-      distanceKm: 2.5,
-      deliveryTime: "20 - 25 phút",
-      rating: 4.9,
-      totalProducts: 180,
-      isVerified: true
-    },
-    rating: 4.9,
-    reviewsCount: 67,
-    sold: 130,
-    stock: 50,
-    description:
-      "Bơ 034 Bảo Lộc chính gốc dáng thon dài từ 25-35cm, hạt tiêu nhỏ xíu, cơm bơ dày vàng ươm dẻo quánh và béo ngậy. Bơ được hái già cuống, tự chín tự nhiên trong 2-3 ngày, không ngâm thuốc kích chín.",
-    highlights: [
-      "Cơm vàng béo ngậy như sáp, hạt siêu nhỏ",
-      "Trái dài đều đặn 2-3 quả/kg",
-      "Đổi trả 1-1 nếu bơ bị sượng hoặc đen chỉ xơ"
-    ],
-    specs: {
-      origin: "Bảo Lộc, Lâm Đồng",
-      brand: "Đặc Sản Bơ Tây Nguyên",
-      weight: "1 kg (2-3 trái)",
-      shelfLife: "Chín trong 2-4 ngày, sau khi chín để ngăn mát 3-5 ngày",
-      storage: "Để nơi thoáng mát khi chưa chín, không ủ trong túi nilon kín",
-      packingStandard: "Lưới xốp bọc từng quả chống thâm dập"
-    },
-    nutrition: {
-      servingSize: "100g thịt bơ tươi",
-      calories: "160 kcal",
-      protein: "2 g",
-      fat: "14.7 g (axit béo không bão hòa đơn tốt cho tim mạch)",
-      carbs: "8.5 g",
-      minerals: "Kali (nhiều hơn chuối), Vitamin E, Lutein"
-    },
-    cookingTips: [
-      "Cắt lát ăn cùng bánh mì nướng trứng ốp la hoặc dầm cùng sữa đặc và đá xay."
-    ],
-    reviews: []
-  },
-  {
-    id: "p12",
-    name: "Nước Rửa Bát Hữu Cơ Quế & Chanh Gừng 800ml",
+    id: "p30",
+    name: "Nước Rửa Bát Hữu Cơ Tinh Dầu Quế & Chanh Gừng",
     category: "household",
     categoryName: "Đồ dùng gia đình",
     price: 48000,
     oldPrice: 60000,
     discountBadge: "-20%",
     unit: "Chai 800ml",
-    image: "https://images.unsplash.com/photo-1585670270608-b404fb8802a6?auto=format&fit=crop&w=800&q=80",
-    gallery: [
-      "https://images.unsplash.com/photo-1585670270608-b404fb8802a6?auto=format&fit=crop&w=800&q=80"
-    ],
-    certification: {
-      type: "Organic",
-      certNo: "ECOCERT-VN-2025",
-      issuedBy: "Tổ Chức Chứng Nhận Hữu Cơ ECOCERT",
-      issuedDate: "15/05/2025",
-      expiryDate: "15/05/2027"
-    },
+    image: "https://images.unsplash.com/photo-1585421514738-01798e348b17?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1585421514738-01798e348b17?auto=format&fit=crop&w=800&q=80"],
+    badge: "Bảo vệ da tay",
     store: {
-      id: "store_tong_kho_gia_dung_my_dinh",
-      name: "Tổng Kho Gia Dụng Mỹ Đình",
-      address: "88 Lê Đức Thọ, Nam Từ Liêm, Hà Nội",
-      distanceKm: 5.4,
-      deliveryTime: "30 - 35 phút",
-      rating: 4.8,
-      totalProducts: 520,
-      isVerified: true
+      id: "store_tong_kho_my_dinh",
+      name: "Tổng Kho Đồ Gia Dụng & Tiêu Dùng Mỹ Đình",
+      address: "102 Hàm Nghi, Mỹ Đình 1, Nam Từ Liêm, Hà Nội",
+      distanceKm: 5.2,
+      deliveryTime: "35 - 45 phút",
+      rating: 4.75,
+      reviewsCount: 215,
+      openHours: "08:00 - 22:30",
+      totalProducts: 50,
+      isVerified: true,
+      categoryName: "Đồ gia dụng & Hóa phẩm hữu cơ",
+      avatar: "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1584992236310-6edddc08acff?auto=format&fit=crop&w=800&q=80"
     },
     rating: 4.8,
-    reviewsCount: 35,
-    sold: 95,
-    stock: 120,
-    description:
-      "Nước rửa chén hữu cơ chiết xuất từ tinh dầu quế tự nhiên, enzym bồ hòn và chanh gừng. Làm sạch dầu mỡ nhanh chóng, khử sạch mùi tanh tanh trên bát đĩa mà không để lại mùi hóa chất, hoàn toàn êm dịu không khô hại da tay.",
-    highlights: [
-      "99% Thành phần có nguồn gốc thực vật sinh học",
-      "Không hóa chất tạo bọt công nghiệp SLS/SLES, không Paraben",
-      "An toàn rửa bình sữa và đồ ăn dặm cho trẻ em"
-    ],
+    reviewsCount: 165,
+    sold: 430,
+    stock: 85,
+    description: "Nước rửa chén chiết xuất từ enzyme bồ hòn lên men tự nhiên và tinh dầu quế ấm nồng. Đánh bay dầu mỡ cứng đầu, khử tanh triệt để và an toàn cho da tay nhạy cảm.",
+    highlights: ["Không hóa chất độc hại, bọt xà phòng sinh học", "Hương quế chanh dễ chịu khử sạch mùi tanh", "Dùng được cho cả đồ ăn dặm của em bé"],
     specs: {
-      origin: "Việt Nam",
-      brand: "EcoZone Organic Home",
-      weight: "800ml",
-      shelfLife: "24 tháng kể từ NSX",
-      storage: "Để nơi khô ráo, tránh ánh nắng trực tiếp",
-      packingStandard: "Chai nhựa HDPE tái sinh có vòi bơm tiện lợi"
+      origin: "Hà Nội, Việt Nam",
+      brand: "EcoZone Organic",
+      weight: "Chai 800ml vòi nhấn tiện lợi",
+      shelfLife: "24 tháng",
+      storage: "Tránh ánh nắng trực tiếp",
+      packingStandard: "Chai nhựa tái chế thân thiện môi trường"
     },
     nutrition: {
       servingSize: "Không áp dụng",
-      calories: "-",
-      protein: "-",
-      fat: "-",
-      carbs: "-",
-      minerals: "-"
+      calories: "0",
+      protein: "0",
+      fat: "0",
+      carbs: "0",
+      minerals: "Đạt chuẩn sinh học Ecocert"
     },
-    cookingTips: [
-      "Bơm 1 lượng nhỏ lên miếng rửa bát ẩm để tạo bọt enzym tự nhiên."
-    ],
+    cookingTips: ["Nhấn 1 giọt ra miếng bọt biển ướt tạo bọt xốp nhẹ nhàng."],
     reviews: []
   },
   {
-    id: "p13",
-    name: "Thịt Gà Ta Thả Vườn Làm Sạch Nguyên Con",
-    category: "food",
-    categoryName: "Thực phẩm tươi",
-    price: 165000,
-    oldPrice: 195000,
-    discountBadge: "-15%",
-    unit: "Con 1.3 - 1.5kg",
-    image: "https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&w=800&q=80",
-    gallery: [
-      "https://images.unsplash.com/photo-1587593810167-a84920ea0781?auto=format&fit=crop&w=800&q=80"
-    ],
-    badge: "Gà ta thả đồi",
-    certification: {
-      type: "ATTP Quốc Gia",
-      certNo: "VSATTP-HN-2026",
-      issuedBy: "Chi Cục Thú Y Hà Nội",
-      issuedDate: "01/01/2026",
-      expiryDate: "01/01/2027"
-    },
+    id: "p31",
+    name: "Chảo Chống Dính Vân Đá Ceramic Đáy Từ Siêu Bền",
+    category: "household",
+    categoryName: "Đồ gia dụng",
+    price: 185000,
+    oldPrice: 230000,
+    discountBadge: "-20%",
+    unit: "Chiếc 26cm",
+    image: "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=800&q=80"],
+    badge: "Chống dính vân đá",
     store: {
-      id: "store_zonemart_cau_giay",
-      name: "ZoneMart Cầu Giấy",
-      address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội",
-      distanceKm: 1.2,
-      deliveryTime: "15 - 20 phút",
-      rating: 5.0,
-      totalProducts: 240,
-      isVerified: true
+      id: "store_tong_kho_my_dinh",
+      name: "Tổng Kho Đồ Gia Dụng & Tiêu Dùng Mỹ Đình",
+      address: "102 Hàm Nghi, Mỹ Đình 1, Nam Từ Liêm, Hà Nội",
+      distanceKm: 5.2,
+      deliveryTime: "35 - 45 phút",
+      rating: 4.75,
+      reviewsCount: 215,
+      openHours: "08:00 - 22:30",
+      totalProducts: 50,
+      isVerified: true,
+      categoryName: "Đồ gia dụng & Hóa phẩm hữu cơ",
+      avatar: "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1584992236310-6edddc08acff?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.7,
+    reviewsCount: 94,
+    sold: 260,
+    stock: 35,
+    description: "Chảo chiên rán đường kính 26cm phủ lớp men gốm Ceramic vân đá hoa cương chống trầy xước. Chiên trứng không cần dầu mỡ, tay cầm cách nhiệt chống bỏng an toàn.",
+    highlights: ["Lớp chống dính Ceramic không chứa chì hay PFOA", "Đáy từ đúc nguyên khối chống phồng đáy", "Dễ dàng lau chùi chỉ với một chiếc khăn mềm"],
+    specs: {
+      origin: "Việt Nam",
+      brand: "Mỹ Đình Smart Home",
+      weight: "850g",
+      shelfLife: "Bảo hành 24 tháng",
+      storage: "Treo nơi khô ráo",
+      packingStandard: "Hộp giấy bảo vệ chuyên dụng"
+    },
+    nutrition: {
+      servingSize: "Không áp dụng",
+      calories: "0",
+      protein: "0",
+      fat: "0",
+      carbs: "0",
+      minerals: "Chứng chỉ FDA Hoa Kỳ"
+    },
+    cookingTips: ["Dùng thìa gỗ hoặc muôi silicon để bảo vệ lớp chống dính bền lâu."],
+    reviews: []
+  },
+  {
+    id: "p32",
+    name: "Túi Rác Tự Hủy Sinh Học Thân Thiện Môi Trường",
+    category: "household",
+    categoryName: "Đồ dùng gia đình",
+    price: 35000,
+    oldPrice: 45000,
+    discountBadge: "-22%",
+    unit: "Cuộn 3 túi",
+    image: "https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80"],
+    badge: "Bảo vệ môi trường",
+    store: {
+      id: "store_tong_kho_my_dinh",
+      name: "Tổng Kho Đồ Gia Dụng & Tiêu Dùng Mỹ Đình",
+      address: "102 Hàm Nghi, Mỹ Đình 1, Nam Từ Liêm, Hà Nội",
+      distanceKm: 5.2,
+      deliveryTime: "35 - 45 phút",
+      rating: 4.75,
+      reviewsCount: 215,
+      openHours: "08:00 - 22:30",
+      totalProducts: 50,
+      isVerified: true,
+      categoryName: "Đồ gia dụng & Hóa phẩm hữu cơ",
+      avatar: "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1584992236310-6edddc08acff?auto=format&fit=crop&w=800&q=80"
     },
     rating: 4.9,
-    reviewsCount: 52,
-    sold: 110,
-    stock: 25,
-    description: "Gà ta nuôi thả đồi tự nhiên thịt săn chắc, da giòn vàng óng, vị ngọt đậm đà. Đã được làm sạch lông mổ moi hút chân không vệ sinh an toàn thực phẩm.",
-    highlights: [
-      "Gà ta thả đồi tự nhiên thịt dai thơm ngọt",
-      "Làm sạch mổ moi đóng gói bảo quản lạnh",
-      "Giao hỏa tốc 20 phút bảo đảm tươi rói"
-    ],
+    reviewsCount: 145,
+    sold: 610,
+    stock: 120,
+    description: "Bộ 3 cuộn túi rác tự hủy sinh học làm từ tinh bột ngô thiên nhiên. Dẻo dai dai bền, đáy xếp hình sao chống rò rỉ nước rác và tự phân hủy sau 180 ngày chôn lấp.",
+    highlights: ["Chất liệu dẻo dai khó rách thủng", "Đường cắt xé tiện lợi, đáy kín nước", "Thân thiện 100% với môi trường sống"],
     specs: {
-      origin: "Ba Vì, Hà Nội",
-      brand: "Gà Sạch Đồi Ba Vì",
-      weight: "1.3 - 1.5kg/con",
-      shelfLife: "3 ngày ngăn mát, 30 ngày ngăn đông",
-      storage: "0-4°C trong tủ lạnh",
-      packingStandard: "Hút chân không tiêu chuẩn ATTP"
+      origin: "Việt Nam",
+      brand: "EcoZone Organic",
+      weight: "Lốc 3 cuộn (1kg - cỡ 55x65cm)",
+      shelfLife: "3 năm",
+      storage: "Nơi khô ráo",
+      packingStandard: "Lốc bọc màng co"
     },
     nutrition: {
-      servingSize: "100g",
-      calories: "239 kcal",
-      protein: "27.3g",
-      fat: "13.6g",
-      carbs: "0g",
-      minerals: "Sắt, Phốt pho, Vitamin A, B3"
+      servingSize: "Không áp dụng",
+      calories: "0",
+      protein: "0",
+      fat: "0",
+      carbs: "0",
+      minerals: "Chứng nhận TUV Austria OK Biobased"
     },
-    cookingTips: ["Luộc lửa vừa kèm gừng hành hoa tiêu 25 phút để da giòn thịt ngọt."],
-    reviews: []
-  },
-  {
-    id: "p14",
-    name: "Cánh Gà Tươi CP Loại 1 Đóng Khay",
-    category: "food",
-    categoryName: "Thực phẩm tươi",
-    price: 82000,
-    oldPrice: 95000,
-    discountBadge: "-14%",
-    unit: "Khay 500g",
-    image: "https://images.unsplash.com/photo-1527477321055-43615b629c5e?auto=format&fit=crop&w=800&q=80",
-    gallery: [
-      "https://images.unsplash.com/photo-1527477321055-43615b629c5e?auto=format&fit=crop&w=800&q=80"
-    ],
-    badge: "Tươi mổ trong ngày",
-    store: {
-      id: "store_zonemart_cau_giay",
-      name: "ZoneMart Cầu Giấy",
-      address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội",
-      distanceKm: 1.2,
-      deliveryTime: "15 - 20 phút",
-      rating: 5.0,
-      totalProducts: 240,
-      isVerified: true
-    },
-    rating: 4.8,
-    reviewsCount: 38,
-    sold: 145,
-    stock: 40,
-    description: "Cánh gà tươi CP chuẩn thịt sạch, lớp da mỏng ít mỡ, thích hợp chiên nước mắm, nướng mật ong hoặc rim me.",
-    highlights: ["Cánh gà tươi sạch mổ trong ngày", "Chuẩn thịt sạch CP an toàn tuyệt đối"],
-    specs: {
-      origin: "CP Foods Việt Nam",
-      brand: "CP Fresh Meat",
-      weight: "500g (khoảng 4-6 khúc cánh)",
-      shelfLife: "3 ngày ngăn mát",
-      storage: "0-4°C",
-      packingStandard: "Khay màng bọc thực phẩm hút ẩm"
-    },
-    nutrition: {
-      servingSize: "100g",
-      calories: "203 kcal",
-      protein: "18.3g",
-      fat: "14.2g",
-      carbs: "0g",
-      minerals: "Canxi, Sắt"
-    },
-    cookingTips: ["Khứa nhẹ thân cánh ướp gia vị 15 phút trước khi nướng hoặc chiên."],
-    reviews: []
-  },
-  {
-    id: "p15",
-    name: "Cơm Gà Xối Mỡ Da Giòn Nóng Hổi Kèm Canh",
-    category: "fastfood",
-    categoryName: "Món ăn nóng",
-    price: 55000,
-    oldPrice: 65000,
-    discountBadge: "-15%",
-    unit: "Phần",
-    image: "https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?auto=format&fit=crop&w=800&q=80",
-    gallery: [
-      "https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?auto=format&fit=crop&w=800&q=80"
-    ],
-    badge: "Nóng giòn thơm nức",
-    store: {
-      id: "store_bep_com_nieu",
-      name: "Bếp Cơm Niêu & Cơm Tấm",
-      address: "15 Nguyễn Khang, Trung Hòa, Cầu Giấy, Hà Nội",
-      distanceKm: 2.1,
-      deliveryTime: "15 - 25 phút",
-      rating: 4.9,
-      totalProducts: 45,
-      isVerified: true
-    },
-    rating: 4.9,
-    reviewsCount: 76,
-    sold: 230,
-    stock: 60,
-    description: "Cơm gà xối mỡ hạt cơm vàng óng nấu từ nước luộc gà, đùi góc tư gà xối mỡ nóng hổi da giòn rụm, thịt mềm ngọt nước kèm dưa chua và canh rong biển.",
-    highlights: ["Gà xối mỡ da giòn rụm nóng hổi", "Cơm nấu nước luộc gà béo ngậy vàng ươm"],
-    specs: {
-      origin: "Chế biến tại bếp đạt chuẩn VSATTP",
-      brand: "Bếp Cơm Niêu & Cơm Tấm",
-      weight: "1 Suất ăn đầy đặn",
-      shelfLife: "Dùng nóng trong vòng 2 giờ",
-      storage: "Giữ ấm trong hộp bảo ôn",
-      packingStandard: "Hộp bã mía thân thiện môi trường giữ nhiệt"
-    },
-    nutrition: {
-      servingSize: "1 suất (450g)",
-      calories: "680 kcal",
-      protein: "38g",
-      fat: "24g",
-      carbs: "78g",
-      minerals: "Đầy đủ dinh dưỡng"
-    },
-    cookingTips: ["Dùng ngay khi còn nóng để cảm nhận trọn vẹn độ giòn của da gà."],
+    cookingTips: ["Dùng lót thùng rác phòng khách, bếp hoặc văn phòng làm việc."],
     reviews: []
   }
 ];
@@ -1102,6 +1890,8 @@ export function useProductCatalog() {
 
   // Danh sách tổng hợp toàn bộ sản phẩm (Gồm catalog tĩnh + sản phẩm do Seller đăng đã được duyệt)
   const allProducts = computed<CatalogProduct[]>(() => {
+    // Đảm bảo phụ thuộc phản ứng vào catalogVersion để cập nhật tức thì
+    void catalogVersion.value;
     const dynamicActive = moderation.activeProducts.value.map((p) => {
       let cat: "food" | "veggie" | "fastfood" | "beverage" | "household" = "food";
       if (p.category === "Rau củ quả") cat = "veggie";
@@ -1109,6 +1899,22 @@ export function useProductCatalog() {
       else if (p.category === "Trái cây tươi") cat = "beverage";
       else if (p.category === "Món ăn nóng") cat = "fastfood";
       else cat = "household";
+
+      const cleanEmail = (p.sellerEmail || "").toLowerCase().trim();
+      let storeAddr = "36 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy, Hà Nội";
+      let storeHours = "06:00 - 20:30";
+      let storeAvatar = "https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80";
+
+      if (cleanEmail && typeof localStorage !== "undefined") {
+        try {
+          const rawStore = localStorage.getItem(`zonemart_seller_store_${cleanEmail}`);
+          if (rawStore) {
+            const parsed = JSON.parse(rawStore);
+            if (parsed.address) storeAddr = parsed.address;
+            if (parsed.openHours) storeHours = parsed.openHours;
+          }
+        } catch {}
+      }
 
       return {
         id: p.id,
@@ -1122,13 +1928,18 @@ export function useProductCatalog() {
         badge: "Đã AI Kiểm Duyệt",
         store: {
           id: "store_" + (p.storeName || "seller").toLowerCase().replace(/[^a-z0-9]/g, "_"),
-          name: p.storeName || "Nông Sản Sạch Ba Vì",
-          address: "Ba Vì, Hà Nội",
-          distanceKm: 1.8,
-          deliveryTime: "20 - 30 phút",
+          name: p.storeName || "Vườn Rau Hữu Cơ Bác Ba",
+          address: storeAddr,
+          distanceKm: 0.8,
+          deliveryTime: "12 - 18 phút",
           rating: 5.0,
-          totalProducts: 15,
-          isVerified: true
+          reviewsCount: 384,
+          openHours: storeHours,
+          totalProducts: 42,
+          isVerified: true,
+          categoryName: p.category || "Rau củ hữu cơ VietGAP",
+          avatar: storeAvatar,
+          coverImage: p.image || "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800&q=80"
         },
         rating: 5.0,
         reviewsCount: 14,
@@ -1174,7 +1985,7 @@ export function useProductCatalog() {
     ];
   });
 
-  // Danh sách toàn bộ gian hàng trích xuất tự động từ sản phẩm
+  // Danh sách toàn bộ gian hàng trích xuất tự động từ sản phẩm - Đảm bảo giữ trọn vẹn thông số riêng của từng quán
   const allStores = computed<CatalogStore[]>(() => {
     const storeMap = new Map<string, CatalogStore>();
 
@@ -1183,28 +1994,6 @@ export function useProductCatalog() {
       const key = p.store.name.trim();
 
       if (!storeMap.has(key)) {
-        let avatar = "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80";
-        let cover = p.image;
-        if (key.includes("Cầu Giấy") || key.includes("ZoneMart")) {
-          avatar = "https://images.unsplash.com/photo-1578916171728-46686eac8d58?auto=format&fit=crop&w=200&q=80";
-          cover = "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=800&q=80";
-        } else if (key.includes("Trái Cây") || key.includes("Quả")) {
-          avatar = "https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=200&q=80";
-          cover = "https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=800&q=80";
-        } else if (key.includes("Bánh Mì") || key.includes("Tiệm")) {
-          avatar = "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=200&q=80";
-          cover = "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80";
-        } else if (key.includes("Gia Dụng") || key.includes("Kho")) {
-          avatar = "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=200&q=80";
-          cover = "https://images.unsplash.com/photo-1584992236310-6edddc08acff?auto=format&fit=crop&w=800&q=80";
-        } else if (key.includes("Cơm") || key.includes("Bếp")) {
-          avatar = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80";
-          cover = "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80";
-        } else if (key.includes("VietGAP") || key.includes("Nông Trại") || key.includes("Rau")) {
-          avatar = "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=200&q=80";
-          cover = "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80";
-        }
-
         storeMap.set(key, {
           id: p.store.id || `store_${key.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
           name: p.store.name,
@@ -1212,13 +2001,13 @@ export function useProductCatalog() {
           distanceKm: p.store.distanceKm || 1.5,
           deliveryTime: p.store.deliveryTime || "15 - 20 phút",
           rating: p.store.rating || 5.0,
-          reviewsCount: p.reviewsCount || 48,
+          reviewsCount: p.store.reviewsCount || p.reviewsCount || 48,
           totalProducts: p.store.totalProducts || 1,
           isVerified: p.store.isVerified !== false,
-          categoryName: p.categoryName || "Thực phẩm tươi",
-          avatar,
-          coverImage: cover,
-          openHours: "07:00 - 22:00",
+          categoryName: p.store.categoryName || p.categoryName || "Thực phẩm tươi",
+          avatar: p.store.avatar || "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80",
+          coverImage: p.store.coverImage || p.image,
+          openHours: p.store.openHours || "07:00 - 22:00",
           products: [p],
         });
       } else {
@@ -1240,7 +2029,7 @@ export function useProductCatalog() {
       allProducts.value.find((p) => p.id.toLowerCase() === targetId) ||
       allProducts.value.find((p) => p.id.toLowerCase() === `p${cleanNumId}`) ||
       allProducts.value.find((p) => p.id.toLowerCase() === cleanNumId) ||
-      CATALOG_PRODUCTS[0] // Fallback an toàn tới sản phẩm đầu tiên
+      CATALOG_PRODUCTS[0]
     );
   };
 
@@ -1258,12 +2047,24 @@ export function useProductCatalog() {
     );
   };
 
+  const refreshCatalog = () => {
+    moderation.refreshProducts();
+    catalogVersion.value++;
+  };
+
   return {
     allProducts,
     allStores,
     getProductById,
     getRelatedProducts,
     getStoreByIdOrName,
+    refreshCatalog,
   };
 }
 
+// Lắng nghe sự kiện toàn cục khi sản phẩm thay đổi để tự động re-compute catalog
+if (typeof window !== "undefined") {
+  window.addEventListener("zonemart:products-changed", () => {
+    catalogVersion.value++;
+  });
+}

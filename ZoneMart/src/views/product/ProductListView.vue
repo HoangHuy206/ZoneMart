@@ -10,6 +10,7 @@ import { ref, computed, watch, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useProductCatalog, type CatalogStore } from "../../composables/useProductCatalog";
 import { useCart } from "../../composables/useCart";
+import { useToast } from "../../composables/useToast";
 
 const router = useRouter();
 const route = useRoute();
@@ -25,6 +26,20 @@ const activeSearchTab = ref<"product" | "store">("product"); // Tab tìm kiếm:
 const selectedStoreFilter = ref<string>(""); // Tên gian hàng cụ thể nếu người dùng đang lọc theo gian hàng
 const toastMessage = ref("");
 const showToast = ref(false);
+
+const toast = useToast();
+const isCatalogLoading = ref(true);
+let loadingTimer: any = null;
+
+const triggerLoadingEffect = (ms = 350) => {
+  isCatalogLoading.value = true;
+  if (loadingTimer) clearTimeout(loadingTimer);
+  window.dispatchEvent(new CustomEvent('zonemart:loading-start'));
+  loadingTimer = setTimeout(() => {
+    isCatalogLoading.value = false;
+    window.dispatchEvent(new CustomEvent('zonemart:loading-finish'));
+  }, ms);
+};
 
 const showNotification = (msg: string) => {
   toastMessage.value = msg;
@@ -69,8 +84,24 @@ const syncFromRoute = () => {
   }
 };
 
-onMounted(syncFromRoute);
-watch(() => route.query, syncFromRoute);
+onMounted(() => {
+  catalog.refreshCatalog();
+  syncFromRoute();
+  triggerLoadingEffect(420);
+
+  // Catalog tự động re-compute khi có sự kiện zonemart:products-changed thông qua useProductCatalog
+});
+watch(() => route.query, () => {
+  catalog.refreshCatalog();
+  syncFromRoute();
+  triggerLoadingEffect(300);
+});
+watch(() => selectedCategory.value, () => {
+  triggerLoadingEffect(250);
+});
+watch(() => activeSearchTab.value, () => {
+  triggerLoadingEffect(280);
+});
 
 // Danh mục ngành hàng gốc
 const categoryDefinitions = [
@@ -100,6 +131,7 @@ interface ProductItem {
   badge?: string;
   unit: string;
   image: string;
+  description?: string;
 }
 
 const allProductItems = computed<ProductItem[]>(() => {
@@ -120,6 +152,7 @@ const allProductItems = computed<ProductItem[]>(() => {
     badge: p.badge,
     unit: p.unit,
     image: p.image,
+    description: p.description || "",
   }));
 });
 
@@ -135,9 +168,11 @@ const categories = computed(() => {
       p.name.toLowerCase().includes(q) ||
       p.categoryName.toLowerCase().includes(q) ||
       p.storeName.toLowerCase().includes(q) ||
+      (p.description && p.description.toLowerCase().includes(q)) ||
       removeVietnameseTones(p.name).includes(qNoTone) ||
       removeVietnameseTones(p.categoryName).includes(qNoTone) ||
-      removeVietnameseTones(p.storeName).includes(qNoTone);
+      removeVietnameseTones(p.storeName).includes(qNoTone) ||
+      (p.description && removeVietnameseTones(p.description).includes(qNoTone));
 
     const matchDistance = p.distanceKm <= maxRadiusKm.value;
     const matchStore =
@@ -170,9 +205,11 @@ const totalMatchesWithoutCategory = computed(() => {
       p.name.toLowerCase().includes(q) ||
       p.categoryName.toLowerCase().includes(q) ||
       p.storeName.toLowerCase().includes(q) ||
+      (p.description && p.description.toLowerCase().includes(q)) ||
       removeVietnameseTones(p.name).includes(qNoTone) ||
       removeVietnameseTones(p.categoryName).includes(qNoTone) ||
-      removeVietnameseTones(p.storeName).includes(qNoTone);
+      removeVietnameseTones(p.storeName).includes(qNoTone) ||
+      (p.description && removeVietnameseTones(p.description).includes(qNoTone));
 
     const matchDistance = p.distanceKm <= maxRadiusKm.value;
     const matchStore =
@@ -196,9 +233,11 @@ const filteredProducts = computed(() => {
       p.name.toLowerCase().includes(q) ||
       p.categoryName.toLowerCase().includes(q) ||
       p.storeName.toLowerCase().includes(q) ||
+      (p.description && p.description.toLowerCase().includes(q)) ||
       removeVietnameseTones(p.name).includes(qNoTone) ||
       removeVietnameseTones(p.categoryName).includes(qNoTone) ||
-      removeVietnameseTones(p.storeName).includes(qNoTone);
+      removeVietnameseTones(p.storeName).includes(qNoTone) ||
+      (p.description && removeVietnameseTones(p.description).includes(qNoTone));
 
     const matchDistance = p.distanceKm <= maxRadiusKm.value;
     const matchStore =
@@ -330,6 +369,7 @@ const onAddToCart = (p: ProductItem) => {
     }
   );
   showNotification(`Đã thêm "${p.name}" vào giỏ hàng!`);
+  toast.success(`Đã thêm "${p.name}" (${p.unit}) vào giỏ hàng!`, 'Giỏ Hàng ZoneMart');
 };
 
 // Reset bộ lọc
@@ -580,7 +620,23 @@ const resetFilters = () => {
 
       <!-- 5A. TAB SẢN PHẨM: LƯỚI SẢN PHẨM KHÔNG KHUNG VIỀN (TASTE-SKILL PRODUCT GRID) -->
       <div v-if="activeSearchTab === 'product'">
-        <div v-if="filteredProducts.length > 0" class="products-tactile-grid">
+        <!-- Skeleton Loading Shimmer khi tải dữ liệu sản phẩm -->
+        <div v-if="isCatalogLoading" class="products-tactile-grid skeleton-grid">
+          <div v-for="n in 8" :key="'skel-p-' + n" class="skeleton-card">
+            <div class="skeleton-shimmer skeleton-media"></div>
+            <div class="skeleton-body">
+              <div class="skeleton-shimmer skeleton-store-tag"></div>
+              <div class="skeleton-shimmer skeleton-title"></div>
+              <div class="skeleton-shimmer skeleton-rating"></div>
+              <div class="skeleton-bottom-row">
+                <div class="skeleton-shimmer skeleton-price"></div>
+                <div class="skeleton-shimmer skeleton-btn"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="filteredProducts.length > 0" class="products-tactile-grid loaded-products-anim">
           <div
             v-for="p in filteredProducts"
             :key="p.id"
@@ -697,7 +753,22 @@ const resetFilters = () => {
 
       <!-- 5B. TAB GIAN HÀNG: LƯỚI GIAN HÀNG TẬN NƠI (TASTE-SKILL STORE CARDS) -->
       <div v-else>
-        <div v-if="filteredStores.length > 0" class="stores-tactile-grid">
+        <!-- Skeleton Loading Shimmer khi tải danh sách gian hàng -->
+        <div v-if="isCatalogLoading" class="stores-tactile-grid skeleton-grid">
+          <div v-for="n in 4" :key="'skel-s-' + n" class="skeleton-store-card">
+            <div class="skeleton-shimmer skeleton-store-cover"></div>
+            <div class="skeleton-store-body">
+              <div class="skeleton-shimmer skeleton-store-avatar"></div>
+              <div class="skeleton-store-lines">
+                <div class="skeleton-shimmer skeleton-title" style="width: 70%;"></div>
+                <div class="skeleton-shimmer skeleton-rating" style="width: 45%;"></div>
+                <div class="skeleton-shimmer skeleton-store-tag" style="width: 85%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="filteredStores.length > 0" class="stores-tactile-grid loaded-products-anim">
           <div
             v-for="store in filteredStores"
             :key="store.id"
@@ -2055,6 +2126,131 @@ const resetFilters = () => {
   .btn-exit-store-filter {
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* SKELETON SHIMMER LOADING & STAGGER ANIMATION */
+.skeleton-card {
+  background: #ffffff;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+  border: 1px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    #f1f5f9 0%,
+    #e2e8f0 50%,
+    #f1f5f9 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmerWave 1.4s infinite ease-in-out;
+  border-radius: 8px;
+}
+
+@keyframes shimmerWave {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-media {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 0;
+}
+
+.skeleton-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton-store-tag {
+  width: 50%;
+  height: 14px;
+}
+
+.skeleton-title {
+  width: 85%;
+  height: 20px;
+}
+
+.skeleton-rating {
+  width: 40%;
+  height: 14px;
+}
+
+.skeleton-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+
+.skeleton-price {
+  width: 45%;
+  height: 22px;
+}
+
+.skeleton-btn {
+  width: 60px;
+  height: 32px;
+  border-radius: 12px;
+}
+
+.skeleton-store-card {
+  background: #ffffff;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+  border: 1px solid #f1f5f9;
+}
+
+.skeleton-store-cover {
+  width: 100%;
+  height: 140px;
+  border-radius: 0;
+}
+
+.skeleton-store-body {
+  padding: 16px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.skeleton-store-avatar {
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  border-radius: 50%;
+}
+
+.skeleton-store-lines {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Stagger animation on loaded */
+.loaded-products-anim {
+  animation: fadeInGrid 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fadeInGrid {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>

@@ -15,6 +15,8 @@ import {
   type UserProfile,
   type UserRole,
 } from '../../composables/useAuth';
+import FaceScanModal from '../../components/auth/FaceScanModal.vue';
+import { apiFetch } from '../../utils/apiConfig';
 
 const router = useRouter();
 const auth = useAuth();
@@ -248,6 +250,25 @@ const loadUserProfile = () => {
   user.username = savedData.username || defaultUsername;
   user.email = savedData.email || defaultEmail;
   user.phone = savedData.phone || acc.phone || defaultPhone;
+
+  // 1. Số điện thoại: Tuyệt đối KHÔNG tự động gán bất kỳ số điện thoại nào cho tài khoản mới
+  let initialPhone = '';
+  if (acc.phone && acc.phone.trim() !== '' && acc.phone !== 'Chưa có') {
+    initialPhone = acc.phone.trim();
+  } else if (!isNew && savedData.phone && savedData.phone.trim() !== '') {
+    initialPhone = savedData.phone.trim();
+  }
+  user.phone = initialPhone;
+
+  // Nếu là tài khoản mới và chưa có SĐT liên kết từ backend, đảm bảo sạch hoàn toàn
+  if (isNew && !acc.phone) {
+    user.phone = '';
+    delete savedData.phone;
+    const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
+    try {
+      localStorage.setItem(savedKey, JSON.stringify({ ...savedData, phone: '' }));
+    } catch {}
+  }
   user.gender = savedData.gender || (acc.role === 'seller' ? 'female' : 'male');
   user.birthDate =
     savedData.birthDate ||
@@ -285,6 +306,13 @@ const loadUserProfile = () => {
   // Nạp địa chỉ và đơn hàng riêng của tài khoản
   loadAddresses();
   loadOrders();
+
+  // Đồng bộ ngay lập tức cho useAuth & toàn sàn nếu có thông tin từ savedData
+  auth.updateUser({
+    fullName: user.fullName,
+    avatarUrl: user.avatarUrl,
+    phone: user.phone,
+  });
 };
 
 // 3. Avatar upload
@@ -299,20 +327,67 @@ const handleAvatarChange = (e: Event) => {
     const file = target.files[0];
     const reader = new FileReader();
     reader.onload = (event) => {
-      if (event.target?.result) {
-        user.avatarUrl = event.target.result as string;
-        // Tự động lưu ảnh mới vào hồ sơ riêng của tài khoản
-        const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
-        localStorage.setItem(savedKey, JSON.stringify(user));
+      const rawResult = event.target?.result as string;
+      if (!rawResult) return;
 
-        // Đồng bộ lên useAuth
-        const curr = auth.currentUser.value;
-        if (curr) {
-          curr.avatarUrl = user.avatarUrl;
-          auth.login(curr);
+      // Nén ảnh bằng Canvas (tối đa 400x400) để đảm bảo mượt mà và không đầy bộ nhớ
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 400;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height = Math.round((height * MAX_SIZE) / width);
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width = Math.round((width * MAX_SIZE) / height);
+            height = MAX_SIZE;
+          }
         }
-        triggerToast('Cập nhật ảnh đại diện thành công!');
-      }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedAvatar = canvas.toDataURL('image/jpeg', 0.88);
+          user.avatarUrl = compressedAvatar;
+
+          // 1. Lưu ảnh mới vào hồ sơ riêng của tài khoản
+          const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
+          localStorage.setItem(savedKey, JSON.stringify(user));
+
+          // 2. Đồng bộ tức thì lên useAuth Singleton toàn sàn (Header, Dropdown, Nav)
+          auth.updateUser({
+            avatarUrl: compressedAvatar,
+            fullName: user.fullName,
+            phone: user.phone,
+          });
+
+          // 3. Đồng bộ lên CSDL MongoDB Atlas Backend
+          const acc = currentAccount.value;
+          fetch('/api/auth/update-profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: acc.id,
+              phoneEmail: user.email || acc.phoneEmail,
+              fullName: user.fullName,
+              avatarUrl: compressedAvatar,
+              phone: user.phone,
+              gender: user.gender,
+              birthDate: user.birthDate,
+              username: user.username,
+            }),
+          }).catch(() => null);
+
+          triggerToast('🎉 Cập nhật và đồng bộ ảnh đại diện thành công!');
+        }
+      };
+      img.src = rawResult;
     };
     reader.readAsDataURL(file);
   }
@@ -323,26 +398,26 @@ const isSaving = ref(false);
 const handleSaveProfile = async () => {
   isSaving.value = true;
   try {
-    // Lưu vào phân vùng riêng của tài khoản
+    // 1. Lưu vào phân vùng riêng của tài khoản
     const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
     localStorage.setItem(savedKey, JSON.stringify(user));
 
-    // Đồng bộ vào useAuth và LocalStorage toàn sàn
-    const curr = auth.currentUser.value;
-    if (curr) {
-      curr.fullName = user.fullName;
-      curr.avatarUrl = user.avatarUrl;
-      curr.phoneEmail = user.email || curr.phoneEmail;
-      auth.login(curr);
-    }
+    // 2. Đồng bộ vào useAuth và LocalStorage toàn sàn (currentUser, zonemart_user)
+    auth.updateUser({
+      fullName: user.fullName,
+      avatarUrl: user.avatarUrl,
+      phoneEmail: user.email || currentAccount.value.phoneEmail,
+      phone: user.phone,
+    });
 
-    // Cập nhật lên CSDL Backend ASP.NET Core
-    await fetch('http://localhost:5000/api/auth/update-profile', {
+    // 3. Cập nhật lên CSDL Backend ASP.NET Core
+    const acc = currentAccount.value;
+    await fetch('/api/auth/update-profile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        id: curr?.id,
-        phoneEmail: user.email || curr?.phoneEmail,
+        id: acc.id,
+        phoneEmail: user.email || acc.phoneEmail,
         fullName: user.fullName,
         avatarUrl: user.avatarUrl,
         phone: user.phone,
@@ -353,7 +428,7 @@ const handleSaveProfile = async () => {
     }).catch(() => null);
 
     triggerToast(
-      `Đã lưu thông tin hồ sơ cho tài khoản '${user.email || user.fullName}'!`,
+      `Đã lưu và đồng bộ thông tin hồ sơ cho tài khoản '${user.email || user.fullName}'!`,
     );
   } finally {
     isSaving.value = false;
@@ -747,23 +822,19 @@ const quickTopUp = async (amount: number) => {
   user.zonePayBalance += amount;
 
   // Cập nhật useAuth Singleton để Header và Dropdown nhận số dư mới ngay tức thì
-  const curr = auth.currentUser.value;
-  if (curr) {
-    curr.walletBalance = user.zonePayBalance;
-    auth.login(curr);
-  }
+  auth.updateUser({ walletBalance: user.zonePayBalance });
 
   const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
   localStorage.setItem(savedKey, JSON.stringify(user));
 
   // Gửi API lên Backend C#
   try {
-    const res = await fetch('http://localhost:5000/api/auth/topup-wallet', {
+    const res = await fetch('/api/auth/topup-wallet', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        id: curr?.id,
-        phoneEmail: user.email || curr?.phoneEmail,
+        id: currentAccount.value.id,
+        phoneEmail: user.email || currentAccount.value.phoneEmail,
         amount,
       }),
     });
@@ -810,7 +881,7 @@ const handleChangePasswordSubmit = async () => {
 
   isSubmittingPwd.value = true;
   try {
-    const res = await fetch('http://localhost:5000/api/auth/change-password', {
+    const res = await fetch('/api/auth/change-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -864,7 +935,7 @@ const handleSendZaloOtp = async () => {
 
   isSendingZaloOtp.value = true;
   try {
-    const res = await fetch('http://localhost:5000/api/auth/send-phone-otp', {
+    const res = await fetch('/api/auth/send-phone-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -916,7 +987,7 @@ const handleVerifyZaloOtp = async () => {
   try {
     const acc = currentAccount.value;
     const res = await fetch(
-      'http://localhost:5000/api/auth/verify-link-phone',
+      '/api/auth/verify-link-phone',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -937,22 +1008,7 @@ const handleVerifyZaloOtp = async () => {
         const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
         localStorage.setItem(savedKey, JSON.stringify(user));
 
-        const curr = auth.currentUser.value;
-        if (curr) {
-          curr.phone = cleanPhone;
-          auth.login(curr);
-        }
-        try {
-          const savedUser =
-            localStorage.getItem('currentUser') ||
-            localStorage.getItem('zonemart_user');
-          if (savedUser) {
-            const parsed = JSON.parse(savedUser);
-            parsed.phone = cleanPhone;
-            localStorage.setItem('currentUser', JSON.stringify(parsed));
-            localStorage.setItem('zonemart_user', JSON.stringify(parsed));
-          }
-        } catch {}
+        auth.updateUser({ phone: cleanPhone });
 
         triggerToast(
           `🎉 Đã thêm số điện thoại ${cleanPhone} thành công! Giờ bạn có thể dùng SĐT này để đăng nhập.`,
@@ -973,11 +1029,84 @@ const handleVerifyZaloOtp = async () => {
   }
 };
 
+// 10. Xác thực khuôn mặt sinh trắc học Face ID (UniFace)
+const showFaceModal = ref(false);
+const isFaceAuthEnabled = ref(false);
+const faceRegisteredAt = ref('');
+const isCheckingFaceStatus = ref(false);
+const isDisablingFace = ref(false);
+
+const checkFaceStatus = async () => {
+  const acc = currentAccount.value;
+  const term = acc.id || acc.phoneEmail;
+  if (!term || term === 'usr_guest') {
+    isFaceAuthEnabled.value = false;
+    faceRegisteredAt.value = '';
+    return;
+  }
+
+  isCheckingFaceStatus.value = true;
+  try {
+    const res = await apiFetch(`/api/auth/face/status?userId=${encodeURIComponent(term)}`);
+    if (res && res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        isFaceAuthEnabled.value = Boolean(data.faceAuthEnabled);
+        faceRegisteredAt.value = data.registeredAt || '';
+      }
+    }
+  } catch (e) {
+    console.error('Lỗi kiểm tra Face ID:', e);
+  } finally {
+    isCheckingFaceStatus.value = false;
+  }
+};
+
+const openFaceRegisterModal = () => {
+  showFaceModal.value = true;
+};
+
+const handleFaceRegisterSuccess = (payload: any) => {
+  isFaceAuthEnabled.value = true;
+  faceRegisteredAt.value = payload.registeredAt || new Date().toLocaleString('vi-VN');
+  triggerToast('🎉 Đã kích hoạt và lưu khuôn mặt thành công cho tài khoản!');
+};
+
+const handleDisableFace = async () => {
+  const acc = currentAccount.value;
+  const term = acc.id || acc.phoneEmail;
+  if (!confirm('Bạn có chắc chắn muốn tắt tính năng đăng nhập bằng khuôn mặt cho tài khoản này?')) {
+    return;
+  }
+
+  isDisablingFace.value = true;
+  try {
+    const res = await apiFetch('/api/auth/face/disable', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: term }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      isFaceAuthEnabled.value = false;
+      faceRegisteredAt.value = '';
+      triggerToast('Đã hủy kích hoạt đăng nhập bằng khuôn mặt Face ID.');
+    } else {
+      triggerToast(data.message || 'Không thể hủy Face ID.');
+    }
+  } catch (e: any) {
+    triggerToast(e.message || 'Lỗi khi hủy Face ID.');
+  } finally {
+    isDisablingFace.value = false;
+  }
+};
+
 // 9. Lắng nghe thay đổi tài khoản đăng nhập để chuyển đổi dữ liệu tức thì
 watch(
   () => accountKey.value,
   () => {
     loadUserProfile();
+    checkFaceStatus();
   },
 );
 
@@ -992,6 +1121,7 @@ watch(
 
 onMounted(() => {
   loadUserProfile();
+  checkFaceStatus();
 });
 </script>
 
@@ -1040,6 +1170,10 @@ onMounted(() => {
               <span>@{{ user.username }}</span>
               <span class="divider-dot">•</span>
               <span>{{ user.phone }}</span>
+              <template v-if="user.phone">
+                <span class="divider-dot">•</span>
+                <span>{{ user.phone }}</span>
+              </template>
               <template v-if="user.storeName">
                 <span class="divider-dot">•</span>
                 <span class="text-orange"
@@ -1055,6 +1189,8 @@ onMounted(() => {
               </template>
               <span class="divider-dot">•</span>
               <span class="text-green">Đã xác minh KYC 100%</span>
+              <span v-if="user.phone" class="text-green">Đã xác minh OTP</span>
+              <span v-else class="text-warning-muted">Chưa liên kết SĐT</span>
             </p>
 
             <!-- Loyalty / Role Progress bar -->
@@ -1359,6 +1495,74 @@ onMounted(() => {
                   >
                     Đổi mật khẩu
                   </button>
+                </div>
+              </div>
+
+              <!-- Xác thực khuôn mặt (Face ID Biometric) -->
+              <div class="form-group face-auth-group">
+                <div class="label-with-badge">
+                  <label class="form-label mb-0">Xác Thực Khuôn Mặt (Face ID)</label>
+                  <span
+                    v-if="isFaceAuthEnabled"
+                    class="face-status-chip active"
+                  >
+                    <i class="bi bi-shield-check"></i> Đã kích hoạt
+                  </span>
+                  <span v-else class="face-status-chip inactive">
+                    <i class="bi bi-shield-slash"></i> Chưa kích hoạt
+                  </span>
+                </div>
+
+                <div class="face-auth-card" :class="{ 'is-active': isFaceAuthEnabled }">
+                  <div class="face-info-left">
+                    <div class="face-symbol-icon" :class="{ 'symbol-active': isFaceAuthEnabled }">
+                      <i class="bi bi-person-bounding-box"></i>
+                    </div>
+                    <div>
+                      <div class="face-title-text">
+                        {{ isFaceAuthEnabled ? 'Đã liên kết khuôn mặt của bạn' : 'Chưa kích hoạt nhận diện khuôn mặt' }}
+                      </div>
+                      <div class="face-helper-text">
+                        <span v-if="isFaceAuthEnabled" class="text-success-bold">
+                          ✓ Đăng nhập 1-chạm cực nhanh bằng AI UniFace (Kích hoạt: {{ faceRegisteredAt || 'Gần đây' }})
+                        </span>
+                        <span v-else class="text-muted">
+                          Bật tính năng này để quét khuôn mặt và liên kết độc quyền với tài khoản này, chống chéo tài khoản khi đăng nhập.
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="face-actions-right">
+                    <template v-if="isFaceAuthEnabled">
+                      <button
+                        type="button"
+                        class="btn-face-rescan"
+                        @click="openFaceRegisterModal"
+                        title="Quét lại khuôn mặt mới"
+                      >
+                        <i class="bi bi-arrow-clockwise me-1"></i> Quét Lại
+                      </button>
+                      <button
+                        type="button"
+                        class="btn-face-disable"
+                        :disabled="isDisablingFace"
+                        @click="handleDisableFace"
+                        title="Tắt xác thực khuôn mặt"
+                      >
+                        <i class="bi bi-x-circle me-1"></i> Tắt
+                      </button>
+                    </template>
+                    <template v-else>
+                      <button
+                        type="button"
+                        class="btn-face-activate"
+                        @click="openFaceRegisterModal"
+                      >
+                        <i class="bi bi-camera-fill me-1"></i> Bật Face ID
+                      </button>
+                    </template>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2018,6 +2222,15 @@ onMounted(() => {
         </form>
       </div>
     </div>
+
+    <!-- Modal Quét & Kích Hoạt Khuôn Mặt (Face ID UniFace) -->
+    <FaceScanModal
+      v-model="showFaceModal"
+      mode="register"
+      :user-id="currentAccount.id || currentAccount.phoneEmail"
+      :user-name="user.fullName"
+      @success="handleFaceRegisterSuccess"
+    />
   </div>
 </template>
 
@@ -3631,6 +3844,162 @@ onMounted(() => {
 .btn-zalo-connect:hover {
   background: #c2410c;
   transform: translateY(-1px);
+}
+
+/* FACE ID BIOMETRIC AUTH STYLES */
+.face-auth-group {
+  margin-top: 18px;
+}
+
+.face-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+.face-status-chip.active {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+.face-status-chip.inactive {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.face-auth-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  transition: all 0.2s ease;
+}
+
+.face-auth-card.is-active {
+  border-color: #10b981;
+  background: linear-gradient(to right, #f0fdf4, #ffffff);
+}
+
+.face-auth-card:hover {
+  border-color: #0284c7;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.08);
+}
+
+.face-info-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.face-symbol-icon {
+  width: 44px;
+  height: 44px;
+  background: #f1f5f9;
+  color: #64748b;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.face-symbol-icon.symbol-active {
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+
+.face-title-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.face-helper-text {
+  font-size: 12px;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.face-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-face-activate {
+  background: linear-gradient(135deg, #0284c7, #2563eb);
+  color: #ffffff;
+  border: none;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.btn-face-activate:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
+
+.btn-face-rescan {
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.btn-face-rescan:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.btn-face-disable {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.btn-face-disable:hover:not(:disabled) {
+  background: #fecaca;
+}
+
+.btn-face-disable:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* MODAL LIÊN KẾT ZALO */

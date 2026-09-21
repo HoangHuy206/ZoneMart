@@ -37,14 +37,25 @@ router.beforeEach((to, _from, next) => {
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
       const parsed = JSON.parse(savedUser);
-      if (parsed && parsed.role) {
+      if (parsed) {
         isLoggedIn = true;
-        userRole = parsed.role;
+        const pRole = (parsed.role || parsed.primaryRole || '').toLowerCase().trim();
+        const pEmail = (parsed.phoneEmail || parsed.email || '').toLowerCase().trim();
+        if (
+          parsed.isAdmin === true ||
+          pRole === 'admin' ||
+          pRole === 'administrator' ||
+          pEmail === 'admin@zonemart.vn'
+        ) {
+          userRole = 'admin';
+        } else if (pRole) {
+          userRole = pRole;
+        }
       }
     }
     if (!isLoggedIn && localStorage.getItem('isLoggedIn') === 'true') {
       isLoggedIn = true;
-      userRole = localStorage.getItem('userRole') || 'buyer';
+      userRole = (localStorage.getItem('userRole') || 'buyer').toLowerCase().trim();
     }
   } catch {
     isLoggedIn = false;
@@ -56,12 +67,14 @@ router.beforeEach((to, _from, next) => {
     return next();
   }
 
+  const normalizedUserRole = userRole.toLowerCase().trim();
+
   // 1. Nếu route yêu cầu vai trò cụ thể (RBAC - Role Based Access Control)
   if (to.meta.roles && Array.isArray(to.meta.roles)) {
-    const allowedRoles = to.meta.roles as string[];
+    const allowedRoles = (to.meta.roles as string[]).map((r) => r.toLowerCase().trim());
 
     // Nếu chưa đăng nhập mà truy cập trang phân quyền
-    if (!isLoggedIn || userRole === 'guest') {
+    if (!isLoggedIn || normalizedUserRole === 'guest') {
       return next({
         path: '/login',
         query: {
@@ -73,8 +86,8 @@ router.beforeEach((to, _from, next) => {
     }
 
     // Nếu đã đăng nhập nhưng SAI QUYỀN VAI TRÒ -> BÁO LỖI LUÔN, CHUYỂN ĐẾN TRANG 403
-    if (!allowedRoles.includes(userRole)) {
-      console.warn(`[RBAC] Truy cập bị từ chối vào ${to.path}. Vai trò hiện tại: [${userRole}], yêu cầu: [${allowedRoles.join(', ')}]`);
+    if (!allowedRoles.includes(normalizedUserRole)) {
+      console.warn(`[RBAC] Truy cập bị từ chối vào ${to.path}. Vai trò hiện tại: [${normalizedUserRole}], yêu cầu: [${allowedRoles.join(', ')}]`);
       return next({ path: '/403' });
     }
   }
@@ -92,9 +105,9 @@ router.beforeEach((to, _from, next) => {
 
   // 3. Nếu đã đăng nhập mà truy cập lại trang Đăng Nhập hoặc Đăng Ký
   if (isLoggedIn && (to.path === '/login' || to.path === '/register')) {
-    if (userRole === 'admin') return next({ path: '/admin' });
-    if (userRole === 'seller') return next({ path: '/seller' });
-    if (userRole === 'shipper') return next({ path: '/shipper' });
+    if (normalizedUserRole === 'admin') return next({ path: '/admin' });
+    if (normalizedUserRole === 'seller') return next({ path: '/seller' });
+    if (normalizedUserRole === 'shipper') return next({ path: '/shipper' });
     return next({ path: '/' });
   }
 

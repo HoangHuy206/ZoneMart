@@ -51,6 +51,29 @@ public class ProductsController : ControllerBase
 
             var products = await _mongoService.Products.Find(filter).ToListAsync();
 
+            // Làm giàu dữ liệu tên cửa hàng và email người bán từ bảng Stores
+            try
+            {
+                var stores = await _mongoService.Stores.Find(_ => true).ToListAsync();
+                var storeDict = stores.ToDictionary(s => s.Id ?? "", s => s);
+
+                foreach (var p in products)
+                {
+                    if (!string.IsNullOrEmpty(p.StoreId) && storeDict.TryGetValue(p.StoreId, out var st))
+                    {
+                        if (string.IsNullOrWhiteSpace(p.StoreName))
+                        {
+                            p.StoreName = st.StoreName;
+                        }
+                        if (string.IsNullOrWhiteSpace(p.SellerEmail))
+                        {
+                            p.SellerEmail = st.PhoneEmail;
+                        }
+                    }
+                }
+            }
+            catch {}
+
             return Ok(new
             {
                 success = true,
@@ -63,6 +86,103 @@ public class ProductsController : ControllerBase
             return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
+
+    public class SyncProductDto
+    {
+        public string? Id { get; set; }
+        public string? Name { get; set; }
+        public string? Category { get; set; }
+        public decimal Price { get; set; }
+        public string? Unit { get; set; }
+        public int Stock { get; set; }
+        public string? Image { get; set; }
+        public string? SellerEmail { get; set; }
+        public string? StoreName { get; set; }
+        public string? Status { get; set; }
+    }
+
+    /// <summary>
+    /// API Đồng bộ sản phẩm từ người bán vào MongoDB
+    /// </summary>
+    [HttpPost("sync-product")]
+    public async Task<IActionResult> SyncProduct([FromBody] SyncProductDto dto)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(dto.Name))
+            {
+                return BadRequest(new { success = false, message = "Tên sản phẩm không được để trống" });
+            }
+
+            // Tìm Store theo SellerEmail hoặc StoreName
+            string storeId = "65f01234567890abcdef0001";
+            Store? foundStore = null;
+            if (!string.IsNullOrWhiteSpace(dto.SellerEmail) || !string.IsNullOrWhiteSpace(dto.StoreName))
+            {
+                var storeFilter = Builders<Store>.Filter.Or(
+                    Builders<Store>.Filter.Eq(s => s.PhoneEmail, dto.SellerEmail),
+                    Builders<Store>.Filter.Eq(s => s.StoreName, dto.StoreName)
+                );
+                foundStore = await _mongoService.Stores.Find(storeFilter).FirstOrDefaultAsync();
+                if (foundStore != null && !string.IsNullOrEmpty(foundStore.Id))
+                {
+                    storeId = foundStore.Id;
+                }
+            }
+
+            string resolvedStoreName = !string.IsNullOrWhiteSpace(dto.StoreName)
+                ? dto.StoreName
+                : (foundStore?.StoreName ?? "Gian hàng ZoneMart");
+            string resolvedSellerEmail = !string.IsNullOrWhiteSpace(dto.SellerEmail)
+                ? dto.SellerEmail
+                : (foundStore?.PhoneEmail ?? "");
+
+            // Kiểm tra xem sản phẩm đã tồn tại theo tên và store chưa
+            var prodFilter = Builders<Product>.Filter.And(
+                Builders<Product>.Filter.Eq(p => p.ProductName, dto.Name),
+                Builders<Product>.Filter.Eq(p => p.StoreId, storeId)
+            );
+            var existing = await _mongoService.Products.Find(prodFilter).FirstOrDefaultAsync();
+
+            if (existing != null)
+            {
+                existing.Price = dto.Price > 0 ? dto.Price : existing.Price;
+                existing.Category = !string.IsNullOrWhiteSpace(dto.Category) ? dto.Category : existing.Category;
+                existing.StockQuantity = dto.Stock > 0 ? dto.Stock : existing.StockQuantity;
+                if (!string.IsNullOrWhiteSpace(dto.Image)) existing.ImageUrl = dto.Image;
+                existing.AiStatus = dto.Status == "active" ? "approved" : (dto.Status ?? "pending");
+                existing.StoreName = resolvedStoreName;
+                existing.SellerEmail = resolvedSellerEmail;
+                await _mongoService.Products.ReplaceOneAsync(p => p.Id == existing.Id, existing);
+                return Ok(new { success = true, message = "Đã cập nhật sản phẩm trong MongoDB", product = existing });
+            }
+
+            var newProd = new Product
+            {
+                StoreId = storeId,
+                StoreName = resolvedStoreName,
+                SellerEmail = resolvedSellerEmail,
+                ProductName = dto.Name,
+                Category = !string.IsNullOrWhiteSpace(dto.Category) ? dto.Category : "Rau củ quả",
+                Description = $"Sản phẩm {dto.Name} tươi sạch thu hoạch tự nhiên từ {resolvedStoreName}. Đã kiểm duyệt AI Vision Guard.",
+                Price = dto.Price > 0 ? dto.Price : 25000,
+                Weight = 0.5,
+                StockQuantity = dto.Stock > 0 ? dto.Stock : 30,
+                StockStatus = dto.Stock > 0 ? "in_stock" : "out_of_stock",
+                ImageUrl = !string.IsNullOrWhiteSpace(dto.Image) ? dto.Image : "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80",
+                AiStatus = dto.Status == "active" ? "approved" : "pending",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _mongoService.Products.InsertOneAsync(newProd);
+            return Ok(new { success = true, message = "Đã đồng bộ sản phẩm vào MongoDB thành công", product = newProd });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
 
     /// <summary>
     /// API Lấy danh sách các cửa hàng trong bán kính 10km

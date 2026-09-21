@@ -289,6 +289,18 @@ function loadProducts(): ModeratedProduct[] {
             changed = true;
           }
         }
+
+        // 3. Chuẩn hóa bài đăng sss nếu còn mang tên gian hàng mặc định từ cache cũ
+        if (normName === "sss") {
+          if (item.storeName === "Vườn Rau Ba Vì - Nông Sản Sạch" || !item.storeName) {
+            item.storeName = "lọ lên đầu đạt";
+            changed = true;
+          }
+          if (item.sellerEmail === "seller@zonemart.vn" || !item.sellerEmail) {
+            item.sellerEmail = "dovanbinh487@gmail.com";
+            changed = true;
+          }
+        }
       }
 
       if (changed) {
@@ -314,16 +326,248 @@ function loadPenalties(): Record<string, SellerPenaltyState> {
   return {};
 }
 
+export function compressImage(
+  dataUrl: string,
+  maxWidth = 400,
+  maxHeight = 400,
+  quality = 0.75
+): Promise<string> {
+  return new Promise((resolve) => {
+    if (!dataUrl || !dataUrl.startsWith("data:image")) {
+      resolve(dataUrl);
+      return;
+    }
+    // Ảnh đã nhỏ (< 60KB) thì không cần nén tiếp
+    if (dataUrl.length < 65000) {
+      resolve(dataUrl);
+      return;
+    }
+    try {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let width = img.width;
+          let height = img.height;
+          if (width > maxWidth || height > maxHeight) {
+            if (width > height) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            } else {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(width, 100);
+          canvas.height = Math.max(height, 100);
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(dataUrl);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const compressed = canvas.toDataURL("image/jpeg", quality);
+          resolve(compressed);
+        } catch {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    } catch {
+      resolve(dataUrl);
+    }
+  });
+}
+
+function getCategoryFallbackImage(category: string): string {
+  if (category === "Rau củ quả") {
+    return "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=500&q=80";
+  }
+  if (category === "Thịt cá tươi") {
+    return "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=500&q=80";
+  }
+  if (category === "Trái cây tươi") {
+    return "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=500&q=80";
+  }
+  if (category === "Món ăn nóng") {
+    return "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=500&q=80";
+  }
+  return "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=500&q=80";
+}
+
 const allProducts = ref<ModeratedProduct[]>(loadProducts());
 const sellerPenalties = ref<Record<string, SellerPenaltyState>>(loadPenalties());
 
 function saveProducts() {
-  localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(allProducts.value));
+  try {
+    localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(allProducts.value));
+  } catch (err) {
+    console.warn("localStorage quota exceeded while saving products, stripping heavy images for localStorage only...", err);
+    try {
+      const sanitized = allProducts.value.map(p => {
+        if (p.image && p.image.startsWith("data:") && p.image.length > 50000) {
+          return {
+            ...p,
+            image: getCategoryFallbackImage(p.category)
+          };
+        }
+        return p;
+      });
+      localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(sanitized));
+      // KHÔNG ghi đè allProducts.value trong RAM để giữ nguyên ảnh thật
+    } catch (e2) {
+      console.error("Critical: Could not save products to localStorage:", e2);
+    }
+  }
+
+  // Thông báo thời gian thực tới tất cả các component và tab đang mở
+  if (typeof window !== "undefined") {
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("zonemart:products-changed", {
+          detail: { count: allProducts.value.length, timestamp: Date.now() }
+        })
+      );
+    }, 0);
+  }
 }
 
 function savePenalties() {
-  localStorage.setItem(STORAGE_KEY_PENALTIES, JSON.stringify(sellerPenalties.value));
+  try {
+    localStorage.setItem(STORAGE_KEY_PENALTIES, JSON.stringify(sellerPenalties.value));
+  } catch {}
 }
+
+// Đồng bộ sản phẩm lên backend MongoDB trong nền
+async function syncProductToBackend(p: ModeratedProduct) {
+  try {
+    // Luôn giữ ảnh thực tế do người bán tải lên (không ghi đè bằng ảnh mock Unsplash)
+    const cleanImg = p.image || getCategoryFallbackImage(p.category);
+
+    await fetch("/api/products/sync-product", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+        price: p.price,
+        unit: p.unit,
+        stock: p.stock,
+        image: cleanImg,
+        sellerEmail: p.sellerEmail,
+        storeName: p.storeName,
+        status: p.status
+      })
+    }).catch(() => {});
+  } catch {}
+}
+
+let isRefreshingProducts = false;
+
+// Làm mới danh sách sản phẩm từ localStorage và backend
+function refreshProducts(): ModeratedProduct[] {
+  const loaded = loadProducts();
+  allProducts.value = loaded;
+
+  if (isRefreshingProducts) {
+    return loaded;
+  }
+
+  // Gọi đồng bộ thêm từ backend nếu có sản phẩm mới trên CSDL
+  if (typeof window !== "undefined") {
+    isRefreshingProducts = true;
+    fetch("/api/products")
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.success && Array.isArray(data.data)) {
+          let updated = false;
+          data.data.forEach((bp: any) => {
+            const pName = (bp.productName || bp.name || "").trim();
+            if (!pName) return;
+            const existingIndex = allProducts.value.findIndex(
+              ep => ep.name.toLowerCase() === pName.toLowerCase()
+            );
+
+            const realStoreName = bp.storeName || (bp.store && bp.store.name) || "";
+            const realSellerEmail = bp.sellerEmail || "";
+            const realImage = bp.imageUrl || bp.image || getCategoryFallbackImage(bp.category);
+
+            if (existingIndex === -1) {
+              const mapped: ModeratedProduct = {
+                id: bp.id || `p-${Date.now()}`,
+                name: pName,
+                category: bp.category || "Rau củ quả",
+                price: bp.price || 25000,
+                unit: bp.weight ? `${bp.weight} kg` : "Bó 500g",
+                stock: bp.stockQuantity || 30,
+                image: realImage,
+                status: "active",
+                isAvailable: true,
+                sellerEmail: realSellerEmail || "seller@zonemart.vn",
+                storeName: realStoreName || "Cửa hàng đối tác",
+                createdAt: bp.createdAt ? new Date(bp.createdAt).toLocaleDateString("vi-VN") : "Hôm nay",
+                aiScore: { safetyScore: 99, matchScore: 98 }
+              };
+              allProducts.value.unshift(mapped);
+              updated = true;
+            } else {
+              // Cập nhật thông tin thực từ CSDL nếu sản phẩm cục bộ đang bị sai thông tin (ảnh mock hoặc tên shop mặc định)
+              const existing = allProducts.value[existingIndex];
+              let itemUpdated = false;
+
+              if (realStoreName && existing.storeName !== realStoreName) {
+                existing.storeName = realStoreName;
+                itemUpdated = true;
+              }
+              if (realSellerEmail && existing.sellerEmail !== realSellerEmail) {
+                existing.sellerEmail = realSellerEmail;
+                itemUpdated = true;
+              }
+              if (realImage && existing.image !== realImage) {
+                existing.image = realImage;
+                itemUpdated = true;
+              }
+              if (bp.price && existing.price !== bp.price) {
+                existing.price = bp.price;
+                itemUpdated = true;
+              }
+
+              if (itemUpdated) {
+                allProducts.value[existingIndex] = { ...existing };
+                updated = true;
+              }
+            }
+          });
+          if (updated) {
+            allProducts.value = [...allProducts.value];
+            saveProducts();
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        isRefreshingProducts = false;
+      });
+  }
+  return loaded;
+}
+
+// Tự động khởi chạy đồng bộ ngay khi module được nạp trong trình duyệt
+if (typeof window !== "undefined") {
+  setTimeout(() => {
+    refreshProducts();
+  }, 100);
+
+  // Lắng nghe sự kiện Storage giữa các tab trình duyệt
+  window.addEventListener("storage", (e) => {
+    if (e.key === STORAGE_KEY_PRODUCTS) {
+      refreshProducts();
+    }
+  });
+}
+
 
 export function useProductModeration() {
   const getSellerPenalty = (sellerEmail: string): SellerPenaltyState => {
@@ -675,6 +919,7 @@ export function useProductModeration() {
 
     allProducts.value.unshift(activeProd);
     saveProducts();
+    syncProductToBackend(activeProd);
     return {
       scanResult,
       createdProduct: activeProd
@@ -752,6 +997,9 @@ export function useProductModeration() {
     };
     currentProd.managerNote = undefined;
     saveProducts();
+    if (currentProd.status === "active") {
+      syncProductToBackend(currentProd);
+    }
     return { scanResult, updatedProduct: currentProd };
   };
 
@@ -762,6 +1010,7 @@ export function useProductModeration() {
     prod.isAvailable = true;
     prod.managerNote = undefined;
     saveProducts();
+    syncProductToBackend(prod);
 
     const penalty = getSellerPenalty(prod.sellerEmail);
     penalty.notificationLogs.unshift({
@@ -832,6 +1081,8 @@ export function useProductModeration() {
     approveProductByManager,
     rejectProductByManager,
     resetSellerPenalties,
-    saveProducts
+    saveProducts,
+    refreshProducts,
+    compressImage
   };
 }

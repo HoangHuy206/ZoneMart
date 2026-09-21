@@ -26,8 +26,10 @@ const isLoadingDatabase = ref(false);
 onMounted(async () => {
   isLoadingDatabase.value = true;
   try {
-    const userId = auth.currentUser.value?.id || 'usr_buyer_01';
-    await cart.loadCartFromDatabase(userId);
+    const userId = auth.currentUser.value?.id;
+    if (userId) {
+      await cart.loadCartFromDatabase(userId);
+    }
     suggestedProducts.value = await cartService.fetchSuggestedProducts();
   } catch (e) {
     console.warn('Lỗi nạp dữ liệu database cho CartView:', e);

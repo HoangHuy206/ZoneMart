@@ -65,4 +65,13 @@ public class User
 
     [BsonElement("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    [BsonElement("face_embedding")]
+    public List<float>? FaceEmbedding { get; set; }
+
+    [BsonElement("face_auth_enabled")]
+    public bool FaceAuthEnabled { get; set; } = false;
+
+    [BsonElement("face_registered_at")]
+    public DateTime? FaceRegisteredAt { get; set; }
 }

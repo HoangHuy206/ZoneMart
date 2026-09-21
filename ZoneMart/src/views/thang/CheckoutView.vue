@@ -17,6 +17,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useCart } from "../../composables/useCart";
 import { useAuth } from "../../composables/useAuth";
+import { orderRealtimeService } from "../../services/orderRealtimeService";
 
 const router = useRouter();
 const cart = useCart();
@@ -487,6 +488,45 @@ const onPaymentConfirmed = (paidAmount?: number) => {
     localStorage.setItem(orderKey, JSON.stringify(existing));
   } catch (e) {}
 
+  // Phát tán sự kiện nổ đơn thời gian thực tới Shipper & Seller
+  try {
+    const firstShopName = selectedCartItems.value[0]?.shop || "Vườn Rau Ba Vì (Cầu Giấy)";
+    orderRealtimeService.dispatchNewOrder({
+      id: orderId,
+      orderCode: orderId,
+      total: finalAmount,
+      shippingFee: shippingFee.value || 15000,
+      paymentMethod: "Chuyển khoản QR",
+      createdAt: dateStr,
+      status: "pending",
+      statusText: "Đang chờ tài xế nhận đơn",
+      customer: {
+        lat: currentCoords.value?.lat || 21.0333,
+        lng: currentCoords.value?.lng || 105.7983,
+        name: buyerName.value,
+        phone: buyerPhone.value,
+        address: shippingAddress.value
+      },
+      store: {
+        lat: 21.0345,
+        lng: 105.7960,
+        name: firstShopName,
+        address: "Số 48 Cầu Giấy, Quan Hoa, Cầu Giấy, Hà Nội",
+        phone: "0988 123 456"
+      },
+      items: selectedCartItems.value.map(item => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        image: item.image,
+        shop: item.shop
+      }))
+    });
+  } catch (e) {
+    console.warn("Lỗi phát đơn thời gian thực:", e);
+  }
+
   const profileKey = "zonemart_profile_data_" + ownerKey;
   try {
     const profile = JSON.parse(localStorage.getItem(profileKey) || "{}");
@@ -657,33 +697,9 @@ const startPaymentListener = () => {
   }, 1000);
 };
 
-const isCheckingPayment = ref(false);
+// Hệ thống tự động lắng nghe và đối soát 100% qua SSE và Polling /api/payment/check
 
-const handleUserClickPaid = async () => {
-  if (paymentState.value === "SUCCESS") {
-    goToBuyerOrders();
-    return;
-  }
-  isCheckingPayment.value = true;
-  try {
-    const checkUrl = `/api/payment/check?code=${encodeURIComponent(orderPaymentCode.value)}&amount=${finalTotal.value}&bankAccount=${encodeURIComponent(vietinBankConfig.value.accountNo)}`;
-    const res = await fetch(checkUrl);
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.paid && data.code && data.code.toUpperCase() === orderPaymentCode.value.toUpperCase()) {
-        isCheckingPayment.value = false;
-        onPaymentConfirmed(data.amount);
-        return;
-      }
-    }
-  } catch (e) {}
-
-  setTimeout(() => {
-    isCheckingPayment.value = false;
-    triggerToast(`⏳ Đang tiếp tục quét... Chưa có biến động tiền vào tài khoản ${vietinBankConfig.value.bankId} (${vietinBankConfig.value.accountNo}).`);
-  }, 500);
-};
-
+// Hệ thống tự động lắng nghe và đối soát 100% qua SSE và Polling /api/payment/check
 // Đã kết nối API thật - Tự động đối soát qua Webhook /api/payment/check
 
 // Modal giải thích & hướng dẫn kết nối API Tingo Pay
@@ -883,6 +899,45 @@ const handlePlaceOrder = () => {
     existing.unshift(newOrder);
     localStorage.setItem(orderKey, JSON.stringify(existing));
   } catch (e) {}
+
+  // Phát tán sự kiện nổ đơn thời gian thực tới Shipper & Seller
+  try {
+    const firstShopName = selectedCartItems.value[0]?.shop || "Vườn Rau Ba Vì (Cầu Giấy)";
+    orderRealtimeService.dispatchNewOrder({
+      id: orderId,
+      orderCode: orderId,
+      total: finalTotal.value,
+      shippingFee: shippingFee.value || 15000,
+      paymentMethod: "Tiền mặt COD",
+      createdAt: dateStr,
+      status: "pending",
+      statusText: "Đang chờ tài xế nhận đơn",
+      customer: {
+        lat: currentCoords.value?.lat || 21.0333,
+        lng: currentCoords.value?.lng || 105.7983,
+        name: buyerName.value,
+        phone: buyerPhone.value,
+        address: shippingAddress.value
+      },
+      store: {
+        lat: 21.0345,
+        lng: 105.7960,
+        name: firstShopName,
+        address: "Số 48 Cầu Giấy, Quan Hoa, Cầu Giấy, Hà Nội",
+        phone: "0988 123 456"
+      },
+      items: selectedCartItems.value.map(item => ({
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        image: item.image,
+        shop: item.shop
+      }))
+    });
+  } catch (e) {
+    console.warn("Lỗi phát đơn thời gian thực COD:", e);
+  }
 
   alert(`🎉 Đặt hàng thành công mã #${orderId}!\nĐơn hàng sẽ được giao tới: ${shippingAddress.value}\nNgười nhận: ${buyerName.value} (${buyerPhone.value})`);
   cart.clearCart();
@@ -1164,19 +1219,9 @@ const handlePlaceOrder = () => {
             <div class="auto-spinner"></div>
             <div>
               <div class="auto-title">ĐANG TỰ ĐỘNG LẮNG NGHE TÀI KHOẢN TPBANK</div>
-              <div class="auto-desc">Bạn chỉ cần chuyển khoản theo mã QR. Tiền vào hệ thống sẽ tự động xác nhận ngay tức thì!</div>
+              <div class="auto-desc">Bạn chỉ cần chuyển khoản theo mã QR. Tiền vào hệ thống sẽ tự động xác nhận và chuyển trang ngay tức thì!</div>
             </div>
           </div>
-          <button
-            v-if="paymentMethod === 'ONLINE_QR' && paymentState !== 'SUCCESS'"
-            class="btn-check-status-subtle"
-            @click="handleUserClickPaid"
-            type="button"
-            :disabled="isCheckingPayment"
-          >
-            <i class="bi me-1" :class="isCheckingPayment ? 'bi-arrow-repeat spin-icon' : 'bi-arrow-repeat'"></i>
-            {{ isCheckingPayment ? 'Đang đối soát số dư với ngân hàng TPBank...' : 'Kiểm tra trạng thái tiền về ngay' }}
-          </button>
           <button
             v-else-if="paymentMethod === 'ONLINE_QR' && paymentState === 'SUCCESS'"
             class="btn btn-success-solid btn-block"

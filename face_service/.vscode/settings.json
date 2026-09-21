@@ -1,0 +1,16 @@
+{
+  "python.defaultInterpreterPath": "C:\\Users\\DELL\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+  "python.analysis.typeCheckingMode": "off",
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportUnknownVariableType": "none",
+    "reportUnknownMemberType": "none",
+    "reportUnknownArgumentType": "none",
+    "reportUnknownParameterType": "none",
+    "reportMissingTypeStubs": "none",
+    "reportGeneralTypeIssues": "none",
+    "reportOptionalMemberAccess": "none"
+  },
+  "python.analysis.extraPaths": [
+    "D:\\ZoneMart\\face_service"
+  ]
+}

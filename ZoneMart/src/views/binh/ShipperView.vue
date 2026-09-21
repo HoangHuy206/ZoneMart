@@ -12,11 +12,20 @@
 import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
+import { orderRealtimeService, type RealtimeOrder } from "../../services/orderRealtimeService";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 const router = useRouter();
 const auth = useAuth();
+
+// Quản lý nổ đơn hàng mới trong bán kính 3km
+const incomingOrder = ref<RealtimeOrder | null>(null);
+const showIncomingModal = ref(false);
+const incomingCountdown = ref(30);
+let incomingTimer: any = null;
+const incomingDistance = ref(0);
+let unsubscribeOrderCreated: (() => void) | null = null;
 
 // 1. Trạng thái hoạt động (Mặc định: Tạm nghỉ)
 const isOnline = ref(false);
@@ -102,7 +111,7 @@ const loadDriverProfile = async () => {
       // Query API endpoint để đồng bộ thông tin mới nhất từ CSDL MongoDB Atlas
       const accountQuery = u.phoneEmail || u.phoneNumber || driverProfile.phoneEmail;
       if (accountQuery) {
-        const res = await fetch(`http://localhost:5000/api/auth/shipper-profile?account=${encodeURIComponent(accountQuery)}`).catch(() => null);
+        const res = await fetch(`/api/auth/shipper-profile?account=${encodeURIComponent(accountQuery)}`).catch(() => null);
         if (res && res.ok) {
           const data = await res.json();
           if (data.success && data.shipper) {
@@ -280,8 +289,8 @@ const initMap = () => {
   renderOrderOnMap();
 };
 
-// Vẽ tuyến đường & các điểm đơn hàng chuẩn Google Navigation
-const renderOrderOnMap = () => {
+// Vẽ tuyến đường & các điểm đơn hàng chuẩn Google Navigation (Tự động tìm con đường ngắn nhất qua OSRM)
+const renderOrderOnMap = async () => {
   if (!map) return;
 
   // Xóa layers cũ
@@ -291,40 +300,56 @@ const renderOrderOnMap = () => {
   if (routeLine) map.removeLayer(routeLine);
 
   if (isOnline.value && currentStep.value !== "idle" && currentStep.value !== "delivered" && activeOrder.value) {
+    const storeLat = activeOrder.value.store?.lat ?? 21.0345;
+    const storeLng = activeOrder.value.store?.lng ?? 105.7960;
+    const custLat = activeOrder.value.customer?.lat ?? 21.0333;
+    const custLng = activeOrder.value.customer?.lng ?? 105.7983;
+
     // Ghim Shop
-    storeMarker = L.marker([activeOrder.value.store.lat, activeOrder.value.store.lng], {
+    storeMarker = L.marker([storeLat, storeLng], {
       icon: storeIcon
     }).addTo(map).bindPopup(`
       <div class="gm-infowindow">
         <div class="gm-iw-tag text-blue">ĐIỂM LẤY HÀNG</div>
-        <h4 class="gm-iw-title">${activeOrder.value.store.name}</h4>
-        <p class="gm-iw-desc"><i class="bi bi-geo-alt-fill text-primary"></i> ${activeOrder.value.store.address}</p>
+        <h4 class="gm-iw-title">${activeOrder.value.store?.name || 'Quán ZoneMart'}</h4>
+        <p class="gm-iw-desc"><i class="bi bi-geo-alt-fill text-primary"></i> ${activeOrder.value.store?.address || 'Khu vực Cầu Giấy'}</p>
         <div class="gm-iw-rating"><i class="bi bi-star-fill text-warning"></i> 4.9 <span class="text-muted">(1,240 đánh giá) • Mở cửa</span></div>
       </div>
     `);
 
     // Ghim Khách hàng
-    customerMarker = L.marker([activeOrder.value.customer.lat, activeOrder.value.customer.lng], {
+    customerMarker = L.marker([custLat, custLng], {
       icon: customerIcon
     }).addTo(map).bindPopup(`
       <div class="gm-infowindow">
         <div class="gm-iw-tag text-danger">ĐIỂM GIAO HÀNG</div>
-        <h4 class="gm-iw-title">${activeOrder.value.customer.name}</h4>
-        <p class="gm-iw-desc"><i class="bi bi-geo-alt-fill text-danger"></i> ${activeOrder.value.customer.address}</p>
-        <div class="gm-iw-meta"><i class="bi bi-telephone-fill"></i> ${activeOrder.value.customer.phone} • Hỏa tốc 3km</div>
+        <h4 class="gm-iw-title">${activeOrder.value.customer?.name || 'Khách Hàng'}</h4>
+        <p class="gm-iw-desc"><i class="bi bi-geo-alt-fill text-danger"></i> ${activeOrder.value.customer?.address || 'Địa chỉ nhận hàng'}</p>
+        <div class="gm-iw-meta"><i class="bi bi-telephone-fill"></i> ${activeOrder.value.customer?.phone || ''} • Hỏa tốc 3km</div>
       </div>
     `);
 
-    // Tọa độ chặng đi
-    const waypoints: [number, number][] = currentStep.value === "accepted"
-      ? [
-          [driverLocation.value.lat, driverLocation.value.lng],
-          [activeOrder.value.store.lat, activeOrder.value.store.lng]
-        ]
-      : [
-          [activeOrder.value.store.lat, activeOrder.value.store.lng],
-          [activeOrder.value.customer.lat, activeOrder.value.customer.lng]
-        ];
+    // Tự động định vị con đường ngắn nhất thực tế qua OSRM Driving Engine
+    let waypoints: [number, number][] = [];
+    if (currentStep.value === "accepted") {
+      // Tuyến đường ngắn nhất từ Vị trí Tài xế -> Quán
+      waypoints = await orderRealtimeService.fetchShortestRoute(
+        driverLocation.value.lat,
+        driverLocation.value.lng,
+        storeLat,
+        storeLng
+      );
+    } else {
+      // Tuyến đường ngắn nhất từ Vị trí Hiện Tại / Quán -> Khách Hàng
+      waypoints = await orderRealtimeService.fetchShortestRoute(
+        driverLocation.value.lat,
+        driverLocation.value.lng,
+        custLat,
+        custLng
+      );
+    }
+
+    if (!map) return;
 
     // Tuyến đường Google Maps kép: Casing ngoài + Inner line màu sáng
     routeLineCasing = L.polyline(waypoints, {
@@ -343,9 +368,11 @@ const renderOrderOnMap = () => {
       lineJoin: "round"
     }).addTo(map);
 
-    // Fit view bao trọn lộ trình
-    const bounds = L.latLngBounds(waypoints);
-    map.fitBounds(bounds, { padding: [60, 60] });
+    // Fit view bao trọn lộ trình ngắn nhất
+    if (waypoints.length > 0) {
+      const bounds = L.latLngBounds(waypoints);
+      map.fitBounds(bounds, { padding: [60, 60] });
+    }
   }
 };
 
@@ -550,31 +577,74 @@ const toggleOnline = () => {
   });
 };
 
-// Xử lý luồng đơn hàng
-const handleConfirmPicked = () => {
-  currentStep.value = "picked";
-  triggerToast("Đã lấy hàng tại Shop! Hãy di chuyển tới địa chỉ khách.");
-  renderOrderOnMap();
+// Xử lý chấp nhận đơn hàng nổ trong bán kính 3km
+const handleAcceptIncomingOrder = async () => {
+  if (!incomingOrder.value) return;
+  if (incomingTimer) clearInterval(incomingTimer);
+  showIncomingModal.value = false;
+
+  const order = incomingOrder.value;
+  const itemsText = Array.isArray(order.items)
+    ? order.items.map((i: any) => `${i.name} (x${i.quantity})`).join(", ")
+    : "Sản phẩm ZoneMart";
+
+  activeOrder.value = {
+    ...order,
+    orderId: order.id,
+    distanceKm: incomingDistance.value,
+    items: itemsText
+  };
+  currentStep.value = "accepted";
+
+  // Thông báo tới Buyer thời gian thực: "Tài xế đang đi lấy đơn hàng"
+  orderRealtimeService.acceptOrder(order.id, driverProfile);
+  triggerToast(`Đã nhận đơn #${order.id}! Đang tự động định vị tuyến đường ngắn nhất đến Quán...`);
+
+  await renderOrderOnMap();
 };
 
+const handleDeclineOrder = () => {
+  if (incomingTimer) clearInterval(incomingTimer);
+  showIncomingModal.value = false;
+  incomingOrder.value = null;
+  triggerToast("Đã từ chối đơn hàng.");
+};
+
+// Xử lý luồng đơn hàng: 1. Đã lấy hàng thành công tại quán -> vẽ đường ngắn nhất tới Khách
+const handleConfirmPicked = async () => {
+  currentStep.value = "picked";
+  if (activeOrder.value) {
+    const orderId = activeOrder.value.id || activeOrder.value.orderId;
+    // Thông báo tới Buyer thời gian thực: "Tài xế đang giao cho bạn"
+    orderRealtimeService.confirmOrderPicked(orderId);
+  }
+  triggerToast("Đã lấy đơn hàng thành công! Đang tự động định vị tuyến đường ngắn nhất đến Khách...");
+  await renderOrderOnMap();
+};
+
+// Xử lý luồng đơn hàng: 2. Đã giao thành công tới khách hàng
 const handleConfirmDelivered = () => {
   currentStep.value = "delivered";
   if (activeOrder.value) {
-    const fee = activeOrder.value.shippingFee;
+    const orderId = activeOrder.value.id || activeOrder.value.orderId;
+    // Thông báo tới Buyer & Seller thời gian thực: "Giao thành công"
+    orderRealtimeService.confirmOrderDelivered(orderId);
+
+    const fee = activeOrder.value.shippingFee || 15000;
     shiftStats.value.todayEarnings += fee;
     shiftStats.value.completedOrders += 1;
-    shiftStats.value.totalKm = Number((shiftStats.value.totalKm + activeOrder.value.distanceKm).toFixed(1));
+    shiftStats.value.totalKm = Number((shiftStats.value.totalKm + (activeOrder.value.distanceKm || 1.5)).toFixed(1));
 
     // Ghi nhận vào lịch sử cuốc xe
     const now = new Date();
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
     tripHistory.value.unshift({
-      id: activeOrder.value.orderId,
+      id: orderId,
       time: timeStr,
-      storeName: activeOrder.value.store.name,
-      customerName: activeOrder.value.customer.name,
+      storeName: activeOrder.value.store?.name || "ZoneMart Store",
+      customerName: activeOrder.value.customer?.name || "Khách Hàng",
       shippingFee: fee,
-      distanceKm: activeOrder.value.distanceKm,
+      distanceKm: activeOrder.value.distanceKm || 1.5,
       status: "Giao thành công"
     });
 
@@ -602,8 +672,77 @@ onMounted(() => {
     router.replace("/403");
     return;
   }
+
+  // Kiểm tra tính hợp lệ của tài khoản với backend (nếu tài khoản đã bị Admin xóa)
+  const emailToCheck = auth.currentUser.value?.phoneEmail || auth.currentUser.value?.phone;
+  if (emailToCheck && role !== 'admin') {
+    fetch(`http://localhost:5000/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
+    fetch(`/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
+      .then((res) => {
+        if (res.status === 404 || res.status === 401) {
+          auth.logout();
+          alert("Tài khoản của bạn đã bị xóa khỏi hệ thống! Vui lòng liên hệ Ban Quản Trị.");
+          router.replace("/login");
+        }
+      })
+      .catch(() => {});
+  }
+
   loadDriverProfile();
   initMap();
+
+  // Lắng nghe đơn hàng mới từ hệ thống thời gian thực (Kiểm tra bán kính 3km)
+  unsubscribeOrderCreated = orderRealtimeService.onOrderCreated((order) => {
+    // 1. Chỉ nổ đơn khi Shipper đang BẬT HOẠT ĐỘNG
+    if (!isOnline.value) {
+      console.log("[ShipperView] Tài xế đang TẮT hoạt động -> Không nổ đơn.");
+      return;
+    }
+
+    // 2. Nếu đang bận giao đơn khác thì không nổ đơn đè
+    if (currentStep.value !== "idle" && currentStep.value !== "delivered") {
+      console.log("[ShipperView] Tài xế đang bận đơn khác -> Không nổ đơn.");
+      return;
+    }
+
+    // 3. Tính khoảng cách thực tế từ vị trí hiện tại của Shipper tới Quán (Haversine)
+    const storeLat = order.store?.lat ?? 21.0345;
+    const storeLng = order.store?.lng ?? 105.7960;
+    const dist = orderRealtimeService.calculateDistanceKm(
+      driverLocation.value.lat,
+      driverLocation.value.lng,
+      storeLat,
+      storeLng
+    );
+
+    incomingDistance.value = dist;
+
+    // QUY TẮC: Trong vòng bán kính 3km thì LẬP TỨC NỔ ĐƠN, ngược lại nếu > 3km thì KHÔNG NỔ ĐƠN
+    if (dist <= 3.0) {
+      console.log(`[ShipperView] Đơn nằm trong bán kính 3km (${dist} km) -> NỔ ĐƠN!`);
+      incomingOrder.value = order;
+      showIncomingModal.value = true;
+      incomingCountdown.value = 30;
+
+      // Phát chuông báo nổ đơn
+      orderRealtimeService.playOrderAlertSound();
+      triggerToast(`🚨 NỔ ĐƠN HỎA TỐC! Quán cách bạn ${dist} km (Bán kính <= 3km)`);
+
+      if (incomingTimer) clearInterval(incomingTimer);
+      incomingTimer = setInterval(() => {
+        incomingCountdown.value--;
+        if (incomingCountdown.value <= 0) {
+          clearInterval(incomingTimer);
+          showIncomingModal.value = false;
+          incomingOrder.value = null;
+        }
+      }, 1000);
+    } else {
+      console.log(`[ShipperView] Đơn nằm ngoài bán kính 3km (${dist} km) -> Bỏ qua, không nổ đơn.`);
+      triggerToast(`ℹ️ Có đơn mới ngoài bán kính 3km (${dist} km) - Không nổ đơn.`);
+    }
+  });
+
   // Nếu đang mở hoạt động sẵn, tự động định vị vị trí người dùng
   if (isOnline.value) {
     locateAndTrackDriver(true);
@@ -612,6 +751,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (incomingTimer) clearInterval(incomingTimer);
+  if (unsubscribeOrderCreated) unsubscribeOrderCreated();
   stopLocationWatch();
   if (map) {
     map.remove();
@@ -627,6 +768,84 @@ onUnmounted(() => {
       <i class="bi bi-info-circle-fill"></i>
       <span>{{ toastMsg }}</span>
     </div>
+
+    <!-- MODAL NỔ ĐƠN HÀNG HỎA TỐC BÁN KÍNH 3KM -->
+    <transition name="modal-bounce">
+      <div v-if="showIncomingModal && incomingOrder" class="incoming-order-overlay">
+        <div class="incoming-order-modal">
+          <div class="incoming-modal-header">
+            <div class="incoming-badge-pulse">
+              <span class="pulse-ring"></span>
+              <i class="bi bi-bell-fill"></i>
+            </div>
+            <div class="incoming-title-box">
+              <h3>🚨 NỔ ĐƠN HỎA TỐC BÁN KÍNH 3KM!</h3>
+              <p>Quán cách bạn <strong>{{ incomingDistance }} km</strong> (Trong vòng bán kính 3km)</p>
+            </div>
+            <div class="countdown-badge">
+              <i class="bi bi-stopwatch"></i> {{ incomingCountdown }}s
+            </div>
+          </div>
+
+          <!-- Thanh đếm ngược 30s -->
+          <div class="countdown-bar-container">
+            <div class="countdown-bar-fill" :style="{ width: (incomingCountdown / 30 * 100) + '%' }"></div>
+          </div>
+
+          <div class="incoming-modal-body">
+            <!-- Thù lao cước nhận -->
+            <div class="fee-banner">
+              <span class="fee-label">Thu nhập cuốc xe:</span>
+              <strong class="fee-val">+{{ (incomingOrder.shippingFee || 15000).toLocaleString('vi-VN') }} ₫</strong>
+            </div>
+
+            <!-- Điểm lấy hàng -->
+            <div class="loc-step-item">
+              <div class="loc-icon bg-blue"><i class="bi bi-shop"></i></div>
+              <div class="loc-details">
+                <span class="loc-tag">1. Điểm lấy hàng (Cách bạn {{ incomingDistance }} km)</span>
+                <h4 class="loc-name">{{ incomingOrder.store?.name || 'Quán ZoneMart' }}</h4>
+                <p class="loc-address">{{ incomingOrder.store?.address || 'Khu vực Cầu Giấy, Hà Nội' }}</p>
+              </div>
+            </div>
+
+            <!-- Điểm giao hàng -->
+            <div class="loc-step-item">
+              <div class="loc-icon bg-green"><i class="bi bi-geo-alt-fill"></i></div>
+              <div class="loc-details">
+                <span class="loc-tag">2. Điểm giao tới khách</span>
+                <h4 class="loc-name">{{ incomingOrder.customer?.name || 'Khách Hàng' }} ({{ incomingOrder.customer?.phone || '' }})</h4>
+                <p class="loc-address">{{ incomingOrder.customer?.address || 'Địa chỉ khách hàng' }}</p>
+              </div>
+            </div>
+
+            <!-- Danh sách món hàng -->
+            <div class="incoming-items-list" v-if="incomingOrder.items && incomingOrder.items.length > 0">
+              <div class="items-head">
+                <span>Món hàng cần giao ({{ incomingOrder.items.length }} món):</span>
+              </div>
+              <div class="incoming-item-row" v-for="(it, idx) in incomingOrder.items" :key="idx">
+                <img v-if="it.image" :src="it.image" class="item-thumb" />
+                <div v-else class="item-thumb fallback"><i class="bi bi-basket3"></i></div>
+                <div class="item-info">
+                  <span class="item-title">{{ it.name }}</span>
+                  <span class="item-qty">Số lượng: x{{ it.quantity }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="incoming-modal-actions">
+            <button type="button" class="btn-decline" @click="handleDeclineOrder">
+              <i class="bi bi-x-circle me-1"></i> Bỏ qua
+            </button>
+            <button type="button" class="btn-accept" @click="handleAcceptIncomingOrder">
+              <i class="bi bi-check2-circle me-1"></i> ĐỒNG Ý NHẬN ĐƠN ({{ incomingCountdown }}s)
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
 
     <!-- 1. FULLSCREEN LEAFLET MAP (TRÀN TOÀN BỘ MÀN HÌNH) -->
     <div class="fullscreen-map-wrapper">
@@ -756,6 +975,7 @@ onUnmounted(() => {
             </a>
             <button class="btn btn-primary flex-1" @click="handleConfirmPicked">
               <i class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></i> ĐÃ LẤY HÀNG <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i>
+              <i class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></i> ĐÃ LẤY ĐƠN HÀNG THÀNH CÔNG <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i>
             </button>
           </div>
         </div>
@@ -778,6 +998,7 @@ onUnmounted(() => {
             </a>
             <button class="btn btn-success flex-1" @click="handleConfirmDelivered">
               <i class="bi bi-check2-circle me-1" aria-hidden="true"></i> ĐÃ GIAO XONG
+              <i class="bi bi-check2-circle me-1" aria-hidden="true"></i> ĐÃ GIAO THÀNH CÔNG
             </button>
           </div>
           <button class="btn-report-link" @click="handleReportIssue">
@@ -3254,6 +3475,309 @@ onUnmounted(() => {
   .trip-meta-col {
     align-items: flex-start;
   }
+}
+
+/* ================================================================
+   MODAL NỔ ĐƠN HỎA TỐC BÁN KÍNH 3KM STYLING
+   ================================================================ */
+.incoming-order-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeInModal 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.incoming-order-modal {
+  background: #ffffff;
+  width: 100%;
+  max-width: 480px;
+  border-radius: 20px;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.4), 0 0 0 2px #3b82f6;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: scaleInModal 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.incoming-modal-header {
+  background: linear-gradient(135deg, #1e3a8a, #2563eb);
+  color: #ffffff;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.incoming-badge-pulse {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  background: #ef4444;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.pulse-ring {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  right: -6px;
+  bottom: -6px;
+  border-radius: 50%;
+  border: 3px solid #ef4444;
+  animation: ringPulse 1.2s infinite ease-out;
+}
+
+@keyframes ringPulse {
+  0% { transform: scale(0.9); opacity: 1; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+.incoming-title-box h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+}
+
+.incoming-title-box p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #bfdbfe;
+}
+
+.countdown-badge {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-weight: 800;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #fef08a;
+  border: 1px solid rgba(254, 240, 138, 0.4);
+}
+
+.countdown-bar-container {
+  width: 100%;
+  height: 5px;
+  background: #e2e8f0;
+}
+
+.countdown-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #eab308, #ef4444);
+  transition: width 1s linear;
+}
+
+.incoming-modal-body {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.fee-banner {
+  background: #f0fdf4;
+  border: 1.5px dashed #22c55e;
+  border-radius: 12px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fee-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #166534;
+}
+
+.fee-val {
+  font-size: 20px;
+  font-weight: 800;
+  color: #15803d;
+}
+
+.loc-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: #f8fafc;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.loc-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.loc-icon.bg-blue { background: #3b82f6; }
+.loc-icon.bg-green { background: #10b981; }
+
+.loc-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.loc-tag {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
+.loc-name {
+  margin: 2px 0 1px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.loc-address {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.incoming-items-list {
+  border-top: 1px solid #f1f5f9;
+  padding-top: 10px;
+}
+
+.items-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.incoming-item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.item-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.item-thumb.fallback {
+  background: #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+}
+
+.item-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+}
+
+.item-title {
+  font-size: 13px;
+  color: #334155;
+  font-weight: 500;
+}
+
+.item-qty {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.incoming-modal-actions {
+  padding: 16px 20px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  gap: 12px;
+}
+
+.btn-decline {
+  flex: 1;
+  padding: 13px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #64748b;
+  font-weight: 700;
+  font-size: 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-decline:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.btn-accept {
+  flex: 2;
+  padding: 13px;
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+  border: none;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 14px;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.4);
+  transition: all 0.2s;
+}
+
+.btn-accept:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(34, 197, 94, 0.5);
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleInModal {
+  from { transform: scale(0.85); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 </style>
 

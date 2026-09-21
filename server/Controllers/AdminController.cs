@@ -220,19 +220,53 @@ public class AdminController : ControllerBase
         {
             await EnsureDataSeededAsync();
 
+            // Dọn dẹp gian hàng thử nghiệm cũ 'Demobanhang1234' nếu có để hiển thị chính xác gian hàng thật 'Tạp Hóa Hoàng Huy'
+            try
+            {
+                await _mongoService.Stores.DeleteManyAsync(s => s.StoreName == "Demobanhang1234" || s.Id == "6aa116df481fb0a8422e859d");
+                await _mongoService.AdminNotifications.DeleteManyAsync(n => n.TargetName == "Demobanhang1234" || n.Message.Contains("Demobanhang1234"));
+            }
+            catch { }
+
             var usersList = await _mongoService.Users.Find(u => !u.IsDeleted).SortByDescending(u => u.CreatedAt).ToListAsync();
-            var storeList = await _mongoService.Stores.Find(_ => true).ToListAsync();
-            var shipperList = await _mongoService.Shippers.Find(_ => true).ToListAsync();
+            var storeList = await _mongoService.Stores.Find(_ => true).SortByDescending(s => s.CreatedAt).ToListAsync();
+            var shipperList = await _mongoService.Shippers.Find(_ => true).SortByDescending(s => s.CreatedAt).ToListAsync();
 
             var allCombined = new List<AdminUserViewDto>();
 
-            // 1. Map existing users and attach Store & Shipper details
+            // 1. Map existing users and attach Store & Shipper details (Ưu tiên theo PhoneEmail, UserId, StoreCode, Name)
             foreach (var u in usersList)
             {
-                var store = storeList.FirstOrDefault(s => s.UserId == u.Id || (s.OwnerFullName == u.FullName && !string.IsNullOrEmpty(u.FullName)));
-                var shipper = shipperList.FirstOrDefault(sh => sh.UserId == u.Id || sh.PhoneNumber == u.PhoneEmail || sh.FullName == u.FullName);
+                var store = storeList.FirstOrDefault(s =>
+                    (!string.IsNullOrEmpty(s.PhoneEmail) && !string.IsNullOrEmpty(u.PhoneEmail) && s.PhoneEmail.Trim().ToLower() == u.PhoneEmail.Trim().ToLower()) ||
+                    (!string.IsNullOrEmpty(s.UserId) && (s.UserId == u.Id || (!string.IsNullOrEmpty(u.UserCode) && s.UserId == u.UserCode))) ||
+                    (!string.IsNullOrEmpty(s.StoreCode) && !string.IsNullOrEmpty(u.UserCode) && s.StoreCode == u.UserCode) ||
+                    (!string.IsNullOrEmpty(s.OwnerFullName) && !string.IsNullOrEmpty(u.FullName) && s.OwnerFullName.Trim().ToLower() == u.FullName.Trim().ToLower())
+                );
 
-                string primaryRole = u.IsAdmin ? "Admin" : u.IsManager ? "Manager" : u.IsSeller ? "Seller" : u.IsShipper ? "Shipper" : "Buyer";
+                var shipper = shipperList.FirstOrDefault(sh =>
+                    (!string.IsNullOrEmpty(sh.PhoneNumber) && !string.IsNullOrEmpty(u.PhoneEmail) && sh.PhoneNumber.Trim().ToLower() == u.PhoneEmail.Trim().ToLower()) ||
+                    (!string.IsNullOrEmpty(sh.UserId) && (sh.UserId == u.Id || (!string.IsNullOrEmpty(u.UserCode) && sh.UserId == u.UserCode))) ||
+                    (!string.IsNullOrEmpty(sh.ShipperCode) && !string.IsNullOrEmpty(u.UserCode) && sh.ShipperCode == u.UserCode) ||
+                    (!string.IsNullOrEmpty(sh.FullName) && !string.IsNullOrEmpty(u.FullName) && sh.FullName.Trim().ToLower() == u.FullName.Trim().ToLower())
+                );
+
+                string primaryRole = u.IsAdmin ? "Admin" 
+                    : u.IsManager ? "Manager" 
+                    : (store != null && store.Status == "Pending") ? "Seller" 
+                    : (shipper != null && shipper.Status == "Pending") ? "Shipper" 
+                    : u.IsSeller ? "Seller" 
+                    : u.IsShipper ? "Shipper" 
+                    : "Buyer";
+
+                string accountStatus = u.AccountStatus ?? "active";
+                if (accountStatus != "banned" && accountStatus != "locked_10_days" && accountStatus != "suspended")
+                {
+                    if ((store != null && store.Status == "Pending") || (shipper != null && shipper.Status == "Pending") || u.AccountStatus == "pending")
+                    {
+                        accountStatus = "pending";
+                    }
+                }
 
                 allCombined.Add(new AdminUserViewDto
                 {
@@ -246,21 +280,29 @@ public class AdminController : ControllerBase
                     isShipper = u.IsShipper,
                     isAdmin = u.IsAdmin,
                     isManager = u.IsManager,
-                    accountStatus = u.AccountStatus ?? "active",
+                    accountStatus = accountStatus,
                     lockUntil = u.LockUntil,
                     violationCount = u.ViolationCount,
                     createdAt = u.CreatedAt.ToString("dd/MM/yyyy"),
                     storeDetails = store != null ? new
                     {
                         storeId = store.Id,
+                        storeCode = store.StoreCode,
                         storeName = store.StoreName,
+                        ownerFullName = store.OwnerFullName,
+                        phoneEmail = store.PhoneEmail,
                         address = store.Address,
                         category = store.Category,
+                        openHours = store.OpenHours,
+                        bankName = store.BankName,
+                        bankAccountNumber = store.BankAccountNumber,
                         status = store.Status,
+                        rejectReason = store.RejectReason,
                         cccdNumber = store.CccdNumber,
                         cccdFrontImage = store.CccdFrontImage,
                         cccdBackImage = store.CccdBackImage,
-                        foodSafetyCertImage = store.FoodSafetyCertImage
+                        foodSafetyCertImage = store.FoodSafetyCertImage,
+                        createdAt = store.CreatedAt.ToString("dd/MM/yyyy HH:mm")
                     } : null,
                     shipperDetails = shipper != null ? new
                     {
@@ -269,11 +311,17 @@ public class AdminController : ControllerBase
                         licensePlate = shipper.LicensePlate,
                         vehicleType = shipper.VehicleType,
                         vehicleModel = shipper.VehicleModel,
+                        operatingArea = shipper.OperatingArea,
+                        bankName = shipper.BankName,
+                        bankAccountNumber = shipper.BankAccountNumber,
+                        avatarUrl = shipper.AvatarUrl,
                         status = shipper.Status,
+                        rejectReason = shipper.RejectReason,
                         cccdNumber = shipper.CccdNumber,
                         cccdFrontImage = shipper.CccdFrontImage,
                         cccdBackImage = shipper.CccdBackImage,
-                        drivingLicenseImage = shipper.DrivingLicenseImage
+                        drivingLicenseImage = shipper.DrivingLicenseImage,
+                        createdAt = shipper.CreatedAt.ToString("dd/MM/yyyy HH:mm")
                     } : null
                 });
             }
@@ -281,12 +329,18 @@ public class AdminController : ControllerBase
             // 2. Add unmapped Stores as Seller accounts
             foreach (var store in storeList)
             {
-                if (!allCombined.Any(u => u.fullName == store.OwnerFullName || (u.storeDetails != null && (string)((dynamic)u.storeDetails).storeId == store.Id)))
+                bool alreadyMapped = allCombined.Any(u =>
+                    (u.storeDetails != null && (string)((dynamic)u.storeDetails).storeId == store.Id) ||
+                    (!string.IsNullOrEmpty(store.PhoneEmail) && !string.IsNullOrEmpty(u.email) && u.email.Trim().ToLower() == store.PhoneEmail.Trim().ToLower()) ||
+                    (!string.IsNullOrEmpty(store.OwnerFullName) && !string.IsNullOrEmpty(u.fullName) && u.fullName.Trim().ToLower() == store.OwnerFullName.Trim().ToLower())
+                );
+
+                if (!alreadyMapped)
                 {
                     allCombined.Add(new AdminUserViewDto
                     {
                         id = store.Id ?? Guid.NewGuid().ToString(),
-                        email = "seller." + (store.StoreName?.Replace(" ", "").ToLower() ?? "shop") + "@zonemart.vn",
+                        email = !string.IsNullOrEmpty(store.PhoneEmail) ? store.PhoneEmail : ("seller." + (store.StoreName?.Replace(" ", "").ToLower() ?? "shop") + "@zonemart.vn"),
                         fullName = store.OwnerFullName ?? "Chủ Tiệm " + store.StoreName,
                         avatarUrl = "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200",
                         primaryRole = "Seller",
@@ -298,18 +352,26 @@ public class AdminController : ControllerBase
                         accountStatus = store.Status == "Pending" ? "pending" : "active",
                         lockUntil = null,
                         violationCount = 0,
-                        createdAt = DateTime.UtcNow.ToString("dd/MM/yyyy"),
+                        createdAt = store.CreatedAt.ToString("dd/MM/yyyy"),
                         storeDetails = new
                         {
                             storeId = store.Id,
+                            storeCode = store.StoreCode,
                             storeName = store.StoreName,
+                            ownerFullName = store.OwnerFullName,
+                            phoneEmail = store.PhoneEmail,
                             address = store.Address,
                             category = store.Category,
+                            openHours = store.OpenHours,
+                            bankName = store.BankName,
+                            bankAccountNumber = store.BankAccountNumber,
                             status = store.Status,
+                            rejectReason = store.RejectReason,
                             cccdNumber = store.CccdNumber,
                             cccdFrontImage = store.CccdFrontImage,
                             cccdBackImage = store.CccdBackImage,
-                            foodSafetyCertImage = store.FoodSafetyCertImage
+                            foodSafetyCertImage = store.FoodSafetyCertImage,
+                            createdAt = store.CreatedAt.ToString("dd/MM/yyyy HH:mm")
                         },
                         shipperDetails = null
                     });
@@ -319,14 +381,20 @@ public class AdminController : ControllerBase
             // 3. Add unmapped Shippers as Shipper accounts
             foreach (var shipper in shipperList)
             {
-                if (!allCombined.Any(u => u.fullName == shipper.FullName || (u.shipperDetails != null && (string)((dynamic)u.shipperDetails).shipperId == shipper.Id)))
+                bool alreadyMapped = allCombined.Any(u =>
+                    (u.shipperDetails != null && (string)((dynamic)u.shipperDetails).shipperId == shipper.Id) ||
+                    (!string.IsNullOrEmpty(shipper.PhoneNumber) && !string.IsNullOrEmpty(u.email) && u.email.Trim().ToLower() == shipper.PhoneNumber.Trim().ToLower()) ||
+                    (!string.IsNullOrEmpty(shipper.FullName) && !string.IsNullOrEmpty(u.fullName) && u.fullName.Trim().ToLower() == shipper.FullName.Trim().ToLower())
+                );
+
+                if (!alreadyMapped)
                 {
                     allCombined.Add(new AdminUserViewDto
                     {
                         id = shipper.Id ?? Guid.NewGuid().ToString(),
                         email = shipper.PhoneNumber ?? "shipper@zonemart.vn",
                         fullName = shipper.FullName ?? "Tài Xế " + shipper.LicensePlate,
-                        avatarUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200",
+                        avatarUrl = string.IsNullOrEmpty(shipper.AvatarUrl) ? "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200" : shipper.AvatarUrl,
                         primaryRole = "Shipper",
                         isBuyer = true,
                         isSeller = false,
@@ -336,7 +404,7 @@ public class AdminController : ControllerBase
                         accountStatus = shipper.Status == "Pending" ? "pending" : "active",
                         lockUntil = null,
                         violationCount = 0,
-                        createdAt = DateTime.UtcNow.ToString("dd/MM/yyyy"),
+                        createdAt = shipper.CreatedAt.ToString("dd/MM/yyyy"),
                         storeDetails = null,
                         shipperDetails = new
                         {
@@ -345,11 +413,17 @@ public class AdminController : ControllerBase
                             licensePlate = shipper.LicensePlate,
                             vehicleType = shipper.VehicleType,
                             vehicleModel = shipper.VehicleModel,
+                            operatingArea = shipper.OperatingArea,
+                            bankName = shipper.BankName,
+                            bankAccountNumber = shipper.BankAccountNumber,
+                            avatarUrl = shipper.AvatarUrl,
                             status = shipper.Status,
+                            rejectReason = shipper.RejectReason,
                             cccdNumber = shipper.CccdNumber,
                             cccdFrontImage = shipper.CccdFrontImage,
                             cccdBackImage = shipper.CccdBackImage,
-                            drivingLicenseImage = shipper.DrivingLicenseImage
+                            drivingLicenseImage = shipper.DrivingLicenseImage,
+                            createdAt = shipper.CreatedAt.ToString("dd/MM/yyyy HH:mm")
                         }
                     });
                 }
@@ -420,21 +494,60 @@ public class AdminController : ControllerBase
                 var store = await _mongoService.Stores.Find(s => s.Id == req.TargetId).FirstOrDefaultAsync();
                 if (store == null) return NotFound(new { success = false, message = "Không tìm thấy hồ sơ Cửa hàng!" });
 
-                var storeUpdate = Builders<Store>.Update.Set(s => s.Status, "Approved");
+                var storeUpdate = Builders<Store>.Update
+                    .Set(s => s.Status, "Approved")
+                    .Set(s => s.RejectReason, null);
                 await _mongoService.Stores.UpdateOneAsync(s => s.Id == req.TargetId, storeUpdate);
+                store.Status = "Approved";
+                AuthController.InMemoryStores[store.Id] = store;
 
-                // Cập nhật User
-                var user = await _mongoService.Users.Find(u => u.Id == store.UserId || u.PhoneEmail == store.OwnerFullName).FirstOrDefaultAsync();
+                // Cập nhật User chính xác: kích hoạt AccountStatus = "active" và IsSeller = true
+                var filterList = new List<FilterDefinition<User>>();
+                if (!string.IsNullOrEmpty(store.UserId) && MongoDB.Bson.ObjectId.TryParse(store.UserId, out _))
+                {
+                    filterList.Add(Builders<User>.Filter.Eq(u => u.Id, store.UserId));
+                }
+                if (!string.IsNullOrEmpty(store.UserId))
+                {
+                    filterList.Add(Builders<User>.Filter.Eq(u => u.UserCode, store.UserId));
+                }
+                if (!string.IsNullOrEmpty(store.StoreCode))
+                {
+                    filterList.Add(Builders<User>.Filter.Eq(u => u.UserCode, store.StoreCode));
+                }
+                if (!string.IsNullOrEmpty(store.PhoneEmail))
+                {
+                    string cleanMail = store.PhoneEmail.Trim().ToLower();
+                    filterList.Add(Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanMail));
+                    filterList.Add(Builders<User>.Filter.Regex(u => u.PhoneEmail, new MongoDB.Bson.BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(cleanMail)}$", "i")));
+                    filterList.Add(Builders<User>.Filter.Eq(u => u.Phone, store.PhoneEmail.Trim()));
+                }
+                var user = filterList.Count > 0 ? await _mongoService.Users.Find(Builders<User>.Filter.Or(filterList)).FirstOrDefaultAsync() : null;
                 if (user != null)
                 {
-                    var userUpdate = Builders<User>.Update.Set(u => u.IsSeller, true);
+                    var userUpdate = Builders<User>.Update
+                        .Set(u => u.IsSeller, true)
+                        .Set(u => u.AccountStatus, "active")
+                        .Set(u => u.UserCode, string.IsNullOrEmpty(user.UserCode) ? store.StoreCode : user.UserCode);
                     await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, userUpdate);
+
+                    user.IsSeller = true;
+                    user.AccountStatus = "active";
+                    if (!string.IsNullOrEmpty(user.PhoneEmail)) AuthController.InMemoryUsers[user.PhoneEmail] = user;
+
+                    // Liên kết store.UserId trực tiếp với user.Id
+                    await _mongoService.Stores.UpdateOneAsync(s => s.Id == store.Id, Builders<Store>.Update.Set(s => s.UserId, user.Id));
+                    store.UserId = user.Id;
+                    AuthController.InMemoryStores[store.Id] = store;
+
                     emailToSend = user.PhoneEmail;
                     nameToEmail = user.FullName;
                 }
                 else
                 {
-                    emailToSend = store.UserId.Contains("@") ? store.UserId : (store.PhoneEmail?.Contains("@") == true ? store.PhoneEmail : "");
+                    emailToSend = (!string.IsNullOrEmpty(store.PhoneEmail) && store.PhoneEmail.Contains("@")) 
+                        ? store.PhoneEmail 
+                        : (store.UserId.Contains("@") ? store.UserId : "");
                     nameToEmail = store.OwnerFullName;
                 }
 
@@ -455,11 +568,14 @@ public class AdminController : ControllerBase
                                     <p style='margin: 6px 0 0 0; color: #78350F; font-size: 13px; line-height: 1.5;'>Vui lòng luôn nghiêm túc tuân thủ quy định <b>An toàn vệ sinh thực phẩm</b>, bảo đảm cung cấp hàng hóa/thực phẩm tươi sạch, đóng gói cẩn thận và phục vụ khách hàng uy tín, chu đáo.</p>
                                 </div>
                                 <div style='text-align: center; margin-top: 24px;'>
-                                    <a href='http://localhost:5173/login' style='background: #D94E15; color: #ffffff; text-decoration: none; padding: 13px 28px; border-radius: 25px; font-weight: bold; display: inline-block;'>Bắt Đầu Quản Lý Gian Hàng Ngay ➔</a>
+                                    <a href='http://localhost:5173/login?role=seller' style='background: #D94E15; color: #ffffff; text-decoration: none; padding: 13px 28px; border-radius: 25px; font-weight: bold; display: inline-block;'>Bắt Đầu Quản Lý Gian Hàng Ngay ➔</a>
                                 </div>
                             </div>
                         </div>";
-                    await SendEmailViaMailKitAsync(emailToSend, subject, htmlBody, "ZoneMart Support");
+                    if (!string.IsNullOrWhiteSpace(emailToSend) && emailToSend.Contains("@"))
+                    {
+                        await SendEmailViaMailKitAsync(emailToSend, subject, htmlBody, "ZoneMart Support");
+                    }
                 });
             }
             else if (req.Type.ToLower() == "shipper")
@@ -467,20 +583,58 @@ public class AdminController : ControllerBase
                 var shipper = await _mongoService.Shippers.Find(s => s.Id == req.TargetId).FirstOrDefaultAsync();
                 if (shipper == null) return NotFound(new { success = false, message = "Không tìm thấy hồ sơ Tài xế!" });
 
-                var shipperUpdate = Builders<Shipper>.Update.Set(s => s.Status, "Approved");
+                var shipperUpdate = Builders<Shipper>.Update
+                    .Set(s => s.Status, "Approved")
+                    .Set(s => s.RejectReason, null);
                 await _mongoService.Shippers.UpdateOneAsync(s => s.Id == req.TargetId, shipperUpdate);
+                shipper.Status = "Approved";
+                AuthController.InMemoryShippers[shipper.Id] = shipper;
 
-                var user = await _mongoService.Users.Find(u => u.Id == shipper.UserId || u.PhoneEmail == shipper.PhoneNumber).FirstOrDefaultAsync();
+                var filterList = new List<FilterDefinition<User>>();
+                if (!string.IsNullOrEmpty(shipper.UserId) && MongoDB.Bson.ObjectId.TryParse(shipper.UserId, out _))
+                {
+                    filterList.Add(Builders<User>.Filter.Eq(u => u.Id, shipper.UserId));
+                }
+                if (!string.IsNullOrEmpty(shipper.UserId))
+                {
+                    filterList.Add(Builders<User>.Filter.Eq(u => u.UserCode, shipper.UserId));
+                }
+                if (!string.IsNullOrEmpty(shipper.ShipperCode))
+                {
+                    filterList.Add(Builders<User>.Filter.Eq(u => u.UserCode, shipper.ShipperCode));
+                }
+                if (!string.IsNullOrEmpty(shipper.PhoneNumber))
+                {
+                    string cleanPhone = shipper.PhoneNumber.Trim().ToLower();
+                    filterList.Add(Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanPhone));
+                    filterList.Add(Builders<User>.Filter.Regex(u => u.PhoneEmail, new MongoDB.Bson.BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(cleanPhone)}$", "i")));
+                    filterList.Add(Builders<User>.Filter.Eq(u => u.Phone, shipper.PhoneNumber.Trim()));
+                }
+                var user = filterList.Count > 0 ? await _mongoService.Users.Find(Builders<User>.Filter.Or(filterList)).FirstOrDefaultAsync() : null;
                 if (user != null)
                 {
-                    var userUpdate = Builders<User>.Update.Set(u => u.IsShipper, true);
+                    var userUpdate = Builders<User>.Update
+                        .Set(u => u.IsShipper, true)
+                        .Set(u => u.AccountStatus, "active")
+                        .Set(u => u.UserCode, string.IsNullOrEmpty(user.UserCode) ? shipper.ShipperCode : user.UserCode);
                     await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, userUpdate);
+
+                    user.IsShipper = true;
+                    user.AccountStatus = "active";
+                    if (!string.IsNullOrEmpty(user.PhoneEmail)) AuthController.InMemoryUsers[user.PhoneEmail] = user;
+
+                    await _mongoService.Shippers.UpdateOneAsync(s => s.Id == shipper.Id, Builders<Shipper>.Update.Set(s => s.UserId, user.Id));
+                    shipper.UserId = user.Id;
+                    AuthController.InMemoryShippers[shipper.Id] = shipper;
+
                     emailToSend = user.PhoneEmail;
                     nameToEmail = user.FullName;
                 }
                 else
                 {
-                    emailToSend = shipper.PhoneNumber.Contains("@") ? shipper.PhoneNumber : "";
+                    emailToSend = (!string.IsNullOrEmpty(shipper.PhoneNumber) && shipper.PhoneNumber.Contains("@")) 
+                        ? shipper.PhoneNumber 
+                        : "";
                     nameToEmail = shipper.FullName;
                 }
 
@@ -584,11 +738,102 @@ public class AdminController : ControllerBase
                 var store = await _mongoService.Stores.Find(s => s.Id == req.TargetId).FirstOrDefaultAsync();
                 if (store != null)
                 {
-                    var storeUpdate = Builders<Store>.Update.Set(s => s.Status, "Rejected");
+                    var storeUpdate = Builders<Store>.Update
+                        .Set(s => s.Status, "Rejected")
+                        .Set(s => s.RejectReason, req.Reason);
                     await _mongoService.Stores.UpdateOneAsync(s => s.Id == req.TargetId, storeUpdate);
-                    var user = await _mongoService.Users.Find(u => u.Id == store.UserId).FirstOrDefaultAsync();
-                    emailToSend = user?.PhoneEmail ?? "seller@gmail.com";
-                    nameToEmail = store.OwnerFullName;
+                    store.Status = "Rejected";
+                    store.RejectReason = req.Reason;
+                    AuthController.InMemoryStores[store.Id] = store;
+
+                    var filterList = new List<FilterDefinition<User>>();
+                    if (!string.IsNullOrEmpty(store.UserId) && MongoDB.Bson.ObjectId.TryParse(store.UserId, out _))
+                    {
+                        filterList.Add(Builders<User>.Filter.Eq(u => u.Id, store.UserId));
+                    }
+                    if (!string.IsNullOrEmpty(store.UserId))
+                    {
+                        filterList.Add(Builders<User>.Filter.Eq(u => u.UserCode, store.UserId));
+                    }
+                    if (!string.IsNullOrEmpty(store.StoreCode))
+                    {
+                        filterList.Add(Builders<User>.Filter.Eq(u => u.UserCode, store.StoreCode));
+                    }
+                    if (!string.IsNullOrEmpty(store.PhoneEmail))
+                    {
+                        string cleanMail = store.PhoneEmail.Trim().ToLower();
+                        filterList.Add(Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanMail));
+                        filterList.Add(Builders<User>.Filter.Regex(u => u.PhoneEmail, new MongoDB.Bson.BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(cleanMail)}$", "i")));
+                        filterList.Add(Builders<User>.Filter.Eq(u => u.Phone, store.PhoneEmail.Trim()));
+                    }
+                    var user = filterList.Count > 0 ? await _mongoService.Users.Find(Builders<User>.Filter.Or(filterList)).FirstOrDefaultAsync() : null;
+                    emailToSend = (!string.IsNullOrEmpty(user?.PhoneEmail) && user.PhoneEmail.Contains("@")) 
+                        ? user.PhoneEmail 
+                        : ((!string.IsNullOrEmpty(store.PhoneEmail) && store.PhoneEmail.Contains("@")) ? store.PhoneEmail : "");
+                    nameToEmail = user?.FullName ?? store.OwnerFullName;
+
+                    // Gửi Gmail thông báo từ chối hồ sơ Seller
+                    _ = Task.Run(async () =>
+                    {
+                        string subject = "[ZoneMart Seller] THONG BAO KET QUA THAM DINH HO SO GIAN HANG";
+                        string htmlBody = $@"
+                            <div style='background-color: #FEF2F2; padding: 32px 12px; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;'>
+                                <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 580px; background: #FFFFFF; border-radius: 24px; border: 1.5px solid #FECACA; box-shadow: 0 15px 35px rgba(220, 38, 38, 0.1); overflow: hidden; margin: 0 auto; padding: 32px 28px;'>
+                                    <tr>
+                                        <td align='center' style='padding-bottom: 20px; border-bottom: 1px solid #FEE2E2;'>
+                                            <div style='font-size: 26px; font-weight: 900; color: #DC2626; letter-spacing: -0.5px;'>
+                                                Zone<span style='color: #D94E15;'>Mart</span> <span style='font-size: 16px; color: #DC2626; background: #FEE2E2; padding: 3px 10px; border-radius: 20px;'>SELLER SUPPORT</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+
+                                    <tr>
+                                        <td align='center' style='padding: 24px 0 16px 0;'>
+                                            <h2 style='color: #B91C1C; font-size: 21px; font-weight: 900; margin: 0 0 8px 0;'>HỒ SƠ GIAN HÀNG CHƯA ĐẠT YÊU CẦU THẨM ĐỊNH</h2>
+                                            <p style='color: #475569; font-size: 15px; margin: 0;'>Kính gửi chủ tiệm <b>{nameToEmail}</b> (Gian hàng: <b style='color: #DC2626;'>{store.StoreName}</b>),</p>
+                                        </td>
+                                    </tr>
+
+                                    <tr>
+                                        <td style='color: #334155; font-size: 14.5px; line-height: 1.65;'>
+                                            <p style='margin-bottom: 16px;'>
+                                                Ban quản lý <b>ZoneMart Seller</b> đã tiến hành thẩm định hồ sơ đăng ký mở gian hàng của bạn. Rất tiếc, hồ sơ hiện tại <b>CHƯA ĐƯỢC PHÊ DUYỆT</b> do phát hiện một số sai sót hoặc thiếu giấy tờ cần thiết sau đây:
+                                            </p>
+
+                                            <div style='background: #FEF2F2; border-left: 5px solid #DC2626; border-radius: 12px; padding: 18px; margin: 20px 0;'>
+                                                <h4 style='color: #991B1B; margin: 0 0 8px 0; font-size: 15px;'>📌 LÝ DO CHI TIẾT TỪ BAN THẨM ĐỊNH:</h4>
+                                                <p style='margin: 0; color: #7F1D1D; font-size: 14px; font-weight: bold; line-height: 1.6;'>
+                                                    &quot;{req.Reason}&quot;
+                                                </p>
+                                            </div>
+
+                                            <p style='margin-bottom: 16px;'>
+                                                <b>Hướng dẫn khắc phục:</b> Bạn vui lòng kiểm tra lại ảnh chụp CCCD, Giấy chứng nhận An toàn thực phẩm hoặc điều chỉnh thông tin chính xác theo lý do trên và đăng ký nộp lại hồ sơ.
+                                            </p>
+
+                                            <div style='text-align: center; margin: 24px 0;'>
+                                                <a href='http://localhost:5173/register-seller' style='background: #DC2626; color: #FFFFFF; font-size: 15px; font-weight: 800; text-decoration: none; padding: 14px 36px; border-radius: 30px; display: inline-block; box-shadow: 0 8px 20px rgba(220, 38, 38, 0.25);'>
+                                                    CẬP NHẬT & NỘP LẠI HỒ SƠ ➔
+                                                </a>
+                                            </div>
+                                        </td>
+                                    </tr>
+
+                                    <tr>
+                                        <td align='center' style='padding-top: 24px; border-top: 1px solid #FEE2E2; color: #94A3B8; font-size: 12px;'>
+                                            Trân trọng,<br />
+                                            <b style='color: #B91C1C; font-size: 13.5px;'>BAN QUẢN LÝ GIAN HÀNG ZONEMART SELLER</b><br />
+                                            Hotline Hỗ Trợ: 1900 6868 • Email: hh9393100@gmail.com
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>";
+
+                        if (!string.IsNullOrWhiteSpace(emailToSend) && emailToSend.Contains("@"))
+                        {
+                            await SendEmailViaMailKitAsync(emailToSend, subject, htmlBody, "ZoneMart Support");
+                        }
+                    });
                 }
             }
             else if (req.Type.ToLower() == "shipper")
@@ -596,78 +841,107 @@ public class AdminController : ControllerBase
                 var shipper = await _mongoService.Shippers.Find(s => s.Id == req.TargetId).FirstOrDefaultAsync();
                 if (shipper != null)
                 {
-                    var shipperUpdate = Builders<Shipper>.Update.Set(s => s.Status, "Rejected").Set(s => s.RejectReason, req.Reason);
+                    var shipperUpdate = Builders<Shipper>.Update
+                        .Set(s => s.Status, "Rejected")
+                        .Set(s => s.RejectReason, req.Reason);
                     await _mongoService.Shippers.UpdateOneAsync(s => s.Id == req.TargetId, shipperUpdate);
-                    var user = await _mongoService.Users.Find(u => u.Id == shipper.UserId || u.PhoneEmail == shipper.PhoneNumber).FirstOrDefaultAsync();
-                    emailToSend = (user?.PhoneEmail?.Contains("@") == true) ? user.PhoneEmail : (shipper.PhoneNumber.Contains("@") ? shipper.PhoneNumber : "");
-                    nameToEmail = shipper.FullName;
+                    shipper.Status = "Rejected";
+                    shipper.RejectReason = req.Reason;
+                    AuthController.InMemoryShippers[shipper.Id] = shipper;
+
+                    var filterList = new List<FilterDefinition<User>>();
+                    if (!string.IsNullOrEmpty(shipper.UserId) && MongoDB.Bson.ObjectId.TryParse(shipper.UserId, out _))
+                    {
+                        filterList.Add(Builders<User>.Filter.Eq(u => u.Id, shipper.UserId));
+                    }
+                    if (!string.IsNullOrEmpty(shipper.UserId))
+                    {
+                        filterList.Add(Builders<User>.Filter.Eq(u => u.UserCode, shipper.UserId));
+                    }
+                    if (!string.IsNullOrEmpty(shipper.ShipperCode))
+                    {
+                        filterList.Add(Builders<User>.Filter.Eq(u => u.UserCode, shipper.ShipperCode));
+                    }
+                    if (!string.IsNullOrEmpty(shipper.PhoneNumber))
+                    {
+                        string cleanPhone = shipper.PhoneNumber.Trim().ToLower();
+                        filterList.Add(Builders<User>.Filter.Eq(u => u.PhoneEmail, cleanPhone));
+                        filterList.Add(Builders<User>.Filter.Regex(u => u.PhoneEmail, new MongoDB.Bson.BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(cleanPhone)}$", "i")));
+                        filterList.Add(Builders<User>.Filter.Eq(u => u.Phone, shipper.PhoneNumber.Trim()));
+                    }
+                    var user = filterList.Count > 0 ? await _mongoService.Users.Find(Builders<User>.Filter.Or(filterList)).FirstOrDefaultAsync() : null;
+                    emailToSend = (!string.IsNullOrEmpty(user?.PhoneEmail) && user.PhoneEmail.Contains("@")) 
+                        ? user.PhoneEmail 
+                        : (shipper.PhoneNumber.Contains("@") ? shipper.PhoneNumber : "");
+                    nameToEmail = user?.FullName ?? shipper.FullName;
+
+                    // Gửi Gmail thông báo lý do từ chối Shipper
+                    _ = Task.Run(async () =>
+                    {
+                        string subject = "[ZoneMart Driver] THONG BAO THAM DINH HO SO (CAN BO SUNG GIAY TO)";
+                        string htmlBody = $@"
+                            <div style='background-color: #FEF2F2; padding: 32px 12px; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;'>
+                                <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 580px; background: #FFFFFF; border-radius: 24px; border: 1.5px solid #FECACA; box-shadow: 0 15px 35px rgba(220, 38, 38, 0.1); overflow: hidden; margin: 0 auto; padding: 32px 28px;'>
+                                    <tr>
+                                        <td align='center' style='padding-bottom: 20px; border-bottom: 1px solid #FEE2E2;'>
+                                            <div style='font-size: 26px; font-weight: 900; color: #DC2626; letter-spacing: -0.5px;'>
+                                                Zone<span style='color: #D94E15;'>Mart</span> <span style='font-size: 16px; color: #DC2626; background: #FEE2E2; padding: 3px 10px; border-radius: 20px;'>DRIVER SUPPORT</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+
+                                    <tr>
+                                        <td align='center' style='padding: 24px 0 16px 0;'>
+                                            <h2 style='color: #B91C1C; font-size: 21px; font-weight: 900; margin: 0 0 8px 0;'>HỒ SƠ ĐĂNG KÝ CHƯA ĐẠT YÊU CẦU THẨM ĐỊNH</h2>
+                                            <p style='color: #475569; font-size: 15px; margin: 0;'>Kính gửi <b>{nameToEmail}</b>,</p>
+                                        </td>
+                                    </tr>
+
+                                    <tr>
+                                        <td style='color: #334155; font-size: 14.5px; line-height: 1.65;'>
+                                            <p style='margin-bottom: 16px;'>
+                                                Ban quản lý <b>ZoneMart Driver</b> đã tiến hành thẩm định hồ sơ đăng ký tài xế của bạn. Rất tiếc, hồ sơ hiện tại <b>CHƯA ĐƯỢC PHÊ DUYỆT</b> do phát hiện một số sai sót hoặc thiếu thông tin sau đây:
+                                            </p>
+
+                                            <div style='background: #FEF2F2; border-left: 5px solid #DC2626; border-radius: 12px; padding: 18px; margin: 20px 0;'>
+                                                <h4 style='color: #991B1B; margin: 0 0 8px 0; font-size: 15px;'>📌 LÝ DO CHI TIẾT TỪ BAN THẨM ĐỊNH:</h4>
+                                                <p style='margin: 0; color: #7F1D1D; font-size: 14px; font-weight: bold; line-height: 1.6;'>
+                                                    &quot;{req.Reason}&quot;
+                                                </p>
+                                            </div>
+
+                                            <p style='margin-bottom: 16px;'>
+                                                <b>Hướng dẫn khắc phục:</b> Bạn vui lòng truy cập lại Cổng đăng ký tài xế ZoneMart Driver, chụp lại ảnh CCCD / GPLX hoặc điều chỉnh thông tin chính xác theo lý do trên và bấm nộp lại hồ sơ.
+                                            </p>
+
+                                            <div style='text-align: center; margin: 24px 0;'>
+                                                <a href='http://localhost:5173/register-shipper#shipper-register-card' style='background: #DC2626; color: #FFFFFF; font-size: 15px; font-weight: 800; text-decoration: none; padding: 14px 36px; border-radius: 30px; display: inline-block; box-shadow: 0 8px 20px rgba(220, 38, 38, 0.25);'>
+                                                    CẬP NHẬT & NỘP LẠI HỒ SƠ ➔
+                                                </a>
+                                            </div>
+                                        </td>
+                                    </tr>
+
+                                    <tr>
+                                        <td align='center' style='padding-top: 24px; border-top: 1px solid #FEE2E2; color: #94A3B8; font-size: 12px;'>
+                                            Trân trọng,<br />
+                                            <b style='color: #B91C1C; font-size: 13.5px;'>BAN QUẢN LÝ TÀI XẾ ZONEMART DRIVER</b><br />
+                                            Hotline Hỗ Trợ: 1900 6868 • Email: dobinh225599@gmail.com
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>";
+
+                        if (!string.IsNullOrWhiteSpace(emailToSend) && emailToSend.Contains("@"))
+                        {
+                            await SendEmailViaMailKitAsync(emailToSend, subject, htmlBody, "ZoneMart Fleet");
+                        }
+                    });
                 }
             }
 
-            // Gửi Gmail thông báo lý do từ chối
-            _ = Task.Run(async () =>
-            {
-                string subject = $"[ZoneMart Driver] ⚠️ THÔNG BÁO THẨM ĐỊNH HỒ SƠ (CẦN BỔ SUNG GIAY TỜ)";
-                string htmlBody = $@"
-                    <div style='background-color: #FEF2F2; padding: 32px 12px; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;'>
-                        <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 580px; background: #FFFFFF; border-radius: 24px; border: 1.5px solid #FECACA; box-shadow: 0 15px 35px rgba(220, 38, 38, 0.1); overflow: hidden; margin: 0 auto; padding: 32px 28px;'>
-                            <tr>
-                                <td align='center' style='padding-bottom: 20px; border-bottom: 1px solid #FEE2E2;'>
-                                    <div style='font-size: 26px; font-weight: 900; color: #DC2626; letter-spacing: -0.5px;'>
-                                        Zone<span style='color: #D94E15;'>Mart</span> <span style='font-size: 16px; color: #DC2626; background: #FEE2E2; padding: 3px 10px; border-radius: 20px;'>DRIVER SUPPORT</span>
-                                    </div>
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td align='center' style='padding: 24px 0 16px 0;'>
-                                    <h2 style='color: #B91C1C; font-size: 21px; font-weight: 900; margin: 0 0 8px 0;'>⚠️ HỒ SƠ ĐĂNG KÝ CHƯA ĐẠT YÊU CẦU THẨM ĐỊNH</h2>
-                                    <p style='color: #475569; font-size: 15px; margin: 0;'>Kính gửi <b>{nameToEmail}</b>,</p>
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td style='color: #334155; font-size: 14.5px; line-height: 1.65;'>
-                                    <p style='margin-bottom: 16px;'>
-                                        Ban quản lý <b>ZoneMart Driver</b> đã tiến hành thẩm định hồ sơ đăng ký tài xế của bạn. Rất tiếc, hồ sơ hiện tại <b>CHƯA ĐƯỢC PHÊ DUYỆT</b> do phát hiện một số sai sót hoặc thiếu thông tin sau đây:
-                                    </p>
-
-                                    <div style='background: #FEF2F2; border-left: 5px solid #DC2626; border-radius: 12px; padding: 18px; margin: 20px 0;'>
-                                        <h4 style='color: #991B1B; margin: 0 0 8px 0; font-size: 15px;'>📌 LÝ DO CHI TIẾT TỪ BAN THẨM ĐỊNH:</h4>
-                                        <p style='margin: 0; color: #7F1D1D; font-size: 14px; font-weight: bold; line-height: 1.6;'>
-                                            &quot;{req.Reason}&quot;
-                                        </p>
-                                    </div>
-
-                                    <p style='margin-bottom: 16px;'>
-                                        <b>Hướng dẫn khắc phục:</b> Bạn vui lòng truy cập lại Cổng đăng ký tài xế ZoneMart Driver, chụp lại ảnh CCCD / GPLX hoặc điều chỉnh thông tin chính xác theo lý do trên và bấm nộp lại hồ sơ.
-                                    </p>
-
-                                    <div style='text-align: center; margin: 24px 0;'>
-                                        <a href='http://localhost:5173/register-shipper#shipper-register-card' style='background: #DC2626; color: #FFFFFF; font-size: 15px; font-weight: 800; text-decoration: none; padding: 14px 36px; border-radius: 30px; display: inline-block; box-shadow: 0 8px 20px rgba(220, 38, 38, 0.25);'>
-                                            CẬP NHẬT & NỘP LẠI HỒ SƠ ➔
-                                        </a>
-                                    </div>
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <td align='center' style='padding-top: 24px; border-top: 1px solid #FEE2E2; color: #94A3B8; font-size: 12px;'>
-                                    Trân trọng,<br />
-                                    <b style='color: #B91C1C; font-size: 13.5px;'>BAN QUẢN LÝ TÀI XẾ ZONEMART DRIVER</b><br />
-                                    Hotline Hỗ Trợ: 1900 6868 • Email: dobinh225599@gmail.com
-                                </td>
-                            </tr>
-                        </table>
-                    </div>";
-
-                if (!string.IsNullOrWhiteSpace(emailToSend) && emailToSend.Contains("@"))
-                {
-                    await SendEmailViaMailKitAsync(emailToSend, subject, htmlBody, "ZoneMart Support");
-                }
-            });
-
-            await LogAuditAsync(req.ActorEmail, req.ActorRole, "Từ chối KYC", emailToSend, $"Từ chối hồ sơ {req.Type}. Lý do: {req.Reason}");
+            // Lưu Nhật ký Audit Log
+            await LogAuditAsync(req.ActorEmail, req.ActorRole, "Từ chối KYC", emailToSend, $"Từ chối hồ sơ {req.Type} (#{req.TargetId}), lý do: {req.Reason}");
 
             return Ok(new { success = true, message = "Đã từ chối hồ sơ và gửi email lý do chi tiết cho người dùng." });
         }
@@ -678,66 +952,140 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
-    /// Chế tài xử lý tài khoản vi phạm (3 mức độ)
+    /// Chế tài xử lý tài khoản vi phạm (3 mức độ: Khóa cảnh cáo 10 ngày, Tạm đình chỉ 30 ngày, Cấm vĩnh viễn)
     /// </summary>
+    [HttpPost("discipline-user")]
     [HttpPost("punish-user")]
     public async Task<IActionResult> PunishUser([FromBody] PunishUserRequest req)
     {
         try
         {
-            var user = await _mongoService.Users.Find(u => u.Id == req.UserId || u.PhoneEmail == req.UserEmail).FirstOrDefaultAsync();
-            if (user == null) return NotFound(new { success = false, message = "Không tìm thấy tài khoản!" });
+            string userEmail = !string.IsNullOrWhiteSpace(req.UserEmail) ? req.UserEmail.Trim().ToLower() : "";
+            string targetUserId = req.UserId?.Trim() ?? "";
+
+            // 1. Tìm trong Users
+            User? user = null;
+            if (MongoDB.Bson.ObjectId.TryParse(targetUserId, out _))
+            {
+                user = await _mongoService.Users.Find(u => u.Id == targetUserId).FirstOrDefaultAsync();
+            }
+            if (user == null)
+            {
+                user = await _mongoService.Users.Find(u => u.UserCode == targetUserId || u.PhoneEmail == targetUserId).FirstOrDefaultAsync();
+            }
+            if (user == null && !string.IsNullOrEmpty(userEmail))
+            {
+                user = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == userEmail).FirstOrDefaultAsync();
+            }
+
+            // 2. Fallback tìm theo Store
+            if (user == null)
+            {
+                Store? st = null;
+                if (MongoDB.Bson.ObjectId.TryParse(targetUserId, out _)) st = await _mongoService.Stores.Find(s => s.Id == targetUserId).FirstOrDefaultAsync();
+                if (st == null) st = await _mongoService.Stores.Find(s => s.StoreCode == targetUserId || s.PhoneEmail == targetUserId).FirstOrDefaultAsync();
+                if (st == null && !string.IsNullOrEmpty(userEmail)) st = await _mongoService.Stores.Find(s => s.PhoneEmail == userEmail).FirstOrDefaultAsync();
+
+                if (st != null)
+                {
+                    userEmail = st.PhoneEmail ?? userEmail;
+                    user = await _mongoService.Users.Find(u => u.PhoneEmail == st.PhoneEmail || u.Id == st.UserId).FirstOrDefaultAsync();
+                }
+            }
+
+            // 3. Fallback tìm theo Shipper
+            if (user == null)
+            {
+                Shipper? sh = null;
+                if (MongoDB.Bson.ObjectId.TryParse(targetUserId, out _)) sh = await _mongoService.Shippers.Find(s => s.Id == targetUserId).FirstOrDefaultAsync();
+                if (sh == null) sh = await _mongoService.Shippers.Find(s => s.ShipperCode == targetUserId || s.PhoneNumber == targetUserId).FirstOrDefaultAsync();
+                if (sh == null && !string.IsNullOrEmpty(userEmail)) sh = await _mongoService.Shippers.Find(s => s.PhoneNumber == userEmail).FirstOrDefaultAsync();
+
+                if (sh != null)
+                {
+                    userEmail = sh.PhoneNumber ?? userEmail;
+                    user = await _mongoService.Users.Find(u => u.PhoneEmail == sh.PhoneNumber || u.Id == sh.UserId).FirstOrDefaultAsync();
+                }
+            }
+
+            if (user == null) return NotFound(new { success = false, message = "Không tìm thấy tài khoản để xử lý kỷ luật!" });
 
             string statusMsg = "";
-            string newStatus = user.AccountStatus;
-            DateTime? lockTime = user.LockUntil;
+            string newStatus = "locked_10_days";
+            DateTime? lockTime = DateTime.UtcNow.AddDays(10);
 
             if (req.Level == 1)
             {
-                // Mức 1: Cảnh báo vi phạm
-                statusMsg = "Hệ thống đã gửi Thư cảnh báo chính thức về Gmail nhắc nhở quy định.";
-                var update = Builders<User>.Update.Inc(u => u.ViolationCount, 1);
-                await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, update);
+                // Mức 1: Khóa cảnh cáo 10 ngày (240 giờ)
+                newStatus = "locked_10_days";
+                lockTime = DateTime.UtcNow.AddDays(10);
+                statusMsg = $"Đã áp dụng chế tài: Khóa cảnh cáo tài khoản 10 ngày (240 giờ) đối với {user.FullName}.";
             }
             else if (req.Level == 2)
             {
-                // Mức 2: Tạm khóa 10 ngày (240 giờ)
-                newStatus = "locked_10_days";
-                lockTime = DateTime.UtcNow.AddDays(10);
-                statusMsg = "Đã tạm khóa tài khoản 10 ngày (240 giờ). Đăng xuất tài khoản ngay lập tức.";
-                
-                var update = Builders<User>.Update.Set(u => u.AccountStatus, newStatus).Set(u => u.LockUntil, lockTime).Inc(u => u.ViolationCount, 1);
-                await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, update);
+                // Mức 2: Tạm đình chỉ vận hành sàn
+                newStatus = "suspended";
+                lockTime = DateTime.UtcNow.AddDays(30);
+                statusMsg = $"Đã áp dụng chế tài: Tạm đình chỉ vận hành sàn 30 ngày đối với {user.FullName}.";
             }
             else if (req.Level == 3)
             {
                 // Mức 3: Cấm vĩnh viễn (Permanent Ban)
                 newStatus = "banned";
                 lockTime = null;
-                statusMsg = "Đã cấm vĩnh viễn tài khoản. Gmail này đưa vào Blacklist không thể đăng ký lại.";
-                
-                var update = Builders<User>.Update.Set(u => u.AccountStatus, newStatus).Set(u => u.LockUntil, lockTime).Inc(u => u.ViolationCount, 1);
-                await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, update);
+                statusMsg = $"Đã áp dụng chế tài: Cấm tài khoản vĩnh viễn đối với {user.FullName}.";
+            }
+
+            var update = Builders<User>.Update
+                .Set(u => u.AccountStatus, newStatus)
+                .Set(u => u.LockUntil, lockTime)
+                .Inc(u => u.ViolationCount, 1);
+            await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, update);
+
+            // Đồng bộ bộ nhớ In-Memory
+            if (!string.IsNullOrEmpty(user.PhoneEmail) && AuthController.InMemoryUsers.TryGetValue(user.PhoneEmail, out var inMemUser))
+            {
+                inMemUser.AccountStatus = newStatus;
+                inMemUser.LockUntil = lockTime;
+                inMemUser.ViolationCount += 1;
+            }
+
+            // Đồng bộ Store/Shipper nếu bị khóa hoặc đình chỉ
+            if (newStatus == "banned" || newStatus == "suspended" || newStatus == "locked_10_days")
+            {
+                string entityStatus = newStatus == "banned" ? "Banned" : "Suspended";
+                await _mongoService.Stores.UpdateManyAsync(
+                    s => s.UserId == user.Id || s.PhoneEmail == user.PhoneEmail,
+                    Builders<Store>.Update.Set(s => s.Status, entityStatus)
+                );
+                await _mongoService.Shippers.UpdateManyAsync(
+                    sh => sh.UserId == user.Id || sh.PhoneNumber == user.PhoneEmail,
+                    Builders<Shipper>.Update.Set(sh => sh.Status, entityStatus)
+                );
             }
 
             // Gửi Gmail thông báo chế tài
             _ = Task.Run(async () =>
             {
-                string subject = $"[ZoneMart] Thông Báo Chế Tài Vi Phạm Quy Định (Mức {req.Level})";
-                string htmlBody = $@"
-                    <div style='font-family: Arial, sans-serif; background: #fafafa; padding: 24px;'>
-                        <div style='max-width: 500px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 24px; border: 1px solid #e5e7eb;'>
-                            <h2 style='color: #dc2626;'>🚫 THÔNG BÁO XỬ LÝ VI PHẠM SÀN ZONEMART</h2>
-                            <p>Xin chào <b>{user.FullName}</b> ({user.PhoneEmail}),</p>
-                            <p>Hệ thống ghi nhận tài khoản của bạn đã vi phạm quy định vận hành của ZoneMart:</p>
-                            <div style='background: #fef2f2; border: 1px solid #fca5a5; padding: 12px; border-radius: 8px; font-weight: bold; color: #991b1b; margin: 12px 0;'>
-                                Mức độ xử lý: Mức {req.Level}<br/>
-                                Lý do: {req.Reason}
+                try
+                {
+                    string subject = $"[ZoneMart] Thông Báo Chế Tài Vi Phạm Quy Định (Mức {req.Level})";
+                    string htmlBody = $@"
+                        <div style='font-family: Arial, sans-serif; background: #fafafa; padding: 24px;'>
+                            <div style='max-width: 500px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 24px; border: 1px solid #e5e7eb;'>
+                                <h2 style='color: #dc2626;'>🚫 THÔNG BÁO XỬ LÝ VI PHẠM SÀN ZONEMART</h2>
+                                <p>Xin chào <b>{user.FullName}</b> ({user.PhoneEmail}),</p>
+                                <p>Hệ thống ghi nhận tài khoản của bạn đã vi phạm quy định vận hành của ZoneMart:</p>
+                                <div style='background: #fef2f2; border: 1px solid #fca5a5; padding: 12px; border-radius: 8px; font-weight: bold; color: #991b1b; margin: 12px 0;'>
+                                    Mức độ xử lý: Mức {req.Level}<br/>
+                                    Lý do: {req.Reason}
+                                </div>
+                                <p>{(req.Level == 1 ? "Tài khoản của bạn tạm ngưng phục vụ trong 10 ngày (240 giờ)." : req.Level == 2 ? "Tài khoản của bạn tạm đình chỉ hoạt động trong 30 ngày." : "Tài khoản của bạn đã bị cấm vĩnh viễn khỏi nền tảng ZoneMart.")}</p>
                             </div>
-                            <p>{(req.Level == 1 ? "Vui lòng tuân thủ quy chế sàn để không bị tạm khóa dịch vụ." : req.Level == 2 ? "Tài khoản của bạn tạm ngưng phục vụ trong 10 ngày (240 giờ)." : "Tài khoản của bạn đã bị cấm vĩnh viễn khỏi nền tảng ZoneMart.")}</p>
-                        </div>
-                    </div>";
-                await SendEmailViaMailKitAsync(user.PhoneEmail, subject, htmlBody, "ZoneMart Security");
+                        </div>";
+                    await SendEmailViaMailKitAsync(user.PhoneEmail, subject, htmlBody, "ZoneMart Security");
+                }
+                catch { }
             });
 
             await LogAuditAsync(req.ActorEmail, req.ActorRole, $"Chế tài Mức {req.Level}", user.PhoneEmail, $"Lý do: {req.Reason}. Status mới: {newStatus}");
@@ -758,30 +1106,214 @@ public class AdminController : ControllerBase
     {
         try
         {
-            var user = await _mongoService.Users.Find(u => u.Id == req.UserId || u.PhoneEmail == req.UserEmail).FirstOrDefaultAsync();
+            string userEmail = !string.IsNullOrWhiteSpace(req.UserEmail) ? req.UserEmail.Trim().ToLower() : "";
+            string targetUserId = req.UserId?.Trim() ?? "";
+
+            User? user = null;
+            if (MongoDB.Bson.ObjectId.TryParse(targetUserId, out _))
+            {
+                user = await _mongoService.Users.Find(u => u.Id == targetUserId).FirstOrDefaultAsync();
+            }
+            if (user == null)
+            {
+                user = await _mongoService.Users.Find(u => u.UserCode == targetUserId || u.PhoneEmail == targetUserId).FirstOrDefaultAsync();
+            }
+            if (user == null && !string.IsNullOrEmpty(userEmail))
+            {
+                user = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == userEmail).FirstOrDefaultAsync();
+            }
+
             if (user == null) return NotFound(new { success = false, message = "Không tìm thấy tài khoản!" });
 
             var update = Builders<User>.Update.Set(u => u.AccountStatus, "active").Unset(u => u.LockUntil);
             await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, update);
 
+            // Đồng bộ In-Memory
+            if (!string.IsNullOrEmpty(user.PhoneEmail) && AuthController.InMemoryUsers.TryGetValue(user.PhoneEmail, out var inMemUser))
+            {
+                inMemUser.AccountStatus = "active";
+                inMemUser.LockUntil = null;
+            }
+
+            // Phục hồi Store/Shipper về Active
+            await _mongoService.Stores.UpdateManyAsync(
+                s => s.UserId == user.Id || s.PhoneEmail == user.PhoneEmail,
+                Builders<Store>.Update.Set(s => s.Status, "Active")
+            );
+            await _mongoService.Shippers.UpdateManyAsync(
+                sh => sh.UserId == user.Id || sh.PhoneNumber == user.PhoneEmail,
+                Builders<Shipper>.Update.Set(sh => sh.Status, "Active")
+            );
+
             _ = Task.Run(async () =>
             {
-                string subject = "[ZoneMart] Thông Báo Phục Hồi Tài Khoản Hoạt Động Trở Lại";
-                string htmlBody = $@"
-                    <div style='font-family: Arial, sans-serif; background: #f0fdf4; padding: 24px;'>
-                        <div style='max-width: 500px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 24px; border: 1px solid #bbf7d0;'>
-                            <h2 style='color: #16a34a;'>🔓 TÀI KHOẢN CỦA BẠN ĐÃ ĐƯỢC MỞ KHÓA!</h2>
-                            <p>Xin chào <b>{user.FullName}</b>,</p>
-                            <p>Ban Quản Lý ZoneMart đã phê duyệt mở khóa tài khoản <b>{user.PhoneEmail}</b>. Trạng thái tài khoản của bạn hiện là <b>Active (Đang hoạt động)</b>.</p>
-                            <p>Bạn có thể đăng nhập và sử dụng đầy đủ tính năng bình thường.</p>
-                        </div>
-                    </div>";
-                await SendEmailViaMailKitAsync(user.PhoneEmail, subject, htmlBody, "ZoneMart Security");
+                try
+                {
+                    string subject = "[ZoneMart] Thông Báo Phục Hồi Tài Khoản Hoạt Động Trở Lại";
+                    string htmlBody = $@"
+                        <div style='font-family: Arial, sans-serif; background: #f0fdf4; padding: 24px;'>
+                            <div style='max-width: 500px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 24px; border: 1px solid #bbf7d0;'>
+                                <h2 style='color: #16a34a;'>🔓 TÀI KHOẢN CỦA BẠN ĐÃ ĐƯỢC MỞ KHÓA!</h2>
+                                <p>Xin chào <b>{user.FullName}</b>,</p>
+                                <p>Ban Quản Lý ZoneMart đã phê duyệt mở khóa tài khoản <b>{user.PhoneEmail}</b>. Trạng thái tài khoản của bạn hiện là <b>Active (Đang hoạt động)</b>.</p>
+                                <p>Bạn có thể đăng nhập và sử dụng đầy đủ tính năng bình thường.</p>
+                            </div>
+                        </div>";
+                    await SendEmailViaMailKitAsync(user.PhoneEmail, subject, htmlBody, "ZoneMart Security");
+                }
+                catch { }
             });
 
             await LogAuditAsync(req.ActorEmail, req.ActorRole, "Mở khóa tài khoản", user.PhoneEmail, "Khôi phục trạng thái Active");
 
             return Ok(new { success = true, message = "Đã mở khóa tài khoản thành công! Gửi email thông báo về Gmail." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// API XÓA TÀI KHOẢN DÀNH CHO ADMIN DASHBOARD (POST /api/admin/delete-user)
+    /// Xóa tài khoản, tự động dọn dẹp các hồ sơ Store hoặc Shipper liên kết nếu có
+    /// </summary>
+    [HttpPost("delete-user")]
+    public async Task<IActionResult> DeleteUserPost([FromBody] DeleteUserPostRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.UserId))
+        {
+            return BadRequest(new { success = false, message = "Thiếu mã tài khoản cần xóa!" });
+        }
+
+        try
+        {
+            string userEmail = !string.IsNullOrWhiteSpace(req.Email) ? req.Email.Trim().ToLower() : "";
+            string userName = "";
+            string targetUserId = req.UserId?.Trim() ?? "";
+
+            // 1. Tìm trong collection Users
+            User? user = null;
+            if (MongoDB.Bson.ObjectId.TryParse(targetUserId, out _))
+            {
+                user = await _mongoService.Users.Find(u => u.Id == targetUserId).FirstOrDefaultAsync();
+            }
+            if (user == null)
+            {
+                user = await _mongoService.Users.Find(u => u.UserCode == targetUserId || u.PhoneEmail == targetUserId).FirstOrDefaultAsync();
+            }
+            if (user == null && !string.IsNullOrEmpty(userEmail))
+            {
+                user = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == userEmail).FirstOrDefaultAsync();
+            }
+
+            if (user != null)
+            {
+                if (string.IsNullOrEmpty(userEmail) && !string.IsNullOrEmpty(user.PhoneEmail))
+                    userEmail = user.PhoneEmail.Trim().ToLower();
+                userName = user.FullName ?? "";
+            }
+
+            // 2. Tìm trong collection Stores (nếu là gian hàng)
+            Store? store = null;
+            if (MongoDB.Bson.ObjectId.TryParse(targetUserId, out _))
+            {
+                store = await _mongoService.Stores.Find(s => s.Id == targetUserId).FirstOrDefaultAsync();
+            }
+            if (store == null)
+            {
+                store = await _mongoService.Stores.Find(s => s.StoreCode == targetUserId || s.PhoneEmail == targetUserId).FirstOrDefaultAsync();
+            }
+            if (store == null && !string.IsNullOrEmpty(userEmail))
+            {
+                store = await _mongoService.Stores.Find(s => s.PhoneEmail != null && s.PhoneEmail.ToLower() == userEmail).FirstOrDefaultAsync();
+            }
+
+            if (store != null)
+            {
+                if (string.IsNullOrEmpty(userName)) userName = store.StoreName ?? store.OwnerFullName ?? "";
+                if (string.IsNullOrEmpty(userEmail) && !string.IsNullOrEmpty(store.PhoneEmail)) userEmail = store.PhoneEmail.Trim().ToLower();
+            }
+
+            // 3. Tìm trong collection Shippers (nếu là tài xế)
+            Shipper? shipper = null;
+            if (MongoDB.Bson.ObjectId.TryParse(targetUserId, out _))
+            {
+                shipper = await _mongoService.Shippers.Find(s => s.Id == targetUserId).FirstOrDefaultAsync();
+            }
+            if (shipper == null)
+            {
+                shipper = await _mongoService.Shippers.Find(s => s.ShipperCode == targetUserId || s.PhoneNumber == targetUserId).FirstOrDefaultAsync();
+            }
+            if (shipper == null && !string.IsNullOrEmpty(userEmail))
+            {
+                shipper = await _mongoService.Shippers.Find(s => s.PhoneNumber != null && s.PhoneNumber.ToLower() == userEmail).FirstOrDefaultAsync();
+            }
+
+            if (shipper != null)
+            {
+                if (string.IsNullOrEmpty(userName)) userName = shipper.FullName ?? "";
+                if (string.IsNullOrEmpty(userEmail) && !string.IsNullOrEmpty(shipper.PhoneNumber)) userEmail = shipper.PhoneNumber.Trim().ToLower();
+            }
+
+            // 4. XÓA TRIỆT ĐỂ KHỎI TẤT CẢ CÁC COLLECTION MONGODB (HARD DELETE)
+            await _mongoService.Users.DeleteManyAsync(u => 
+                u.Id == targetUserId || 
+                (user != null && u.Id == user.Id) || 
+                (!string.IsNullOrEmpty(userEmail) && u.PhoneEmail != null && u.PhoneEmail.ToLower() == userEmail) ||
+                (user != null && !string.IsNullOrEmpty(user.UserCode) && u.UserCode == user.UserCode)
+            );
+
+            await _mongoService.Stores.DeleteManyAsync(s => 
+                s.Id == targetUserId || 
+                s.UserId == targetUserId || 
+                (store != null && s.Id == store.Id) ||
+                (user != null && (s.UserId == user.Id || (!string.IsNullOrEmpty(user.UserCode) && s.UserId == user.UserCode))) || 
+                (!string.IsNullOrEmpty(userEmail) && s.PhoneEmail != null && s.PhoneEmail.ToLower() == userEmail)
+            );
+
+            await _mongoService.Shippers.DeleteManyAsync(sh => 
+                sh.Id == targetUserId || 
+                sh.UserId == targetUserId || 
+                (shipper != null && sh.Id == shipper.Id) ||
+                (user != null && (sh.UserId == user.Id || (!string.IsNullOrEmpty(user.UserCode) && sh.UserId == user.UserCode))) || 
+                (!string.IsNullOrEmpty(userEmail) && sh.PhoneNumber != null && sh.PhoneNumber.ToLower() == userEmail)
+            );
+
+            // 5. DỌN DẸP SẠCH SẼ BỘ NHỚ ĐỆM IN-MEMORY (TRÁNH FALLBACK ĐĂNG NHẬP LẠI)
+            if (!string.IsNullOrEmpty(userEmail))
+            {
+                AuthController.InMemoryUsers.TryRemove(userEmail, out _);
+            }
+            if (!string.IsNullOrEmpty(targetUserId))
+            {
+                AuthController.InMemoryUsers.TryRemove(targetUserId, out _);
+            }
+            var inMemUserKeys = AuthController.InMemoryUsers.Where(kv => 
+                kv.Value.Id == targetUserId || 
+                (!string.IsNullOrEmpty(userEmail) && kv.Value.PhoneEmail != null && kv.Value.PhoneEmail.Equals(userEmail, StringComparison.OrdinalIgnoreCase))
+            ).Select(kv => kv.Key).ToList();
+            foreach (var k in inMemUserKeys) AuthController.InMemoryUsers.TryRemove(k, out _);
+
+            var inMemStoreKeys = AuthController.InMemoryStores.Where(kv => 
+                kv.Key == targetUserId || 
+                kv.Value.Id == targetUserId || 
+                kv.Value.UserId == targetUserId || 
+                (!string.IsNullOrEmpty(userEmail) && kv.Value.PhoneEmail != null && kv.Value.PhoneEmail.Equals(userEmail, StringComparison.OrdinalIgnoreCase))
+            ).Select(kv => kv.Key).ToList();
+            foreach (var k in inMemStoreKeys) AuthController.InMemoryStores.TryRemove(k, out _);
+
+            var inMemShipperKeys = AuthController.InMemoryShippers.Where(kv => 
+                kv.Key == targetUserId || 
+                kv.Value.Id == targetUserId || 
+                kv.Value.UserId == targetUserId || 
+                (!string.IsNullOrEmpty(userEmail) && kv.Value.PhoneNumber != null && kv.Value.PhoneNumber.Equals(userEmail, StringComparison.OrdinalIgnoreCase))
+            ).Select(kv => kv.Key).ToList();
+            foreach (var k in inMemShipperKeys) AuthController.InMemoryShippers.TryRemove(k, out _);
+
+            await LogAuditAsync(req.ActorEmail, req.ActorRole, "Xóa tài khoản vĩnh viễn", userEmail, $"ADMIN đã xóa hoàn toàn tài khoản #{targetUserId} ({userName}) khỏi hệ thống!");
+
+            return Ok(new { success = true, message = $"Đã xóa hoàn toàn tài khoản [{userName}] khỏi hệ thống!" });
         }
         catch (Exception ex)
         {
@@ -819,14 +1351,37 @@ public class AdminController : ControllerBase
 
         try
         {
-            var user = await _mongoService.Users.Find(u => u.Id == userId).FirstOrDefaultAsync();
+            User? user = null;
+            if (MongoDB.Bson.ObjectId.TryParse(userId, out _))
+            {
+                user = await _mongoService.Users.Find(u => u.Id == userId).FirstOrDefaultAsync();
+            }
+            if (user == null)
+            {
+                user = await _mongoService.Users.Find(u => u.UserCode == userId || u.PhoneEmail == userId).FirstOrDefaultAsync();
+            }
             if (user == null) return NotFound(new { success = false, message = "Không tìm thấy tài khoản để xóa!" });
 
-            // 3. Thực hiện Soft-Delete chuẩn CSDL
-            var update = Builders<User>.Update.Set(u => u.IsDeleted, true).Set(u => u.AccountStatus, "deleted");
-            await _mongoService.Users.UpdateOneAsync(u => u.Id == userId, update);
+            // 3. Thực hiện xóa triệt để chuẩn CSDL
+            string userEmail = user.PhoneEmail?.Trim().ToLower() ?? "";
+            string userCode = user.UserCode ?? "";
 
-            await LogAuditAsync(actorEmail, actorRole, "Xóa tài khoản (Soft-Delete)", user.PhoneEmail, $"ADMIN đã xóa tài khoản #{userId}");
+            await _mongoService.Users.DeleteManyAsync(u => u.Id == userId || (!string.IsNullOrEmpty(userEmail) && u.PhoneEmail != null && u.PhoneEmail.ToLower() == userEmail));
+            if (MongoDB.Bson.ObjectId.TryParse(userId, out _))
+            {
+                await _mongoService.Users.DeleteManyAsync(u => u.Id == userId || (!string.IsNullOrEmpty(userEmail) && u.PhoneEmail != null && u.PhoneEmail.ToLower() == userEmail));
+            }
+            else
+            {
+                await _mongoService.Users.DeleteManyAsync(u => u.UserCode == userId || (!string.IsNullOrEmpty(userEmail) && u.PhoneEmail != null && u.PhoneEmail.ToLower() == userEmail));
+            }
+            await _mongoService.Stores.DeleteManyAsync(s => s.UserId == userId || (!string.IsNullOrEmpty(userCode) && s.UserId == userCode) || (!string.IsNullOrEmpty(userEmail) && s.PhoneEmail != null && s.PhoneEmail.ToLower() == userEmail));
+            await _mongoService.Shippers.DeleteManyAsync(sh => sh.UserId == userId || (!string.IsNullOrEmpty(userCode) && sh.UserId == userCode) || (!string.IsNullOrEmpty(userEmail) && sh.PhoneNumber != null && sh.PhoneNumber.ToLower() == userEmail));
+
+            if (!string.IsNullOrEmpty(userEmail)) AuthController.InMemoryUsers.TryRemove(userEmail, out _);
+            AuthController.InMemoryUsers.TryRemove(userId, out _);
+
+            await LogAuditAsync(actorEmail, actorRole, "Xóa tài khoản vĩnh viễn", user.PhoneEmail, $"ADMIN đã xóa vĩnh viễn tài khoản #{userId}");
 
             return Ok(new
             {
@@ -1031,6 +1586,41 @@ public class AdminController : ControllerBase
     {
         try
         {
+            // Luôn đảm bảo tài khoản Admin hệ thống tồn tại và có quyền IsAdmin = true
+            var adminUser = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == "admin@zonemart.vn").FirstOrDefaultAsync();
+            if (adminUser == null)
+            {
+                adminUser = new User
+                {
+                    PhoneEmail = "admin@zonemart.vn",
+                    PasswordHash = "admin123",
+                    Password = "admin123",
+                    FullName = "Super Administrator",
+                    IsAdmin = true,
+                    IsManager = true,
+                    AccountStatus = "active",
+                    CreatedAt = DateTime.UtcNow
+                };
+                await _mongoService.Users.InsertOneAsync(adminUser);
+            }
+            else if (!adminUser.IsAdmin)
+            {
+                await _mongoService.Users.UpdateOneAsync(
+                    u => u.Id == adminUser.Id,
+                    Builders<User>.Update.Set(u => u.IsAdmin, true).Set(u => u.IsManager, true).Set(u => u.AccountStatus, "active")
+                );
+            }
+
+            // Đảm bảo hhuy85895@gmail.com là tài khoản Khách hàng thông thường (Buyer), không phải Admin
+            var hhuyUser = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == "hhuy85895@gmail.com").FirstOrDefaultAsync();
+            if (hhuyUser != null && (hhuyUser.IsAdmin || hhuyUser.IsManager))
+            {
+                await _mongoService.Users.UpdateOneAsync(
+                    u => u.Id == hhuyUser.Id,
+                    Builders<User>.Update.Set(u => u.IsAdmin, false).Set(u => u.IsManager, false).Set(u => u.IsBuyer, true)
+                );
+            }
+
             var userCount = await _mongoService.Users.CountDocumentsAsync(_ => true);
             if (userCount == 0 || force)
             {
@@ -1245,6 +1835,111 @@ public class AdminController : ControllerBase
             Console.WriteLine($"⚠️ [MongoDB Migration Warning] {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Lấy danh sách thông báo thời gian thực của Admin (Người đăng ký Store, Shipper, KYC mới...)
+    /// Tự động đồng bộ từ Pending Stores/Shippers nếu bảng AdminNotifications chưa có.
+    /// </summary>
+    [HttpGet("notifications")]
+    public async Task<IActionResult> GetNotifications()
+    {
+        try
+        {
+            var notifs = await _mongoService.AdminNotifications
+                .Find(_ => true)
+                .SortByDescending(n => n.CreatedAt)
+                .Limit(50)
+                .ToListAsync();
+
+            // Nếu danh sách rỗng, tự động tạo thông báo ban đầu từ các đơn đăng ký Pending thực tế
+            if (notifs.Count == 0)
+            {
+                var pendingStores = await _mongoService.Stores.Find(s => s.Status == "Pending").ToListAsync();
+                foreach (var s in pendingStores)
+                {
+                    var notif = new AdminNotification
+                    {
+                        Type = "seller",
+                        Title = "Đăng ký mở gian hàng mới",
+                        Message = $"Chủ tiệm {s.OwnerFullName} vừa đăng ký mở gian hàng \"{s.StoreName}\". Chờ duyệt KYC.",
+                        TargetUserId = s.UserId ?? "",
+                        TargetName = s.StoreName ?? "",
+                        IsRead = false,
+                        CreatedAt = s.CreatedAt
+                    };
+                    await _mongoService.AdminNotifications.InsertOneAsync(notif);
+                    notifs.Add(notif);
+                }
+
+                var pendingShippers = await _mongoService.Shippers.Find(sh => sh.Status == "Pending").ToListAsync();
+                foreach (var sh in pendingShippers)
+                {
+                    var notif = new AdminNotification
+                    {
+                        Type = "shipper",
+                        Title = "Đăng ký tài xế shipper mới",
+                        Message = $"Tài xế {sh.FullName} ({sh.LicensePlate}) vừa nộp hồ sơ đăng ký đối tác shipper. Chờ xét duyệt.",
+                        TargetUserId = sh.UserId ?? "",
+                        TargetName = sh.FullName ?? "",
+                        IsRead = false,
+                        CreatedAt = sh.CreatedAt
+                    };
+                    await _mongoService.AdminNotifications.InsertOneAsync(notif);
+                    notifs.Add(notif);
+                }
+
+                notifs = notifs.OrderByDescending(n => n.CreatedAt).ToList();
+            }
+
+            int unreadCount = notifs.Count(n => !n.IsRead);
+
+            return Ok(new
+            {
+                success = true,
+                unreadCount,
+                notifications = notifs
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Đánh dấu tất cả thông báo hoặc một thông báo cụ thể là đã đọc
+    /// </summary>
+    [HttpPost("notifications/mark-read")]
+    public async Task<IActionResult> MarkNotificationAsRead([FromBody] MarkNotificationReadRequest? req)
+    {
+        try
+        {
+            if (req != null && !string.IsNullOrWhiteSpace(req.Id))
+            {
+                var filter = Builders<AdminNotification>.Filter.Eq(n => n.Id, req.Id);
+                var update = Builders<AdminNotification>.Update.Set(n => n.IsRead, true);
+                await _mongoService.AdminNotifications.UpdateOneAsync(filter, update);
+            }
+            else
+            {
+                // Đánh dấu tất cả là đã đọc
+                var filter = Builders<AdminNotification>.Filter.Eq(n => n.IsRead, false);
+                var update = Builders<AdminNotification>.Update.Set(n => n.IsRead, true);
+                await _mongoService.AdminNotifications.UpdateManyAsync(filter, update);
+            }
+
+            return Ok(new { success = true, message = "Đã cập nhật trạng thái thông báo" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+}
+
+public class MarkNotificationReadRequest
+{
+    public string? Id { get; set; }
 }
 
 public class ApproveKycRequest
@@ -1316,4 +2011,12 @@ public class AdminUserViewDto
     public string createdAt { get; set; } = string.Empty;
     public object? storeDetails { get; set; }
     public object? shipperDetails { get; set; }
+}
+
+public class DeleteUserPostRequest
+{
+    public string UserId { get; set; } = string.Empty;
+    public string? Email { get; set; }
+    public string ActorEmail { get; set; } = string.Empty;
+    public string ActorRole { get; set; } = string.Empty;
 }

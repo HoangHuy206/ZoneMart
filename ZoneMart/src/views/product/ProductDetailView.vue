@@ -11,6 +11,7 @@ import { ref, computed, watch, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useCart } from "../../composables/useCart";
 import { useProductCatalog, type CatalogProduct } from "../../composables/useProductCatalog";
+import { useToast } from "../../composables/useToast";
 
 const route = useRoute();
 const router = useRouter();
@@ -29,6 +30,7 @@ watch(
   () => route.params.id,
   (newId) => {
     if (newId) {
+      window.dispatchEvent(new CustomEvent('zonemart:loading-start'));
       const found = catalog.getProductById(newId as string);
       if (found) {
         product.value = found;
@@ -36,6 +38,9 @@ watch(
         quantity.value = 1;
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('zonemart:loading-finish'));
+      }, 250);
     }
   }
 );
@@ -92,6 +97,7 @@ const copyShareLink = async () => {
 };
 
 // Toast notification
+const toast = useToast();
 const toastMessage = ref("");
 const showToast = ref(false);
 let toastTimer: any = null;
@@ -125,6 +131,7 @@ const handleAddToCart = () => {
 
   cart.addItem(storeInfo, itemData, quantity.value);
   showToastMessage(`Đã thêm ${quantity.value} "${product.value.name}" vào giỏ hàng!`);
+  toast.success(`Đã thêm ${quantity.value} "${product.value.name}" vào giỏ hàng!`, 'Giỏ Hàng ZoneMart');
 };
 
 // Mua ngay hỏa tốc (Thêm vào giỏ và sang trang Checkout ngay)

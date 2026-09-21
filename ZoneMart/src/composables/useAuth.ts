@@ -58,9 +58,26 @@ export const DEMO_USERS: Record<Exclude<UserRole, 'guest'>, UserProfile> = {
 
 function loadInitialUser(): UserProfile | null {
   try {
-    const saved = localStorage.getItem('currentUser');
+    const saved =
+      localStorage.getItem('currentUser') ||
+      localStorage.getItem('zonemart_user');
     if (saved) {
-      return JSON.parse(saved);
+      const user: UserProfile = JSON.parse(saved);
+      // Kiểm tra đồng bộ dữ liệu ảnh đại diện / tên mới nhất từ phân vùng hồ sơ nếu có
+      const key = (user.phoneEmail || user.id || '').toLowerCase().trim();
+      if (key && typeof window !== 'undefined') {
+        const profileSaved = localStorage.getItem('zonemart_profile_data_' + key);
+        if (profileSaved) {
+          try {
+            const profileData = JSON.parse(profileSaved);
+            if (profileData.avatarUrl) user.avatarUrl = profileData.avatarUrl;
+            if (profileData.fullName) user.fullName = profileData.fullName;
+            if (profileData.phone) user.phone = profileData.phone;
+            if (user.phone && profileData.phone) user.phone = profileData.phone;
+          } catch {}
+        }
+      }
+      return user;
     }
     // Tương thích ngược với key isLoggedIn cũ
     const isOldLogged = localStorage.getItem('isLoggedIn') === 'true';
@@ -69,7 +86,7 @@ function loadInitialUser(): UserProfile | null {
       'guest'
     >;
     if (isOldLogged && oldRole && DEMO_USERS[oldRole]) {
-      return DEMO_USERS[oldRole];
+      return { ...DEMO_USERS[oldRole] };
     }
   } catch (e) {
     console.error('Lỗi đọc trạng thái tài khoản:', e);
@@ -125,17 +142,61 @@ export function useAuth() {
   };
 
   const login = (user: UserProfile) => {
-    currentUser.value = user;
-    localStorage.setItem('currentUser', JSON.stringify(user));
+    const freshUser: UserProfile = { ...user };
+    currentUser.value = freshUser;
+    localStorage.setItem('currentUser', JSON.stringify(freshUser));
+    localStorage.setItem('zonemart_user', JSON.stringify(freshUser));
     localStorage.setItem('isLoggedIn', 'true');
-    localStorage.setItem('userRole', user.role);
+    localStorage.setItem('userRole', freshUser.role);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('zonemart:user-updated', { detail: freshUser }),
+      );
+    }
+  };
+
+  const updateUser = (partial: Partial<UserProfile>) => {
+    if (!currentUser.value) return;
+    const updated: UserProfile = {
+      ...currentUser.value,
+      ...partial,
+    };
+    currentUser.value = updated;
+    localStorage.setItem('currentUser', JSON.stringify(updated));
+    localStorage.setItem('zonemart_user', JSON.stringify(updated));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('zonemart:user-updated', { detail: updated }),
+      );
+    }
   };
 
   const logout = () => {
     currentUser.value = null;
     localStorage.removeItem('currentUser');
+    localStorage.removeItem('zonemart_user');
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('userRole');
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (
+          key &&
+          (key.startsWith('zonemart_cart_guest_') ||
+            key === 'zonemart_cart' ||
+            key === 'zonemart_guest_id')
+        ) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    } catch {}
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('zonemart:user-updated', { detail: null }),
+      );
+    }
   };
 
   const switchRole = (role: Exclude<UserRole, 'guest'>) => {
@@ -153,6 +214,7 @@ export function useAuth() {
     roleBadgeClass,
     formatVND,
     login,
+    updateUser,
     logout,
     switchRole,
     DEMO_USERS,

@@ -129,7 +129,7 @@ const handleSendOtp = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("http://localhost:5000/api/forgotpassword/send-otp", {
+    const res = await fetch("/api/forgotpassword/send-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: form.email.trim() })
@@ -154,6 +154,7 @@ const handleSendOtp = async () => {
       }
     } else {
       errorMessage.value = "Không thể kết nối đến máy chủ backend (http://localhost:5000). Vui lòng thử lại sau.";
+      errorMessage.value = "Không thể kết nối đến máy chủ backend. Vui lòng thử lại sau.";
     }
   } catch (error: any) {
     errorMessage.value = error.message || "Không thể gửi mã xác thực. Vui lòng thử lại sau.";
@@ -180,7 +181,7 @@ const handleVerifyOtp = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("http://localhost:5000/api/forgotpassword/verify-otp", {
+    const res = await fetch("/api/forgotpassword/verify-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -227,7 +228,7 @@ const handleResetPassword = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("http://localhost:5000/api/forgotpassword/reset-password", {
+    const res = await fetch("/api/forgotpassword/reset-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

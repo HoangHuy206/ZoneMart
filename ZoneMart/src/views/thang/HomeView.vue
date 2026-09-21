@@ -1,10 +1,23 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
+import { useToast } from '../../composables/useToast';
 
 const router = useRouter();
 const cart = useCart();
+const toast = useToast();
+
+const toastMessage = ref('');
+let toastTimer: any = null;
+const showToast = (msg: string) => {
+  toastMessage.value = msg;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastMessage.value = '';
+  }, 2500);
+  toast.success(msg, 'Giỏ Hàng ZoneMart');
+};
 
 let observer: IntersectionObserver | null = null;
 
@@ -58,6 +71,7 @@ const portalCards = [
     btnText: 'KHÁM PHÁ CHỢ',
     btnRoute: '/products',
     iconType: 'user',
+    openNewTab: false,
   },
   {
     id: 'seller',
@@ -69,6 +83,7 @@ const portalCards = [
     btnText: 'ĐĂNG KÝ SHOP',
     btnRoute: '/register-seller',
     iconType: 'store',
+    openNewTab: true,
   },
   {
     id: 'shipper',
@@ -80,6 +95,7 @@ const portalCards = [
     btnText: 'CỔNG TÀI XẾ',
     btnRoute: '/register-shipper',
     iconType: 'truck',
+    openNewTab: true,
   },
 ];
 
@@ -126,26 +142,26 @@ const featuredCategories = [
 // 3. Sản phẩm tươi mới nổi bật trong bán kính 10km (Hot Products)
 const featuredProducts = [
   {
-    id: 1,
-    name: 'Dâu Tây Đà Lạt Giống Nhật (Hộp 500g)',
+    id: 'p5',
+    name: 'Dâu Tây Giống Hana Nhật Bản (Hộp 500g)',
     farm: 'Nông Trại Xanh Lạc Dương',
-    distance: '1.8 km',
-    deliveryTime: '25 phút',
+    distance: '1.6 km',
+    deliveryTime: '20 phút',
     price: 95000,
-    originalPrice: 120000,
-    discount: '-21%',
+    originalPrice: 125000,
+    discount: '-24%',
     rating: 4.9,
-    sold: 142,
+    sold: 310,
     tag: 'Thu hoạch sáng nay',
     image:
       'https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=600&q=80',
   },
   {
-    id: 2,
-    name: 'Xà Lách Mỡ Thủy Canh VietGAP (1kg)',
+    id: 'p1',
+    name: 'Rau Xà Lách Mỡ Thủy Canh VietGAP (1kg)',
     farm: 'Vườn Rau Hữu Cơ Bác Ba',
-    distance: '0.9 km',
-    deliveryTime: '18 phút',
+    distance: '0.8 km',
+    deliveryTime: '15 phút',
     price: 35000,
     originalPrice: 45000,
     discount: '-22%',
@@ -156,34 +172,94 @@ const featuredProducts = [
       'https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?auto=format&fit=crop&w=600&q=80',
   },
   {
-    id: 3,
+    id: 'p9',
     name: 'Bưởi Da Xanh Bến Tre Loại 1 (Trái 1.5kg)',
-    farm: 'Vựa Bưởi Sáu Thảo Bến Tre',
-    distance: '3.4 km',
-    deliveryTime: '35 phút',
+    farm: 'Vựa Trái Cây Sáu Thảo Miền Tây',
+    distance: '2.4 km',
+    deliveryTime: '25 phút',
     price: 68000,
     originalPrice: 85000,
     discount: '-20%',
     rating: 4.8,
-    sold: 96,
+    sold: 295,
     tag: 'Đặc sản chuẩn gốc',
     image:
       'https://images.unsplash.com/photo-1587049352846-4a222e784d38?auto=format&fit=crop&w=600&q=80',
   },
   {
-    id: 4,
-    name: 'Mật Ong Hoa Cà Phê Gia Lai (Chai 500ml)',
-    farm: 'Hợp Tác Xã Nông Sản Cao Nguyên',
-    distance: '2.5 km',
-    deliveryTime: '30 phút',
+    id: 'p13',
+    name: 'Thịt Bò Mỹ Nhập Khẩu USDA Choice (500g)',
+    farm: 'Thực Phẩm Tươi Sống ZoneMart Cầu Giấy',
+    distance: '1.2 km',
+    deliveryTime: '18 phút',
+    price: 185000,
+    originalPrice: 220000,
+    discount: '-16%',
+    rating: 5.0,
+    sold: 560,
+    tag: 'Thịt mát trong ngày',
+    image:
+      'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'p17',
+    name: 'Cơm Tấm Sườn Bì Chả Đặc Biệt (Suất)',
+    farm: 'Bếp Cơm Niêu & Ẩm Thực Nóng Cô Ba',
+    distance: '3.1 km',
+    deliveryTime: '25 phút',
+    price: 55000,
+    originalPrice: 65000,
+    discount: '-15%',
+    rating: 4.8,
+    sold: 680,
+    tag: 'Giao nóng hổi',
+    image:
+      'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'p21',
+    name: 'Combo Bánh Mì Chảo Nóng Hổi (Phần)',
+    farm: 'Tiệm Bánh Mì & Cà Phê Zone Sáng',
+    distance: '1.9 km',
+    deliveryTime: '15 phút',
+    price: 45000,
+    originalPrice: 55000,
+    discount: '-18%',
+    rating: 4.9,
+    sold: 490,
+    tag: 'Ăn sáng hỏa tốc',
+    image:
+      'https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'p25',
+    name: 'Mật Ong Rừng Hoa Cà Phê Gia Lai (500ml)',
+    farm: 'Hợp Tác Xã Đặc Sản Vùng Cao Tây Bắc',
+    distance: '4.3 km',
+    deliveryTime: '35 phút',
     price: 135000,
     originalPrice: 165000,
     discount: '-18%',
     rating: 4.9,
-    sold: 215,
+    sold: 375,
     tag: 'Nguyên chất 100%',
     image:
       'https://images.unsplash.com/photo-1587049352851-8d4e89133924?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'p14',
+    name: 'Cá Hồi Na Uy Phi Lê Cắt Miếng (Khay 300g)',
+    farm: 'Thực Phẩm Tươi Sống ZoneMart Cầu Giấy',
+    distance: '1.2 km',
+    deliveryTime: '18 phút',
+    price: 195000,
+    originalPrice: 235000,
+    discount: '-17%',
+    rating: 5.0,
+    sold: 320,
+    tag: 'Chuẩn Sashimi',
+    image:
+      'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=600&q=80',
   },
 ];
 
@@ -215,15 +291,17 @@ const howItWorks = [
   },
 ];
 
-// 5. Nhà vườn & Gian hàng tiêu biểu địa phương
+// 5. Nhà vườn & Gian hàng tiêu biểu địa phương (Thông số & sản phẩm độc nhất 100%)
 const featuredVendors = [
   {
     id: 1,
     name: 'Vườn Rau Hữu Cơ Bác Ba',
-    owner: 'Bác Ba (15 năm trồng rau sạch)',
-    distance: '0.9 km',
-    productsCount: '45+ loại rau củ',
+    owner: 'Bác Ba (15 năm trồng rau sạch Ba Vì)',
+    distance: '0.8 km',
+    deliveryTime: '12 - 18 phút',
+    productsCount: '42+ loại rau củ VietGAP',
     rating: 5.0,
+    reviews: 384,
     avatar:
       'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80',
     cover:
@@ -232,10 +310,12 @@ const featuredVendors = [
   {
     id: 2,
     name: 'Nông Trại Xanh Lạc Dương',
-    owner: 'HTX Nông Nghiệp Công Nghệ Cao',
-    distance: '1.8 km',
-    productsCount: '30+ loại củ quả & hoa quả',
+    owner: 'HTX Nông Nghiệp Công Nghệ Cao Lạc Dương',
+    distance: '1.6 km',
+    deliveryTime: '18 - 25 phút',
+    productsCount: '38+ loại dâu tây & củ quả',
     rating: 4.9,
+    reviews: 256,
     avatar:
       'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
     cover:
@@ -243,15 +323,59 @@ const featuredVendors = [
   },
   {
     id: 3,
-    name: 'Vựa Trái Cây Sáu Thảo Bến Tre',
-    owner: 'Nhà vườn Sáu Thảo',
-    distance: '3.4 km',
-    productsCount: '25+ đặc sản miệt vườn',
+    name: 'Vựa Trái Cây Sáu Thảo Miền Tây',
+    owner: 'Nhà vườn Sáu Thảo (Bến Tre)',
+    distance: '2.4 km',
+    deliveryTime: '22 - 30 phút',
+    productsCount: '30+ trái cây miệt vườn',
     rating: 4.8,
+    reviews: 192,
     avatar:
       'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
     cover:
       'https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 4,
+    name: 'Thực Phẩm Tươi Sống ZoneMart Cầu Giấy',
+    owner: 'ZoneMart Fresh Hub Cầu Giấy',
+    distance: '1.2 km',
+    deliveryTime: '15 - 20 phút',
+    productsCount: '65+ thịt bò, cá hồi, gà tươi',
+    rating: 5.0,
+    reviews: 420,
+    avatar:
+      'https://images.unsplash.com/photo-1578916171728-46686eac8d58?auto=format&fit=crop&w=200&q=80',
+    cover:
+      'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 5,
+    name: 'Bếp Cơm Niêu & Ẩm Thực Nóng Cô Ba',
+    owner: 'Bếp Trưởng Cô Ba Sài Gòn',
+    distance: '3.1 km',
+    deliveryTime: '20 - 30 phút',
+    productsCount: '25+ món cơm & canh nóng',
+    rating: 4.7,
+    reviews: 310,
+    avatar:
+      'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80',
+    cover:
+      'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 6,
+    name: 'Tiệm Bánh Mì & Cà Phê Zone Sáng',
+    owner: 'Bánh Mì Zone Bakery',
+    distance: '1.9 km',
+    deliveryTime: '12 - 18 phút',
+    productsCount: '20+ món điểm tâm sáng & cà phê',
+    rating: 4.85,
+    reviews: 175,
+    avatar:
+      'https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=200&q=80',
+    cover:
+      'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=600&q=80',
   },
 ];
 
@@ -313,13 +437,20 @@ const goToRoute = (path: string) => {
   router.push(path);
 };
 
+const goToStore = (storeName: string) => {
+  router.push({
+    path: '/products',
+    query: { store: storeName, type: 'product' },
+  });
+};
+
 const openNewTabRoute = (path: string) => {
   const routeUrl = router.resolve(path).href;
   window.open(routeUrl, '_blank');
 };
 
-const goToPortal = (btnRoute: string) => {
-  if (btnRoute === '/register-seller' || btnRoute === '/register-shipper') {
+const goToPortal = (btnRoute: string, openNewTab?: boolean) => {
+  if (openNewTab || btnRoute === '/register-seller' || btnRoute === '/register-shipper') {
     openNewTabRoute(btnRoute);
   } else {
     router.push(btnRoute);
@@ -343,12 +474,20 @@ const handleAddToCartHome = (item: any) => {
       image: item.image,
     }
   );
-  alert(`Đã thêm "${item.name}" vào giỏ hàng của bạn!`);
+  showToast(`Đã thêm "${item.name}" vào giỏ hàng thành công!`);
 };
 </script>
 
 <template>
   <div class="homepage-container">
+    <!-- Thông báo thêm giỏ hàng nhẹ nhàng -->
+    <Transition name="toast-fade">
+      <div v-if="toastMessage" class="home-toast-notice">
+        <i class="bi bi-check2-circle text-success me-2 fs-5"></i>
+        <span>{{ toastMessage }}</span>
+      </div>
+    </Transition>
+
     <!-- ==========================================================
          1. FIRST FOLD: HERO BANNER & 3 THẺ VAI TRÒ
          ========================================================== -->
@@ -410,6 +549,7 @@ const handleAddToCartHome = (item: any) => {
             v-for="card in portalCards"
             :key="card.id"
             class="portal-card"
+            @click="goToPortal(card.btnRoute, card.openNewTab)"
           >
             <div class="portal-icon-box">
               <svg
@@ -462,7 +602,7 @@ const handleAddToCartHome = (item: any) => {
             <p class="portal-tagline">{{ card.tagline }}</p>
             <p class="portal-desc">{{ card.description }}</p>
 
-            <button class="portal-btn" @click="goToPortal(card.btnRoute)">
+            <button class="portal-btn" @click.stop="goToPortal(card.btnRoute, card.openNewTab)">
               {{ card.btnText }}
             </button>
           </div>
@@ -627,7 +767,7 @@ const handleAddToCartHome = (item: any) => {
             quanh bạn
           </p>
         </div>
-        <router-link to="/products" class="view-all-link">
+        <router-link to="/products?type=store" class="view-all-link">
           <span>Xem Tất Cả Gian Hàng</span>
           <i class="bi bi-arrow-right"></i>
         </router-link>
@@ -639,7 +779,7 @@ const handleAddToCartHome = (item: any) => {
           :key="v.id"
           class="vendor-card scroll-reveal"
           :style="{ '--reveal-delay': `${idx * 0.1}s` }"
-          @click="goToRoute('/products')"
+          @click="goToStore(v.name)"
         >
           <div class="vendor-cover-wrap">
             <img
@@ -660,7 +800,7 @@ const handleAddToCartHome = (item: any) => {
               <span><i class="bi bi-star-fill text-warning"></i> {{ v.rating }}</span>
             </div>
             <p class="vendor-stock"><i class="bi bi-box-seam text-primary"></i> {{ v.productsCount }}</p>
-            <button class="vendor-btn">
+            <button class="vendor-btn" @click.stop="goToStore(v.name)">
               <span>Ghé Thăm Gian Hàng</span>
               <i class="bi bi-arrow-right"></i>
             </button>
@@ -1027,6 +1167,7 @@ const handleAddToCartHome = (item: any) => {
   flex-direction: column;
   align-items: center;
   transition: all 0.25s ease;
+  cursor: pointer;
 }
 .portal-card:hover {
   transform: translateY(-4px);
@@ -1776,5 +1917,33 @@ const handleAddToCartHome = (item: any) => {
     width: 100%;
     text-align: center;
   }
+}
+
+.home-toast-notice {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 999999;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 12px 22px;
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.toast-fade-enter-from,
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
 }
 </style>

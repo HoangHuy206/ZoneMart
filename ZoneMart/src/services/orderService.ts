@@ -59,7 +59,7 @@ export interface OrderRecord {
   subOrders: SubOrderResponse[];
 }
 
-const API_BASE = 'http://localhost:5000/api/orders';
+const API_BASE = '/api/orders';
 
 export const orderService = {
   /**

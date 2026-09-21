@@ -9,6 +9,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
 import { useProductCatalog, type CatalogProduct } from "../../composables/useProductCatalog";
+import { orderRealtimeService } from "../../services/orderRealtimeService";
 
 const auth = useAuth();
 const router = useRouter();
@@ -102,6 +103,9 @@ const getOrderStatusClass = (status: any): string => {
   const s = String(status).toLowerCase();
   if (s.includes("thanh toán") || s.includes("completed") || s.includes("thành công")) return "completed";
   if (s.includes("delivering") || s.includes("giao")) return "delivering";
+  if (s.includes("thanh toán") || s.includes("completed") || s.includes("thành công") || s.includes("giao thành công")) return "completed";
+  if (s.includes("delivering") || s.includes("đang giao cho bạn") || s.includes("đang giao")) return "delivering";
+  if (s.includes("picking") || s.includes("đang đi lấy")) return "picking";
   return "processing";
 };
 
@@ -109,9 +113,13 @@ const getOrderStatusText = (status: any): string => {
   if (!status) return "Đang xử lý";
   if (typeof status === "string") {
     const clean = status.replace(/\s*\(TPBank\)/gi, "").replace(/\s*TPBank/gi, "").trim();
+    if (clean === "picking" || clean.includes("đang đi lấy")) return "Tài xế đang đi lấy đơn hàng";
+    if (clean === "delivering" || clean.includes("đang giao cho bạn")) return "Tài xế đang giao cho bạn";
+    if (clean === "completed" || clean.includes("thành công") || clean.includes("giao thành công")) return "Giao thành công";
     if (clean.includes("Đã thanh toán")) return "Đã thanh toán";
     if (clean === "completed") return "Giao hàng thành công";
     if (clean === "delivering") return "Đang giao hàng (Hỏa tốc)";
+    if (clean === "pending") return "Đang chờ tài xế nhận đơn";
     return clean;
   }
   return "Đang xử lý";
@@ -267,6 +275,20 @@ const loadBuyerOrders = () => {
   orders.value = collectedOrders;
 };
 
+const realTimeToast = ref("");
+const showRealTimeToast = ref(false);
+let realTimeToastTimer: any = null;
+const triggerRealTimeToast = (msg: string) => {
+  realTimeToast.value = msg;
+  showRealTimeToast.value = true;
+  if (realTimeToastTimer) clearTimeout(realTimeToastTimer);
+  realTimeToastTimer = setTimeout(() => {
+    showRealTimeToast.value = false;
+  }, 4500);
+};
+
+let unsubscribeRealTimeStatus: (() => void) | null = null;
+
 // Hiệu ứng Loading mô phỏng tải dữ liệu chân thực và mượt mà
 const fetchOrdersWithLoading = (delayMs: number = 650) => {
   isLoading.value = true;
@@ -285,10 +307,32 @@ const handleGlobalRefresh = () => {
 onMounted(() => {
   fetchOrdersWithLoading(650);
   window.addEventListener("zonemart:refresh_buyer_orders", handleGlobalRefresh);
+
+  // Lắng nghe cập nhật trạng thái đơn hàng thời gian thực (từ Shipper)
+  unsubscribeRealTimeStatus = orderRealtimeService.onOrderStatusChanged(({ orderId, status, statusText, order }) => {
+    const found = orders.value.find((o) => o.id === orderId || o.orderId === orderId);
+    if (found) {
+      found.status = status;
+      found.statusText = statusText;
+      if (order.shipperInfo) found.shipperInfo = order.shipperInfo;
+    } else {
+      loadBuyerOrders();
+    }
+
+    if (status === "picking") {
+      triggerRealTimeToast(`🚴 Đơn #${orderId}: Tài xế đang đi lấy đơn hàng tại quán!`);
+    } else if (status === "delivering") {
+      triggerRealTimeToast(`📦 Đơn #${orderId}: Tài xế đang giao cho bạn! Vui lòng chú ý điện thoại.`);
+    } else if (status === "completed") {
+      triggerRealTimeToast(`🎉 Đơn #${orderId}: Đã giao thành công! Cảm ơn bạn đã đặt hàng tại ZoneMart.`);
+    }
+  });
 });
 
 onUnmounted(() => {
   if (loadingTimer) clearTimeout(loadingTimer);
+  if (realTimeToastTimer) clearTimeout(realTimeToastTimer);
+  if (unsubscribeRealTimeStatus) unsubscribeRealTimeStatus();
   window.removeEventListener("zonemart:refresh_buyer_orders", handleGlobalRefresh);
 });
 
@@ -402,6 +446,14 @@ const handleReportIssue = (order: any) => {
 
 <template>
   <div class="buyer-orders-container">
+    <!-- Real-time Order Notification Toast -->
+    <transition name="toast-slide">
+      <div v-if="showRealTimeToast" class="realtime-status-toast">
+        <i class="bi bi-broadcast text-primary"></i>
+        <span>{{ realTimeToast }}</span>
+      </div>
+    </transition>
+
     <div class="header">
       <div class="header-content">
         <h2><i class="bi bi-box-seam-fill me-2 text-primary"></i>Đơn Mua Của Bạn</h2>
@@ -524,8 +576,25 @@ const handleReportIssue = (order: any) => {
             <div class="status-pill" :class="getOrderStatusClass(order.status)">
               <i v-if="getOrderStatusClass(order.status) === 'completed'" class="bi bi-check-circle-fill me-1"></i>
               <i v-else-if="getOrderStatusClass(order.status) === 'delivering'" class="bi bi-bicycle me-1"></i>
+              <i v-else-if="getOrderStatusClass(order.status) === 'picking'" class="bi bi-geo-alt-fill me-1"></i>
               <i v-else class="bi bi-hourglass-split me-1"></i>
               <span>{{ getOrderStatusText(order.status || order.statusText) }}</span>
+            </div>
+          </div>
+
+          <!-- Thanh thông tin Shipper khi đang lấy/giao hàng -->
+          <div v-if="order.shipperInfo && (getOrderStatusClass(order.status) === 'picking' || getOrderStatusClass(order.status) === 'delivering')" class="buyer-shipper-live-card">
+            <div class="shipper-avatar-mini">
+              <i class="bi bi-bicycle text-primary"></i>
+            </div>
+            <div class="shipper-live-text">
+              <div class="shipper-live-name">
+                <strong>{{ order.shipperInfo.name }}</strong> ({{ order.shipperInfo.phone }})
+                <span class="plate-tag">{{ order.shipperInfo.licensePlate }}</span>
+              </div>
+              <small class="shipper-live-desc">
+                {{ getOrderStatusClass(order.status) === 'picking' ? 'Tài xế đang trên đường đến quán lấy món hàng cho bạn' : 'Tài xế đã nhận món từ quán và đang giao hỏa tốc đến bạn' }}
+              </small>
             </div>
           </div>
 
@@ -1448,5 +1517,249 @@ const handleReportIssue = (order: any) => {
 .btn-shop-now:hover {
   background: #c2410c;
   transform: translateY(-2px);
+}
+
+/* ============================================================================
+   RESPONSIVE BREAKPOINTS CHO TRANG ĐƠN MUA (BUYER ORDERS)
+   ============================================================================ */
+@media (max-width: 768px) {
+  .buyer-orders-container {
+    padding: 0 14px;
+    margin: 20px auto 60px auto;
+  }
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  .header-content h2 {
+    font-size: 22px;
+  }
+  .header-actions {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+  }
+  .btn-refresh-orders,
+  .btn-continue-shopping {
+    flex: 1;
+    justify-content: center;
+    font-size: 12.5px;
+    padding: 8px 12px;
+    min-height: 40px;
+  }
+  .order-card {
+    border-radius: 14px;
+  }
+  .order-top {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .order-meta-info {
+    font-size: 13px;
+    gap: 6px;
+  }
+  .order-id-code {
+    font-size: 14px;
+  }
+  .order-body {
+    padding: 14px;
+    gap: 12px;
+  }
+  .order-store-banner {
+    padding-bottom: 10px;
+  }
+  .store-icon-wrap {
+    width: 32px;
+    height: 32px;
+    font-size: 15px;
+  }
+  .store-name {
+    font-size: 14px;
+  }
+  .product-item-card {
+    padding: 10px 12px;
+    gap: 12px;
+  }
+  .product-thumb-box {
+    width: 60px;
+    height: 60px;
+    min-width: 60px;
+  }
+  .product-name {
+    font-size: 14px;
+  }
+  .shipping-info-box {
+    padding: 10px 12px;
+    font-size: 12.5px;
+  }
+  .order-bottom {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 12px 14px;
+    gap: 12px;
+  }
+  .bottom-left-summary {
+    display: flex;
+    justify-content: space-between;
+  }
+  .bottom-right-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 10px;
+  }
+  .total-price-box {
+    justify-content: space-between;
+    width: 100%;
+  }
+  .total-amount {
+    font-size: 18px;
+  }
+  .action-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+  .action-buttons .btn {
+    justify-content: center;
+    padding: 8px 10px;
+    font-size: 12px;
+    min-height: 38px;
+  }
+}
+
+@media (max-width: 480px) {
+  .buyer-orders-container {
+    padding: 0 10px;
+    margin: 14px auto 40px auto;
+  }
+  .header-content h2 {
+    font-size: 19px;
+  }
+  .account-meta-line {
+    font-size: 12px;
+  }
+  .user-chip {
+    font-size: 12px;
+    padding: 3px 8px;
+  }
+  .order-card {
+    border-radius: 12px;
+  }
+  .product-item-card {
+    flex-wrap: wrap;
+  }
+  .product-subtotal-box {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px dashed #e2e8f0;
+    padding-top: 6px;
+    margin-top: 4px;
+  }
+  .subtotal-label {
+    font-size: 12px;
+  }
+  .subtotal-amount {
+    font-size: 14px;
+  }
+  .empty-orders-card {
+    padding: 40px 16px;
+    border-radius: 14px;
+  }
+  .empty-main-title {
+    font-size: 17px;
+  }
+  .empty-sub-text {
+    font-size: 13px;
+  }
+  .btn-shop-now {
+    width: 100%;
+    justify-content: center;
+    font-size: 13px;
+    padding: 10px 16px;
+  }
+}
+
+/* REALTIME ORDER STATUS TOAST & CARDS */
+.realtime-status-toast {
+  position: sticky;
+  top: 16px;
+  z-index: 100;
+  background: linear-gradient(135deg, #1e293b, #0f172a);
+  color: #f8fafc;
+  padding: 12px 20px;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 0 0 1px #3b82f6;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  animation: slideDownToast 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.status-pill.picking {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.buyer-shipper-live-card {
+  margin: 0 16px 12px;
+  padding: 10px 14px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.shipper-avatar-mini {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #e0f2fe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.shipper-live-name {
+  font-size: 13px;
+  color: #0369a1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.plate-tag {
+  background: #0284c7;
+  color: #ffffff;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.shipper-live-desc {
+  font-size: 12px;
+  color: #0284c7;
+  display: block;
+  margin-top: 2px;
+}
+
+@keyframes slideDownToast {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 </style>

@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import logoImg from './assets/logo.png';
 import { useAuth, type UserRole } from './composables/useAuth';
 import { useCart } from './composables/useCart';
 import { useProductCatalog } from './composables/useProductCatalog';
+import ZoneToast from './components/common/ZoneToast.vue';
+import TopProgressBar from './components/common/TopProgressBar.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -12,12 +14,25 @@ const auth = useAuth();
 const cart = useCart();
 const catalog = useProductCatalog();
 
+onMounted(() => {
+  catalog.refreshCatalog();
+});
+
 const navigateToBuyerOrders = () => {
   closeDropdowns();
   if (route.path === '/buyer-orders') {
     window.dispatchEvent(new CustomEvent('zonemart:refresh_buyer_orders', { detail: { time: Date.now() } }));
   }
 };
+
+// Đồng bộ phản ứng avatar và thông tin người dùng tức thì khi có cập nhật
+if (typeof window !== 'undefined') {
+  window.addEventListener('zonemart:user-updated', (e: any) => {
+    if (e?.detail) {
+      auth.currentUser.value = { ...e.detail };
+    }
+  });
+}
 
 const isMobileMenuOpen = ref(false);
 const isUserDropdownOpen = ref(false);
@@ -32,17 +47,30 @@ const searchPlaceholder = computed(() => {
     : 'Tìm kiếm nông sản, thực phẩm tươi, món ngon...';
 });
 
+function removeVietnameseTones(str: string): string {
+  return (str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase();
+}
+
 // Gợi ý tìm kiếm thời gian thực
 const searchSuggestions = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   if (!q) return { products: [], stores: [] };
+  const qNoTone = removeVietnameseTones(q);
 
   const products = catalog.allProducts.value
     .filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.categoryName.toLowerCase().includes(q) ||
-        p.store.name.toLowerCase().includes(q)
+        p.store.name.toLowerCase().includes(q) ||
+        removeVietnameseTones(p.name).includes(qNoTone) ||
+        removeVietnameseTones(p.categoryName).includes(qNoTone) ||
+        removeVietnameseTones(p.store.name).includes(qNoTone)
     )
     .slice(0, 5);
 
@@ -51,7 +79,10 @@ const searchSuggestions = computed(() => {
       (s) =>
         s.name.toLowerCase().includes(q) ||
         s.address.toLowerCase().includes(q) ||
-        (s.categoryName && s.categoryName.toLowerCase().includes(q))
+        (s.categoryName && s.categoryName.toLowerCase().includes(q)) ||
+        removeVietnameseTones(s.name).includes(qNoTone) ||
+        removeVietnameseTones(s.address).includes(qNoTone) ||
+        (s.categoryName && removeVietnameseTones(s.categoryName).includes(qNoTone))
     )
     .slice(0, 4);
 
@@ -127,6 +158,10 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
 <template>
   <div class="app-wrapper" @click="closeDropdowns">
+    <!-- Thanh tải tiến trình đỉnh trang & Toast thông báo hoạt họa toàn cục -->
+    <TopProgressBar />
+    <ZoneToast />
+
     <!-- Header chuẩn theo hình Sample Mockup (Tự động ẩn ở trang 404 qua meta.hideHeader) -->
     <header v-if="!$route.meta.hideHeader" class="navbar">
       <div class="nav-container">
@@ -137,7 +172,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             <span class="brand-name"
               >Zone<span class="highlight">Mart</span></span
             >
-            <span class="brand-tagline">Giao hàng hỏa tốc 10km</span>
+            <span class="brand-tagline">Giao hàng hỏa tốc 3km</span>
           </div>
         </router-link>
 
@@ -406,7 +441,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                 active-class="active"
               >
                 <i class="bi bi-bicycle menu-mini-icon"></i>
-                <span>Nhận Đơn 10km</span>
+                <span>Nhận Đơn 3km</span>
               </router-link>
               <router-link
                 to="/profile"
@@ -480,9 +515,6 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                   d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
                 ></path>
               </svg>
-              <span v-if="cart.totalCount.value > 0" class="cart-badge">{{
-                cart.totalCount.value
-              }}</span>
             </router-link>
             <router-link to="/register" class="btn-auth-outline">
               Đăng Ký
@@ -755,6 +787,36 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             </div>
           </div>
 
+          <!-- Mobile Cart Button (luôn hiển thị trên header di động) -->
+          <router-link
+            to="/cart"
+            class="icon-btn cart-btn mobile-header-cart"
+            title="Giỏ hàng"
+            aria-label="Xem giỏ hàng"
+            @click="closeDropdowns"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="9" cy="21" r="1"></circle>
+              <circle cx="20" cy="21" r="1"></circle>
+              <path
+                d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
+              ></path>
+            </svg>
+            <span v-if="auth.isLoggedIn.value && cart.totalCount.value > 0" class="cart-badge">{{
+              cart.totalCount.value
+            }}</span>
+          </router-link>
+
           <!-- Mobile Toggle Button -->
           <button
             class="mobile-toggle"
@@ -777,6 +839,45 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
         class="mobile-menu"
         aria-label="Menu điều hướng di động"
       >
+        <!-- Khung tìm kiếm trên di động -->
+        <div class="mobile-search-section">
+          <div class="mobile-search-target-tabs">
+            <button
+              type="button"
+              class="mobile-target-btn"
+              :class="{ active: searchTarget === 'product' }"
+              @click="setSearchTarget('product')"
+            >
+              <i class="bi bi-box-seam-fill"></i> Sản phẩm
+            </button>
+            <button
+              type="button"
+              class="mobile-target-btn"
+              :class="{ active: searchTarget === 'store' }"
+              @click="setSearchTarget('store')"
+            >
+              <i class="bi bi-shop"></i> Gian hàng
+            </button>
+          </div>
+          <div class="mobile-search-input-wrap">
+            <i class="bi bi-search mobile-search-icon"></i>
+            <input
+              v-model="searchQuery"
+              type="text"
+              class="mobile-search-input"
+              :placeholder="searchPlaceholder"
+              @keyup.enter="handleHeaderSearch(); closeDropdowns();"
+            />
+            <button
+              type="button"
+              class="mobile-search-btn"
+              @click="handleHeaderSearch(); closeDropdowns();"
+            >
+              Tìm
+            </button>
+          </div>
+        </div>
+        <div class="mobile-divider"></div>
         <!-- Guest Mobile Links -->
         <template v-if="!auth.isLoggedIn.value">
           <router-link
@@ -838,7 +939,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             </router-link>
             <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
               <i class="bi bi-cart3 menu-icon"></i>
-              <span>Giỏ Hàng<span v-if="cart.totalCount.value > 0"> ({{ cart.totalCount.value }})</span></span>
+              <span>Giỏ Hàng<span v-if="auth.isLoggedIn.value && cart.totalCount.value > 0"> ({{ cart.totalCount.value }})</span></span>
             </router-link>
             <router-link
               to="/buyer-orders"
@@ -1013,7 +1114,11 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
     <!-- Nội dung chính được điều hướng qua Router -->
     <main class="main-content">
-      <router-view />
+      <router-view v-slot="{ Component }">
+        <transition name="page-fade-slide" mode="out-in">
+          <component :is="Component" />
+        </transition>
+      </router-view>
     </main>
 
     <!-- Footer ZoneMart – Chuẩn sàn Thương Mại Điện Tử (Tự động ẩn ở trang 404 qua meta.hideFooter) -->
@@ -1025,12 +1130,12 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             <img :src="logoImg" alt="ZoneMart" class="footer-logo-img" />
             <div class="footer-brand-title">
               <h4>ZoneMart</h4>
-              <span>Giao Hàng Hỏa Tốc 10km</span>
+              <span>Giao Hàng Hỏa Tốc 3km</span>
             </div>
           </div>
           <p class="footer-tagline">
             Sàn thương mại điện tử kết nối trực tiếp Nhà Vườn, Tiểu Thương với
-            Khách Hàng lân cận trong bán kính 10km.
+            Khách Hàng lân cận trong bán kính 3km.
           </p>
           <ul class="footer-contact-list">
             <li>
@@ -1095,12 +1200,12 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
           <h5 class="footer-heading">HỢP TÁC & PHÁT TRIỂN</h5>
           <ul class="footer-links">
             <li>
-              <router-link to="/register-seller"
+              <router-link to="/register-seller" target="_blank"
                 >Mở gian hàng Nông Dân / Shop</router-link
               >
             </li>
             <li>
-              <router-link to="/register-shipper"
+              <router-link to="/register-shipper" target="_blank"
                 >Đăng ký làm Tài xế Shipper</router-link
               >
             </li>
@@ -1206,6 +1311,7 @@ body {
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
+  overflow-x: clip;
 }
 
 .main-content {
@@ -1214,6 +1320,7 @@ body {
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* ==========================================================
@@ -1265,21 +1372,24 @@ body {
 }
 .brand-name {
   font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 850;
   letter-spacing: -0.3px;
-  color: #1e3a5f;
-  line-height: 1.1;
+  color: #0f172a;
+  line-height: 1.15;
 }
 .brand-name .highlight {
-  color: #d85a2a;
+  color: #ea580c;
 }
 .brand-tagline {
-  font-size: 11px;
-  font-weight: 600;
-  color: #7b6960;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #c2410c;
   letter-spacing: 0.2px;
-  margin-top: 1px;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* 2. SEARCH BAR CHÍNH GIỮA */
@@ -2220,6 +2330,92 @@ body {
   border-color: #d85a2a;
 }
 
+/* Mobile Header Cart */
+.mobile-header-cart {
+  display: none;
+  background: #fff8f3;
+  border: 1px solid #ebdcd3;
+  color: #d85a2a;
+}
+.mobile-header-cart:hover {
+  background: #fdf5f0;
+  border-color: #d85a2a;
+}
+
+/* Mobile Search Section */
+.mobile-search-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 8px 0;
+}
+.mobile-search-target-tabs {
+  display: flex;
+  gap: 8px;
+}
+.mobile-target-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1.5px solid #ebdcd3;
+  background: #faf7f2;
+  color: #4a3830;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-height: 40px;
+}
+.mobile-target-btn.active {
+  background: #d85a2a;
+  border-color: #d85a2a;
+  color: #ffffff;
+}
+.mobile-search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.mobile-search-icon {
+  position: absolute;
+  left: 12px;
+  color: #8c776c;
+  font-size: 14px;
+}
+.mobile-search-input {
+  width: 100%;
+  height: 42px;
+  padding: 0 60px 0 36px;
+  border-radius: 10px;
+  border: 1.5px solid #ebdcd3;
+  background: #ffffff;
+  font-size: 13.5px;
+  color: #2b1b14;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.mobile-search-input:focus {
+  border-color: #d85a2a;
+}
+.mobile-search-btn {
+  position: absolute;
+  right: 4px;
+  height: 34px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: #d85a2a;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 /* Mobile Toggle */
 .mobile-toggle {
   display: none;
@@ -2227,9 +2423,13 @@ body {
   border: 1px solid #ebdcd3;
   border-radius: 8px;
   font-size: 20px;
-  padding: 6px 10px;
+  padding: 8px 12px;
+  min-width: 44px;
+  min-height: 44px;
   cursor: pointer;
   color: #2b1b14;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Mobile Menu */
@@ -2239,12 +2439,15 @@ body {
   top: 70px;
   left: 0;
   width: 100%;
+  max-height: calc(100dvh - 70px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background: #ffffff;
   border-bottom: 1.5px solid #ebdcd3;
-  padding: 16px 20px;
+  padding: 16px 20px calc(16px + env(safe-area-inset-bottom, 0px));
   box-shadow: 0 10px 20px rgba(43, 27, 20, 0.08);
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .mobile-link {
   display: flex;
@@ -2254,27 +2457,29 @@ body {
   font-size: 14px;
   font-weight: 600;
   color: #4a3830;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: 11px 14px;
+  border-radius: 10px;
   transition: all 0.2s;
   background: none;
   border: none;
   text-align: left;
   cursor: pointer;
+  min-height: 44px;
 }
 .mobile-link .menu-icon {
-  font-size: 16px;
+  font-size: 18px;
   color: #d85a2a;
   flex-shrink: 0;
 }
-.mobile-link:hover {
+.mobile-link:hover,
+.mobile-link:active {
   background: #fdf5f0;
   color: #d85a2a;
 }
 .mobile-divider {
   height: 1px;
   background: #ebdcd3;
-  margin: 8px 0;
+  margin: 6px 0;
 }
 .mobile-auth-grid {
   display: grid;
@@ -2289,6 +2494,8 @@ body {
   justify-content: center;
   gap: 8px;
   text-align: center;
+  min-height: 44px;
+  border-radius: 10px;
 }
 .logout-link {
   color: #dc2626;
@@ -2308,11 +2515,19 @@ body {
   .logged-in-actions {
     display: none;
   }
+  .mobile-header-cart {
+    display: inline-flex;
+    margin-right: 8px;
+  }
   .mobile-toggle {
-    display: block;
+    display: inline-flex;
   }
   .mobile-menu {
     display: flex;
+  }
+  .nav-right-actions {
+    display: flex;
+    align-items: center;
   }
 }
 
@@ -2320,11 +2535,13 @@ body {
    FOOTER CHUẨN SÀN THƯƠNG MẠI ĐIỆN TỬ
    ========================================================== */
 .app-footer {
-  background: #19100a;
+  position: relative;
+  z-index: 20;
+  background: #0b0f19;
   color: #a49187;
   padding: 50px 0 0 0;
   margin-top: 50px;
-  border-top: 3px solid #3c2419;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 13.5px;
 }
 
@@ -2592,5 +2809,19 @@ body {
     flex-direction: column;
     text-align: center;
   }
+}
+
+/* Page Transition Effect */
+.page-fade-slide-enter-active,
+.page-fade-slide-leave-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.page-fade-slide-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.page-fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
 }
 </style>

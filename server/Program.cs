@@ -21,6 +21,7 @@ builder.Services.Configure<TelegramSettings>(
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ITelegramService, TelegramService>();
+builder.Services.AddHostedService<PythonFaceServiceManager>();
 
 // 4. Cấu hình CORS cho phép Vue 3 Frontend (localhost:5173) gọi API
 builder.Services.AddCors(options =>

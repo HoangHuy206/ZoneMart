@@ -6,7 +6,7 @@
  */
 import type { CartStoreGroup } from '../composables/useCart';
 
-const API_BASE = 'http://localhost:5000/api/cart';
+const API_BASE = '/api/cart';
 
 export interface SuggestedProductItem {
   id: string;
@@ -55,7 +55,7 @@ export const cartService = {
           );
           return {
             stores,
-            voucherCode: data.data.voucherCode || 'FREESHIP10K',
+            voucherCode: data.data.voucherCode || '',
           };
         }
       }

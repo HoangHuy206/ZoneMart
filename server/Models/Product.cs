@@ -14,6 +14,12 @@ public class Product
     [BsonRepresentation(BsonType.ObjectId)]
     public string StoreId { get; set; } = string.Empty;
 
+    [BsonElement("store_name")]
+    public string? StoreName { get; set; }
+
+    [BsonElement("seller_email")]
+    public string? SellerEmail { get; set; }
+
     [BsonElement("product_name")]
     public string ProductName { get; set; } = string.Empty;
 
