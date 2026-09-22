@@ -2335,28 +2335,49 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(term)) return null;
         term = term.Trim();
 
-        var filterList = new List<FilterDefinition<User>>
+        User? user = null;
+        try
         {
-            Builders<User>.Filter.Eq(u => u.UserCode, term),
-            Builders<User>.Filter.Eq(u => u.PhoneEmail, term),
-            Builders<User>.Filter.Eq(u => u.Phone, term)
-        };
-        if (MongoDB.Bson.ObjectId.TryParse(term, out _))
+            var filterList = new List<FilterDefinition<User>>
+            {
+                Builders<User>.Filter.Eq(u => u.UserCode, term),
+                Builders<User>.Filter.Eq(u => u.PhoneEmail, term),
+                Builders<User>.Filter.Eq(u => u.Phone, term)
+            };
+            if (MongoDB.Bson.ObjectId.TryParse(term, out _))
+            {
+                filterList.Add(Builders<User>.Filter.Eq(u => u.Id, term));
+            }
+
+            var filter = Builders<User>.Filter.Or(filterList);
+            user = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
+            if (user == null)
+            {
+                string lowerTerm = term.ToLower();
+                user = await _mongoService.Users.Find(u => u.PhoneEmail != null && u.PhoneEmail.ToLower() == lowerTerm).FirstOrDefaultAsync();
+            }
+        }
+        catch (Exception ex)
         {
-            filterList.Add(Builders<User>.Filter.Eq(u => u.Id, term));
+            Console.WriteLine($"[FindUserByIdentifierAsync] MongoDB lookup warning: {ex.Message}");
         }
 
-        var filter = Builders<User>.Filter.Or(filterList);
-        var user = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
         if (user == null)
         {
-            string lowerTerm = term.ToLower();
-            user = await _mongoService.Users.Find(u => u.PhoneEmail != null && u.PhoneEmail.ToLower() == lowerTerm).FirstOrDefaultAsync();
-        }
-
-        if (user == null && InMemoryUsers.TryGetValue(term, out var inMemUser))
-        {
-            user = inMemUser;
+            if (InMemoryUsers.TryGetValue(term, out var inMemUser))
+            {
+                user = inMemUser;
+            }
+            else
+            {
+                string lowerTerm = term.ToLower();
+                user = InMemoryUsers.Values.FirstOrDefault(u =>
+                    (u.PhoneEmail != null && u.PhoneEmail.ToLower() == lowerTerm) ||
+                    (u.Phone != null && u.Phone == term) ||
+                    (u.UserCode != null && u.UserCode == term) ||
+                    (u.Id != null && u.Id == term)
+                );
+            }
         }
 
         return user;
@@ -2420,12 +2441,28 @@ public class AuthController : ControllerBase
             var newEmbedding = embNode.Select(n => (float)n!.GetValue<double>()).ToList();
 
             // 3. KIỂM TRA CHỐNG ĐĂNG KÝ TRÙNG / CHỐNG CHÉO TÀI KHOẢN:
-            var otherUsersWithFace = await _mongoService.Users.Find(u => 
-                u.FaceAuthEnabled && 
-                u.FaceEmbedding != null && 
-                u.Id != user.Id && 
-                !u.IsDeleted
-            ).ToListAsync();
+            List<User> otherUsersWithFace = new();
+            try
+            {
+                otherUsersWithFace = await _mongoService.Users.Find(u => 
+                    u.FaceAuthEnabled && 
+                    u.FaceEmbedding != null && 
+                    u.Id != user.Id && 
+                    !u.IsDeleted
+                ).ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [RegisterFace] MongoDB lookup warning: {ex.Message}");
+            }
+
+            foreach (var other in InMemoryUsers.Values)
+            {
+                if (other.FaceAuthEnabled && other.FaceEmbedding != null && other.Id != user.Id && !otherUsersWithFace.Any(u => u.Id == other.Id))
+                {
+                    otherUsersWithFace.Add(other);
+                }
+            }
 
             foreach (var other in otherUsersWithFace)
             {
@@ -2433,7 +2470,6 @@ public class AuthController : ControllerBase
                 {
                     double sim = CalculateCosineSimilarity(newEmbedding, other.FaceEmbedding);
                     if (sim >= 0.72)
-                    if (sim >= 0.50)
                     {
                         return BadRequest(new
                         {
@@ -2454,7 +2490,14 @@ public class AuthController : ControllerBase
                 .Set(u => u.FaceAuthEnabled, true)
                 .Set(u => u.FaceRegisteredAt, DateTime.UtcNow);
 
-            await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, update);
+            try
+            {
+                await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, update);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [RegisterFace] MongoDB save warning: {ex.Message}");
+            }
 
             if (!string.IsNullOrEmpty(user.PhoneEmail)) InMemoryUsers[user.PhoneEmail] = user;
 
@@ -2521,21 +2564,29 @@ public class AuthController : ControllerBase
     [HttpGet("face/status")]
     public async Task<IActionResult> GetFaceStatus([FromQuery] string userId)
     {
-        if (string.IsNullOrWhiteSpace(userId)) return BadRequest(new { success = false, message = "Thiếu mã tài khoản!" });
-
-        var user = await FindUserByIdentifierAsync(userId);
-
-        if (user == null)
+        try
         {
+            if (string.IsNullOrWhiteSpace(userId)) return BadRequest(new { success = false, message = "Thiếu mã tài khoản!" });
+
+            var user = await FindUserByIdentifierAsync(userId);
+
+            if (user == null)
+            {
+                return Ok(new { success = true, faceAuthEnabled = false });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                faceAuthEnabled = user.FaceAuthEnabled,
+                registeredAt = user.FaceRegisteredAt?.ToString("dd/MM/yyyy HH:mm")
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[GetFaceStatus] Warning: {ex.Message}");
             return Ok(new { success = true, faceAuthEnabled = false });
         }
-
-        return Ok(new
-        {
-            success = true,
-            faceAuthEnabled = user.FaceAuthEnabled,
-            registeredAt = user.FaceRegisteredAt?.ToString("dd/MM/yyyy HH:mm")
-        });
     }
 
     /// <summary>
@@ -2587,11 +2638,19 @@ public class AuthController : ControllerBase
             var targetEmbedding = embNode.Select(n => (float)n!.GetValue<double>()).ToList();
 
             // 2. Tìm tất cả các tài khoản ĐÃ KÍCH HOẠT Face Auth trong CSDL
-            var activeFaceUsers = await _mongoService.Users.Find(u => 
-                u.FaceAuthEnabled && 
-                u.FaceEmbedding != null && 
-                !u.IsDeleted
-            ).ToListAsync();
+            List<User> activeFaceUsers = new();
+            try
+            {
+                activeFaceUsers = await _mongoService.Users.Find(u => 
+                    u.FaceAuthEnabled && 
+                    u.FaceEmbedding != null && 
+                    !u.IsDeleted
+                ).ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [FaceLogin] MongoDB lookup warning: {ex.Message}");
+            }
 
             foreach (var inMem in InMemoryUsers.Values)
             {

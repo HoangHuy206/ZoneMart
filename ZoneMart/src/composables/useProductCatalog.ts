@@ -2,8 +2,30 @@ import { ref, computed } from "vue";
 import { useProductModeration } from "./useProductModeration";
 
 const catalogVersion = ref(0);
+const apiStores = ref<any[]>([]);
+let isFetchingStores = false;
+
+const fetchDbStores = async () => {
+  if (typeof window === "undefined" || isFetchingStores) return;
+  isFetchingStores = true;
+  try {
+    const res = await fetch("/api/products/stores").catch(() => null);
+    if (res && res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json && json.success && Array.isArray(json.data)) {
+        apiStores.value = json.data;
+        catalogVersion.value++;
+      }
+    }
+  } finally {
+    isFetchingStores = false;
+  }
+};
 
 if (typeof window !== "undefined") {
+  setTimeout(() => {
+    fetchDbStores();
+  }, 120);
   window.addEventListener("zonemart:products-changed", () => {
     catalogVersion.value++;
   });
@@ -1916,6 +1938,16 @@ export function useProductCatalog() {
         } catch {}
       }
 
+      const dbStore = apiStores.value.find(s => 
+        s.storeName && p.storeName && s.storeName.trim().toLowerCase() === p.storeName.trim().toLowerCase()
+      );
+      if (dbStore) {
+        if (dbStore.address) storeAddr = dbStore.address;
+        if (dbStore.openHours) storeHours = dbStore.openHours;
+      }
+
+      const resolvedStoreName = p.storeName || dbStore?.storeName || "Gian Hàng ZoneMart";
+
       return {
         id: p.id,
         name: p.name,
@@ -1927,8 +1959,8 @@ export function useProductCatalog() {
         gallery: [p.image],
         badge: "Đã AI Kiểm Duyệt",
         store: {
-          id: "store_" + (p.storeName || "seller").toLowerCase().replace(/[^a-z0-9]/g, "_"),
-          name: p.storeName || "Vườn Rau Hữu Cơ Bác Ba",
+          id: dbStore?.id || ("store_" + (resolvedStoreName).toLowerCase().replace(/[^a-z0-9]/g, "_")),
+          name: resolvedStoreName,
           address: storeAddr,
           distanceKm: 0.8,
           deliveryTime: "12 - 18 phút",
@@ -1945,7 +1977,7 @@ export function useProductCatalog() {
         reviewsCount: 14,
         sold: 42,
         stock: p.stock || 50,
-        description: `Sản phẩm ${p.name} tươi sạch thu hoạch trực tiếp từ trang trại. Đã trải qua quy trình kiểm định AI Vision Guard của sàn thương mại điện tử ZoneMart.`,
+        description: `Sản phẩm ${p.name} tươi sạch thu hoạch trực tiếp từ ${resolvedStoreName}. Đã trải qua quy trình kiểm định AI Vision Guard của sàn thương mại điện tử ZoneMart.`,
         highlights: [
           "Nông sản sạch thu hoạch tự nhiên trong ngày",
           "Đã vượt qua kiểm định AI an toàn thực phẩm",
@@ -1953,7 +1985,7 @@ export function useProductCatalog() {
         ],
         specs: {
           origin: "Việt Nam",
-          brand: p.storeName || "Hộ Nông Dân Địa Phương",
+          brand: resolvedStoreName,
           weight: p.unit || "Tiêu chuẩn",
           shelfLife: "3-5 ngày trong ngăn mát",
           storage: "Bảo quản ở nhiệt độ mát",
@@ -1985,24 +2017,49 @@ export function useProductCatalog() {
     ];
   });
 
-  // Danh sách toàn bộ gian hàng trích xuất tự động từ sản phẩm - Đảm bảo giữ trọn vẹn thông số riêng của từng quán
+  // Danh sách toàn bộ gian hàng trích xuất tự động từ MongoDB và sản phẩm
   const allStores = computed<CatalogStore[]>(() => {
+    void catalogVersion.value;
     const storeMap = new Map<string, CatalogStore>();
 
+    // 1. Nạp tất cả các gian hàng có thật từ database MongoDB
+    for (const s of apiStores.value) {
+      if (!s.storeName) continue;
+      const key = s.storeName.trim();
+      const sId = s.id || `store_${key.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+      storeMap.set(key.toLowerCase(), {
+        id: sId,
+        name: s.storeName,
+        address: s.address || "Số 48 đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội",
+        distanceKm: 1.2,
+        deliveryTime: "15 - 20 phút",
+        rating: 5.0,
+        reviewsCount: 168,
+        totalProducts: 0,
+        isVerified: true,
+        categoryName: s.category || "Thực phẩm & Nhu yếu phẩm",
+        avatar: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80",
+        coverImage: "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800&q=80",
+        openHours: s.openHours || "06:30 - 22:00",
+        products: [],
+      });
+    }
+
+    // 2. Gán sản phẩm vào gian hàng tương ứng hoặc tạo mới gian hàng nếu chưa có
     for (const p of allProducts.value) {
       if (!p.store || !p.store.name) continue;
-      const key = p.store.name.trim();
+      const lowKey = p.store.name.trim().toLowerCase();
 
-      if (!storeMap.has(key)) {
-        storeMap.set(key, {
-          id: p.store.id || `store_${key.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+      if (!storeMap.has(lowKey)) {
+        storeMap.set(lowKey, {
+          id: p.store.id || `store_${lowKey.replace(/[^a-z0-9]/g, '_')}`,
           name: p.store.name,
           address: p.store.address || "Hà Nội",
           distanceKm: p.store.distanceKm || 1.5,
           deliveryTime: p.store.deliveryTime || "15 - 20 phút",
           rating: p.store.rating || 5.0,
           reviewsCount: p.store.reviewsCount || p.reviewsCount || 48,
-          totalProducts: p.store.totalProducts || 1,
+          totalProducts: 1,
           isVerified: p.store.isVerified !== false,
           categoryName: p.store.categoryName || p.categoryName || "Thực phẩm tươi",
           avatar: p.store.avatar || "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80",
@@ -2011,9 +2068,11 @@ export function useProductCatalog() {
           products: [p],
         });
       } else {
-        const store = storeMap.get(key)!;
-        store.products.push(p);
-        store.totalProducts = Math.max(store.totalProducts, store.products.length);
+        const store = storeMap.get(lowKey)!;
+        if (!store.products.some(sp => sp.id === p.id)) {
+          store.products.push(p);
+        }
+        store.totalProducts = store.products.length;
       }
     }
 
@@ -2049,6 +2108,7 @@ export function useProductCatalog() {
 
   const refreshCatalog = () => {
     moderation.refreshProducts();
+    fetchDbStores();
     catalogVersion.value++;
   };
 

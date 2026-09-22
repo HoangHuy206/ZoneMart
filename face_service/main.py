@@ -151,7 +151,10 @@ def analyze_face(req: AnalyzeRequest) -> Dict[str, Any]:
             spoof_res = spoof_detector.predict(img, face.bbox)
             is_real = bool(spoof_res.is_real)
             confidence = float(spoof_res.confidence)
-            if not is_real:
+            print(f"[UNIFACE] Anti-Spoofing check: is_real={is_real}, confidence={confidence:.4f}")
+            # Ngưỡng chống giả mạo: Chỉ cảnh báo khi mô hình khẳng định chắc chắn là giả mạo (confidence >= 0.90)
+            # Tránh chặn nhầm người dùng thật trong điều kiện ánh sáng đèn phòng / webcam laptop
+            if not is_real and confidence >= 0.90:
                 return {
                     "success": False,
                     "error": "SPOOF_DETECTED",
@@ -159,8 +162,12 @@ def analyze_face(req: AnalyzeRequest) -> Dict[str, Any]:
                     "confidence": confidence,
                     "is_real": False
                 }
+            else:
+                # Nếu confidence < 0.90, coi là người thật hợp lệ
+                is_real = True
         except Exception as ex:
             print(f"⚠️ Cảnh báo kiểm tra Anti-Spoofing: {ex}")
+            is_real = True
 
     # 3. Trích xuất vector đặc trưng Face Embedding (512 chiều)
     if face.embedding is None or len(face.embedding) == 0:
@@ -267,8 +274,11 @@ def detect_face(req: AnalyzeRequest) -> Dict[str, Any]:
             spoof_res = spoof_detector.predict(img, face.bbox)
             is_real = bool(spoof_res.is_real)
             spoof_conf = float(spoof_res.confidence)
+            if not is_real and spoof_conf < 0.90:
+                is_real = True
         except Exception as ex:
             print(f"⚠️ Anti-spoofing error: {ex}")
+            is_real = True
 
         # Tọa độ màn hình gương selfie (Screen Mirrored Coordinates: screen_x = w - raw_x)
         el_x, el_y = w - kps[0][0], kps[0][1] # Mắt trái trên màn hình

@@ -13,7 +13,7 @@
  * - Latest Orders Data Table & Order Workflow (Hỏa tốc 10km)
  * ================================================================
  */
-import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { orderRealtimeService } from "../../services/orderRealtimeService";
 import {
@@ -21,6 +21,8 @@ import {
   type ModeratedProduct,
   type AIScanResult
 } from "../../composables/useProductModeration";
+import FaceScanModal from "../../components/auth/FaceScanModal.vue";
+import { apiFetch } from "../../utils/apiConfig";
 
 const router = useRouter();
 
@@ -86,6 +88,9 @@ onMounted(async () => {
         .catch(() => {});
     }
   } catch { }
+
+  // Kiểm tra trạng thái Face ID của gian hàng
+  checkFaceStatus();
 
   // Lắng nghe thông báo tài xế đã giao đơn hàng thành công theo thời gian thực
   unsubscribeSellerOrder = orderRealtimeService.onOrderStatusChanged(({ orderId, status, order }) => {
@@ -304,6 +309,29 @@ const products = computed(() => {
 
     return (cleanEmail && pEmail === cleanEmail) || (currentStore && pStore === currentStore);
   });
+});
+
+function removeVietnameseTones(str: string): string {
+  return (str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase();
+}
+
+// Danh sách sản phẩm của gian hàng sau khi lọc theo ô tìm kiếm
+const displayedSellerProducts = computed(() => {
+  const base = products.value;
+  if (!searchQuery.value.trim()) return base;
+  const q = searchQuery.value.toLowerCase().trim();
+  const qNoTone = removeVietnameseTones(q);
+  return base.filter(p => 
+    p.name.toLowerCase().includes(q) || 
+    (p.category && p.category.toLowerCase().includes(q)) ||
+    removeVietnameseTones(p.name).includes(qNoTone) ||
+    (p.category && removeVietnameseTones(p.category).includes(qNoTone))
+  );
 });
 
 // Danh sách sản phẩm bán chạy nhất sinh động từ danh mục sản phẩm của tiệm
@@ -722,18 +750,126 @@ const handleSaveStoreSettings = async () => {
   triggerToast(`Đã lưu thông tin cài đặt gian hàng "${storeInfo.name}" thành công!`);
 };
 
+// ==================== THIẾT LẬP FACE-ID CHO SELLER ====================
+const showFaceModal = ref(false);
+const isFaceAuthEnabled = ref(false);
+const faceRegisteredAt = ref("");
+const isCheckingFaceStatus = ref(false);
+const isDisablingFace = ref(false);
+
+const getSellerUserIdentifier = () => {
+  const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+  if (cleanEmail) return cleanEmail;
+  const saved = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+  if (saved) {
+    try {
+      const u = JSON.parse(saved);
+      return u.phoneEmail || u.email || u.id || "";
+    } catch {}
+  }
+  return "";
+};
+
+const checkFaceStatus = async () => {
+  const userId = getSellerUserIdentifier();
+  if (!userId || userId === "usr_guest") {
+    isFaceAuthEnabled.value = false;
+    faceRegisteredAt.value = "";
+    return;
+  }
+  isCheckingFaceStatus.value = true;
+  try {
+    const res = await apiFetch(`/api/auth/face/status?userId=${encodeURIComponent(userId)}`);
+    if (res && res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        isFaceAuthEnabled.value = Boolean(data.faceAuthEnabled);
+        faceRegisteredAt.value = data.registeredAt || "";
+      }
+    }
+  } catch (e) {
+    console.error("Lỗi kiểm tra trạng thái Face ID:", e);
+  } finally {
+    isCheckingFaceStatus.value = false;
+  }
+};
+
+const openFaceRegisterModal = () => {
+  const userId = getSellerUserIdentifier();
+  if (!userId) {
+    triggerToast("Vui lòng đăng nhập tài khoản người bán để thiết lập Face ID!");
+    return;
+  }
+  showFaceModal.value = true;
+};
+
+const handleFaceRegisterSuccess = (payload: any) => {
+  isFaceAuthEnabled.value = true;
+  faceRegisteredAt.value = payload.registeredAt || new Date().toLocaleString("vi-VN");
+  triggerToast("🎉 Đã kích hoạt và lưu khuôn mặt thành công cho tài khoản người bán!");
+};
+
+const handleDisableFace = async () => {
+  const userId = getSellerUserIdentifier();
+  if (!userId) return;
+  if (!confirm("Bạn có chắc chắn muốn tắt tính năng đăng nhập bằng khuôn mặt Face-ID cho tài khoản người bán này?")) {
+    return;
+  }
+  isDisablingFace.value = true;
+  try {
+    const res = await apiFetch("/api/auth/face/disable", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      isFaceAuthEnabled.value = false;
+      faceRegisteredAt.value = "";
+      triggerToast("Đã hủy kích hoạt đăng nhập bằng khuôn mặt Face ID.");
+    } else {
+      triggerToast(data.message || "Không thể hủy Face ID.");
+    }
+  } catch (e: any) {
+    triggerToast(e.message || "Lỗi khi hủy Face ID.");
+  } finally {
+    isDisablingFace.value = false;
+  }
+};
+
+watch(activeNav, (newNav) => {
+  if (newNav === "settings") {
+    checkFaceStatus();
+  }
+});
+
 // Trạng thái vi phạm của Seller hiện tại
 const currentSellerPenalty = computed(() =>
   productModeration.getSellerPenalty(currentUser.email)
 );
 
 // Trạng thái AI Scanning & Modal Kết Quả
-const isScanningAI = ref(false);
-const scanStepText = ref("");
-const scanProgress = ref(0);
 const lastScanResult = ref<AIScanResult | null>(null);
 const showScanResultModal = ref(false);
 const penaltyNotice = ref<{ actionType: string; violationCount: number; message: string } | null>(null);
+
+// Trạng thái Đăng bài kiểu Facebook & AI Quét thật trong nền
+const isPostingFacebook = ref(false);
+const postingProgress = ref(0);
+const postingProductName = ref("");
+const rawImageFile = ref<File | null>(null);
+
+const dataURLtoFile = (dataurl: string, filename: string): File => {
+  const arr = dataurl.split(',');
+  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], filename, { type: mime });
+};
 
 // Modal thêm / sửa sản phẩm
 const showAddProductModal = ref(false);
@@ -878,6 +1014,7 @@ const processUploadedFile = (file: File) => {
   }
   uploadedFileName.value = file.name;
   uploadedFileSize.value = (file.size / 1024).toFixed(1) + " KB";
+  rawImageFile.value = file;
 
   const reader = new FileReader();
   reader.onload = async (e) => {
@@ -912,6 +1049,7 @@ const clearUploadedImage = () => {
   newProductForm.image = "";
   uploadedFileName.value = "";
   uploadedFileSize.value = "";
+  rawImageFile.value = null;
   imageVisualTag.value = "unknown";
 };
 
@@ -972,6 +1110,7 @@ const openEditProduct = (prod: ModeratedProduct) => {
 
 
 // Xử lý lưu & kích hoạt AI Quét Bài (Luồng 2)
+// Xử lý lưu & đăng bài kiểu Facebook (Thanh chạy mượt mà & AI quét thật trong nền)
 const handleSaveProduct = async () => {
   if (!newProductForm.name.trim() || newProductForm.price <= 0) {
     triggerToast("Vui lòng nhập tên và giá bán hợp lệ!");
@@ -986,70 +1125,183 @@ const handleSaveProduct = async () => {
     return;
   }
 
-  // Tự động nén ảnh nếu là base64 trước khi quét và lưu
+  // Nén ảnh nếu là base64 trước khi tải lên
   if (newProductForm.image.startsWith("data:")) {
     newProductForm.image = await productModeration.compressImage(newProductForm.image, 400, 400, 0.75);
   }
-
-  // Đảm bảo đối soát pixel ảnh hoàn tất chính xác trước khi đưa vào AI
-  const currentVisualTag = await analyzeImagePixels(newProductForm.image);
 
   const finalCategory = (newProductForm.category === "Khác"
     ? customCategoryInput.value.trim()
     : newProductForm.category);
 
+  // 1. ĐÓNG MODAL ĐĂNG BÀI NGAY LẬP TỨC (KHÔNG BỊ CHẶN MÀN HÌNH)
   showAddProductModal.value = false;
-  isScanningAI.value = true;
-  scanProgress.value = 15;
-  scanStepText.value = "Đang kết nối AI Moderation Engine & quét nội dung...";
 
-  setTimeout(() => {
-    scanProgress.value = 55;
-    scanStepText.value = "Phát hiện nội dung 18+, từ khóa cấm & đối soát thị giác Ảnh - Tên...";
-  }, 600);
+  // Snapshot dữ liệu sản phẩm
+  const savedName = newProductForm.name.trim();
+  const savedCategory = finalCategory;
+  const savedPrice = newProductForm.price;
+  const savedUnit = newProductForm.unit || "Bó 500g";
+  const savedStock = newProductForm.stock || 30;
+  const savedImage = newProductForm.image;
+  const savedRawFile = rawImageFile.value;
+  const savedFileName = uploadedFileName.value;
+  const isEditing = isEditingMode.value && !!editingProductId.value;
+  const targetId = isEditing ? editingProductId.value! : `p-${Date.now()}`;
 
-  setTimeout(() => {
-    scanProgress.value = 90;
-    scanStepText.value = "Tổng hợp kết quả thẩm định an toàn & độ tương thích...";
-  }, 1200);
+  // 2. KÍCH HOẠT THANH CHẠY TIẾN TRÌNH ĐĂNG BÀI KIỂU FACEBOOK
+  isPostingFacebook.value = true;
+  postingProgress.value = 15;
+  postingProductName.value = savedName;
 
-  setTimeout(() => {
-    isScanningAI.value = false;
-    scanProgress.value = 100;
-
-    try {
-      if (isEditingMode.value && editingProductId.value) {
-        const res = productModeration.updateAndRescanProduct(editingProductId.value, {
-          name: newProductForm.name.trim(),
-          category: finalCategory,
-          price: newProductForm.price,
-          unit: newProductForm.unit,
-          stock: newProductForm.stock,
-          image: newProductForm.image,
-          imageFileName: uploadedFileName.value || undefined,
-          imageVisualTag: currentVisualTag || imageVisualTag.value
-        });
-        lastScanResult.value = res.scanResult;
-        penaltyNotice.value = res.penaltyResult || null;
-      } else {
-        const res = productModeration.submitNewProduct(currentUser.email, storeInfo.name, {
-          name: newProductForm.name.trim(),
-          category: finalCategory,
-          price: newProductForm.price,
-          unit: newProductForm.unit,
-          stock: newProductForm.stock,
-          image: newProductForm.image,
-          imageFileName: uploadedFileName.value || undefined,
-          imageVisualTag: currentVisualTag || imageVisualTag.value
-        });
-        lastScanResult.value = res.scanResult;
-        penaltyNotice.value = res.penaltyResult || null;
-      }
-      showScanResultModal.value = true;
-    } catch (err: any) {
-      triggerToast(err.message || "Lỗi xử lý kiểm duyệt AI!");
+  const progressInterval = setInterval(() => {
+    if (postingProgress.value < 90) {
+      postingProgress.value += 25;
     }
-  }, 1700);
+  }, 220);
+
+  setTimeout(async () => {
+    clearInterval(progressInterval);
+    postingProgress.value = 100;
+
+    // 3. TỰ ĐỘNG ĐƯA BÀI VIẾT LÊN DANH SÁCH BÀI ĐĂNG (GIỐNG FACEBOOK FEED)
+    // Ban đầu ở trạng thái Chờ duyệt (AI đang quét...)
+    const newProd: ModeratedProduct = {
+      id: targetId,
+      name: savedName,
+      category: savedCategory,
+      price: savedPrice,
+      unit: savedUnit,
+      stock: savedStock,
+      image: savedImage,
+      status: "pending_review",
+      isAvailable: false,
+      sellerEmail: currentUser.email || "seller@zonemart.vn",
+      storeName: storeInfo.name || "Gian hàng ZoneMart",
+      createdAt: new Date().toLocaleDateString("vi-VN"),
+      aiScore: {
+        safetyScore: 80,
+        matchScore: 80,
+        flag: "Hệ thống AI Gemini đang quét đối soát trong nền..."
+      }
+    };
+
+    if (isEditing) {
+      const idx = productModeration.allProducts.value.findIndex(p => p.id === targetId);
+      if (idx !== -1) {
+        productModeration.allProducts.value[idx] = newProd;
+      }
+    } else {
+      productModeration.allProducts.value.unshift(newProd);
+    }
+    productModeration.saveProducts();
+
+    // Đồng bộ sản phẩm vào Database MongoDB
+    await productModeration.syncProductToBackend(newProd);
+
+    setTimeout(() => {
+      isPostingFacebook.value = false;
+      postingProgress.value = 0;
+      triggerToast(`Đã đưa bài "${savedName}" lên sàn! AI đang kiểm duyệt đối soát trong nền...`);
+    }, 450);
+
+    // 4. CÙNG LÚC ĐÓ: GỌI API BACKEND C# ĐỂ AI QUÉT SẢN PHẨM THỰC SỰ
+    try {
+      const formData = new FormData();
+      formData.append("productName", savedName);
+      if (savedCategory) {
+        formData.append("categoryName", savedCategory);
+      }
+
+      if (savedRawFile) {
+        formData.append("productImage", savedRawFile);
+      } else if (savedImage.startsWith("data:")) {
+        const fileObj = dataURLtoFile(savedImage, savedFileName || "product.jpg");
+        formData.append("productImage", fileObj);
+      }
+
+      const res = await fetch("http://localhost:5000/api/moderation/check-product", {
+        method: "POST",
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        // Tìm kiếm chính xác sản phẩm: theo targetId, theo ID đã sync từ Mongo, hoặc theo tên
+        let pIdx = productModeration.allProducts.value.findIndex(p => p.id === targetId);
+        if (pIdx === -1) {
+          pIdx = productModeration.allProducts.value.findIndex(p => p.id === newProd.id || (p.name === savedName && p.sellerEmail === (currentUser.email || "seller@zonemart.vn")));
+        }
+        if (pIdx === -1) return;
+
+        const target = productModeration.allProducts.value[pIdx];
+        const isImageSafe = data.visionResult?.isImageSafe ?? data.visionResult?.isSafe ?? true;
+        const isTextSafe = data.policyResult?.isTextSafe ?? data.textResult?.isClean ?? true;
+        const isMeaningful = data.policyResult?.isMeaningful ?? true;
+        const isCrossMatch = data.isCrossMatch ?? data.isMatch ?? false;
+        const isApproved = data.isApproved === true;
+        const detected = (data.visionResult?.detectedItem || "").toLowerCase();
+        const reason = data.warnings?.[0] || data.visionResult?.violationReason || data.visionResult?.imageWarning || data.policyResult?.textWarning || "";
+
+        // A. LỚP 1: VI PHẠM NỘI DUNG CẤM (Vũ khí, súng đạn, 18+, gợi cảm, gợi dục, từ ngữ thô tục) -> XÓA BÀI NGAY LẬP TỨC
+        const isViolation = !isTextSafe || !isImageSafe ||
+          detected.includes("súng") || detected.includes("vũ khí") || detected.includes("gun") || detected.includes("pistol") ||
+          detected.includes("bom") || detected.includes("đạn") || detected.includes("khoả thân") || detected.includes("khiêu dâm") ||
+          reason.toLowerCase().includes("súng") || reason.toLowerCase().includes("vũ khí") || reason.toLowerCase().includes("hàng cấm") ||
+          reason.toLowerCase().includes("nhạy cảm") || reason.toLowerCase().includes("cấm") || reason.toLowerCase().includes("18+");
+
+        if (isViolation) {
+          productModeration.allProducts.value.splice(pIdx, 1);
+          productModeration.saveProducts();
+
+          // Xóa ngay lập tức khỏi database MongoDB
+          try {
+            await fetch(`http://localhost:5000/api/products/${target.id}`, { method: "DELETE" }).catch(() => {});
+            await fetch(`http://localhost:5000/api/products/${encodeURIComponent(target.name)}`, { method: "DELETE" }).catch(() => {});
+          } catch {}
+
+          const finalReason = reason || "Phát hiện nội dung cấm, nhạy cảm hoặc vi phạm nghiêm trọng trên sàn ZoneMart!";
+          const storeName = storeInfo.name || target.storeName || "Gian hàng của bạn";
+          productModeration.handleSellerViolation(currentUser.email, finalReason, target.name, storeName);
+          triggerToast(`🚫 Hệ thống AI đã xóa bài "${target.name}": ${finalReason}. Email cảnh báo đã được gửi về ${currentUser.email}!`);
+          return;
+        }
+
+        // B. LỚP 2: TÊN RÁC/SPAM HOẶC LỆCH ẢNH VÀ TÊN -> CHUYỂN SANG CHỜ DUYỆT (PENDING REVIEW)
+        if (!isApproved || !isCrossMatch || !isMeaningful || data.hasWarnings) {
+          target.status = "pending_review";
+          target.isAvailable = false;
+          const warningMsg = reason || data.warnings?.join("; ") || "Ảnh và tên chưa trùng khớp hoặc tên sản phẩm không hợp lệ.";
+          const matchPercent = typeof data.matchPercentage === "number" ? data.matchPercentage : 20;
+          target.aiScore = {
+            safetyScore: isImageSafe && isTextSafe ? 85 : 20,
+            matchScore: matchPercent,
+            flag: warningMsg
+          };
+          productModeration.allProducts.value = [...productModeration.allProducts.value];
+          productModeration.saveProducts();
+          productModeration.syncProductToBackend(target);
+          triggerToast(`⚠️ Cảnh báo AI: ${warningMsg}. Bài chuyển sang Chờ duyệt!`);
+          return;
+        }
+
+        // C. DUYỆT THÀNH CÔNG 100% -> ACTIVE (ĐANG BÁN)
+        const matchPercent = typeof data.matchPercentage === "number" ? data.matchPercentage : 95;
+        target.status = "active";
+        target.isAvailable = true;
+        target.aiScore = {
+          safetyScore: 99,
+          matchScore: matchPercent
+        };
+        productModeration.allProducts.value = [...productModeration.allProducts.value];
+        productModeration.saveProducts();
+        productModeration.syncProductToBackend(target);
+        triggerToast(`🎉 AI đã duyệt: "${target.name}" đã được phê duyệt và mở bán!`);
+      }
+    } catch (err) {
+      console.warn("Lỗi kiểm duyệt nền:", err);
+    }
+  }, 1100);
 };
 
 // Reset vi phạm demo
@@ -1063,6 +1315,36 @@ const handleToggleAvailable = (prod: ModeratedProduct) => {
   prod.isAvailable = !prod.isAvailable;
   productModeration.saveProducts();
   triggerToast(prod.isAvailable ? `Đã mở bán sản phẩm "${prod.name}"` : `Đã tạm ngưng bán "${prod.name}"`);
+};
+
+// ==================== XÓA SẢN PHẨM ====================
+const showDeleteConfirmModal = ref(false);
+const productToDelete = ref<ModeratedProduct | null>(null);
+
+const confirmDeleteProduct = (prod: ModeratedProduct) => {
+  productToDelete.value = prod;
+  showDeleteConfirmModal.value = true;
+};
+
+const handleExecuteDelete = async () => {
+  if (!productToDelete.value) return;
+  const target = productToDelete.value;
+  const pIdx = productModeration.allProducts.value.findIndex(p => p.id === target.id);
+  if (pIdx !== -1) {
+    productModeration.allProducts.value.splice(pIdx, 1);
+    productModeration.saveProducts();
+  }
+
+  // Gọi API backend xóa sản phẩm khỏi CSDL nếu có
+  try {
+    await fetch(`http://localhost:5000/api/products/${target.id}`, {
+      method: "DELETE"
+    }).catch(() => {});
+  } catch {}
+
+  triggerToast(`Đã xóa vĩnh viễn sản phẩm "${target.name}" khỏi gian hàng!`);
+  showDeleteConfirmModal.value = false;
+  productToDelete.value = null;
 };
 
 // Xử lý đơn hàng
@@ -1700,9 +1982,7 @@ const displayedOrders = computed(() => {
           <div class="tab-header-flex">
             <div>
               <h2 class="tab-heading">Quản Lý Sản Phẩm Gian Hàng</h2>
-              <p class="tab-subheading">
-                Tích hợp AI Kiểm Duyệt Bài Đăng (Luồng 2: Quét 18+, hàng cấm & đối soát Ảnh - Tên)
-              </p>
+          
             </div>
             <button
               type="button"
@@ -1714,6 +1994,31 @@ const displayedOrders = computed(() => {
             </button>
           </div>
 
+          <!-- ==================== THANH TIẾN TRÌNH ĐĂNG BÀI KIỂU FACEBOOK ==================== -->
+          <transition name="fb-slide">
+            <div v-if="isPostingFacebook" class="fb-posting-card">
+              <div class="fb-posting-main">
+                <div class="fb-posting-avatar-box">
+                  <img :src="currentUser.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80'" class="fb-avatar" alt="Avatar" />
+                  <span class="fb-spinner-pulse"></span>
+                </div>
+                <div class="fb-posting-info">
+                  <div class="fb-posting-headline">
+                    <span>Đang tải lên và đăng bài: </span><strong>{{ postingProductName }}</strong>
+                  </div>
+                  <div class="fb-posting-subtext">
+                    <i class="bi bi-cloud-arrow-up-fill text-primary me-1"></i>
+                   Đang đăng sản phẩm  {{ postingProgress }}%
+                  </div>
+                </div>
+                <div class="fb-posting-percent-badge">{{ postingProgress }}%</div>
+              </div>
+              <div class="fb-progress-track">
+                <div class="fb-progress-fill" :style="{ width: `${postingProgress}%` }"></div>
+              </div>
+            </div>
+          </transition>
+
           <!-- BẢNG DANH SÁCH SẢN PHẨM -->
           <div class="dashboard-panel-card">
             <div class="table-responsive-box">
@@ -1721,17 +2026,17 @@ const displayedOrders = computed(() => {
                 <thead>
                   <tr>
                     <th>Hình ảnh</th>
-                    <th>Tên sản phẩm & Thông tin AI</th>
+                    <th>Tên sản phẩm </th>
                     <th>Danh mục</th>
                     <th>Đơn vị</th>
                     <th>Giá niêm yết</th>
                     <th>Tồn kho</th>
-                    <th>Trạng thái Luồng 2</th>
+                    <th>Trạng thái</th>
                     <th class="text-center">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="prod in products" :key="prod.id">
+                  <tr v-for="prod in displayedSellerProducts" :key="prod.id">
                     <td>
                       <img :src="prod.image" :alt="prod.name" class="table-prod-img" />
                     </td>
@@ -1739,9 +2044,7 @@ const displayedOrders = computed(() => {
                       <div class="product-title-wrap">
                         <b>{{ prod.name }}</b>
                         <div v-if="prod.aiScore" class="ai-meta-tag">
-                          <span class="ai-badge-match">
-                            <i class="bi bi-robot"></i> Độ khớp: {{ prod.aiScore.matchScore }}%
-                          </span>
+                       
                         </div>
                         <!-- Ghi chú từ chối của Manager (Nếu có) -->
                         <div v-if="prod.status === 'rejected_need_edit' && prod.managerNote" class="manager-reject-box">
@@ -1765,6 +2068,10 @@ const displayedOrders = computed(() => {
                         <i class="bi bi-check-circle-fill me-1"></i> Đang bán
                       </span>
                       <!-- Trạng thái 2: Chờ Manager duyệt (Nghi ngờ) -->
+                      <!-- Trạng thái 2: AI đang quét hoặc Chờ Manager duyệt -->
+                      <span v-else-if="prod.status === 'pending_review' && prod.aiScore?.flag?.includes('AI Gemini đang quét')" class="badge-status-pill" style="background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;">
+                        <span class="spinner-border spinner-border-sm me-1" style="width: 11px; height: 11px; border-width: 2px;" role="status"></span> AI đang quét...
+                      </span>
                       <span v-else-if="prod.status === 'pending_review'" class="badge-status-pill pending-ai">
                         <i class="bi bi-hourglass-split me-1"></i> Chờ Manager duyệt
                       </span>
@@ -1778,29 +2085,41 @@ const displayedOrders = computed(() => {
                       </span>
                     </td>
                     <td class="text-center">
-                      <!-- Nếu sản phẩm bị Manager từ chối: Nút Sửa bài (Quét lại AI) -->
-                      <button
-                        v-if="prod.status === 'rejected_need_edit'"
-                        type="button"
-                        class="btn-rescan-pill"
-                        @click="openEditProduct(prod)"
-                        title="Chỉnh sửa nội dung và gửi AI quét lại từ đầu"
-                      >
-                        <i class="bi bi-arrow-repeat me-1"></i> Sửa bài (Quét lại)
-                      </button>
-                      <!-- Nếu sản phẩm đang chờ duyệt: Hiển thị trạng thái chờ -->
-                      <span v-else-if="prod.status === 'pending_review'" class="pending-admin-label">
-                        <i class="bi bi-shield-lock me-1"></i> Chờ duyệt ở /admin
-                      </span>
-                      <!-- Nếu đang bán: Nút Bật/Tắt -->
-                      <button
-                        v-else
-                        type="button"
-                        class="btn-action-pill"
-                        @click="handleToggleAvailable(prod)"
-                      >
-                        {{ prod.isAvailable ? 'Tạm ngưng' : 'Bật bán' }}
-                      </button>
+                      <div class="product-actions-wrap">
+                        <!-- Nếu sản phẩm bị Manager từ chối: Nút Sửa bài (Quét lại AI) -->
+                        <button
+                          v-if="prod.status === 'rejected_need_edit'"
+                          type="button"
+                          class="btn-rescan-pill"
+                          @click="openEditProduct(prod)"
+                          title="Chỉnh sửa nội dung và gửi AI quét lại từ đầu"
+                        >
+                          <i class="bi bi-arrow-repeat me-1"></i> Sửa bài
+                        </button>
+                        <!-- Nếu đang bán: Nút Bật/Tắt -->
+                        <button
+                          v-else-if="prod.status === 'active'"
+                          type="button"
+                          class="btn-action-pill"
+                          @click="handleToggleAvailable(prod)"
+                        >
+                          {{ prod.isAvailable ? 'Tạm ngưng' : 'Bật bán' }}
+                        </button>
+                        <!-- Nếu sản phẩm đang chờ duyệt: Hiển thị trạng thái chờ -->
+                        <span v-else-if="prod.status === 'pending_review'" class="pending-admin-label">
+                          <i class="bi bi-shield-lock me-1"></i> Chờ duyệt
+                        </span>
+
+                        <!-- NÚT XÓA SẢN PHẨM -->
+                        <button
+                          type="button"
+                          class="btn-delete-prod-pill"
+                          @click="confirmDeleteProduct(prod)"
+                          title="Xóa sản phẩm khỏi gian hàng"
+                        >
+                          <i class="bi bi-trash3-fill"></i>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -1964,6 +2283,66 @@ const displayedOrders = computed(() => {
               </button>
             </div>
           </div>
+
+          <!-- Cài Đặt Sinh Trắc Học Face-ID cho Gian Hàng -->
+          <div class="dashboard-panel-card settings-face-section mt-4">
+            <div class="face-card-header">
+              <div class="face-header-info">
+                <div class="face-symbol-badge" :class="{ 'is-active': isFaceAuthEnabled }">
+                  <i class="bi bi-person-bounding-box"></i>
+                </div>
+                <div>
+                  <h4 class="settings-card-title mb-1">Thiết Lập Xác Thực Khuôn Mặt (Face-ID)</h4>
+                  <p class="text-muted small mb-0">Bảo mật tài khoản người bán bằng AI sinh trắc học UniFace. Đăng nhập 1-chạm không cần mật khẩu và liên kết độc quyền với gian hàng.</p>
+                </div>
+              </div>
+              <div class="face-header-badge">
+                <span v-if="isFaceAuthEnabled" class="face-status-chip active">
+                  <i class="bi bi-shield-check"></i> Đã kích hoạt
+                </span>
+                <span v-else class="face-status-chip inactive">
+                  <i class="bi bi-shield-slash"></i> Chưa kích hoạt
+                </span>
+              </div>
+            </div>
+
+            <div class="face-auth-box mt-3" :class="{ 'is-active': isFaceAuthEnabled }">
+              <div class="face-info-left">
+                <div class="face-symbol-icon" :class="{ 'symbol-active': isFaceAuthEnabled }">
+                  <i class="bi bi-camera-video-fill"></i>
+                </div>
+                <div>
+                  <div class="face-title-text">
+                    {{ isFaceAuthEnabled ? 'Đã liên kết khuôn mặt cho chủ gian hàng' : 'Chưa kích hoạt nhận diện khuôn mặt' }}
+                  </div>
+                  <div class="face-helper-text">
+                    <span v-if="isFaceAuthEnabled" class="text-success fw-bold">
+                      ✓ Đã kích hoạt sinh trắc học AI (Thời gian: {{ faceRegisteredAt || 'Gần đây' }})
+                    </span>
+                    <span v-else class="text-muted">
+                      Bấm nút bên dưới để quét camera nhận diện khuôn mặt và kích hoạt Face-ID cho tài khoản {{ currentUser.email || storeInfo.name }}.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="face-actions-right">
+                <template v-if="isFaceAuthEnabled">
+                  <button type="button" class="btn-face-rescan" @click="openFaceRegisterModal" title="Quét cập nhật lại khuôn mặt">
+                    <i class="bi bi-arrow-clockwise me-1"></i> Quét Lại
+                  </button>
+                  <button type="button" class="btn-face-disable" :disabled="isDisablingFace" @click="handleDisableFace" title="Hủy kích hoạt Face ID">
+                    <i class="bi bi-x-circle me-1"></i> Tắt Face ID
+                  </button>
+                </template>
+                <template v-else>
+                  <button type="button" class="btn-face-activate" @click="openFaceRegisterModal">
+                    <i class="bi bi-camera-fill me-1"></i> Bật Face ID
+                  </button>
+                </template>
+              </div>
+            </div>
+          </div>
         </section>
 
         <!-- ==================== TAB 7: PLATFORM PARTNER ==================== -->
@@ -2029,9 +2408,7 @@ const displayedOrders = computed(() => {
             </div>
             <div>
               <h4>{{ isEditingMode ? 'Chỉnh Sửa Sản Phẩm' : 'Thêm Sản Phẩm Mới' }}</h4>
-              <p class="modal-subtitle">Sản phẩm được bảo vệ & kiểm duyệt tự động bởi hệ thống AI ZoneMart</p>
             </div>
-            <span class="ai-shield-tag"><i class="bi bi-robot"></i> AI Active</span>
           </div>
           <button type="button" class="btn-close-modal" @click="showAddProductModal = false" title="Đóng">
             <i class="bi bi-x-lg"></i>
@@ -2157,15 +2534,6 @@ const displayedOrders = computed(() => {
               </div>
             </div>
 
-            <div class="ai-image-note">
-              <div class="ai-note-icon">
-                <i class="bi bi-shield-lock-fill"></i>
-              </div>
-              <div class="ai-note-text">
-                <b>Bảo vệ quyền lợi & kiểm duyệt chất lượng:</b>
-                <span> Hệ thống AI sẽ phân tích thị giác hình ảnh để kiểm tra hàng cấm, độ tươi mới & tính tương quan với tên sản phẩm.</span>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -2175,38 +2543,43 @@ const displayedOrders = computed(() => {
           </button>
           <button type="button" class="btn-save-product-primary" @click="handleSaveProduct">
             <i class="bi bi-robot me-1"></i>
-            {{ isEditingMode ? 'Lưu & Quét Lại AI ➔' : 'Gửi Bài & Quét AI ➔' }}
+            {{ isEditingMode ? 'Lưu & Quét Lại AI ➔' : 'Thêm sản phẩm  ➔' }}
           </button>
         </div>
       </div>
     </div>
 
-    <!-- ==================== 2. AI SCANNING OVERLAY (RADAR HUD) ==================== -->
-    <div v-if="isScanningAI" class="ai-scanning-overlay">
-      <div class="ai-scan-card">
-        <div class="radar-box">
-          <div class="radar-circle circle-1"></div>
-          <div class="radar-circle circle-2"></div>
-          <div class="radar-circle circle-3"></div>
-          <div class="radar-beam"></div>
-          <div class="radar-center-bot">
-            <i class="bi bi-robot"></i>
+    <!-- ==================== MODAL XÁC NHẬN XÓA SẢN PHẨM ==================== -->
+    <div v-if="showDeleteConfirmModal && productToDelete" class="modal-backdrop-overlay" @click.self="showDeleteConfirmModal = false">
+      <div class="modal-card-box delete-confirm-modal">
+        <div class="delete-modal-header">
+          <div class="delete-icon-box">
+            <i class="bi bi-trash3-fill"></i>
+          </div>
+          <h3 class="delete-modal-title">Xác nhận xóa sản phẩm</h3>
+          <p class="delete-modal-desc">
+            Bạn có chắc chắn muốn xóa sản phẩm <strong>"{{ productToDelete.name }}"</strong> khỏi gian hàng không? Thao tác này sẽ xóa vĩnh viễn dữ liệu.
+          </p>
+        </div>
+
+        <div class="delete-product-card">
+          <img :src="productToDelete.image" class="delete-prod-thumb" :alt="productToDelete.name" />
+          <div class="delete-prod-details">
+            <h4 class="delete-prod-name">{{ productToDelete.name }}</h4>
+            <div class="delete-prod-meta">
+              <span class="delete-meta-tag">{{ productToDelete.category }}</span>
+              <span class="delete-meta-price">{{ productToDelete.price.toLocaleString('vi-VN') }} đ</span>
+            </div>
           </div>
         </div>
 
-        <h3 class="ai-scan-title">AI Đang Quét Bài Đăng Theo Luồng 2...</h3>
-        <p class="ai-scan-step-text">{{ scanStepText }}</p>
-
-        <!-- Progress bar -->
-        <div class="scan-progress-track">
-          <div class="scan-progress-fill" :style="{ width: `${scanProgress}%` }"></div>
-        </div>
-        <span class="scan-percent">{{ scanProgress }}% Hoàn tất</span>
-
-        <div class="ai-check-bullets">
-          <span class="check-item"><i class="bi bi-shield-check text-success"></i> Bộ lọc 18+ & Khiêu dâm</span>
-          <span class="check-item"><i class="bi bi-shield-check text-success"></i> Hàng quốc cấm & Vũ khí</span>
-          <span class="check-item"><i class="bi bi-search text-primary"></i> Đối soát thị giác Ảnh - Tên</span>
+        <div class="delete-modal-actions">
+          <button type="button" class="btn-cancel-gray" @click="showDeleteConfirmModal = false">
+            Hủy bỏ
+          </button>
+          <button type="button" class="btn-danger-confirm-delete" @click="handleExecuteDelete">
+            <i class="bi bi-trash3-fill me-1"></i> Xác nhận xóa
+          </button>
         </div>
       </div>
     </div>
@@ -2379,6 +2752,15 @@ const displayedOrders = computed(() => {
         <span>{{ toastMessage }}</span>
       </div>
     </Transition>
+
+    <!-- Modal Quét & Kích Hoạt Khuôn Mặt (Face ID UniFace) cho Seller -->
+    <FaceScanModal
+      v-model="showFaceModal"
+      mode="register"
+      :user-id="getSellerUserIdentifier()"
+      :user-name="currentUser.name || storeInfo.name || 'Chủ Gian Hàng'"
+      @success="handleFaceRegisterSuccess"
+    />
   </div>
 </template>
 
@@ -3702,6 +4084,202 @@ h1, h2, h3, h4, h5, h6 {
   background: #FFFFFF !important;
   border-color: #D94E15;
   box-shadow: 0 0 0 3px rgba(217, 78, 21, 0.12);
+}
+
+/* ==================== FACE-ID BIOMETRICS SETTINGS ==================== */
+.settings-face-section {
+  background: #FFFFFF;
+  border-radius: 16px;
+  border: 1px solid #E2E8F0;
+  padding: 22px;
+}
+
+.face-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.face-header-info {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.face-symbol-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #F1F5F9;
+  color: #64748B;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.face-symbol-badge.is-active {
+  background: linear-gradient(135deg, #059669, #10B981);
+  color: #FFFFFF;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+
+.face-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.face-status-chip.active {
+  background: #ECFDF5;
+  color: #059669;
+  border: 1px solid #A7F3D0;
+}
+
+.face-status-chip.inactive {
+  background: #F1F5F9;
+  color: #64748B;
+  border: 1px solid #E2E8F0;
+}
+
+.face-auth-box {
+  background: #F8FAFC;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  transition: all 0.2s ease;
+  flex-wrap: wrap;
+}
+
+.face-auth-box.is-active {
+  background: linear-gradient(to right, #F0FDF4, #FFFFFF);
+  border-color: #10B981;
+}
+
+.face-auth-box:hover {
+  border-color: #0284C7;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.08);
+}
+
+.face-info-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.face-symbol-icon {
+  width: 42px;
+  height: 42px;
+  background: #FFFFFF;
+  color: #64748B;
+  border-radius: 10px;
+  border: 1px solid #E2E8F0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.face-symbol-icon.symbol-active {
+  background: linear-gradient(135deg, #059669, #10B981);
+  color: #FFFFFF;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+
+.face-title-text {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0F172A;
+}
+
+.face-helper-text {
+  font-size: 12.5px;
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+.face-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-face-activate {
+  background: linear-gradient(135deg, #0284C7, #2563EB);
+  color: #FFFFFF;
+  border: none;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.btn-face-activate:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+}
+
+.btn-face-rescan {
+  background: #FFFFFF;
+  color: #334155;
+  border: 1px solid #CBD5E1;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.btn-face-rescan:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+}
+
+.btn-face-disable {
+  background: #FEE2E2;
+  color: #B91C1C;
+  border: 1px solid #FCA5A5;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.btn-face-disable:hover:not(:disabled) {
+  background: #FECACA;
+}
+
+.btn-face-disable:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* CUSTOMER CARDS */
@@ -5471,5 +6049,293 @@ h1, h2, h3, h4, h5, h6 {
 @keyframes sellerScaleIn {
   from { transform: scale(0.85); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
+}
+
+/* ==================== FACEBOOK-STYLE POSTING PROGRESS BAR ==================== */
+.fb-posting-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.08);
+  border-left: 4px solid #3b82f6;
+}
+
+.fb-posting-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.fb-posting-avatar-box {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+}
+
+.fb-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #3b82f6;
+}
+
+.fb-spinner-pulse {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background-color: #3b82f6;
+  border: 2px solid #ffffff;
+  animation: fbPulse 1.5s infinite;
+}
+
+.fb-posting-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.fb-posting-headline {
+  font-size: 14px;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fb-posting-headline strong {
+  color: #1d4ed8;
+}
+
+.fb-posting-subtext {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.fb-posting-percent-badge {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid #bfdbfe;
+}
+
+.fb-progress-track {
+  width: 100%;
+  height: 7px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.fb-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa, #2563eb);
+  border-radius: 999px;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fb-slide-enter-active,
+.fb-slide-leave-active {
+  transition: all 0.35s ease;
+}
+
+.fb-slide-enter-from {
+  opacity: 0;
+  transform: translateY(-12px);
+}
+
+.fb-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-12px);
+}
+
+@keyframes fbPulse {
+  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+  70% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+
+/* ==================== DELETE PRODUCT ACTION & MODAL ==================== */
+.product-actions-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-delete-prod-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #fee2e2;
+  background: #fef2f2;
+  color: #ef4444;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-delete-prod-pill:hover {
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
+  transform: scale(1.06);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+.delete-confirm-modal {
+  max-width: 440px !important;
+  padding: 26px 24px !important;
+  text-align: center;
+  border-radius: 18px !important;
+}
+
+.delete-modal-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.delete-icon-box {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: #fee2e2;
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  margin-bottom: 12px;
+}
+
+.delete-modal-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 6px 0;
+}
+
+.delete-modal-desc {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.delete-product-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 22px;
+  text-align: left;
+}
+
+.delete-prod-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid #cbd5e1;
+}
+
+.delete-prod-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.delete-prod-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.delete-prod-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.delete-meta-tag {
+  background: #e2e8f0;
+  color: #475569;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.delete-meta-price {
+  font-weight: 700;
+  color: #d97706;
+}
+
+.delete-modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.delete-modal-actions .btn-cancel-gray {
+  flex: 1;
+  padding: 11px 16px;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.delete-modal-actions .btn-cancel-gray:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.btn-danger-confirm-delete {
+  flex: 1.3;
+  padding: 11px 16px;
+  background: #ef4444;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+}
+
+.btn-danger-confirm-delete:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.35);
 }
 </style>

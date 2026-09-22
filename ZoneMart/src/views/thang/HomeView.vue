@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
 import { useToast } from '../../composables/useToast';
+import { useProductCatalog } from '../../composables/useProductCatalog';
 
 const router = useRouter();
 const cart = useCart();
 const toast = useToast();
+const catalog = useProductCatalog();
 
 const toastMessage = ref('');
 let toastTimer: any = null;
@@ -22,6 +24,7 @@ const showToast = (msg: string) => {
 let observer: IntersectionObserver | null = null;
 
 onMounted(async () => {
+  catalog.refreshCatalog();
   await nextTick();
   if (typeof window !== 'undefined' && 'IntersectionObserver' in window) {
     observer = new IntersectionObserver(
@@ -140,128 +143,25 @@ const featuredCategories = [
 ];
 
 // 3. Sản phẩm tươi mới nổi bật trong bán kính 10km (Hot Products)
-const featuredProducts = [
-  {
-    id: 'p5',
-    name: 'Dâu Tây Giống Hana Nhật Bản (Hộp 500g)',
-    farm: 'Nông Trại Xanh Lạc Dương',
-    distance: '1.6 km',
-    deliveryTime: '20 phút',
-    price: 95000,
-    originalPrice: 125000,
-    discount: '-24%',
-    rating: 4.9,
-    sold: 310,
-    tag: 'Thu hoạch sáng nay',
-    image:
-      'https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 'p1',
-    name: 'Rau Xà Lách Mỡ Thủy Canh VietGAP (1kg)',
-    farm: 'Vườn Rau Hữu Cơ Bác Ba',
-    distance: '0.8 km',
-    deliveryTime: '15 phút',
-    price: 35000,
-    originalPrice: 45000,
-    discount: '-22%',
-    rating: 5.0,
-    sold: 389,
-    tag: 'Bán chạy số 1',
-    image:
-      'https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 'p9',
-    name: 'Bưởi Da Xanh Bến Tre Loại 1 (Trái 1.5kg)',
-    farm: 'Vựa Trái Cây Sáu Thảo Miền Tây',
-    distance: '2.4 km',
-    deliveryTime: '25 phút',
-    price: 68000,
-    originalPrice: 85000,
-    discount: '-20%',
-    rating: 4.8,
-    sold: 295,
-    tag: 'Đặc sản chuẩn gốc',
-    image:
-      'https://images.unsplash.com/photo-1587049352846-4a222e784d38?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 'p13',
-    name: 'Thịt Bò Mỹ Nhập Khẩu USDA Choice (500g)',
-    farm: 'Thực Phẩm Tươi Sống ZoneMart Cầu Giấy',
-    distance: '1.2 km',
-    deliveryTime: '18 phút',
-    price: 185000,
-    originalPrice: 220000,
-    discount: '-16%',
-    rating: 5.0,
-    sold: 560,
-    tag: 'Thịt mát trong ngày',
-    image:
-      'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 'p17',
-    name: 'Cơm Tấm Sườn Bì Chả Đặc Biệt (Suất)',
-    farm: 'Bếp Cơm Niêu & Ẩm Thực Nóng Cô Ba',
-    distance: '3.1 km',
-    deliveryTime: '25 phút',
-    price: 55000,
-    originalPrice: 65000,
-    discount: '-15%',
-    rating: 4.8,
-    sold: 680,
-    tag: 'Giao nóng hổi',
-    image:
-      'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 'p21',
-    name: 'Combo Bánh Mì Chảo Nóng Hổi (Phần)',
-    farm: 'Tiệm Bánh Mì & Cà Phê Zone Sáng',
-    distance: '1.9 km',
-    deliveryTime: '15 phút',
-    price: 45000,
-    originalPrice: 55000,
-    discount: '-18%',
-    rating: 4.9,
-    sold: 490,
-    tag: 'Ăn sáng hỏa tốc',
-    image:
-      'https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 'p25',
-    name: 'Mật Ong Rừng Hoa Cà Phê Gia Lai (500ml)',
-    farm: 'Hợp Tác Xã Đặc Sản Vùng Cao Tây Bắc',
-    distance: '4.3 km',
-    deliveryTime: '35 phút',
-    price: 135000,
-    originalPrice: 165000,
-    discount: '-18%',
-    rating: 4.9,
-    sold: 375,
-    tag: 'Nguyên chất 100%',
-    image:
-      'https://images.unsplash.com/photo-1587049352851-8d4e89133924?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 'p14',
-    name: 'Cá Hồi Na Uy Phi Lê Cắt Miếng (Khay 300g)',
-    farm: 'Thực Phẩm Tươi Sống ZoneMart Cầu Giấy',
-    distance: '1.2 km',
-    deliveryTime: '18 phút',
-    price: 195000,
-    originalPrice: 235000,
-    discount: '-17%',
-    rating: 5.0,
-    sold: 320,
-    tag: 'Chuẩn Sashimi',
-    image:
-      'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=600&q=80',
-  },
-];
+const featuredProducts = computed(() => {
+  if (catalog.allProducts.value && catalog.allProducts.value.length > 0) {
+    return catalog.allProducts.value.slice(0, 8).map((p, idx) => ({
+      id: p.id,
+      name: p.name,
+      farm: p.store?.name || 'Gian hàng ZoneMart',
+      distance: `${p.store?.distanceKm || 1.2} km`,
+      deliveryTime: p.store?.deliveryTime || '15 - 20 phút',
+      price: p.price,
+      originalPrice: p.oldPrice || Math.round(p.price * 1.18),
+      discount: p.discountBadge || `-${15 + (idx % 10)}%`,
+      rating: p.rating || 5.0,
+      sold: p.sold || (120 + idx * 15),
+      tag: p.badge || 'Nông sản sạch',
+      image: p.image || 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80',
+    }));
+  }
+  return [];
+});
 
 // 4. Quy trình hoạt động 4 bước siêu tốc của ZoneMart
 const howItWorks = [
@@ -291,93 +191,24 @@ const howItWorks = [
   },
 ];
 
-// 5. Nhà vườn & Gian hàng tiêu biểu địa phương (Thông số & sản phẩm độc nhất 100%)
-const featuredVendors = [
-  {
-    id: 1,
-    name: 'Vườn Rau Hữu Cơ Bác Ba',
-    owner: 'Bác Ba (15 năm trồng rau sạch Ba Vì)',
-    distance: '0.8 km',
-    deliveryTime: '12 - 18 phút',
-    productsCount: '42+ loại rau củ VietGAP',
-    rating: 5.0,
-    reviews: 384,
-    avatar:
-      'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80',
-    cover:
-      'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 2,
-    name: 'Nông Trại Xanh Lạc Dương',
-    owner: 'HTX Nông Nghiệp Công Nghệ Cao Lạc Dương',
-    distance: '1.6 km',
-    deliveryTime: '18 - 25 phút',
-    productsCount: '38+ loại dâu tây & củ quả',
-    rating: 4.9,
-    reviews: 256,
-    avatar:
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-    cover:
-      'https://images.unsplash.com/photo-1523348837708-15d4a09cfac2?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 3,
-    name: 'Vựa Trái Cây Sáu Thảo Miền Tây',
-    owner: 'Nhà vườn Sáu Thảo (Bến Tre)',
-    distance: '2.4 km',
-    deliveryTime: '22 - 30 phút',
-    productsCount: '30+ trái cây miệt vườn',
-    rating: 4.8,
-    reviews: 192,
-    avatar:
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-    cover:
-      'https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 4,
-    name: 'Thực Phẩm Tươi Sống ZoneMart Cầu Giấy',
-    owner: 'ZoneMart Fresh Hub Cầu Giấy',
-    distance: '1.2 km',
-    deliveryTime: '15 - 20 phút',
-    productsCount: '65+ thịt bò, cá hồi, gà tươi',
-    rating: 5.0,
-    reviews: 420,
-    avatar:
-      'https://images.unsplash.com/photo-1578916171728-46686eac8d58?auto=format&fit=crop&w=200&q=80',
-    cover:
-      'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 5,
-    name: 'Bếp Cơm Niêu & Ẩm Thực Nóng Cô Ba',
-    owner: 'Bếp Trưởng Cô Ba Sài Gòn',
-    distance: '3.1 km',
-    deliveryTime: '20 - 30 phút',
-    productsCount: '25+ món cơm & canh nóng',
-    rating: 4.7,
-    reviews: 310,
-    avatar:
-      'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80',
-    cover:
-      'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 6,
-    name: 'Tiệm Bánh Mì & Cà Phê Zone Sáng',
-    owner: 'Bánh Mì Zone Bakery',
-    distance: '1.9 km',
-    deliveryTime: '12 - 18 phút',
-    productsCount: '20+ món điểm tâm sáng & cà phê',
-    rating: 4.85,
-    reviews: 175,
-    avatar:
-      'https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=200&q=80',
-    cover:
-      'https://images.unsplash.com/photo-1528735602780-2552fd46c7af?auto=format&fit=crop&w=600&q=80',
-  },
-];
+// 5. Nhà vườn & Gian hàng tiêu biểu địa phương (Đồng bộ thời gian thực từ Database)
+const featuredVendors = computed(() => {
+  if (catalog.allStores.value && catalog.allStores.value.length > 0) {
+    return catalog.allStores.value.slice(0, 6).map((s, idx) => ({
+      id: s.id || idx + 1,
+      name: s.name,
+      owner: s.name,
+      distance: `${s.distanceKm || 1.2} km`,
+      deliveryTime: s.deliveryTime || '15 - 20 phút',
+      productsCount: `${s.totalProducts || s.products?.length || 1}+ sản phẩm`,
+      rating: s.rating || 5.0,
+      reviews: s.reviewsCount || 100,
+      avatar: s.avatar || 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80',
+      cover: s.coverImage || 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=600&q=80',
+    }));
+  }
+  return [];
+});
 
 // 6. Đánh giá thực tế từ cộng đồng
 const testimonials = [

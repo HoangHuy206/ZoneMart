@@ -283,7 +283,7 @@ const startPresenceTracker = () => {
       const pose = await queryFaceDetector();
 
       // 1. Kiểm tra Anti-Spoofing: nếu phát hiện ảnh chụp điện thoại / màn hình / giả mạo với độ tin cậy cao
-      if (pose.hasFace && !pose.isReal && pose.spoofConfidence > 0.88) {
+      if (pose.hasFace && !pose.isReal && pose.spoofConfidence >= 0.90) {
         consecutiveFaceHits = 0;
         consecutiveNoFaceHits = 0;
         isFacePresent.value = false;
@@ -930,11 +930,9 @@ onBeforeUnmount(() => {
 
               <div class="status-texts">
                 <div class="status-title">
-                  {{ scanStatus === 'error' ? statusTitle : currentStepInfo.title }}
                   {{ (scanStatus === 'error' || scanStatus === 'success' || scanStatus === 'scanning') ? statusTitle : currentStepInfo.title }}
                 </div>
                 <div class="status-sub">
-                  {{ scanStatus === 'error' ? statusSub : currentStepInfo.sub }}
                   {{ (scanStatus === 'error' || scanStatus === 'success' || scanStatus === 'scanning') ? statusSub : currentStepInfo.sub }}
                 </div>
               </div>

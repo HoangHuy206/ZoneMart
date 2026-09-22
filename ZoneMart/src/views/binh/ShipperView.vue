@@ -13,6 +13,8 @@ import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
 import { orderRealtimeService, type RealtimeOrder } from "../../services/orderRealtimeService";
+import FaceScanModal from "../../components/auth/FaceScanModal.vue";
+import { apiFetch } from "../../utils/apiConfig";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -144,6 +146,103 @@ const triggerToast = (msg: string) => {
   showToast.value = true;
   setTimeout(() => showToast.value = false, 2800);
 };
+
+// ==================== THIẾT LẬP FACE-ID CHO TÀI XẾ ====================
+const showFaceModal = ref(false);
+const isFaceAuthEnabled = ref(false);
+const faceRegisteredAt = ref("");
+const isCheckingFaceStatus = ref(false);
+const isDisablingFace = ref(false);
+
+const getShipperUserIdentifier = () => {
+  const clean = (driverProfile.phoneEmail || "").toLowerCase().trim();
+  if (clean) return clean;
+  const authUser = auth.currentUser.value;
+  if (authUser?.phoneEmail || authUser?.phone || authUser?.id) {
+    return (authUser.phoneEmail || authUser.phone || authUser.id).toLowerCase().trim();
+  }
+  const savedUserStr = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+  if (savedUserStr) {
+    try {
+      const u = JSON.parse(savedUserStr);
+      return (u.phoneEmail || u.phoneNumber || u.phone || u.email || u.id || "").toLowerCase().trim();
+    } catch {}
+  }
+  return "";
+};
+
+const checkFaceStatus = async () => {
+  const userId = getShipperUserIdentifier();
+  if (!userId || userId === "usr_guest") {
+    isFaceAuthEnabled.value = false;
+    faceRegisteredAt.value = "";
+    return;
+  }
+  isCheckingFaceStatus.value = true;
+  try {
+    const res = await apiFetch(`/api/auth/face/status?userId=${encodeURIComponent(userId)}`);
+    if (res && res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        isFaceAuthEnabled.value = Boolean(data.faceAuthEnabled);
+        faceRegisteredAt.value = data.registeredAt || "";
+      }
+    }
+  } catch (e) {
+    console.error("Lỗi kiểm tra Face ID tài xế:", e);
+  } finally {
+    isCheckingFaceStatus.value = false;
+  }
+};
+
+const openFaceRegisterModal = () => {
+  const userId = getShipperUserIdentifier();
+  if (!userId) {
+    triggerToast("Vui lòng đăng nhập tài khoản tài xế để thiết lập Face ID!");
+    return;
+  }
+  showFaceModal.value = true;
+};
+
+const handleFaceRegisterSuccess = (payload: any) => {
+  isFaceAuthEnabled.value = true;
+  faceRegisteredAt.value = payload.registeredAt || new Date().toLocaleString("vi-VN");
+  triggerToast("🎉 Đã kích hoạt và lưu khuôn mặt thành công cho tài xế!");
+};
+
+const handleDisableFace = async () => {
+  const userId = getShipperUserIdentifier();
+  if (!userId) return;
+  if (!confirm("Bạn có chắc chắn muốn tắt tính năng đăng nhập bằng khuôn mặt Face-ID cho tài xế này?")) {
+    return;
+  }
+  isDisablingFace.value = true;
+  try {
+    const res = await apiFetch("/api/auth/face/disable", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      isFaceAuthEnabled.value = false;
+      faceRegisteredAt.value = "";
+      triggerToast("Đã hủy kích hoạt Face ID cho tài xế.");
+    } else {
+      triggerToast(data.message || "Không thể hủy Face ID.");
+    }
+  } catch (e: any) {
+    triggerToast(e.message || "Lỗi khi hủy Face ID.");
+  } finally {
+    isDisablingFace.value = false;
+  }
+};
+
+watch(currentTab, (newTab) => {
+  if (newTab === "profile") {
+    checkFaceStatus();
+  }
+});
 
 // 4. Biến quản lý bản đồ Google Maps (Leaflet engine)
 let map: L.Map | null = null;
@@ -689,6 +788,7 @@ onMounted(() => {
   }
 
   loadDriverProfile();
+  checkFaceStatus();
   initMap();
 
   // Lắng nghe đơn hàng mới từ hệ thống thời gian thực (Kiểm tra bán kính 3km)
@@ -1060,7 +1160,7 @@ onUnmounted(() => {
             <i class="bi bi-box-seam-fill"></i> Cuốc Xe <span class="tab-count-badge" v-if="tripHistory.length > 0">({{ tripHistory.length }})</span>
           </button>
           <button class="sub-tab-btn" :class="{ 'active': currentTab === 'profile' }" @click="switchTab('profile')">
-            <i class="bi bi-person-badge-fill"></i> Hồ Sơ
+            <i class="bi bi-person-badge-fill"></i> Hồ Sơ & Cài Đặt
           </button>
         </div>
         <button class="btn-close-panel" @click="switchTab('map')" title="Quay lại Bản đồ">
@@ -1211,6 +1311,63 @@ onUnmounted(() => {
               </div>
             </div>
 
+            <!-- Cài Đặt Sinh Trắc Học Face-ID cho Tài Xế -->
+            <div class="shipper-face-card">
+              <div class="face-card-header">
+                <div class="face-header-info">
+                  <div class="face-symbol-badge" :class="{ 'is-active': isFaceAuthEnabled }">
+                    <i class="bi bi-person-bounding-box"></i>
+                  </div>
+                  <div>
+                    <h4 class="face-section-title">Thiết Lập Face-ID Tài Xế</h4>
+                    <p class="face-section-desc">Bảo mật tài khoản tài xế bằng AI Face ID UniFace. Đăng nhập 1-chạm không cần mật khẩu.</p>
+                  </div>
+                </div>
+                <span v-if="isFaceAuthEnabled" class="face-status-chip active">
+                  <i class="bi bi-shield-check"></i> Đã kích hoạt
+                </span>
+                <span v-else class="face-status-chip inactive">
+                  <i class="bi bi-shield-slash"></i> Chưa kích hoạt
+                </span>
+              </div>
+
+              <div class="face-auth-box" :class="{ 'is-active': isFaceAuthEnabled }">
+                <div class="face-info-left">
+                  <div class="face-symbol-icon" :class="{ 'symbol-active': isFaceAuthEnabled }">
+                    <i class="bi bi-camera-video-fill"></i>
+                  </div>
+                  <div>
+                    <div class="face-title-text">
+                      {{ isFaceAuthEnabled ? 'Đã liên kết khuôn mặt tài xế' : 'Chưa kích hoạt nhận diện khuôn mặt' }}
+                    </div>
+                    <div class="face-helper-text">
+                      <span v-if="isFaceAuthEnabled" class="text-success fw-bold">
+                        ✓ Sinh trắc học đã sẵn sàng (Kích hoạt: {{ faceRegisteredAt || 'Gần đây' }})
+                      </span>
+                      <span v-else class="text-muted">
+                        Quét 3D nhận diện khuôn mặt để bảo vệ tài khoản tài xế {{ driverProfile.fullName }}.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="face-actions-right">
+                  <template v-if="isFaceAuthEnabled">
+                    <button type="button" class="btn-face-rescan" @click="openFaceRegisterModal" title="Quét cập nhật lại khuôn mặt">
+                      <i class="bi bi-arrow-clockwise me-1"></i> Quét Lại
+                    </button>
+                    <button type="button" class="btn-face-disable" :disabled="isDisablingFace" @click="handleDisableFace" title="Hủy kích hoạt Face ID">
+                      <i class="bi bi-x-circle me-1"></i> Tắt Face ID
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button type="button" class="btn-face-activate" @click="openFaceRegisterModal">
+                      <i class="bi bi-camera-fill me-1"></i> Bật Face ID
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </div>
 
             <div class="profile-support-box">
               <h4>Tổng Đài Hỗ Trợ Tài Xế 24/7</h4>
@@ -1223,6 +1380,15 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- Modal Quét & Kích Hoạt Khuôn Mặt (Face ID UniFace) cho Shipper -->
+    <FaceScanModal
+      v-model="showFaceModal"
+      mode="register"
+      :user-id="getShipperUserIdentifier()"
+      :user-name="driverProfile.fullName || 'Tài Xế ZoneMart'"
+      @success="handleFaceRegisterSuccess"
+    />
   </div>
 </template>
 
@@ -2078,6 +2244,219 @@ onUnmounted(() => {
   font-size: 14px;
   font-weight: 800;
   color: #0f172a;
+}
+
+/* ==================== FACE-ID BIOMETRICS CHO TÀI XẾ ==================== */
+.shipper-face-card {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.face-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.face-header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.face-symbol-badge {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #f1f5f9;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.face-symbol-badge.is-active {
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+
+.face-section-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 2px 0;
+}
+
+.face-section-desc {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.face-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.face-status-chip.active {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+.face-status-chip.inactive {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.face-auth-box {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  transition: all 0.2s ease;
+  flex-wrap: wrap;
+}
+
+.face-auth-box.is-active {
+  background: linear-gradient(to right, #f0fdf4, #ffffff);
+  border-color: #10b981;
+}
+
+.face-auth-box:hover {
+  border-color: #0284c7;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.08);
+}
+
+.face-info-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.face-symbol-icon {
+  width: 40px;
+  height: 40px;
+  background: #ffffff;
+  color: #64748b;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.face-symbol-icon.symbol-active {
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+
+.face-title-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.face-helper-text {
+  font-size: 12px;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.face-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-face-activate {
+  background: linear-gradient(135deg, #0284c7, #2563eb);
+  color: #ffffff;
+  border: none;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 8px 16px;
+  border-radius: 9px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.btn-face-activate:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
+
+.btn-face-rescan {
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.btn-face-rescan:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.btn-face-disable {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.btn-face-disable:hover:not(:disabled) {
+  background: #fecaca;
+}
+
+.btn-face-disable:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .profile-support-box {

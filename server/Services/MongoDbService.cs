@@ -11,8 +11,33 @@ public class MongoDbService
 
     public MongoDbService(IOptions<MongoDBSettings> settings)
     {
-        var client = new MongoClient(settings.Value.ConnectionString);
-        _database = client.GetDatabase(settings.Value.DatabaseName);
+        MongoClientSettings? clientSettings = null;
+        string connStr = settings.Value?.ConnectionString ?? "";
+
+        try
+        {
+            clientSettings = MongoClientSettings.FromConnectionString(connStr);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [MongoDbService] Lỗi phân giải kết nối MongoDB: {ex.Message}");
+            string fallbackConn = "mongodb://huyhoangzz:hH28122006...@ac-txqeg1o-shard-00-00.trwjvms.mongodb.net:27017,ac-txqeg1o-shard-00-01.trwjvms.mongodb.net:27017,ac-txqeg1o-shard-00-02.trwjvms.mongodb.net:27017/zonemart?tls=true&replicaSet=atlas-p9e9jm-shard-0&authSource=admin&readPreference=primaryPreferred&retryWrites=true&w=majority";
+            try
+            {
+                clientSettings = MongoClientSettings.FromConnectionString(fallbackConn);
+                Console.WriteLine("✅ [MongoDbService] Đã kích hoạt kết nối Fallback Direct ReplicaSet thành công.");
+            }
+            catch (Exception ex2)
+            {
+                Console.WriteLine($"❌ [MongoDbService] Không thể phân giải fallback: {ex2.Message}");
+                clientSettings = new MongoClientSettings();
+            }
+        }
+
+        clientSettings.ServerSelectionTimeout = TimeSpan.FromSeconds(15);
+        clientSettings.ConnectTimeout = TimeSpan.FromSeconds(10);
+        var client = new MongoClient(clientSettings);
+        _database = client.GetDatabase(settings.Value?.DatabaseName ?? "zonemart");
     }
 
     public IMongoDatabase Database => _database;

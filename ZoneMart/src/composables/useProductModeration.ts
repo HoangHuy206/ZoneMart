@@ -264,32 +264,8 @@ function loadProducts(): ModeratedProduct[] {
       });
       items = filtered;
 
-      // 2. Tự động sửa các bài lệch ảnh / tên hợp lệ (chờ duyệt)
       for (const item of items) {
-        const lowerName = item.name.toLowerCase();
-        const normName = stripAccents(item.name);
-        const isSaltOrCondiment = normName.includes("muoi") || lowerName.includes("muối");
-        const hasVeggieMismatch = 
-          item.category === "Thực phẩm bổ dưỡng" || 
-          item.category === "Rau củ quả" || 
-          item.price === 5000 || 
-          item.image.includes("540420773420") || 
-          item.image.includes("556801712") || 
-          item.image.includes("1540420773420");
-
-        if (isSaltOrCondiment && hasVeggieMismatch) {
-          if (item.status !== "pending_review" || !item.aiScore || item.aiScore.matchScore > 50) {
-            item.status = "pending_review";
-            item.isAvailable = false;
-            item.aiScore = {
-              safetyScore: 82,
-              matchScore: 38,
-              flag: 'Lệch ảnh và tên: Tên bài đăng là "muối ăn" nhưng hình ảnh tải lên là rau xanh và danh mục chưa phù hợp.'
-            };
-            changed = true;
-          }
-        }
-
+        const normName = stripAccents(item.name).trim();
         // 3. Chuẩn hóa bài đăng sss nếu còn mang tên gian hàng mặc định từ cache cũ
         if (normName === "sss") {
           if (item.storeName === "Vườn Rau Ba Vì - Nông Sản Sạch" || !item.storeName) {
@@ -442,26 +418,44 @@ function savePenalties() {
 // Đồng bộ sản phẩm lên backend MongoDB trong nền
 async function syncProductToBackend(p: ModeratedProduct) {
   try {
-    // Luôn giữ ảnh thực tế do người bán tải lên (không ghi đè bằng ảnh mock Unsplash)
     const cleanImg = p.image || getCategoryFallbackImage(p.category);
+    const payload = {
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      price: p.price,
+      unit: p.unit,
+      stock: p.stock,
+      image: cleanImg,
+      sellerEmail: p.sellerEmail,
+      storeName: p.storeName,
+      status: p.status
+    };
 
-    await fetch("/api/products/sync-product", {
+    let res = await fetch("/api/products/sync-product", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: p.id,
-        name: p.name,
-        category: p.category,
-        price: p.price,
-        unit: p.unit,
-        stock: p.stock,
-        image: cleanImg,
-        sellerEmail: p.sellerEmail,
-        storeName: p.storeName,
-        status: p.status
-      })
-    }).catch(() => {});
-  } catch {}
+      body: JSON.stringify(payload)
+    }).catch(() => null);
+
+    if (!res || !res.ok) {
+      res = await fetch("http://localhost:5000/api/products/sync-product", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).catch(() => null);
+    }
+
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data && data.product && data.product.id) {
+        p.id = data.product.id;
+        saveProducts();
+      }
+    }
+  } catch (err) {
+    console.warn("Lỗi syncProductToBackend:", err);
+  }
 }
 
 let isRefreshingProducts = false;
@@ -486,13 +480,21 @@ function refreshProducts(): ModeratedProduct[] {
           data.data.forEach((bp: any) => {
             const pName = (bp.productName || bp.name || "").trim();
             if (!pName) return;
-            const existingIndex = allProducts.value.findIndex(
-              ep => ep.name.toLowerCase() === pName.toLowerCase()
-            );
-
             const realStoreName = bp.storeName || (bp.store && bp.store.name) || "";
             const realSellerEmail = bp.sellerEmail || "";
             const realImage = bp.imageUrl || bp.image || getCategoryFallbackImage(bp.category);
+            const isApproved = bp.aiStatus === "approved" || bp.status === "active";
+
+            const existingIndex = allProducts.value.findIndex(ep => {
+              if (bp.id && ep.id === bp.id) return true;
+              const nameMatch = ep.name.toLowerCase() === pName.toLowerCase();
+              if (nameMatch) {
+                if (realSellerEmail && ep.sellerEmail && ep.sellerEmail.toLowerCase() === realSellerEmail.toLowerCase()) return true;
+                if (realStoreName && ep.storeName && ep.storeName.toLowerCase() === realStoreName.toLowerCase()) return true;
+                if (!realSellerEmail) return true;
+              }
+              return false;
+            });
 
             if (existingIndex === -1) {
               const mapped: ModeratedProduct = {
@@ -501,10 +503,10 @@ function refreshProducts(): ModeratedProduct[] {
                 category: bp.category || "Rau củ quả",
                 price: bp.price || 25000,
                 unit: bp.weight ? `${bp.weight} kg` : "Bó 500g",
-                stock: bp.stockQuantity || 30,
+                stock: bp.stockQuantity ?? 30,
                 image: realImage,
-                status: "active",
-                isAvailable: true,
+                status: isApproved ? "active" : (bp.aiStatus === "rejected" ? "deleted_violation" : "pending_review"),
+                isAvailable: isApproved,
                 sellerEmail: realSellerEmail || "seller@zonemart.vn",
                 storeName: realStoreName || "Cửa hàng đối tác",
                 createdAt: bp.createdAt ? new Date(bp.createdAt).toLocaleDateString("vi-VN") : "Hôm nay",
@@ -513,10 +515,18 @@ function refreshProducts(): ModeratedProduct[] {
               allProducts.value.unshift(mapped);
               updated = true;
             } else {
-              // Cập nhật thông tin thực từ CSDL nếu sản phẩm cục bộ đang bị sai thông tin (ảnh mock hoặc tên shop mặc định)
               const existing = allProducts.value[existingIndex];
               let itemUpdated = false;
 
+              if (bp.id && existing.id !== bp.id) {
+                existing.id = bp.id;
+                itemUpdated = true;
+              }
+              if (isApproved && existing.status !== "active") {
+                existing.status = "active";
+                existing.isAvailable = true;
+                itemUpdated = true;
+              }
               if (realStoreName && existing.storeName !== realStoreName) {
                 existing.storeName = realStoreName;
                 itemUpdated = true;
@@ -531,6 +541,10 @@ function refreshProducts(): ModeratedProduct[] {
               }
               if (bp.price && existing.price !== bp.price) {
                 existing.price = bp.price;
+                itemUpdated = true;
+              }
+              if (bp.stockQuantity !== undefined && existing.stock !== bp.stockQuantity) {
+                existing.stock = bp.stockQuantity;
                 itemUpdated = true;
               }
 
@@ -785,7 +799,47 @@ export function useProductModeration() {
     };
   };
 
-  const handleSellerViolation = (sellerEmail: string, violationReason: string) => {
+  const sendViolationEmail = async (
+    sellerEmail: string,
+    violationReason: string,
+    productName?: string,
+    storeName?: string,
+    violationCount?: number,
+    actionType?: string
+  ) => {
+    try {
+      const targetEmail = (sellerEmail || "").trim() || "dovanbinh487@gmail.com";
+      const payload = {
+        sellerEmail: targetEmail,
+        storeName: storeName || "Gian hàng ZoneMart",
+        productName: productName || "Sản phẩm vi phạm chính sách",
+        reason: violationReason,
+        violationCount: violationCount ?? 1,
+        actionType: actionType || "warn"
+      };
+
+      await fetch("/api/moderation/send-violation-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).catch(async () => {
+        await fetch("http://localhost:5000/api/moderation/send-violation-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        }).catch(() => {});
+      });
+    } catch (e) {
+      console.warn("Lỗi khi gửi email cảnh báo vi phạm:", e);
+    }
+  };
+
+  const handleSellerViolation = (
+    sellerEmail: string, 
+    violationReason: string,
+    productName?: string,
+    storeName?: string
+  ) => {
     const penalty = getSellerPenalty(sellerEmail);
     penalty.violationCount += 1;
     penalty.lastViolationReason = violationReason;
@@ -824,6 +878,10 @@ export function useProductModeration() {
     });
 
     savePenalties();
+
+    // Tự động kích hoạt gửi Email cảnh báo thực tế tới hộp thư Gmail của người bán
+    sendViolationEmail(sellerEmail, violationReason, productName, storeName, count, actionType);
+
     return {
       actionType,
       violationCount: count,
@@ -861,7 +919,7 @@ export function useProductModeration() {
     const scanResult = scanProductWithAI(form);
 
     if (scanResult.decision === "VIOLATION") {
-      const penaltyResult = handleSellerViolation(sellerEmail, scanResult.reason);
+      const penaltyResult = handleSellerViolation(sellerEmail, scanResult.reason, form.name, storeName);
       return {
         scanResult,
         penaltyResult
@@ -959,7 +1017,7 @@ export function useProductModeration() {
     if (scanResult.decision === "VIOLATION") {
       allProducts.value.splice(prodIndex, 1);
       saveProducts();
-      const penaltyResult = handleSellerViolation(currentProd.sellerEmail, scanResult.reason);
+      const penaltyResult = handleSellerViolation(currentProd.sellerEmail, scanResult.reason, updatedData.name, currentProd.storeName);
       return { scanResult, penaltyResult };
     }
 
@@ -1081,6 +1139,9 @@ export function useProductModeration() {
     approveProductByManager,
     rejectProductByManager,
     resetSellerPenalties,
+    handleSellerViolation,
+    sendViolationEmail,
+    syncProductToBackend,
     saveProducts,
     refreshProducts,
     compressImage

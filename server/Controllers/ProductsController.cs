@@ -137,12 +137,21 @@ public class ProductsController : ControllerBase
                 ? dto.SellerEmail
                 : (foundStore?.PhoneEmail ?? "");
 
-            // Kiểm tra xem sản phẩm đã tồn tại theo tên và store chưa
-            var prodFilter = Builders<Product>.Filter.And(
-                Builders<Product>.Filter.Eq(p => p.ProductName, dto.Name),
-                Builders<Product>.Filter.Eq(p => p.StoreId, storeId)
-            );
-            var existing = await _mongoService.Products.Find(prodFilter).FirstOrDefaultAsync();
+            // Kiểm tra xem sản phẩm đã tồn tại theo Id hoặc theo (tên + store) chưa
+            Product? existing = null;
+            if (!string.IsNullOrWhiteSpace(dto.Id) && ObjectId.TryParse(dto.Id, out _))
+            {
+                existing = await _mongoService.Products.Find(p => p.Id == dto.Id).FirstOrDefaultAsync();
+            }
+
+            if (existing == null)
+            {
+                var prodFilter = Builders<Product>.Filter.And(
+                    Builders<Product>.Filter.Eq(p => p.ProductName, dto.Name),
+                    Builders<Product>.Filter.Eq(p => p.StoreId, storeId)
+                );
+                existing = await _mongoService.Products.Find(prodFilter).FirstOrDefaultAsync();
+            }
 
             if (existing != null)
             {
@@ -176,6 +185,32 @@ public class ProductsController : ControllerBase
 
             await _mongoService.Products.InsertOneAsync(newProd);
             return Ok(new { success = true, message = "Đã đồng bộ sản phẩm vào MongoDB thành công", product = newProd });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// API Xóa sản phẩm khỏi MongoDB
+    /// </summary>
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteProduct(string id)
+    {
+        try
+        {
+            FilterDefinition<Product> filter;
+            if (ObjectId.TryParse(id, out _))
+            {
+                filter = Builders<Product>.Filter.Eq(p => p.Id, id);
+            }
+            else
+            {
+                filter = Builders<Product>.Filter.Eq(p => p.ProductName, id);
+            }
+            var result = await _mongoService.Products.DeleteOneAsync(filter);
+            return Ok(new { success = true, deletedCount = result.DeletedCount, message = "Đã xóa sản phẩm thành công" });
         }
         catch (Exception ex)
         {
@@ -268,6 +303,7 @@ public class ProductsController : ControllerBase
                 Weight = 0.5,
                 StockQuantity = 50,
                 StockStatus = "in_stock",
+                AiStatus = "approved",
                 ImageUrl = "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=600&q=80",
                 CreatedAt = DateTime.UtcNow
             },
@@ -282,6 +318,7 @@ public class ProductsController : ControllerBase
                 Weight = 5.0,
                 StockQuantity = 80,
                 StockStatus = "in_stock",
+                AiStatus = "approved",
                 ImageUrl = "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=600&q=80",
                 CreatedAt = DateTime.UtcNow
             },
@@ -296,6 +333,7 @@ public class ProductsController : ControllerBase
                 Weight = 0.5,
                 StockQuantity = 40,
                 StockStatus = "in_stock",
+                AiStatus = "approved",
                 ImageUrl = "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=600&q=80",
                 CreatedAt = DateTime.UtcNow
             },
@@ -310,6 +348,7 @@ public class ProductsController : ControllerBase
                 Weight = 0.4,
                 StockQuantity = 30,
                 StockStatus = "in_stock",
+                AiStatus = "approved",
                 ImageUrl = "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=600&q=80",
                 CreatedAt = DateTime.UtcNow
             }

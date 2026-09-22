@@ -9,18 +9,33 @@ builder.Services.Configure<MongoDBSettings>(
 );
 builder.Services.AddSingleton<MongoDbService>();
 
-// 2. Cấu hình Email & Telegram Settings
+// 2. Cấu hình Email & Telegram & Gemini Settings
 builder.Services.Configure<EmailSettings>(
     builder.Configuration.GetSection("EmailSettings")
 );
 builder.Services.Configure<TelegramSettings>(
     builder.Configuration.GetSection("TelegramSettings")
 );
+builder.Services.Configure<GeminiSettings>(
+    builder.Configuration.GetSection("GeminiSettings")
+);
+builder.Services.Configure<KiraSettings>(
+    builder.Configuration.GetSection("KiraSettings")
+);
 
 // 3. Đăng ký Services & HttpClient
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("GeminiClient", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(45);
+});
+builder.Services.AddHttpClient("KiraClient", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ITelegramService, TelegramService>();
+builder.Services.AddScoped<IProductModerationService, ProductModerationService>();
 builder.Services.AddHostedService<PythonFaceServiceManager>();
 
 // 4. Cấu hình CORS cho phép Vue 3 Frontend (localhost:5173) gọi API
