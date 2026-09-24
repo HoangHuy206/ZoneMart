@@ -337,9 +337,23 @@ const switchDocTab = (tab: "front" | "back" | "cert" | "license") => {
   }
 };
 
-const openKycModal = (user: UserAccount) => {
+const openKycModal = (user: UserAccount, preferredType?: "seller" | "shipper") => {
   activeDocTab.value = "front";
-  if (user.storeDetails) {
+  const isShipperPending = user.shipperDetails && (user.shipperDetails.status === "Pending" || user.shipperDetails.status === "pending");
+  const isSellerPending = user.storeDetails && (user.storeDetails.status === "Pending" || user.storeDetails.status === "pending");
+
+  const chooseShipper = preferredType === "shipper" || (isShipperPending && !isSellerPending) || (user.shipperDetails && !user.storeDetails);
+
+  if (chooseShipper && user.shipperDetails) {
+    selectedKycType.value = "shipper";
+    selectedKycItem.value = {
+      ...user.shipperDetails,
+      email: user.email || user.shipperDetails.phoneNumber,
+      fullName: user.shipperDetails.fullName || user.fullName,
+      userId: user.id
+    };
+    activeKycImage.value = user.shipperDetails.cccdFrontImage || user.shipperDetails.drivingLicenseImage || "https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=600";
+  } else if (user.storeDetails) {
     selectedKycType.value = "seller";
     selectedKycItem.value = {
       ...user.storeDetails,
@@ -784,19 +798,61 @@ const handleNotificationClick = async (notif: AdminNotificationItem) => {
   isNotificationOpen.value = false;
   activeTab.value = "kyc";
 
-  // Tìm tài khoản tương ứng để mở modal thẩm định ngay lập tức
-  const targetUser = users.value.find(u =>
-    (notif.targetUserId && (u.id === notif.targetUserId || (u.storeDetails && u.storeDetails.storeId === notif.targetUserId) || (u.shipperDetails && u.shipperDetails.shipperId === notif.targetUserId))) ||
+  const preferredType: "seller" | "shipper" =
+    notif.type === "shipper" || (notif.title && notif.title.toLowerCase().includes("tài xế")) ? "shipper" : "seller";
+
+  const findTargetUser = () => users.value.find(u =>
+    (notif.targetUserId && (
+      u.id === notif.targetUserId ||
+      (u.storeDetails && (u.storeDetails.storeId === notif.targetUserId || u.storeDetails.id === notif.targetUserId)) ||
+      (u.shipperDetails && (u.shipperDetails.shipperId === notif.targetUserId || u.shipperDetails.id === notif.targetUserId))
+    )) ||
     (notif.targetName && (
-      (u.fullName && u.fullName.toLowerCase() === notif.targetName.toLowerCase()) ||
-      (u.storeDetails?.storeName && u.storeDetails.storeName.toLowerCase() === notif.targetName.toLowerCase()) ||
-      (u.shipperDetails?.licensePlate && u.shipperDetails.licensePlate.toLowerCase() === notif.targetName.toLowerCase())
+      (u.fullName && u.fullName.toLowerCase().includes(notif.targetName.toLowerCase())) ||
+      (u.storeDetails?.storeName && u.storeDetails.storeName.toLowerCase().includes(notif.targetName.toLowerCase())) ||
+      (u.shipperDetails?.fullName && u.shipperDetails.fullName.toLowerCase().includes(notif.targetName.toLowerCase())) ||
+      (u.shipperDetails?.licensePlate && notif.message && notif.message.includes(u.shipperDetails.licensePlate))
     ))
   );
 
-  if (targetUser) {
-    openKycModal(targetUser);
+  let targetUser = findTargetUser();
+
+  // Nếu chưa có trong cache hiện tại, tải lại users từ server ngay
+  if (!targetUser) {
+    await fetchUsers();
+    targetUser = findTargetUser();
   }
+
+  if (targetUser) {
+    openKycModal(targetUser, preferredType);
+    return;
+  }
+
+  // Nếu vẫn không thấy trong users.value, gọi trực tiếp API partner theo targetUserId
+  if (notif.targetUserId) {
+    try {
+      const res = await fetch(`/api/admin/partner/${notif.targetUserId}`);
+      if (res.ok) {
+        const pData = await res.json();
+        if (pData.success && pData.partner) {
+          const p = pData.partner;
+          selectedKycType.value = (p.type === "shipper" || preferredType === "shipper") ? "shipper" : "seller";
+          selectedKycItem.value = {
+            ...p,
+            id: p.id,
+            shipperId: selectedKycType.value === "shipper" ? p.id : undefined,
+            storeId: selectedKycType.value === "seller" ? p.id : undefined,
+            userId: p.id
+          };
+          activeKycImage.value = p.cccdFrontImage || p.drivingLicenseImage || "https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=600";
+          showKycModal.value = true;
+          return;
+        }
+      }
+    } catch {}
+  }
+
+  showToast(`Đã chuyển tới mục KYC. Hồ sơ: ${notif.targetName || notif.title}`, "info");
 };
 
 const toggleNotificationPopover = () => {
@@ -1458,12 +1514,14 @@ onUnmounted(() => {
                       </div>
                     </td>
                     <td>
-                      <span v-if="user.storeDetails" class="badge-role-seller">Gian Hàng (Shop)</span>
+                      <span v-if="user.shipperDetails && (user.shipperDetails.status === 'Pending' || user.shipperDetails.status === 'pending')" class="badge-role-shipper">Tài Xế Shipper</span>
+                      <span v-else-if="user.storeDetails && (user.storeDetails.status === 'Pending' || user.storeDetails.status === 'pending')" class="badge-role-seller">Gian Hàng (Shop)</span>
                       <span v-else-if="user.shipperDetails" class="badge-role-shipper">Tài Xế Shipper</span>
                       <span v-else class="badge-role-buyer">Nâng cấp tài khoản</span>
                     </td>
                     <td>
-                      <span v-if="user.storeDetails">{{ user.storeDetails.storeName }} • {{ user.storeDetails.category }}</span>
+                      <span v-if="user.shipperDetails && (user.shipperDetails.status === 'Pending' || user.shipperDetails.status === 'pending')">{{ user.shipperDetails.licensePlate }} • {{ user.shipperDetails.vehicleModel || user.shipperDetails.vehicleType || 'Xe máy' }}</span>
+                      <span v-else-if="user.storeDetails">{{ user.storeDetails.storeName }} • {{ user.storeDetails.category }}</span>
                       <span v-else-if="user.shipperDetails">{{ user.shipperDetails.licensePlate }} • {{ user.shipperDetails.vehicleType }}</span>
                       <span v-else>Đang chờ hoàn thiện</span>
                     </td>
@@ -1473,7 +1531,7 @@ onUnmounted(() => {
                       </span>
                     </td>
                     <td>
-                      <button class="btn-table-action" @click="openKycModal(user)">
+                      <button class="btn-table-action" @click="openKycModal(user, (user.shipperDetails && (user.shipperDetails.status === 'Pending' || user.shipperDetails.status === 'pending')) ? 'shipper' : 'seller')">
                         <Eye :size="14" /> Xem Hồ Sơ & Duyệt
                       </button>
                     </td>
@@ -1674,11 +1732,17 @@ onUnmounted(() => {
                       </div>
                     </td>
                     <td>
-                      <span v-if="user.storeDetails" class="badge-role-seller">Chủ Shop</span>
-                      <span v-else-if="user.shipperDetails" class="badge-role-shipper">Tài Xế</span>
+                      <span v-if="user.shipperDetails && (user.shipperDetails.status === 'Pending' || user.shipperDetails.status === 'pending')" class="badge-role-shipper">Tài Xế Shipper</span>
+                      <span v-else-if="user.storeDetails && (user.storeDetails.status === 'Pending' || user.storeDetails.status === 'pending')" class="badge-role-seller">Chủ Shop</span>
+                      <span v-else-if="user.shipperDetails" class="badge-role-shipper">Tài Xế Shipper</span>
+                      <span v-else class="badge-role-seller">Chủ Shop</span>
                     </td>
                     <td>
-                      <div v-if="user.storeDetails">
+                      <div v-if="user.shipperDetails && (user.shipperDetails.status === 'Pending' || user.shipperDetails.status === 'pending')">
+                        <strong>{{ user.shipperDetails.licensePlate }}</strong>
+                        <small class="d-block text-muted">{{ user.shipperDetails.vehicleModel || user.shipperDetails.vehicleType || 'Xe máy' }} • {{ user.shipperDetails.operatingArea || 'Hoạt động' }}</small>
+                      </div>
+                      <div v-else-if="user.storeDetails">
                         <strong>{{ user.storeDetails.storeName }}</strong>
                         <small class="d-block text-muted">{{ user.storeDetails.address }}</small>
                       </div>
@@ -1688,10 +1752,10 @@ onUnmounted(() => {
                       </div>
                     </td>
                     <td>
-                      <code>{{ user.storeDetails?.cccdNumber || user.shipperDetails?.cccdNumber || '001201012345' }}</code>
+                      <code>{{ (user.shipperDetails && (user.shipperDetails.status === 'Pending' || user.shipperDetails.status === 'pending')) ? (user.shipperDetails.cccdNumber || '---') : (user.storeDetails?.cccdNumber || user.shipperDetails?.cccdNumber || '---') }}</code>
                     </td>
                     <td>
-                      <button class="btn-action-primary" @click="openKycModal(user)">
+                      <button class="btn-action-primary" @click="openKycModal(user, (user.shipperDetails && (user.shipperDetails.status === 'Pending' || user.shipperDetails.status === 'pending')) ? 'shipper' : 'seller')">
                         <FileText :size="14" /> Thẩm định hồ sơ
                       </button>
                     </td>
