@@ -966,7 +966,11 @@ onBeforeUnmount(() => {
                 <i class="bi bi-arrow-clockwise me-1"></i>
                 <span>Thử Lại Ngay</span>
               </button>
-              <button class="btn-face-action secondary" @click="handleClose">
+              <button v-if="mode === 'login'" class="btn-face-action secondary" @click="handleClose">
+                <i class="bi bi-key me-1"></i>
+                <span>Đăng Nhập Bằng Mật Khẩu</span>
+              </button>
+              <button v-else class="btn-face-action secondary" @click="handleClose">
                 <span>Đóng</span>
               </button>
             </template>
@@ -985,8 +989,8 @@ onBeforeUnmount(() => {
                 :disabled="isProcessing"
                 @click="triggerScan"
               >
-                <i class="bi bi-camera-fill me-1"></i>
-                <span>Quét Ngay</span>
+                <i class="bi bi-lightning-charge-fill me-1"></i>
+                <span>Xác Thực Ngay</span>
               </button>
               <button class="btn-face-action secondary" @click="handleClose">
                 <i class="bi bi-x-circle me-1"></i>

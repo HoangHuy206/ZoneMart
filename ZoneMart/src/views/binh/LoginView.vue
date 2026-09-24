@@ -13,7 +13,6 @@ import { useAuth, type UserRole } from '../../composables/useAuth';
 import { apiFetch } from '../../utils/apiConfig';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
 import FaceScanModal from '../../components/auth/FaceScanModal.vue';
-import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
 import { useToast } from '../../composables/useToast';
 
 const router = useRouter();
@@ -285,19 +284,6 @@ const handleLogin = async () => {
 
 <template>
   <div class="login-page-container">
-    <!-- HIỆU ỨNG HẠT CHỐNG TRỌNG LỰC TOÀN TRANG (GOOGLE ANTIGRAVITY ANIMATION) -->
-    <AntigravityCanvas
-      :particle-count="50"
-      :speed="0.8"
-      :gravity="-0.04"
-      :colors="['#4285F4', '#EA4335', '#FBBC05', '#34A853', '#EA580C', '#10B981', '#F59E0B']"
-      :shape="'mixed'"
-      :interactive="true"
-      :full-screen="true"
-      :opacity="0.88"
-      :z-index="999"
-    />
-
     <!-- KHUNG TỔNG THỂ 2 CỘT: ẢNH BÊN TRÁI + BẢNG ĐĂNG NHẬP BÊN PHẢI -->
     <div class="login-hero-layout">
       <!-- CỘT TRÁI: ẢNH MINH HỌA XE ZONEMART TÁCH SẠCH NỀN -->
@@ -458,25 +444,51 @@ const handleLogin = async () => {
                   fill="currentColor"
                   xmlns="http://www.w3.org/2000/svg"
                 >
-                  <!-- Top-Left Corner -->
                   <path d="M4.114,21.943 L4.114,13.029 C4.114,7.993 7.993,4.114 13.029,4.114 L21.943,4.114 C23.079,4.114 24.000,3.193 24.000,2.057 C24.000,0.921 23.079,0.000 21.943,0.000 L13.029,0.000 C5.721,0.000 0.000,5.721 0.000,13.029 L0.000,21.943 C0.000,23.079 0.921,24.000 2.057,24.000 C3.193,24.000 4.114,23.079 4.114,21.943 Z" />
-                  <!-- Top-Right Corner -->
                   <path d="M75.886,21.943 L75.886,13.029 C75.886,7.993 72.007,4.114 66.971,4.114 L58.057,4.114 C56.921,4.114 56.000,3.193 56.000,2.057 C56.000,0.921 56.921,0.000 58.057,0.000 L66.971,0.000 C74.279,0.000 80.000,5.721 80.000,13.029 L80.000,21.943 C80.000,23.079 79.079,24.000 77.943,24.000 C76.807,24.000 75.886,23.079 75.886,21.943 Z" />
-                  <!-- Bottom-Left Corner -->
                   <path d="M4.114,58.057 L4.114,66.971 C4.114,72.007 7.993,75.886 13.029,75.886 L21.943,75.886 C23.079,75.886 24.000,76.807 24.000,77.943 C24.000,79.079 23.079,80.000 21.943,80.000 L13.029,80.000 C5.721,80.000 0.000,74.279 0.000,66.971 L0.000,58.057 C0.000,56.921 0.921,56.000 2.057,56.000 C3.193,56.000 4.114,56.921 4.114,58.057 Z" />
-                  <!-- Bottom-Right Corner -->
                   <path d="M75.886,58.057 L75.886,66.971 C75.886,72.007 72.007,75.886 66.971,75.886 L58.057,75.886 C56.921,75.886 56.000,76.807 56.000,77.943 C56.000,79.079 56.921,80.000 58.057,80.000 L66.971,80.000 C74.279,80.000 80.000,74.279 80.000,66.971 L80.000,58.057 C80.000,56.921 79.079,56.000 77.943,56.000 C76.807,56.000 75.886,56.921 75.886,58.057 Z" />
-                  <!-- Left Eye -->
                   <path d="M21.754,30.213 L21.754,35.931 C21.754,37.114 22.650,38.073 23.754,38.073 C24.859,38.073 25.754,37.114 25.754,35.931 L25.754,30.213 C25.754,29.030 24.859,28.070 23.754,28.070 C22.650,28.070 21.754,29.030 21.754,30.213 Z" />
-                  <!-- Right Eye -->
                   <path d="M54.737,30.213 L54.737,35.931 C54.737,37.114 55.632,38.073 56.737,38.073 C57.841,38.073 58.737,37.114 58.737,35.931 L58.737,30.213 C58.737,29.030 57.841,28.070 56.737,28.070 C55.632,28.070 54.737,29.030 54.737,30.213 Z" />
-                  <!-- Nose -->
                   <path d="M40,30.175 L40,44.912 C40,45.855 39.539,46.316 38.591,46.316 L37.193,46.316 C36.030,46.316 35.088,47.258 35.088,48.421 C35.088,49.584 36.030,50.526 37.193,50.526 L38.591,50.526 C41.863,50.526 44.211,48.182 44.211,44.912 L44.211,30.175 C44.211,29.013 43.268,28.070 42.105,28.070 C40.943,28.070 40,29.013 40,30.175 Z" />
-                  <!-- Smile Mouth -->
                   <path d="M25.932,59.083 C29.833,62.724 34.558,64.561 40,64.561 C45.442,64.561 50.167,62.724 54.068,59.083 C54.918,58.290 54.964,56.957 54.171,56.107 C53.377,55.257 52.045,55.211 51.195,56.005 C48.079,58.913 44.382,60.351 40,60.351 C35.618,60.351 31.921,58.913 28.805,56.005 C27.955,55.211 26.623,55.257 25.829,56.107 C25.036,56.957 25.082,58.290 25.932,59.083 Z" />
                 </svg>
               </button>
             </div>
+
+            <!-- Nút Đăng Nhập Face ID Nổi Bật Dạng Banner Card -->
+            <button
+              type="button"
+              class="btn-face-id-prominent"
+              @click="openFaceIdLoginModal"
+            >
+              <div class="face-prominent-left">
+                <div class="face-prominent-icon-box">
+                  <svg
+                    class="apple-faceid-svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 80 80"
+                    fill="currentColor"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path d="M4.114,21.943 L4.114,13.029 C4.114,7.993 7.993,4.114 13.029,4.114 L21.943,4.114 C23.079,4.114 24.000,3.193 24.000,2.057 C24.000,0.921 23.079,0.000 21.943,0.000 L13.029,0.000 C5.721,0.000 0.000,5.721 0.000,13.029 L0.000,21.943 C0.000,23.079 0.921,24.000 2.057,24.000 C3.193,24.000 4.114,23.079 4.114,21.943 Z" />
+                    <path d="M75.886,21.943 L75.886,13.029 C75.886,7.993 72.007,4.114 66.971,4.114 L58.057,4.114 C56.921,4.114 56.000,3.193 56.000,2.057 C56.000,0.921 56.921,0.000 58.057,0.000 L66.971,0.000 C74.279,0.000 80.000,5.721 80.000,13.029 L80.000,21.943 C80.000,23.079 79.079,24.000 77.943,24.000 C76.807,24.000 75.886,23.079 75.886,21.943 Z" />
+                    <path d="M4.114,58.057 L4.114,66.971 C4.114,72.007 7.993,75.886 13.029,75.886 L21.943,75.886 C23.079,75.886 24.000,76.807 24.000,77.943 C24.000,79.079 23.079,80.000 21.943,80.000 L13.029,80.000 C5.721,80.000 0.000,74.279 0.000,66.971 L0.000,58.057 C0.000,56.921 0.921,56.000 2.057,56.000 C3.193,56.000 4.114,56.921 4.114,58.057 Z" />
+                    <path d="M75.886,58.057 L75.886,66.971 C75.886,72.007 72.007,75.886 66.971,75.886 L58.057,75.886 C56.921,75.886 56.000,76.807 56.000,77.943 C56.000,79.079 56.921,80.000 58.057,80.000 L66.971,80.000 C74.279,80.000 80.000,74.279 80.000,66.971 L80.000,58.057 C80.000,56.921 79.079,56.000 77.943,56.000 C76.807,56.000 75.886,56.921 75.886,58.057 Z" />
+                    <circle cx="23.754" cy="33" r="3" />
+                    <circle cx="56.737" cy="33" r="3" />
+                    <path d="M40,30 L40,45 C40,48 37,48 37,48" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" />
+                    <path d="M28,58 C32,62 48,62 52,58" stroke="currentColor" stroke-width="3.5" fill="none" stroke-linecap="round" />
+                  </svg>
+                </div>
+                <div class="face-prominent-text">
+                  <span class="face-prominent-title">Đăng Nhập Bằng Face ID (1-Chạm)</span>
+                  <span class="face-prominent-sub">Quét khuôn mặt AI UniFace không cần mật khẩu</span>
+                </div>
+              </div>
+              <span class="face-prominent-badge">AI Biometric</span>
+            </button>
 
             <!-- Đường kẻ phân cách OR -->
             <div class="divider-row">
@@ -1033,6 +1045,77 @@ label {
 
 .btn-face-quick-icon:hover .apple-faceid-svg {
   transform: scale(1.08);
+}
+
+/* NÚT ĐĂNG NHẬP FACE ID DẠNG CARD NỔI BẬT */
+.btn-face-id-prominent {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.08) 0%, rgba(99, 102, 241, 0.08) 100%);
+  border: 1.5px solid rgba(14, 165, 233, 0.32);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  color: #0f172a;
+  text-align: left;
+}
+
+.btn-face-id-prominent:hover {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.16) 0%, rgba(99, 102, 241, 0.16) 100%);
+  border-color: #0284c7;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px -4px rgba(14, 165, 233, 0.28);
+}
+
+.face-prominent-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.face-prominent-icon-box {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0284c7, #2563eb);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+  flex-shrink: 0;
+}
+
+.face-prominent-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.face-prominent-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.face-prominent-sub {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+.face-prominent-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #0284c7;
+  background: rgba(2, 132, 199, 0.12);
+  padding: 4px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
 }
 
 /* QUICK DEMO ROLES */
