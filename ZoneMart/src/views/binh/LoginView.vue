@@ -285,11 +285,13 @@ const handleLogin = async () => {
 
 <template>
   <div class="login-page-container">
-    <!-- HIỆU ỨNG HẠT CHỐNG TRỌNG LỰC TOÀN TRANG (GOOGLE ANTIGRAVITY ANIMATION) -->
+    <!-- HIỆU ỨNG LÀN GIÓ NÔNG SẢN TƯƠI CHỢ DÂN SINH (ZONEMART FRESH MARKET BREEZE) -->
     <AntigravityCanvas
+      theme="market"
       :full-screen="true"
-      :particle-count="55"
-      :opacity="0.85"
+      :particle-count="45"
+      :speed="0.75"
+      :opacity="0.82"
       :z-index="1"
     />
 

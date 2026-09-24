@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
 import { useToast } from '../../composables/useToast';
 import { useProductCatalog } from '../../composables/useProductCatalog';
+import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
 
 const router = useRouter();
 const cart = useCart();
@@ -311,6 +312,14 @@ const handleAddToCartHome = (item: any) => {
 
 <template>
   <div class="homepage-container">
+    <!-- HIỆU ỨNG HẠT CHỐNG TRỌNG LỰC TOÀN TRANG (GOOGLE ANTIGRAVITY ANIMATION) -->
+    <AntigravityCanvas
+      :full-screen="true"
+      :particle-count="60"
+      :opacity="0.88"
+      :z-index="999"
+    />
+
     <!-- Thông báo thêm giỏ hàng nhẹ nhàng -->
     <Transition name="toast-fade">
       <div v-if="toastMessage" class="home-toast-notice">

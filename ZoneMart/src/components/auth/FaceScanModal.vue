@@ -666,12 +666,12 @@ onBeforeUnmount(() => {
       <div v-if="modelValue" class="face-scan-overlay" @click.self="handleClose">
         <!-- HIỆU ỨNG HẠT SINH TRẮC HỌC ANTIGRAVITY PHỦ TOÀN BỘ NỀN MODAL TỐI -->
         <AntigravityCanvas
+          theme="cyber"
           :full-screen="true"
           :particle-count="50"
           :speed="0.75"
           :gravity="-0.035"
           :colors="['#38BDF8', '#00F0FF', '#34D399', '#10B981', '#818CF8', '#A78BFA', '#67E8F9']"
-          :shape="'mixed'"
           :interactive="true"
           :opacity="0.9"
           :z-index="1"
