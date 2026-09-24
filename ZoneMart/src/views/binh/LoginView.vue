@@ -13,6 +13,7 @@ import { useAuth, type UserRole } from '../../composables/useAuth';
 import { apiFetch } from '../../utils/apiConfig';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
 import FaceScanModal from '../../components/auth/FaceScanModal.vue';
+import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
 import { useToast } from '../../composables/useToast';
 
 const router = useRouter();
@@ -284,6 +285,18 @@ const handleLogin = async () => {
 
 <template>
   <div class="login-page-container">
+    <!-- NỀN HẠT CHỐNG TRỌNG LỰC ANTIGRAVITY TƯƠNG TÁC CHUỘT (GOOGLE STYLE) -->
+    <AntigravityCanvas
+      :particle-count="55"
+      :speed="0.75"
+      :gravity="-0.045"
+      :colors="['#EA580C', '#F97316', '#10B981', '#059669', '#3B82F6', '#F59E0B', '#FED7AA', '#E0E7FF']"
+      :shape="'mixed'"
+      :interactive="true"
+      :full-screen="true"
+      :opacity="0.8"
+    />
+
     <!-- KHUNG TỔNG THỂ 2 CỘT: ẢNH BÊN TRÁI + BẢNG ĐĂNG NHẬP BÊN PHẢI -->
     <div class="login-hero-layout">
       <!-- CỘT TRÁI: ẢNH MINH HỌA XE ZONEMART TÁCH SẠCH NỀN -->
@@ -650,6 +663,7 @@ label {
 
 /* PAGE CONTAINER VỪA KHÍT 1 MÀN HÌNH (NO SCROLLBAR, LÙI ẢNH SÁT LỀ TRÁI) */
 .login-page-container {
+  position: relative;
   width: 100vw;
   height: 100vh;
   max-height: 100vh;
@@ -669,6 +683,8 @@ label {
 
 /* HERO LAYOUT 2 CỘT: ẢNH SIÊU TO LÙI TRÁI + BẢNG DỊCH THEO VỀ TRÁI */
 .login-hero-layout {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: flex-start;

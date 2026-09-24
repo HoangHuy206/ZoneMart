@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
 import { useToast } from '../../composables/useToast';
 import { useProductCatalog } from '../../composables/useProductCatalog';
+import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
 
 const router = useRouter();
 const cart = useCart();
@@ -327,6 +328,17 @@ const handleAddToCartHome = (item: any) => {
       <section class="hero-section">
         <div class="hero-card">
           <div class="hero-overlay"></div>
+          <!-- HIỆU ỨNG HẠT CHỐNG TRỌNG LỰC ANTIGRAVITY TƯƠNG TÁC CHUỘT (GOOGLE STYLE) -->
+          <AntigravityCanvas
+            :full-screen="false"
+            :particle-count="36"
+            :speed="0.65"
+            :gravity="-0.03"
+            :colors="['#ffffff', '#FED7AA', '#BBF7D0', '#FEF08A', '#F97316', '#86EFAC']"
+            :shape="'mixed'"
+            :opacity="0.35"
+            :interactive="true"
+          />
           <div class="hero-content">
             <span class="hero-subheading">Nông Sản & Đặc Sản Địa Phương</span>
             <h1 class="hero-title">Chợ Địa Phương – Nông Dân Thân Thiện</h1>

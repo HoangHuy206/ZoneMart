@@ -13,6 +13,7 @@
  */
 import { ref, watch, onBeforeUnmount, nextTick, computed } from 'vue';
 import { apiFetch } from '../../utils/apiConfig';
+import AntigravityCanvas from '../common/AntigravityCanvas.vue';
 
 export type FaceScanStep = 'center' | 'left' | 'right' | 'up' | 'down' | 'verifying';
 
@@ -664,6 +665,17 @@ onBeforeUnmount(() => {
     <Transition name="face-modal-fade">
       <div v-if="modelValue" class="face-scan-overlay" @click.self="handleClose">
         <div class="face-scan-dialog">
+          <!-- Hiệu ứng hạt sinh trắc học Antigravity nền Futuristic -->
+          <AntigravityCanvas
+            :full-screen="false"
+            :particle-count="22"
+            :speed="0.45"
+            :gravity="-0.025"
+            :colors="['#38bdf8', '#0ea5e9', '#06b6d4', '#818cf8', '#34d399', '#3b82f6', '#93c5fd']"
+            :shape="'mixed'"
+            :opacity="0.3"
+          />
+
           <!-- Hidden canvas for capturing video frame -->
           <canvas ref="canvasRef" class="d-none" style="display: none;"></canvas>
 
@@ -1008,6 +1020,7 @@ onBeforeUnmount(() => {
 
 /* Modal Dialog Pop Card */
 .face-scan-dialog {
+  position: relative;
   background: #0f172a;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 24px;
@@ -1032,6 +1045,8 @@ onBeforeUnmount(() => {
 
 /* Modal Header */
 .modal-face-header {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1143,6 +1158,8 @@ onBeforeUnmount(() => {
 
 /* Viewport Card */
 .camera-viewport-card {
+  position: relative;
+  z-index: 2;
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -1711,6 +1728,8 @@ onBeforeUnmount(() => {
 
 /* Footer Buttons */
 .face-actions-footer {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1760,6 +1779,8 @@ onBeforeUnmount(() => {
 
 /* Security Footnote */
 .security-footnote {
+  position: relative;
+  z-index: 2;
   padding: 12px 24px;
   background: rgba(15, 23, 42, 0.95);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
