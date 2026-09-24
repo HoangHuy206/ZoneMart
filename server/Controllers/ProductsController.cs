@@ -146,11 +146,25 @@ public class ProductsController : ControllerBase
 
             if (existing == null)
             {
-                var prodFilter = Builders<Product>.Filter.And(
-                    Builders<Product>.Filter.Eq(p => p.ProductName, dto.Name),
-                    Builders<Product>.Filter.Eq(p => p.StoreId, storeId)
-                );
-                existing = await _mongoService.Products.Find(prodFilter).FirstOrDefaultAsync();
+                var cleanName = dto.Name?.Trim() ?? "";
+                var filterList = new List<FilterDefinition<Product>>
+                {
+                    Builders<Product>.Filter.Regex(p => p.ProductName, new BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(cleanName)}$", "i"))
+                };
+                if (!string.IsNullOrWhiteSpace(dto.SellerEmail))
+                {
+                    filterList.Add(Builders<Product>.Filter.Eq(p => p.SellerEmail, dto.SellerEmail.Trim()));
+                }
+                else if (!string.IsNullOrWhiteSpace(dto.StoreName))
+                {
+                    filterList.Add(Builders<Product>.Filter.Eq(p => p.StoreName, dto.StoreName.Trim()));
+                }
+                existing = await _mongoService.Products.Find(Builders<Product>.Filter.And(filterList)).FirstOrDefaultAsync();
+
+                if (existing == null)
+                {
+                    existing = await _mongoService.Products.Find(p => p.ProductName == cleanName).FirstOrDefaultAsync();
+                }
             }
 
             if (existing != null)
@@ -159,7 +173,13 @@ public class ProductsController : ControllerBase
                 existing.Category = !string.IsNullOrWhiteSpace(dto.Category) ? dto.Category : existing.Category;
                 existing.StockQuantity = dto.Stock > 0 ? dto.Stock : existing.StockQuantity;
                 if (!string.IsNullOrWhiteSpace(dto.Image)) existing.ImageUrl = dto.Image;
-                existing.AiStatus = dto.Status == "active" ? "approved" : (dto.Status ?? "pending");
+                
+                string targetStatus = "pending";
+                if (dto.Status == "active" || dto.Status == "approved") targetStatus = "approved";
+                else if (dto.Status == "rejected_need_edit" || dto.Status == "rejected") targetStatus = "rejected";
+                else targetStatus = dto.Status ?? "pending";
+                
+                existing.AiStatus = targetStatus;
                 existing.StoreName = resolvedStoreName;
                 existing.SellerEmail = resolvedSellerEmail;
                 await _mongoService.Products.ReplaceOneAsync(p => p.Id == existing.Id, existing);

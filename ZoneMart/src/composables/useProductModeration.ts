@@ -375,6 +375,21 @@ function getCategoryFallbackImage(category: string): string {
 const allProducts = ref<ModeratedProduct[]>(loadProducts());
 const sellerPenalties = ref<Record<string, SellerPenaltyState>>(loadPenalties());
 
+const BROADCAST_CHANNEL_NAME = "zonemart_products_channel";
+let productsBroadcastChannel: BroadcastChannel | null = null;
+if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+  try {
+    productsBroadcastChannel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+    productsBroadcastChannel.onmessage = (event) => {
+      if (event.data && (event.data.type === "PRODUCTS_CHANGED" || event.data.type === "PRODUCT_STATUS_UPDATED")) {
+        refreshProducts();
+      }
+    };
+  } catch (e) {
+    console.warn("BroadcastChannel error:", e);
+  }
+}
+
 function saveProducts() {
   try {
     localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(allProducts.value));
@@ -397,8 +412,21 @@ function saveProducts() {
     }
   }
 
-  // Thông báo thời gian thực tới tất cả các component và tab đang mở
+  // Thông báo thời gian thực tới tất cả các component và tab đang mở (BroadcastChannel + StorageEvent + CustomEvent)
   if (typeof window !== "undefined") {
+    try {
+      if (productsBroadcastChannel) {
+        productsBroadcastChannel.postMessage({
+          type: "PRODUCTS_CHANGED",
+          timestamp: Date.now()
+        });
+      }
+    } catch {}
+
+    try {
+      localStorage.setItem("zonemart_product_bus_event", String(Date.now()));
+    } catch {}
+
     setTimeout(() => {
       window.dispatchEvent(
         new CustomEvent("zonemart:products-changed", {
@@ -463,16 +491,30 @@ let isRefreshingProducts = false;
 // Làm mới danh sách sản phẩm từ localStorage và backend
 function refreshProducts(): ModeratedProduct[] {
   const loaded = loadProducts();
-  allProducts.value = loaded;
-
-  if (isRefreshingProducts) {
-    return loaded;
+  if (loaded && loaded.length > 0) {
+    loaded.forEach(lp => {
+      const idx = allProducts.value.findIndex(p => p.id === lp.id || (p.name.toLowerCase() === lp.name.toLowerCase() && p.sellerEmail === lp.sellerEmail));
+      if (idx !== -1) {
+        if (allProducts.value[idx].status !== lp.status) {
+          allProducts.value[idx] = { ...lp };
+        }
+      } else {
+        allProducts.value.push(lp);
+      }
+    });
   }
 
-  // Gọi đồng bộ thêm từ backend nếu có sản phẩm mới trên CSDL
+  if (isRefreshingProducts) {
+    return allProducts.value;
+  }
+
+  // Gọi đồng bộ thêm từ backend nếu có sản phẩm mới trên CSDL (chống cache với ?_t=timestamp)
   if (typeof window !== "undefined") {
     isRefreshingProducts = true;
-    fetch("/api/products")
+    fetch(`/api/products?_t=${Date.now()}`, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
+    })
       .then(res => res.json())
       .then(data => {
         if (data && data.success && Array.isArray(data.data)) {
@@ -484,6 +526,7 @@ function refreshProducts(): ModeratedProduct[] {
             const realSellerEmail = bp.sellerEmail || "";
             const realImage = bp.imageUrl || bp.image || getCategoryFallbackImage(bp.category);
             const isApproved = bp.aiStatus === "approved" || bp.status === "active";
+            const isRejected = bp.aiStatus === "rejected" || bp.status === "rejected_need_edit";
 
             const existingIndex = allProducts.value.findIndex(ep => {
               if (bp.id && ep.id === bp.id) return true;
@@ -491,7 +534,7 @@ function refreshProducts(): ModeratedProduct[] {
               if (nameMatch) {
                 if (realSellerEmail && ep.sellerEmail && ep.sellerEmail.toLowerCase() === realSellerEmail.toLowerCase()) return true;
                 if (realStoreName && ep.storeName && ep.storeName.toLowerCase() === realStoreName.toLowerCase()) return true;
-                if (!realSellerEmail) return true;
+                return true;
               }
               return false;
             });
@@ -505,7 +548,7 @@ function refreshProducts(): ModeratedProduct[] {
                 unit: bp.weight ? `${bp.weight} kg` : "Bó 500g",
                 stock: bp.stockQuantity ?? 30,
                 image: realImage,
-                status: isApproved ? "active" : (bp.aiStatus === "rejected" ? "deleted_violation" : "pending_review"),
+                status: isApproved ? "active" : (isRejected ? "rejected_need_edit" : "pending_review"),
                 isAvailable: isApproved,
                 sellerEmail: realSellerEmail || "seller@zonemart.vn",
                 storeName: realStoreName || "Cửa hàng đối tác",
@@ -525,8 +568,14 @@ function refreshProducts(): ModeratedProduct[] {
               if (isApproved && existing.status !== "active") {
                 existing.status = "active";
                 existing.isAvailable = true;
+                existing.managerNote = undefined;
+                itemUpdated = true;
+              } else if (isRejected && existing.status !== "rejected_need_edit") {
+                existing.status = "rejected_need_edit";
+                existing.isAvailable = false;
                 itemUpdated = true;
               }
+
               if (realStoreName && existing.storeName !== realStoreName) {
                 existing.storeName = realStoreName;
                 itemUpdated = true;
@@ -556,7 +605,9 @@ function refreshProducts(): ModeratedProduct[] {
           });
           if (updated) {
             allProducts.value = [...allProducts.value];
-            saveProducts();
+            try {
+              localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(allProducts.value));
+            } catch {}
           }
         }
       })
@@ -565,7 +616,7 @@ function refreshProducts(): ModeratedProduct[] {
         isRefreshingProducts = false;
       });
   }
-  return loaded;
+  return allProducts.value;
 }
 
 // Tự động khởi chạy đồng bộ ngay khi module được nạp trong trình duyệt
@@ -576,9 +627,14 @@ if (typeof window !== "undefined") {
 
   // Lắng nghe sự kiện Storage giữa các tab trình duyệt
   window.addEventListener("storage", (e) => {
-    if (e.key === STORAGE_KEY_PRODUCTS) {
+    if (e.key === STORAGE_KEY_PRODUCTS || e.key === "zonemart_product_bus_event") {
       refreshProducts();
     }
+  });
+
+  // Lắng nghe event nội bộ trong cùng window
+  window.addEventListener("zonemart:products-changed", () => {
+    refreshProducts();
   });
 }
 
