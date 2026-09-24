@@ -13,6 +13,7 @@ import { useAuth, type UserRole } from '../../composables/useAuth';
 import { apiFetch } from '../../utils/apiConfig';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
 import FaceScanModal from '../../components/auth/FaceScanModal.vue';
+import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
 import { useToast } from '../../composables/useToast';
 
 const router = useRouter();
@@ -284,6 +285,14 @@ const handleLogin = async () => {
 
 <template>
   <div class="login-page-container">
+    <!-- HIỆU ỨNG HẠT CHỐNG TRỌNG LỰC TOÀN TRANG (GOOGLE ANTIGRAVITY ANIMATION) -->
+    <AntigravityCanvas
+      :full-screen="true"
+      :particle-count="55"
+      :opacity="0.85"
+      :z-index="1"
+    />
+
     <!-- KHUNG TỔNG THỂ 2 CỘT: ẢNH BÊN TRÁI + BẢNG ĐĂNG NHẬP BÊN PHẢI -->
     <div class="login-hero-layout">
       <!-- CỘT TRÁI: ẢNH MINH HỌA XE ZONEMART TÁCH SẠCH NỀN -->
@@ -695,6 +704,8 @@ label {
 
 /* HERO LAYOUT 2 CỘT: ẢNH SIÊU TO LÙI TRÁI + BẢNG DỊCH THEO VỀ TRÁI */
 .login-hero-layout {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: flex-start;
