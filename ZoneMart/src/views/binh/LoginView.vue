@@ -285,17 +285,17 @@ const handleLogin = async () => {
 
 <template>
   <div class="login-page-container">
-    <!-- HIỆU ỨNG HẠT CHỐNG TRỌNG LỰC ANTIGRAVITY TƯƠNG TÁC CHUỘT (GOOGLE STYLE) -->
+    <!-- HIỆU ỨNG HẠT CHỐNG TRỌNG LỰC TOÀN TRANG (GOOGLE ANTIGRAVITY ANIMATION) -->
     <AntigravityCanvas
-      :particle-count="55"
-      :speed="0.75"
+      :particle-count="50"
+      :speed="0.8"
       :gravity="-0.04"
-      :colors="['#EA4335', '#FBBC05', '#34A853', '#4285F4', '#EA580C', '#10B981', '#F59E0B']"
+      :colors="['#4285F4', '#EA4335', '#FBBC05', '#34A853', '#EA580C', '#10B981', '#F59E0B']"
       :shape="'mixed'"
       :interactive="true"
       :full-screen="true"
       :opacity="0.88"
-      :z-index="1"
+      :z-index="999"
     />
 
     <!-- KHUNG TỔNG THỂ 2 CỘT: ẢNH BÊN TRÁI + BẢNG ĐĂNG NHẬP BÊN PHẢI -->
@@ -664,7 +664,6 @@ label {
 
 /* PAGE CONTAINER VỪA KHÍT 1 MÀN HÌNH (NO SCROLLBAR, LÙI ẢNH SÁT LỀ TRÁI) */
 .login-page-container {
-  position: relative;
   width: 100vw;
   height: 100vh;
   max-height: 100vh;
@@ -684,8 +683,6 @@ label {
 
 /* HERO LAYOUT 2 CỘT: ẢNH SIÊU TO LÙI TRÁI + BẢNG DỊCH THEO VỀ TRÁI */
 .login-hero-layout {
-  position: relative;
-  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: flex-start;

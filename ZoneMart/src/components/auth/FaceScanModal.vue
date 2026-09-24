@@ -665,15 +665,16 @@ onBeforeUnmount(() => {
     <Transition name="face-modal-fade">
       <div v-if="modelValue" class="face-scan-overlay" @click.self="handleClose">
         <div class="face-scan-dialog">
-          <!-- Hiệu ứng hạt sinh trắc học Antigravity nền Futuristic -->
+          <!-- HIỆU ỨNG HẠT SINH TRẮC HỌC ANTIGRAVITY (BIOMETRIC NEON STYLE) -->
           <AntigravityCanvas
             :full-screen="false"
-            :particle-count="24"
-            :speed="0.5"
+            :particle-count="30"
+            :speed="0.65"
             :gravity="-0.03"
-            :colors="['#38bdf8', '#0ea5e9', '#06b6d4', '#818cf8', '#34d399', '#3b82f6', '#93c5fd']"
+            :colors="['#38BDF8', '#0EA5E9', '#06B6D4', '#34D399', '#10B981', '#818CF8']"
             :shape="'mixed'"
-            :opacity="0.6"
+            :interactive="true"
+            :opacity="0.8"
             :z-index="1"
           />
 
