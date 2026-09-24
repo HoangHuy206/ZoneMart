@@ -312,6 +312,19 @@ const handleAddToCartHome = (item: any) => {
 
 <template>
   <div class="homepage-container">
+    <!-- HIỆU ỨNG HẠT CHỐNG TRỌNG LỰC TOÀN TRANG (GOOGLE ANTIGRAVITY ANIMATION) -->
+    <AntigravityCanvas
+      :particle-count="36"
+      :speed="0.6"
+      :gravity="-0.035"
+      :colors="['#EA4335', '#FBBC05', '#34A853', '#4285F4', '#EA580C', '#10B981']"
+      :shape="'mixed'"
+      :interactive="true"
+      :full-screen="true"
+      :opacity="0.75"
+      :z-index="0"
+    />
+
     <!-- Thông báo thêm giỏ hàng nhẹ nhàng -->
     <Transition name="toast-fade">
       <div v-if="toastMessage" class="home-toast-notice">
@@ -328,16 +341,17 @@ const handleAddToCartHome = (item: any) => {
       <section class="hero-section">
         <div class="hero-card">
           <div class="hero-overlay"></div>
-          <!-- HIỆU ỨNG HẠT CHỐNG TRỌNG LỰC ANTIGRAVITY TƯƠNG TÁC CHUỘT (GOOGLE STYLE) -->
+          <!-- HIỆU ỨNG HẠT CHỐNG TRỌNG LỰC BANNER HERO NỔI BẬT -->
           <AntigravityCanvas
             :full-screen="false"
-            :particle-count="36"
-            :speed="0.65"
-            :gravity="-0.03"
-            :colors="['#ffffff', '#FED7AA', '#BBF7D0', '#FEF08A', '#F97316', '#86EFAC']"
+            :particle-count="32"
+            :speed="0.7"
+            :gravity="-0.04"
+            :colors="['#FFFFFF', '#FEF08A', '#BBF7D0', '#FED7AA', '#F97316', '#38BDF8']"
             :shape="'mixed'"
-            :opacity="0.35"
             :interactive="true"
+            :opacity="0.9"
+            :z-index="2"
           />
           <div class="hero-content">
             <span class="hero-subheading">Nông Sản & Đặc Sản Địa Phương</span>
@@ -872,7 +886,7 @@ const handleAddToCartHome = (item: any) => {
 }
 .hero-content {
   position: relative;
-  z-index: 2;
+  z-index: 3;
   max-width: 680px;
   padding: 28px clamp(20px, 3.5vw, 40px);
   color: #ffffff;
@@ -976,7 +990,7 @@ const handleAddToCartHome = (item: any) => {
   position: absolute;
   right: 24px;
   top: 24px;
-  z-index: 2;
+  z-index: 3;
   width: 130px;
   height: 130px;
   opacity: 0.35;

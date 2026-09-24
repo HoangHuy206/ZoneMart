@@ -285,16 +285,17 @@ const handleLogin = async () => {
 
 <template>
   <div class="login-page-container">
-    <!-- NỀN HẠT CHỐNG TRỌNG LỰC ANTIGRAVITY TƯƠNG TÁC CHUỘT (GOOGLE STYLE) -->
+    <!-- HIỆU ỨNG HẠT CHỐNG TRỌNG LỰC ANTIGRAVITY TƯƠNG TÁC CHUỘT (GOOGLE STYLE) -->
     <AntigravityCanvas
       :particle-count="55"
       :speed="0.75"
-      :gravity="-0.045"
-      :colors="['#EA580C', '#F97316', '#10B981', '#059669', '#3B82F6', '#F59E0B', '#FED7AA', '#E0E7FF']"
+      :gravity="-0.04"
+      :colors="['#EA4335', '#FBBC05', '#34A853', '#4285F4', '#EA580C', '#10B981', '#F59E0B']"
       :shape="'mixed'"
       :interactive="true"
       :full-screen="true"
-      :opacity="0.8"
+      :opacity="0.88"
+      :z-index="1"
     />
 
     <!-- KHUNG TỔNG THỂ 2 CỘT: ẢNH BÊN TRÁI + BẢNG ĐĂNG NHẬP BÊN PHẢI -->

@@ -668,12 +668,13 @@ onBeforeUnmount(() => {
           <!-- Hiệu ứng hạt sinh trắc học Antigravity nền Futuristic -->
           <AntigravityCanvas
             :full-screen="false"
-            :particle-count="22"
-            :speed="0.45"
-            :gravity="-0.025"
+            :particle-count="24"
+            :speed="0.5"
+            :gravity="-0.03"
             :colors="['#38bdf8', '#0ea5e9', '#06b6d4', '#818cf8', '#34d399', '#3b82f6', '#93c5fd']"
             :shape="'mixed'"
-            :opacity="0.3"
+            :opacity="0.6"
+            :z-index="1"
           />
 
           <!-- Hidden canvas for capturing video frame -->

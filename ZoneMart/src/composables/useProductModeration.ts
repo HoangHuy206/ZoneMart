@@ -264,7 +264,6 @@ function loadProducts(): ModeratedProduct[] {
       });
       items = filtered;
 
-      // Lọc bỏ bất kỳ sản phẩm nào có từ ngữ không phù hợp hoặc 'sss'
       items = items.filter(item => {
         const normName = stripAccents(item.name || "").trim().toLowerCase();
         const store = (item.storeName || "").toLowerCase();
