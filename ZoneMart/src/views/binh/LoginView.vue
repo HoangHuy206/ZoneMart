@@ -465,39 +465,7 @@ const handleLogin = async () => {
               </button>
             </div>
 
-            <!-- Nút Đăng Nhập Face ID Nổi Bật Dạng Banner Card -->
-            <button
-              type="button"
-              class="btn-face-id-prominent"
-              @click="openFaceIdLoginModal"
-            >
-              <div class="face-prominent-left">
-                <div class="face-prominent-icon-box">
-                  <svg
-                    class="apple-faceid-svg"
-                    width="20"
-                    height="20"
-                    viewBox="0 0 80 80"
-                    fill="currentColor"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path d="M4.114,21.943 L4.114,13.029 C4.114,7.993 7.993,4.114 13.029,4.114 L21.943,4.114 C23.079,4.114 24.000,3.193 24.000,2.057 C24.000,0.921 23.079,0.000 21.943,0.000 L13.029,0.000 C5.721,0.000 0.000,5.721 0.000,13.029 L0.000,21.943 C0.000,23.079 0.921,24.000 2.057,24.000 C3.193,24.000 4.114,23.079 4.114,21.943 Z" />
-                    <path d="M75.886,21.943 L75.886,13.029 C75.886,7.993 72.007,4.114 66.971,4.114 L58.057,4.114 C56.921,4.114 56.000,3.193 56.000,2.057 C56.000,0.921 56.921,0.000 58.057,0.000 L66.971,0.000 C74.279,0.000 80.000,5.721 80.000,13.029 L80.000,21.943 C80.000,23.079 79.079,24.000 77.943,24.000 C76.807,24.000 75.886,23.079 75.886,21.943 Z" />
-                    <path d="M4.114,58.057 L4.114,66.971 C4.114,72.007 7.993,75.886 13.029,75.886 L21.943,75.886 C23.079,75.886 24.000,76.807 24.000,77.943 C24.000,79.079 23.079,80.000 21.943,80.000 L13.029,80.000 C5.721,80.000 0.000,74.279 0.000,66.971 L0.000,58.057 C0.000,56.921 0.921,56.000 2.057,56.000 C3.193,56.000 4.114,56.921 4.114,58.057 Z" />
-                    <path d="M75.886,58.057 L75.886,66.971 C75.886,72.007 72.007,75.886 66.971,75.886 L58.057,75.886 C56.921,75.886 56.000,76.807 56.000,77.943 C56.000,79.079 56.921,80.000 58.057,80.000 L66.971,80.000 C74.279,80.000 80.000,74.279 80.000,66.971 L80.000,58.057 C80.000,56.921 79.079,56.000 77.943,56.000 C76.807,56.000 75.886,56.921 75.886,58.057 Z" />
-                    <circle cx="23.754" cy="33" r="3" />
-                    <circle cx="56.737" cy="33" r="3" />
-                    <path d="M40,30 L40,45 C40,48 37,48 37,48" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" />
-                    <path d="M28,58 C32,62 48,62 52,58" stroke="currentColor" stroke-width="3.5" fill="none" stroke-linecap="round" />
-                  </svg>
-                </div>
-                <div class="face-prominent-text">
-                  <span class="face-prominent-title">Đăng Nhập Bằng Face ID (1-Chạm)</span>
-                  <span class="face-prominent-sub">Quét khuôn mặt AI UniFace không cần mật khẩu</span>
-                </div>
-              </div>
-              <span class="face-prominent-badge">AI Biometric</span>
-            </button>
+           
 
             <!-- Đường kẻ phân cách OR -->
             <div class="divider-row">
