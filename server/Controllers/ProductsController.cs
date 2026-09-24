@@ -146,25 +146,11 @@ public class ProductsController : ControllerBase
 
             if (existing == null)
             {
-                var cleanName = dto.Name?.Trim() ?? "";
-                var filterList = new List<FilterDefinition<Product>>
-                {
-                    Builders<Product>.Filter.Regex(p => p.ProductName, new BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(cleanName)}$", "i"))
-                };
-                if (!string.IsNullOrWhiteSpace(dto.SellerEmail))
-                {
-                    filterList.Add(Builders<Product>.Filter.Eq(p => p.SellerEmail, dto.SellerEmail.Trim()));
-                }
-                else if (!string.IsNullOrWhiteSpace(dto.StoreName))
-                {
-                    filterList.Add(Builders<Product>.Filter.Eq(p => p.StoreName, dto.StoreName.Trim()));
-                }
-                existing = await _mongoService.Products.Find(Builders<Product>.Filter.And(filterList)).FirstOrDefaultAsync();
-
-                if (existing == null)
-                {
-                    existing = await _mongoService.Products.Find(p => p.ProductName == cleanName).FirstOrDefaultAsync();
-                }
+                var prodFilter = Builders<Product>.Filter.And(
+                    Builders<Product>.Filter.Eq(p => p.ProductName, dto.Name),
+                    Builders<Product>.Filter.Eq(p => p.StoreId, storeId)
+                );
+                existing = await _mongoService.Products.Find(prodFilter).FirstOrDefaultAsync();
             }
 
             if (existing != null)
@@ -173,13 +159,7 @@ public class ProductsController : ControllerBase
                 existing.Category = !string.IsNullOrWhiteSpace(dto.Category) ? dto.Category : existing.Category;
                 existing.StockQuantity = dto.Stock > 0 ? dto.Stock : existing.StockQuantity;
                 if (!string.IsNullOrWhiteSpace(dto.Image)) existing.ImageUrl = dto.Image;
-                
-                string targetStatus = "pending";
-                if (dto.Status == "active" || dto.Status == "approved") targetStatus = "approved";
-                else if (dto.Status == "rejected_need_edit" || dto.Status == "rejected") targetStatus = "rejected";
-                else targetStatus = dto.Status ?? "pending";
-                
-                existing.AiStatus = targetStatus;
+                existing.AiStatus = dto.Status == "active" ? "approved" : (dto.Status ?? "pending");
                 existing.StoreName = resolvedStoreName;
                 existing.SellerEmail = resolvedSellerEmail;
                 await _mongoService.Products.ReplaceOneAsync(p => p.Id == existing.Id, existing);
@@ -216,20 +196,39 @@ public class ProductsController : ControllerBase
     /// API Xóa sản phẩm khỏi MongoDB
     /// </summary>
     [HttpDelete("{id}")]
-    public async Task<IActionResult> DeleteProduct(string id)
+    public async Task<IActionResult> DeleteProduct(string id, [FromQuery] string? name = null)
     {
         try
         {
+            var decodedId = System.Uri.UnescapeDataString(id).Trim();
+            var targetName = !string.IsNullOrWhiteSpace(name) ? System.Uri.UnescapeDataString(name).Trim() : decodedId;
+
             FilterDefinition<Product> filter;
-            if (ObjectId.TryParse(id, out _))
+            if (ObjectId.TryParse(decodedId, out _))
             {
-                filter = Builders<Product>.Filter.Eq(p => p.Id, id);
+                filter = Builders<Product>.Filter.Eq(p => p.Id, decodedId);
             }
             else
             {
-                filter = Builders<Product>.Filter.Eq(p => p.ProductName, id);
+                filter = Builders<Product>.Filter.Or(
+                    Builders<Product>.Filter.Eq(p => p.ProductName, decodedId),
+                    Builders<Product>.Filter.Eq(p => p.ProductName, targetName),
+                    Builders<Product>.Filter.Regex(p => p.ProductName, new BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(targetName)}$", "i"))
+                );
             }
+
             var result = await _mongoService.Products.DeleteOneAsync(filter);
+            
+            // Nếu id là mã tạm client (p-xxxx) và chưa xóa được, dùng fallback tìm theo targetName
+            if (result.DeletedCount == 0 && !string.IsNullOrWhiteSpace(targetName) && targetName != decodedId)
+            {
+                var nameFilter = Builders<Product>.Filter.Or(
+                    Builders<Product>.Filter.Eq(p => p.ProductName, targetName),
+                    Builders<Product>.Filter.Regex(p => p.ProductName, new BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(targetName)}$", "i"))
+                );
+                result = await _mongoService.Products.DeleteOneAsync(nameFilter);
+            }
+
             return Ok(new { success = true, deletedCount = result.DeletedCount, message = "Đã xóa sản phẩm thành công" });
         }
         catch (Exception ex)

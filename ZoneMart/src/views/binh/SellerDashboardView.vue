@@ -139,52 +139,10 @@ onMounted(async () => {
       triggerToast(`🎉 Tài xế đã giao đơn hàng #${order.orderCode || order.id} thành công!`);
     }
   });
-
-  // ================================================================
-  // ĐỒNG BỘ THỜI GIAN THỰC TRẠNG THÁI SẢN PHẨM (REAL-TIME STATUS SYNC)
-  // Tự động nhận diện khi Admin duyệt hoặc từ chối sản phẩm để đổi trạng thái
-  // trên giao diện Seller ngay lập tức mà KHÔNG CẦN F5 reload trang!
-  // ================================================================
-  let lastProductStatuses: Record<string, string> = {};
-  products.value.forEach((p) => {
-    lastProductStatuses[p.id] = p.status;
-  });
-
-  const checkProductStatusUpdates = () => {
-    productModeration.refreshProducts();
-    products.value.forEach((p) => {
-      const prevStatus = lastProductStatuses[p.id];
-      if (prevStatus && prevStatus !== p.status) {
-        if (p.status === "active") {
-          triggerToast(`🎉 Tuyệt vời! Sản phẩm "${p.name}" của bạn đã được Ban Quản Trị phê duyệt mở bán!`);
-        } else if (p.status === "rejected_need_edit") {
-          triggerToast(`⚠️ Sản phẩm "${p.name}" đã bị từ chối duyệt. Vui lòng bấm Sửa bài để cập nhật lại.`);
-        }
-      }
-      lastProductStatuses[p.id] = p.status;
-    });
-  };
-
-  // 1. Chạy polling mỗi 1.5 giây để bắt kịp thay đổi từ Admin (kể cả trên trình duyệt khác như Chrome <-> Cốc Cốc)
-  productStatusPoller = setInterval(checkProductStatusUpdates, 1500);
-
-  // 2. Lắng nghe BroadcastChannel & Storage events
-  window.addEventListener("zonemart:products-changed", checkProductStatusUpdates);
-  window.addEventListener("storage", (e) => {
-    if (e.key === "zonemart_products_v2" || e.key === "zonemart_product_bus_event") {
-      checkProductStatusUpdates();
-    }
-  });
 });
-
-let productStatusPoller: any = null;
 
 onUnmounted(() => {
   if (unsubscribeSellerOrder) unsubscribeSellerOrder();
-  if (productStatusPoller) {
-    clearInterval(productStatusPoller);
-    productStatusPoller = null;
-  }
 });
 
 // Thông báo giao đơn hàng thành công nổi bật dành cho người bán
@@ -1377,12 +1335,26 @@ const handleExecuteDelete = async () => {
     productModeration.saveProducts();
   }
 
-  // Gọi API backend xóa sản phẩm khỏi CSDL nếu có
+  // Gọi API backend xóa sản phẩm khỏi CSDL bằng cả ID và tên sản phẩm
   try {
-    await fetch(`http://localhost:5000/api/products/${target.id}`, {
+    const encodedName = encodeURIComponent(target.name);
+    await fetch(`http://localhost:5000/api/products/${target.id}?name=${encodedName}`, {
+      method: "DELETE"
+    }).catch(() => {});
+    await fetch(`http://localhost:5000/api/products/${encodedName}`, {
       method: "DELETE"
     }).catch(() => {});
   } catch {}
+
+  // Kích hoạt đồng bộ tức thì sang trang Danh sách sản phẩm (/products) và toàn sàn
+  window.dispatchEvent(new CustomEvent("zonemart:products-changed"));
+  if (typeof BroadcastChannel !== "undefined") {
+    try {
+      const channel = new BroadcastChannel("zonemart_products_channel");
+      channel.postMessage({ type: "PRODUCT_DELETED", id: target.id, name: target.name });
+      channel.close();
+    } catch {}
+  }
 
   triggerToast(`Đã xóa vĩnh viễn sản phẩm "${target.name}" khỏi gian hàng!`);
   showDeleteConfirmModal.value = false;

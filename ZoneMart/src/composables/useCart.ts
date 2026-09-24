@@ -180,7 +180,6 @@ const appliedVoucherCode = ref<string>(''); // Không tự áp dụng mã giảm
 
 function persistCart(syncToDb = true) {
   const auth = useAuth();
-  if (!auth.isLoggedIn.value) return;
 
   try {
     const key = getStorageKeyForOwner();
@@ -189,7 +188,7 @@ function persistCart(syncToDb = true) {
     console.error('Lỗi lưu giỏ hàng vào localStorage:', e);
   }
 
-  if (syncToDb) {
+  if (syncToDb && auth.isLoggedIn.value) {
     try {
       const userId = auth.currentUser.value?.id;
       if (userId) {
