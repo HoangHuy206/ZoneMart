@@ -851,7 +851,7 @@ public class AuthController : ControllerBase
                 {
                     sellerStatus = userStore.Status;
                     storeName = userStore.StoreName;
-                    rejectReason = userStore.RejectReason;
+                    rejectReason = userStore.RejectReason ?? "";
                 }
             }
             catch { }
@@ -1597,7 +1597,7 @@ public class AuthController : ControllerBase
         catch (Exception ex)
         {
             Console.WriteLine($"❌ [MongoDB Atlas Error] {ex.Message}");
-            InMemoryShippers[newShipper.Id] = newShipper;
+            if (newShipper.Id != null) InMemoryShippers[newShipper.Id] = newShipper;
             return Ok(new
             {
                 success = true,

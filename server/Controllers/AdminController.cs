@@ -499,7 +499,7 @@ public class AdminController : ControllerBase
                     .Set(s => s.RejectReason, null);
                 await _mongoService.Stores.UpdateOneAsync(s => s.Id == req.TargetId, storeUpdate);
                 store.Status = "Approved";
-                AuthController.InMemoryStores[store.Id] = store;
+                if (store.Id != null) AuthController.InMemoryStores[store.Id] = store;
 
                 // Cập nhật User chính xác: kích hoạt AccountStatus = "active" và IsSeller = true
                 var filterList = new List<FilterDefinition<User>>();
@@ -537,8 +537,8 @@ public class AdminController : ControllerBase
 
                     // Liên kết store.UserId trực tiếp với user.Id
                     await _mongoService.Stores.UpdateOneAsync(s => s.Id == store.Id, Builders<Store>.Update.Set(s => s.UserId, user.Id));
-                    store.UserId = user.Id;
-                    AuthController.InMemoryStores[store.Id] = store;
+                    store.UserId = user.Id ?? "";
+                    if (store.Id != null) AuthController.InMemoryStores[store.Id] = store;
 
                     emailToSend = user.PhoneEmail;
                     nameToEmail = user.FullName;
@@ -588,7 +588,7 @@ public class AdminController : ControllerBase
                     .Set(s => s.RejectReason, null);
                 await _mongoService.Shippers.UpdateOneAsync(s => s.Id == req.TargetId, shipperUpdate);
                 shipper.Status = "Approved";
-                AuthController.InMemoryShippers[shipper.Id] = shipper;
+                if (shipper.Id != null) AuthController.InMemoryShippers[shipper.Id] = shipper;
 
                 var filterList = new List<FilterDefinition<User>>();
                 if (!string.IsNullOrEmpty(shipper.UserId) && MongoDB.Bson.ObjectId.TryParse(shipper.UserId, out _))
@@ -624,8 +624,8 @@ public class AdminController : ControllerBase
                     if (!string.IsNullOrEmpty(user.PhoneEmail)) AuthController.InMemoryUsers[user.PhoneEmail] = user;
 
                     await _mongoService.Shippers.UpdateOneAsync(s => s.Id == shipper.Id, Builders<Shipper>.Update.Set(s => s.UserId, user.Id));
-                    shipper.UserId = user.Id;
-                    AuthController.InMemoryShippers[shipper.Id] = shipper;
+                    shipper.UserId = user.Id ?? "";
+                    if (shipper.Id != null) AuthController.InMemoryShippers[shipper.Id] = shipper;
 
                     emailToSend = user.PhoneEmail;
                     nameToEmail = user.FullName;
@@ -744,7 +744,7 @@ public class AdminController : ControllerBase
                     await _mongoService.Stores.UpdateOneAsync(s => s.Id == req.TargetId, storeUpdate);
                     store.Status = "Rejected";
                     store.RejectReason = req.Reason;
-                    AuthController.InMemoryStores[store.Id] = store;
+                    if (store.Id != null) AuthController.InMemoryStores[store.Id] = store;
 
                     var filterList = new List<FilterDefinition<User>>();
                     if (!string.IsNullOrEmpty(store.UserId) && MongoDB.Bson.ObjectId.TryParse(store.UserId, out _))
@@ -847,7 +847,7 @@ public class AdminController : ControllerBase
                     await _mongoService.Shippers.UpdateOneAsync(s => s.Id == req.TargetId, shipperUpdate);
                     shipper.Status = "Rejected";
                     shipper.RejectReason = req.Reason;
-                    AuthController.InMemoryShippers[shipper.Id] = shipper;
+                    if (shipper.Id != null) AuthController.InMemoryShippers[shipper.Id] = shipper;
 
                     var filterList = new List<FilterDefinition<User>>();
                     if (!string.IsNullOrEmpty(shipper.UserId) && MongoDB.Bson.ObjectId.TryParse(shipper.UserId, out _))
@@ -1381,7 +1381,7 @@ public class AdminController : ControllerBase
             if (!string.IsNullOrEmpty(userEmail)) AuthController.InMemoryUsers.TryRemove(userEmail, out _);
             AuthController.InMemoryUsers.TryRemove(userId, out _);
 
-            await LogAuditAsync(actorEmail, actorRole, "Xóa tài khoản vĩnh viễn", user.PhoneEmail, $"ADMIN đã xóa vĩnh viễn tài khoản #{userId}");
+            await LogAuditAsync(actorEmail, actorRole, "Xóa tài khoản vĩnh viễn", user.PhoneEmail ?? "", $"ADMIN đã xóa vĩnh viễn tài khoản #{userId}");
 
             return Ok(new
             {
