@@ -466,9 +466,6 @@ const handleLogin = async () => {
                 </svg>
               </button>
             </div>
-
-           
-
             <!-- Đường kẻ phân cách OR -->
             <div class="divider-row">
               <span class="line"></span>

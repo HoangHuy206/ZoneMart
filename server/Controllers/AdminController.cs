@@ -29,6 +29,7 @@ public class AdminController : ControllerBase
     {
         try
         {
+            await EnsureDataSeededAsync();
             var totalUsers = await _mongoService.Users.CountDocumentsAsync(u => !u.IsDeleted);
             var pendingShops = await _mongoService.Stores.CountDocumentsAsync(s => s.Status == "Pending");
             var pendingShippers = await _mongoService.Shippers.CountDocumentsAsync(s => s.Status == "Pending");
@@ -217,56 +218,19 @@ public class AdminController : ControllerBase
     {
         try
         {
-            List<User> usersList;
+            await EnsureDataSeededAsync();
+
+            // Dọn dẹp gian hàng thử nghiệm cũ 'Demobanhang1234' nếu có để hiển thị chính xác gian hàng thật 'Tạp Hóa Hoàng Huy'
             try
             {
-                usersList = await _mongoService.Users.Find(u => !u.IsDeleted).ToListAsync();
+                await _mongoService.Stores.DeleteManyAsync(s => s.StoreName == "Demobanhang1234" || s.Id == "6aa116df481fb0a8422e859d");
+                await _mongoService.AdminNotifications.DeleteManyAsync(n => n.TargetName == "Demobanhang1234" || n.Message.Contains("Demobanhang1234"));
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"⚠️ [Admin Users Fetch Warning] {ex.Message}");
-                usersList = AuthController.InMemoryUsers.Values.Where(u => !u.IsDeleted).ToList();
-            }
+            catch { }
 
-            List<Store> storeList;
-            try
-            {
-                storeList = await _mongoService.Stores.Find(_ => true).ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"⚠️ [Admin Stores Fetch Warning] {ex.Message}");
-                storeList = new List<Store>();
-            }
-
-            List<Shipper> shipperList;
-            try
-            {
-                shipperList = await _mongoService.Shippers.Find(_ => true).ToListAsync();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"⚠️ [Admin Shippers Fetch Warning] {ex.Message}");
-                shipperList = new List<Shipper>();
-            }
-
-            // Đồng bộ thêm các Shipper trong bộ nhớ nếu có
-            foreach (var memShip in AuthController.InMemoryShippers.Values)
-            {
-                if (!shipperList.Any(s => s.Id == memShip.Id || s.ShipperCode == memShip.ShipperCode || s.LicensePlate == memShip.LicensePlate))
-                {
-                    shipperList.Add(memShip);
-                }
-            }
-
-            // Đồng bộ thêm các User trong bộ nhớ nếu có
-            foreach (var memUser in AuthController.InMemoryUsers.Values)
-            {
-                if (!usersList.Any(u => u.Id == memUser.Id || u.PhoneEmail == memUser.PhoneEmail))
-                {
-                    usersList.Add(memUser);
-                }
-            }
+            var usersList = await _mongoService.Users.Find(u => !u.IsDeleted).SortByDescending(u => u.CreatedAt).ToListAsync();
+            var storeList = await _mongoService.Stores.Find(_ => true).SortByDescending(s => s.CreatedAt).ToListAsync();
+            var shipperList = await _mongoService.Shippers.Find(_ => true).SortByDescending(s => s.CreatedAt).ToListAsync();
 
             var allCombined = new List<AdminUserViewDto>();
 
@@ -1623,7 +1587,7 @@ public class AdminController : ControllerBase
         try
         {
             // Luôn đảm bảo tài khoản Admin hệ thống tồn tại và có quyền IsAdmin = true
-            var adminUser = await _mongoService.Users.Find(u => u.PhoneEmail == "admin@zonemart.vn").FirstOrDefaultAsync();
+            var adminUser = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == "admin@zonemart.vn").FirstOrDefaultAsync();
             if (adminUser == null)
             {
                 adminUser = new User
@@ -1648,7 +1612,7 @@ public class AdminController : ControllerBase
             }
 
             // Đảm bảo hhuy85895@gmail.com là tài khoản Khách hàng thông thường (Buyer), không phải Admin
-            var hhuyUser = await _mongoService.Users.Find(u => u.PhoneEmail == "hhuy85895@gmail.com").FirstOrDefaultAsync();
+            var hhuyUser = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == "hhuy85895@gmail.com").FirstOrDefaultAsync();
             if (hhuyUser != null && (hhuyUser.IsAdmin || hhuyUser.IsManager))
             {
                 await _mongoService.Users.UpdateOneAsync(

@@ -50,8 +50,11 @@ import {
   ShieldAlert,
   Handshake,
   Info,
-  CreditCard
+  CreditCard,
+  PackageCheck,
+  Check
 } from "lucide-vue-next";
+import { useProductModeration } from "../../composables/useProductModeration";
 
 const router = useRouter();
 const auth = useAuth();
@@ -60,8 +63,8 @@ const auth = useAuth();
 const currentActorRole = ref<"Admin" | "Manager">("Admin");
 const currentActorEmail = ref<string>("admin@zonemart.vn");
 
-// Tabs điều hướng (Dashboard, Accounts, KYC, Managers, Audit)
-const activeTab = ref<"dashboard" | "accounts" | "kyc" | "managers" | "audit">("dashboard");
+// Tabs điều hướng (Dashboard, Accounts, KYC, Products, Managers, Audit)
+const activeTab = ref<"dashboard" | "accounts" | "kyc" | "products" | "managers" | "audit">("dashboard");
 
 // Loading & Notification Toast states
 const isLoading = ref<boolean>(false);
@@ -183,6 +186,45 @@ const sellerCount = computed(() => users.value.filter(u => u.isSeller).length);
 const shipperCount = computed(() => users.value.filter(u => u.isShipper).length);
 const pendingCount = computed(() => stats.value.pendingShops + stats.value.pendingShippers);
 const totalUserCount = computed(() => stats.value.totalUsers || users.value.length || 18);
+
+// Product Moderation Composable (Kiểm duyệt sản phẩm)
+const productModeration = useProductModeration();
+const { pendingReviewProducts, approveProductByManager, rejectProductByManager, allProducts } = productModeration;
+const pendingProductsCount = computed(() => pendingReviewProducts.value.length);
+
+const showRejectProductModal = ref<boolean>(false);
+const selectedProductToReject = ref<any>(null);
+const productRejectReason = ref<string>("");
+
+const handleApproveProductItem = (prod: any) => {
+  const success = approveProductByManager(prod.id);
+  if (success) {
+    showToast(`🎉 Đã duyệt mở bán sản phẩm "${prod.name}" thành công!`, "success");
+    fetchStats();
+    fetchAuditLogs();
+  } else {
+    showToast("Không thể phê duyệt sản phẩm này!", "danger");
+  }
+};
+
+const openRejectProductModal = (prod: any) => {
+  selectedProductToReject.value = prod;
+  productRejectReason.value = prod.aiScore?.flag || "Hình ảnh không khớp với tên sản phẩm hoặc vi phạm quy định sàn.";
+  showRejectProductModal.value = true;
+};
+
+const handleConfirmRejectProduct = () => {
+  if (!selectedProductToReject.value) return;
+  const prod = selectedProductToReject.value;
+  const reason = productRejectReason.value.trim() || "Ảnh sản phẩm và tên không đồng nhất";
+  rejectProductByManager(prod.id, reason);
+  showToast(`Đã từ chối và yêu cầu gian hàng sửa lại sản phẩm "${prod.name}"`, "warning");
+  showRejectProductModal.value = false;
+  selectedProductToReject.value = null;
+  productRejectReason.value = "";
+  fetchStats();
+  fetchAuditLogs();
+};
 
 const buyerPercent = computed(() => {
   const total = totalUserCount.value || 1;
@@ -1107,6 +1149,21 @@ onUnmounted(() => {
 
             <li
               class="nav-item"
+              :class="{ active: activeTab === 'products' }"
+              @click="activeTab = 'products'"
+            >
+              <div class="nav-label-box">
+                <div class="nav-icon-wrapper">
+                  <PackageCheck :size="17" />
+                </div>
+                <span>Duyệt Sản Phẩm</span>
+              </div>
+              <span v-if="pendingProductsCount > 0" class="nav-count-badge" style="background: #f97316;">{{ pendingProductsCount }}</span>
+              <ChevronRight v-else :size="15" class="nav-arrow" />
+            </li>
+
+            <li
+              class="nav-item"
               :class="{ active: activeTab === 'managers' }"
               @click="activeTab = 'managers'"
             >
@@ -1696,10 +1753,16 @@ onUnmounted(() => {
 
         <!-- TAB 3: DUYỆT HỒ SƠ KYC (KYC APPROVALS) -->
         <div v-else-if="activeTab === 'kyc'" class="tab-content-container">
-          <div class="content-header-card">
+          <div class="content-header-card d-flex flex-wrap justify-content-between align-items-center gap-3">
             <div class="header-title-box">
               <h2 class="content-heading">Thẩm Định & Phê Duyệt Hồ Sơ Đối Tác</h2>
               <p class="content-sub">Đối soát giấy tờ CCCD, giấy phép kinh doanh, bằng lái xe của Gian Hàng và Shipper</p>
+            </div>
+            <div class="kyc-quick-switch-box" v-if="pendingProductsCount > 0">
+              <button class="btn-quick-switch" @click="activeTab = 'products'">
+                <PackageCheck :size="16" />
+                <span>Có <b>{{ pendingProductsCount }}</b> sản phẩm gian hàng chờ duyệt ➔</span>
+              </button>
             </div>
           </div>
 
@@ -1758,6 +1821,107 @@ onUnmounted(() => {
                       <button class="btn-action-primary" @click="openKycModal(user, (user.shipperDetails && (user.shipperDetails.status === 'Pending' || user.shipperDetails.status === 'pending')) ? 'shipper' : 'seller')">
                         <FileText :size="14" /> Thẩm định hồ sơ
                       </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB DUYỆT SẢN PHẨM GIAN HÀNG (PRODUCT MODERATION) -->
+        <div v-else-if="activeTab === 'products'" class="tab-content-container">
+          <div class="content-header-card d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div class="header-title-box">
+              <h2 class="content-heading">Kiểm Duyệt Sản Phẩm Gian Hàng (AI & Thủ Công)</h2>
+              <p class="content-sub">Thẩm định các mặt hàng do Người Bán đăng tải bị AI nghi ngờ hoặc cần Ban Quản Trị phê duyệt trước khi mở bán</p>
+            </div>
+            <div class="header-actions">
+              <span class="badge-role-seller" style="font-size: 13px; padding: 7px 16px;">
+                Đang chờ duyệt: <b>{{ pendingProductsCount }}</b> sản phẩm
+              </span>
+            </div>
+          </div>
+
+          <div class="table-card">
+            <div v-if="pendingReviewProducts.length === 0" class="empty-state-card" style="padding: 60px 20px; text-align: center;">
+              <CheckCircle2 :size="52" class="text-success mb-3" style="display: block; margin: 0 auto;" />
+              <h3 style="font-weight: 700; color: #0f172a; margin-bottom: 8px;">Hiện không có sản phẩm nào cần duyệt!</h3>
+              <p style="color: #64748b; font-size: 14px;">Mọi sản phẩm của các gian hàng đã được thẩm định an toàn hoặc tự động mở bán.</p>
+            </div>
+
+            <div v-else class="table-responsive-wrapper">
+              <table class="concept-table">
+                <thead>
+                  <tr>
+                    <th style="min-width: 260px;">Sản Phẩm & Hình Ảnh</th>
+                    <th style="min-width: 180px;">Gian Hàng</th>
+                    <th style="min-width: 130px;">Giá Niêm Yết</th>
+                    <th style="min-width: 100px;">Tồn Kho</th>
+                    <th style="min-width: 280px;">Kết Quả Quét AI</th>
+                    <th style="min-width: 210px;" class="text-end">Hành Động</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="prod in pendingReviewProducts" :key="prod.id">
+                    <td>
+                      <div class="table-user-cell">
+                        <img
+                          :src="prod.image || 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=150'"
+                          class="product-thumb-img"
+                          @click="activeZoomImage = prod.image"
+                          title="Bấm để xem ảnh phóng to"
+                        />
+                        <div>
+                          <strong class="d-block" style="font-size: 14px; color: #0f172a;">{{ prod.name }}</strong>
+                          <small class="text-muted">{{ prod.category }} • {{ prod.unit || 'Phần' }}</small>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div>
+                        <strong style="color: #ea580c; font-size: 13.5px;">{{ prod.storeName || 'Gian hàng' }}</strong>
+                        <small class="d-block text-muted">{{ prod.sellerEmail }}</small>
+                      </div>
+                    </td>
+                    <td>
+                      <strong style="color: #0f172a; font-size: 14px;">{{ Number(prod.price).toLocaleString('vi-VN') }} đ</strong>
+                    </td>
+                    <td>
+                      <span class="badge-stock-pill">{{ prod.stock }}</span>
+                    </td>
+                    <td>
+                      <div class="ai-moderation-cell">
+                        <div class="d-flex align-items-center gap-1 mb-1">
+                          <span class="badge-ai-warning">
+                            <AlertTriangle :size="12" /> AI Cảnh báo
+                          </span>
+                          <span v-if="prod.aiScore?.matchScore" class="badge-ai-score">
+                            Độ khớp: {{ prod.aiScore.matchScore }}%
+                          </span>
+                        </div>
+                        <p class="ai-flag-text">
+                          {{ prod.aiScore?.flag || 'Chưa xác định được vật thể trong ảnh để đối chiếu tên sản phẩm.' }}
+                        </p>
+                      </div>
+                    </td>
+                    <td class="text-end">
+                      <div class="actions-inline-btns">
+                        <button
+                          class="btn-approve-product"
+                          @click="handleApproveProductItem(prod)"
+                          title="Phê duyệt cho phép bán sản phẩm này ngay lập tức"
+                        >
+                          <Check :size="14" /> Duyệt Mở Bán
+                        </button>
+                        <button
+                          class="btn-reject-product"
+                          @click="openRejectProductModal(prod)"
+                          title="Từ chối và yêu cầu người bán sửa lại thông tin"
+                        >
+                          <X :size="14" /> Từ Chối
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -2191,6 +2355,41 @@ onUnmounted(() => {
           <button class="btn-modal-cancel" @click="showCreateManagerModal = false">Đóng</button>
           <button class="btn-modal-submit" @click="handleCreateManager">
             <Plus :size="16" /> Lưu Tài Khoản
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL TỪ CHỐI DUYỆT SẢN PHẨM -->
+    <div v-if="showRejectProductModal && selectedProductToReject" class="modal-backdrop-custom">
+      <div class="modal-dialog-card modal-md">
+        <div class="modal-header-row">
+          <h3 class="modal-heading text-danger">
+            <ShieldAlert :size="20" class="text-danger" /> Từ Chối Duyệt Sản Phẩm
+          </h3>
+          <button class="modal-close-btn" @click="showRejectProductModal = false"><X :size="18" /></button>
+        </div>
+        <div class="modal-body-scroll">
+          <div class="danger-callout-box mb-3">
+            <AlertTriangle :size="18" class="text-danger flex-shrink-0" />
+            <p class="danger-callout-text">
+              Bạn đang từ chối sản phẩm <strong>"{{ selectedProductToReject.name }}"</strong> của gian hàng <strong>"{{ selectedProductToReject.storeName }}"</strong>.
+            </p>
+          </div>
+          <div class="modal-field-group">
+            <label class="modal-form-label">Lý do từ chối (Gửi thông báo & Email tới Người Bán):</label>
+            <textarea
+              v-model="productRejectReason"
+              class="modal-form-control"
+              rows="3"
+              placeholder="Nhập lý do từ chối để người bán biết và sửa lại ảnh/tên sản phẩm..."
+            ></textarea>
+          </div>
+        </div>
+        <div class="modal-footer-row">
+          <button class="btn-modal-cancel" @click="showRejectProductModal = false">Hủy Bỏ</button>
+          <button class="btn-modal-danger" @click="handleConfirmRejectProduct">
+            <X :size="15" /> Xác Nhận Từ Chối
           </button>
         </div>
       </div>
@@ -4347,7 +4546,119 @@ onUnmounted(() => {
 }
 .toast-success { background-color: #16a34a; }
 .toast-danger { background-color: #dc2626; }
-.toast-warning { background-color: #d97706; }
+/* ================================================================
+ * PRODUCT APPROVAL STYLES
+ * ================================================================ */
+.product-thumb-img {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1.5px solid #e2e8f0;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.product-thumb-img:hover {
+  transform: scale(1.08);
+}
+.badge-stock-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  background-color: #f1f5f9;
+  color: #334155;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 12px;
+}
+.ai-moderation-cell {
+  max-width: 320px;
+}
+.badge-ai-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #ffedd5;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.badge-ai-score {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 600;
+}
+.ai-flag-text {
+  font-size: 12px;
+  color: #b45309;
+  line-height: 1.4;
+  margin: 0;
+  background: #fefce8;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border-left: 3px solid #eab308;
+}
+.btn-approve-product {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #16a34a;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-approve-product:hover {
+  background-color: #15803d;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);
+}
+.btn-reject-product {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-reject-product:hover {
+  background-color: #dc2626;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+}
+.kyc-quick-switch-box .btn-quick-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #fff7ed;
+  color: #ea580c;
+  border: 1.5px solid #fed7aa;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.kyc-quick-switch-box .btn-quick-switch:hover {
+  background-color: #ea580c;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.2);
+}
 
 /* RESPONSIVE */
 @media (max-width: 1024px) {

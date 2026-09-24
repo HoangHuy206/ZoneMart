@@ -25,8 +25,8 @@ public class MongoDbService
         try
         {
             clientSettings = MongoClientSettings.FromConnectionString(connStr);
-            clientSettings.ServerSelectionTimeout = TimeSpan.FromSeconds(15);
-            clientSettings.ConnectTimeout = TimeSpan.FromSeconds(10);
+            clientSettings.ServerSelectionTimeout = TimeSpan.FromSeconds(7);
+            clientSettings.ConnectTimeout = TimeSpan.FromSeconds(5);
         }
         catch (Exception ex)
         {
@@ -39,19 +39,32 @@ public class MongoDbService
         var client = new MongoClient(clientSettings);
         _database = client.GetDatabase(settings.Value?.DatabaseName ?? "zonemart");
 
-        _ = Task.Run(async () =>
+        try
         {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+            _database.RunCommand<BsonDocument>(new BsonDocument("ping", 1), cancellationToken: cts.Token);
+            Console.WriteLine("🍃 [MongoDbService] Đã kết nối thành công đến MongoDB Atlas (zonemart)!");
+        }
+        catch (Exception pingEx)
+        {
+            Console.WriteLine($"⚠️ [MongoDbService] Kết nối chính thất bại ({pingEx.Message}). Tự động kích hoạt kết nối Fallback Direct ReplicaSet...");
             try
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                await _database.RunCommandAsync<BsonDocument>(new BsonDocument("ping", 1), cancellationToken: cts.Token);
-                Console.WriteLine("🍃 [MongoDbService] Đã kết nối thành công đến MongoDB Atlas (zonemart)!");
+                var fbSettings = MongoClientSettings.FromConnectionString(FallbackReplicaSetConn);
+                fbSettings.ServerSelectionTimeout = TimeSpan.FromSeconds(7);
+                fbSettings.ConnectTimeout = TimeSpan.FromSeconds(5);
+                var fbClient = new MongoClient(fbSettings);
+                using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+                var fbDb = fbClient.GetDatabase(settings.Value?.DatabaseName ?? "zonemart");
+                fbDb.RunCommand<BsonDocument>(new BsonDocument("ping", 1), cancellationToken: cts2.Token);
+                _database = fbDb;
+                Console.WriteLine("✅ [MongoDbService] Kết nối Fallback Direct ReplicaSet đã hoạt động hoàn hảo!");
             }
-            catch (Exception ex)
+            catch (Exception fbEx)
             {
-                Console.WriteLine($"⚠️ [MongoDbService] Khởi tạo kết nối nền: {ex.Message}");
+                Console.WriteLine($"❌ [MongoDbService] Fallback cũng gặp sự cố: {fbEx.Message}");
             }
-        });
+        }
     }
 
     public IMongoDatabase Database => _database;
