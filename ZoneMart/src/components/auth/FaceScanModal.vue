@@ -664,19 +664,20 @@ onBeforeUnmount(() => {
   <Teleport to="body">
     <Transition name="face-modal-fade">
       <div v-if="modelValue" class="face-scan-overlay" @click.self="handleClose">
+        <!-- HIỆU ỨNG HẠT SINH TRẮC HỌC ANTIGRAVITY PHỦ TOÀN BỘ NỀN MODAL TỐI -->
+        <AntigravityCanvas
+          :full-screen="true"
+          :particle-count="50"
+          :speed="0.75"
+          :gravity="-0.035"
+          :colors="['#38BDF8', '#00F0FF', '#34D399', '#10B981', '#818CF8', '#A78BFA', '#67E8F9']"
+          :shape="'mixed'"
+          :interactive="true"
+          :opacity="0.9"
+          :z-index="1"
+        />
+
         <div class="face-scan-dialog">
-          <!-- HIỆU ỨNG HẠT SINH TRẮC HỌC ANTIGRAVITY (BIOMETRIC NEON STYLE) -->
-          <AntigravityCanvas
-            :full-screen="false"
-            :particle-count="30"
-            :speed="0.65"
-            :gravity="-0.03"
-            :colors="['#38BDF8', '#0EA5E9', '#06B6D4', '#34D399', '#10B981', '#818CF8']"
-            :shape="'mixed'"
-            :interactive="true"
-            :opacity="0.8"
-            :z-index="1"
-          />
 
           <!-- Hidden canvas for capturing video frame -->
           <canvas ref="canvasRef" class="d-none" style="display: none;"></canvas>
@@ -1027,6 +1028,7 @@ onBeforeUnmount(() => {
 /* Modal Dialog Pop Card */
 .face-scan-dialog {
   position: relative;
+  z-index: 2;
   background: #0f172a;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 24px;
