@@ -264,20 +264,16 @@ function loadProducts(): ModeratedProduct[] {
       });
       items = filtered;
 
-      for (const item of items) {
-        const normName = stripAccents(item.name).trim();
-        // 3. Chuẩn hóa bài đăng sss nếu còn mang tên gian hàng mặc định từ cache cũ
-        if (normName === "sss") {
-          if (item.storeName === "Vườn Rau Ba Vì - Nông Sản Sạch" || !item.storeName) {
-            item.storeName = "lọ lên đầu đạt";
-            changed = true;
-          }
-          if (item.sellerEmail === "seller@zonemart.vn" || !item.sellerEmail) {
-            item.sellerEmail = "dovanbinh487@gmail.com";
-            changed = true;
-          }
+      // Lọc bỏ bất kỳ sản phẩm nào có từ ngữ không phù hợp hoặc 'sss'
+      items = items.filter(item => {
+        const normName = stripAccents(item.name || "").trim().toLowerCase();
+        const store = (item.storeName || "").toLowerCase();
+        if (normName === "sss" || store.includes("lọ lên") || store.includes("lồn") || store.includes("địt")) {
+          changed = true;
+          return false;
         }
-      }
+        return true;
+      });
 
       if (changed) {
         try {
