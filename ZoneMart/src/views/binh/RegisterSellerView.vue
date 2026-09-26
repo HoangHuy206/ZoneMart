@@ -846,24 +846,27 @@ onUnmounted(() => {
           </div>
 
           <!-- Tên cửa hàng -->
-          <div class="field-item">
-            <label class="field-label">
-              Tên cửa hàng <span class="req">*</span>
-              <span class="hint-text">(12 - 30 ký tự, không ký tự đặc biệt)</span>
+          <div class="mb-3">
+            <label class="form-label fw-bold">
+              Tên cửa hàng <span class="req text-danger">*</span>
+              <span class="hint-text text-muted ms-1">(12 - 30 ký tự, không ký tự đặc biệt)</span>
             </label>
-            <input
-              v-model="form.storeName"
-              type="text"
-              class="field-input"
-              placeholder="VD: Bách Hóa Sạch ZoneMart Cầu Giấy"
-              maxlength="30"
-              required
-            />
+            <div class="input-group">
+              <span class="input-group-text"><i class="bi bi-shop"></i></span>
+              <input
+                v-model="form.storeName"
+                type="text"
+                class="form-control"
+                placeholder="VD: Bách Hóa Sạch ZoneMart Cầu Giấy"
+                maxlength="30"
+                required
+              />
+            </div>
           </div>
 
           <!-- CUSTOM DROPDOWN DANH MỤC HÀNG BÁN CHÍNH (MỞ THẢ XUÔI XUỐNG DƯỚI) -->
-          <div class="field-item custom-select-container">
-            <label class="field-label">Danh mục hàng bán chính <span class="req">*</span></label>
+          <div class="mb-3 custom-select-container">
+            <label class="form-label fw-bold">Danh mục hàng bán chính <span class="req text-danger">*</span></label>
             <div
               class="custom-select-trigger"
               :class="{ 'active': isCategoryDropdownOpen }"
@@ -889,19 +892,19 @@ onUnmounted(() => {
             </div>
 
             <!-- Địa chỉ tiệm -->
-            <div class="field-item">
-              <label for="seller-store-address" class="field-label">
-                Địa chỉ tiệm <span class="req">*</span>
-                <span class="hint-text">(Không nhập ký tự đặc biệt)</span>
+            <div class="mb-3">
+              <label for="seller-store-address" class="form-label fw-bold">
+                Địa chỉ tiệm <span class="req text-danger">*</span>
+                <span class="hint-text text-muted ms-1">(Không nhập ký tự đặc biệt)</span>
               </label>
-              <div class="input-icon-wrapper">
-                <i class="bi bi-geo-alt-fill input-leading-icon"></i>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-geo-alt-fill"></i></span>
                 <input
                   id="seller-store-address"
                   name="address"
                   v-model="form.address"
                   type="text"
-                  class="field-input has-leading-icon"
+                  class="form-control"
                   placeholder="VD: Số 225 đường Nguyễn Trãi, Thành phố Hà Nội"
                   required
                   aria-required="true"
@@ -1000,20 +1003,20 @@ onUnmounted(() => {
           <!-- ==================== BƯỚC 2: XÁC THỰC CHỦ TIỆM ==================== -->
           <form v-else-if="currentStep === 2" key="seller-step-2" @submit.prevent="goToNextStep" class="form-body" novalidate>
             <!-- Họ tên chủ tiệm -->
-            <div class="field-item">
-              <label for="seller-owner-name" class="field-label">
-                Họ tên chủ tiệm <span class="req">*</span>
-                <span class="hint-text">(6 - 16 ký tự, chỉ nhập chữ)</span>
+            <div class="mb-3">
+              <label for="seller-owner-name" class="form-label fw-bold">
+                Họ tên chủ tiệm <span class="req text-danger">*</span>
+                <span class="hint-text text-muted ms-1">(6 - 16 ký tự, chỉ nhập chữ)</span>
               </label>
-              <div class="input-icon-wrapper">
-                <i class="bi bi-person-badge-fill input-leading-icon"></i>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-person-badge-fill"></i></span>
                 <input
                   id="seller-owner-name"
                   name="ownerFullName"
                   v-model="form.ownerFullName"
                   type="text"
                   autocomplete="name"
-                  class="field-input has-leading-icon"
+                  class="form-control"
                   placeholder="VD: Nguyễn Văn Bình"
                   maxlength="16"
                   required
@@ -1130,20 +1133,20 @@ onUnmounted(() => {
             </div>
 
             <!-- Số tài khoản nhận tiền -->
-            <div class="field-item">
-              <label for="seller-bank-acc" class="field-label">
-                Số tài khoản nhận tiền <span class="req">*</span>
-                <span class="hint-text">(8 - 15 chữ số)</span>
+            <div class="mb-3">
+              <label for="seller-bank-acc" class="form-label fw-bold">
+                Số tài khoản nhận tiền <span class="req text-danger">*</span>
+                <span class="hint-text text-muted ms-1">(8 - 15 chữ số)</span>
               </label>
-              <div class="input-icon-wrapper">
-                <i class="bi bi-credit-card-2-front-fill input-leading-icon"></i>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-credit-card-2-front-fill"></i></span>
                 <input
                   id="seller-bank-acc"
                   name="bankAccountNumber"
                   v-model="form.bankAccountNumber"
                   type="text"
                   inputmode="numeric"
-                  class="field-input has-leading-icon font-mono"
+                  class="form-control font-monospace"
                   placeholder="VD: 190382910283 (Chỉ nhập chữ số)"
                   maxlength="15"
                   required
@@ -1153,20 +1156,20 @@ onUnmounted(() => {
             </div>
 
             <!-- THÔNG TIN TÀI KHOẢN ĐĂNG NHẬP -->
-            <div class="field-item">
-              <label for="seller-account-login" class="field-label">
-                Số điện thoại hoặc Email đăng nhập <span class="req">*</span>
-                <span class="hint-text">(Dùng để đăng nhập và theo dõi kết quả xét duyệt)</span>
+            <div class="mb-3">
+              <label for="seller-account-login" class="form-label fw-bold">
+                Số điện thoại hoặc Email đăng nhập <span class="req text-danger">*</span>
+                <span class="hint-text text-muted ms-1">(Dùng để đăng nhập và theo dõi kết quả xét duyệt)</span>
               </label>
-              <div class="input-icon-wrapper">
-                <i class="bi bi-envelope-at-fill input-leading-icon"></i>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-envelope-at-fill"></i></span>
                 <input
                   id="seller-account-login"
                   name="username"
                   v-model="form.phoneEmail"
                   type="text"
                   autocomplete="username"
-                  class="field-input has-leading-icon"
+                  class="form-control"
                   placeholder="VD: 0912345678 hoặc email@gmail.com"
                   required
                   aria-required="true"
@@ -1174,20 +1177,20 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div class="field-item">
-              <label for="seller-password" class="field-label">
-                Mật khẩu đăng nhập <span class="req">*</span>
-                <span class="hint-text">(Tối thiểu 6 ký tự)</span>
+            <div class="mb-3">
+              <label for="seller-password" class="form-label fw-bold">
+                Mật khẩu đăng nhập <span class="req text-danger">*</span>
+                <span class="hint-text text-muted ms-1">(Tối thiểu 6 ký tự)</span>
               </label>
-              <div class="input-icon-wrapper">
-                <i class="bi bi-lock-fill input-leading-icon"></i>
+              <div class="input-group">
+                <span class="input-group-text"><i class="bi bi-lock-fill"></i></span>
                 <input
                   id="seller-password"
                   name="new-password"
                   v-model="form.password"
                   type="password"
                   autocomplete="new-password"
-                  class="field-input has-leading-icon"
+                  class="form-control"
                   placeholder="Nhập mật khẩu cho tài khoản người bán"
                   minlength="6"
                   required

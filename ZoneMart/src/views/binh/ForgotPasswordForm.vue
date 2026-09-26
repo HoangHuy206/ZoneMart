@@ -290,17 +290,17 @@ const handleResetPassword = async () => {
       <div v-if="successMessage" class="msg-box success">✅ {{ successMessage }}</div>
 
       <form @submit.prevent="handleSendOtp" class="form-body" method="post" novalidate>
-        <div class="field-item">
-          <label for="forgot-email" class="field-label">Địa chỉ Email của bạn <span class="required-star">*</span></label>
-          <div class="input-icon-wrapper">
-            <i class="bi bi-envelope-fill input-leading-icon"></i>
+        <div class="mb-3">
+          <label for="forgot-email" class="form-label fw-bold">Địa chỉ Email của bạn <span class="required-star text-danger">*</span></label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-envelope-fill"></i></span>
             <input
               id="forgot-email"
               name="email"
               v-model="form.email"
               type="email"
               autocomplete="email"
-              class="field-input has-leading-icon"
+              class="form-control"
               placeholder="VD: dobinh225599@gmail.com"
               required
               aria-required="true"
@@ -334,14 +334,14 @@ const handleResetPassword = async () => {
       <div v-if="successMessage" class="msg-box success">✓ {{ successMessage }}</div>
 
       <form @submit.prevent="handleVerifyOtp" class="form-body" method="post" novalidate>
-        <div class="field-item">
-          <label class="field-label">Nhập mã xác thực (6 chữ số)</label>
+        <div class="mb-3">
+          <label class="form-label fw-bold text-center d-block">Nhập mã xác thực (6 chữ số)</label>
           <input
             v-model="form.otp"
             type="text"
             maxlength="6"
-            class="field-input otp-center-input"
-            :style="{ color: themeConfig.primaryColor }"
+            class="form-control text-center fs-4 fw-bold"
+            :style="{ color: themeConfig.primaryColor, letterSpacing: '6px' }"
             placeholder="• • • • • •"
             required
           />
@@ -378,24 +378,24 @@ const handleResetPassword = async () => {
 
       <form @submit.prevent="handleResetPassword" class="form-body" method="post" novalidate>
         <!-- Mật khẩu mới -->
-        <div class="field-item">
-          <label for="forgot-new-pass" class="field-label">Mật khẩu mới <span class="required-star">*</span></label>
-          <div class="password-wrapper input-icon-wrapper">
-            <i class="bi bi-lock-fill input-leading-icon"></i>
+        <div class="mb-3">
+          <label for="forgot-new-pass" class="form-label fw-bold">Mật khẩu mới <span class="required-star text-danger">*</span></label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-lock-fill"></i></span>
             <input
               id="forgot-new-pass"
               name="newPassword"
               v-model="form.newPassword"
               :type="showNewPass ? 'text' : 'password'"
               autocomplete="new-password"
-              class="field-input has-leading-icon has-trailing-btn"
+              class="form-control"
               placeholder="Nhập mật khẩu mới (tối thiểu 6 ký tự)..."
               required
               aria-required="true"
             />
             <button 
               type="button" 
-              class="eye-toggle-btn" 
+              class="btn btn-outline-secondary" 
               @click="showNewPass = !showNewPass"
               :title="showNewPass ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'"
             >
@@ -405,24 +405,24 @@ const handleResetPassword = async () => {
         </div>
 
         <!-- Nhập lại mật khẩu mới -->
-        <div class="field-item">
-          <label for="forgot-confirm-pass" class="field-label">Nhập lại mật khẩu mới <span class="required-star">*</span></label>
-          <div class="password-wrapper input-icon-wrapper">
-            <i class="bi bi-shield-check input-leading-icon"></i>
+        <div class="mb-3">
+          <label for="forgot-confirm-pass" class="form-label fw-bold">Nhập lại mật khẩu mới <span class="required-star text-danger">*</span></label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="bi bi-shield-check"></i></span>
             <input
               id="forgot-confirm-pass"
               name="confirmPassword"
               v-model="form.confirmPassword"
               :type="showConfirmPass ? 'text' : 'password'"
               autocomplete="new-password"
-              class="field-input has-leading-icon has-trailing-btn"
+              class="form-control"
               placeholder="Xác nhận lại mật khẩu mới..."
               required
               aria-required="true"
             />
             <button 
               type="button" 
-              class="eye-toggle-btn" 
+              class="btn btn-outline-secondary" 
               @click="showConfirmPass = !showConfirmPass"
               :title="showConfirmPass ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'"
             >

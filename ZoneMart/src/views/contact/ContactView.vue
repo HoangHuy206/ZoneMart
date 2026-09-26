@@ -533,64 +533,76 @@ const resetForm = () => {
               </div>
             </div>
 
-            <!-- Inputs Grid -->
-            <div class="input-grid">
-              <div class="field-group">
-                <label class="field-label" for="fullName">Họ và tên <span class="required">*</span></label>
-                <input
-                  id="fullName"
-                  v-model="form.fullName"
-                  type="text"
-                  placeholder="Ví dụ: Nguyễn Hoàng Huy"
-                  class="text-input"
-                  required
-                />
+            <!-- Inputs Grid with Bootstrap 5 -->
+            <div class="row g-3 mb-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label fw-bold" for="fullName">Họ và tên <span class="text-danger">*</span></label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="bi bi-person"></i></span>
+                  <input
+                    id="fullName"
+                    v-model="form.fullName"
+                    type="text"
+                    placeholder="Ví dụ: Nguyễn Hoàng Huy"
+                    class="form-control"
+                    required
+                  />
+                </div>
               </div>
 
-              <div class="field-group">
-                <label class="field-label" for="email">Địa chỉ Email <span class="required">*</span></label>
-                <input
-                  id="email"
-                  v-model="form.email"
-                  type="email"
-                  placeholder="email@example.com"
-                  class="text-input"
-                  required
-                />
+              <div class="col-12 col-md-6">
+                <label class="form-label fw-bold" for="email">Địa chỉ Email <span class="text-danger">*</span></label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                  <input
+                    id="email"
+                    v-model="form.email"
+                    type="email"
+                    placeholder="email@example.com"
+                    class="form-control"
+                    required
+                  />
+                </div>
               </div>
 
-              <div class="field-group">
-                <label class="field-label" for="phone">Số điện thoại liên hệ</label>
-                <input
-                  id="phone"
-                  v-model="form.phone"
-                  type="tel"
-                  placeholder="0912 345 678"
-                  class="text-input"
-                />
+              <div class="col-12 col-md-6">
+                <label class="form-label fw-bold" for="phone">Số điện thoại liên hệ</label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="bi bi-telephone"></i></span>
+                  <input
+                    id="phone"
+                    v-model="form.phone"
+                    type="tel"
+                    placeholder="0912 345 678"
+                    class="form-control"
+                  />
+                </div>
               </div>
 
-              <div class="field-group">
-                <label class="field-label" for="orderCode">Mã đơn hàng (nếu có)</label>
-                <input
-                  id="orderCode"
-                  v-model="form.orderCode"
-                  type="text"
-                  placeholder="Ví dụ: ZM-88992"
-                  class="text-input font-mono"
-                />
+              <div class="col-12 col-md-6">
+                <label class="form-label fw-bold" for="orderCode">Mã đơn hàng (nếu có)</label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="bi bi-receipt"></i></span>
+                  <input
+                    id="orderCode"
+                    v-model="form.orderCode"
+                    type="text"
+                    placeholder="Ví dụ: ZM-88992"
+                    class="form-control font-monospace"
+                  />
+                </div>
               </div>
             </div>
 
             <!-- Message Area -->
-            <div class="field-group">
-              <label class="field-label" for="message">Nội dung chi tiết <span class="required">*</span></label>
+            <div class="mb-3">
+              <label class="form-label fw-bold" for="message">Nội dung chi tiết <span class="text-danger">*</span></label>
               <textarea
                 id="message"
                 v-model="form.message"
                 rows="4"
                 placeholder="Mô tả cụ thể sự cố đơn hàng, địa chỉ giao nhận hoặc thắc mắc của bạn..."
-                class="text-input textarea-input"
+                class="form-control"
                 required
               ></textarea>
             </div>

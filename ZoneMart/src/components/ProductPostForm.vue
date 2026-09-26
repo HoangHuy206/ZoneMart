@@ -8,26 +8,26 @@
 
       <form @submit.prevent="handleFormSubmit" class="form-body">
         <!-- 1. Tên sản phẩm -->
-        <div class="form-group">
-          <label for="productName" class="form-label">
-            Tên sản phẩm <span class="required">*</span>
+        <div class="mb-3">
+          <label for="productName" class="form-label fw-bold">
+            Tên sản phẩm <span class="required text-danger">*</span>
           </label>
           <input
             id="productName"
             v-model.trim="form.productName"
             type="text"
             placeholder="VD: Rau muống sạch Ba Vì, Xoài cát Chu..."
-            class="form-input"
+            class="form-control"
             :disabled="isLoading"
             required
           />
         </div>
 
         <!-- 2. Danh mục & Giá bán -->
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <label for="category" class="form-label">Danh mục</label>
-            <select id="category" v-model="form.category" class="form-input" :disabled="isLoading">
+        <div class="row g-3 mb-3">
+          <div class="col-12 col-md-6">
+            <label for="category" class="form-label fw-bold">Danh mục</label>
+            <select id="category" v-model="form.category" class="form-select" :disabled="isLoading">
               <option value="Rau củ quả">Rau củ quả</option>
               <option value="Trái cây tươi">Trái cây tươi</option>
               <option value="Thịt cá tươi">Thịt cá tươi</option>
@@ -36,19 +36,22 @@
             </select>
           </div>
 
-          <div class="form-group flex-1">
-            <label for="price" class="form-label">Giá bán (VNĐ) <span class="required">*</span></label>
-            <input
-              id="price"
-              v-model.number="form.price"
-              type="number"
-              min="1000"
-              step="1000"
-              placeholder="VD: 25000"
-              class="form-input"
-              :disabled="isLoading"
-              required
-            />
+          <div class="col-12 col-md-6">
+            <label for="price" class="form-label fw-bold">Giá bán (VNĐ) <span class="required text-danger">*</span></label>
+            <div class="input-group">
+              <input
+                id="price"
+                v-model.number="form.price"
+                type="number"
+                min="1000"
+                step="1000"
+                placeholder="VD: 25000"
+                class="form-control font-monospace fw-bold"
+                :disabled="isLoading"
+                required
+              />
+              <span class="input-group-text font-monospace">₫</span>
+            </div>
           </div>
         </div>
 
