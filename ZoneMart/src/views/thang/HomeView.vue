@@ -52,7 +52,6 @@ onMounted(async () => {
       el.classList.add('is-revealed');
     });
   }
-  startSlideTimer();
 });
 
 onUnmounted(() => {
@@ -60,157 +59,10 @@ onUnmounted(() => {
     observer.disconnect();
     observer = null;
   }
-  if (slideTimer) {
-    clearInterval(slideTimer);
-    slideTimer = null;
-  }
 });
 
-// ==========================================================
-// 0. DỮ LIỆU BANNER SLIDER (4 SLIDES: GIỚI THIỆU - SELLER - SHIPPER - NGƯỜI DÙNG)
-// ==========================================================
-export interface HeroSlide {
-  id: string;
-  badge: string;
-  title: string;
-  description: string;
-  primaryBtnText: string;
-  primaryBtnRoute: string;
-  primaryBtnNewTab?: boolean;
-  secondaryBtnText: string;
-  secondaryBtnRoute: string;
-  secondaryBtnNewTab?: boolean;
-  bgImage: string;
-  illustration: string;
-}
 
-const heroSlides: HeroSlide[] = [
-  {
-    id: 'intro',
-    badge: 'NÔNG SẢN & ĐẶC SẢN ĐỊA PHƯƠNG',
-    title: 'Chợ Địa Phương – Nông Dân Thân Thiện',
-    description:
-      'Cầu nối trực tiếp giữa nhà vườn địa phương và gia đình bạn. Tươi ngon mỗi ngày, hỗ trợ cộng đồng nông sản với dịch vụ giao hàng nhanh trong bán kính 10km.',
-    primaryBtnText: 'KHÁM PHÁ CHỢ',
-    primaryBtnRoute: '/products',
-    primaryBtnNewTab: false,
-    secondaryBtnText: 'LIÊN HỆ CHÚNG TÔI',
-    secondaryBtnRoute: '/contact',
-    secondaryBtnNewTab: false,
-    bgImage:
-      'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1600&q=80',
-    illustration: '/images/anhxoanen_clean.png',
-  },
-  {
-    id: 'seller',
-    badge: 'ĐỒNG HÀNH CÙNG NHÀ VƯỜN & TIỂU THƯƠNG',
-    title: 'Mở Gian Hàng Số – Bán Hàng Dễ Dàng',
-    description:
-      'Đưa nông sản & đặc sản địa phương lên sàn số nhanh chóng. AI kiểm duyệt an toàn, tiếp cận hàng nghìn khách hàng lân cận và tăng trưởng doanh thu vượt bậc.',
-    primaryBtnText: 'ĐĂNG KÝ GIAN HÀNG',
-    primaryBtnRoute: '/register-seller',
-    primaryBtnNewTab: true,
-    secondaryBtnText: 'CẨM NANG NGƯỜI BÁN',
-    secondaryBtnRoute: '/seller-landing',
-    secondaryBtnNewTab: true,
-    bgImage:
-      'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1600&q=80',
-    illustration: '/images/anhxoanendkybanhang_clean.png',
-  },
-  {
-    id: 'shipper',
-    badge: 'ĐỐI TÁC GIAO HÀNG ZONE SHIPPER',
-    title: 'Giao Hàng Siêu Tốc – Chủ Động Thu Nhập',
-    description:
-      'Giao hàng siêu tốc trong bán kính 10km, nhận đơn tiện lợi gần nhà, không lo đi xa. Thu nhập minh bạch, trả thưởng nhanh chóng và linh hoạt thời gian chạy đơn.',
-    primaryBtnText: 'ĐĂNG KÝ SHIPPER',
-    primaryBtnRoute: '/register-shipper',
-    primaryBtnNewTab: true,
-    secondaryBtnText: 'QUY CHẾ TÀI XẾ',
-    secondaryBtnRoute: '/shipper-landing',
-    secondaryBtnNewTab: true,
-    bgImage:
-      'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1600&q=80',
-    illustration: '/images/anhxoanendkyshipper_clean.png',
-  },
-  {
-    id: 'buyer',
-    badge: 'TRẢI NGHIỆM ĐI CHỢ THÔNG MINH',
-    title: 'Đi Chợ Online Tươi Chuẩn – Giao Tận Bếp',
-    description:
-      'Hàng trăm món tươi sạch, rau củ quả chuẩn VietGAP được kiểm định thị giác bằng AI. Đặt hàng dễ dàng, theo dõi lộ trình thời gian thực và nhận hàng chỉ sau 15-30 phút.',
-    primaryBtnText: 'ĐI CHỢ NGAY',
-    primaryBtnRoute: '/products',
-    primaryBtnNewTab: false,
-    secondaryBtnText: 'ĐĂNG KÝ TÀI KHOẢN',
-    secondaryBtnRoute: '/register',
-    secondaryBtnNewTab: false,
-    bgImage:
-      'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1600&q=80',
-    illustration: '/images/anhxoanen_clean.png',
-  },
-];
-
-const currentSlide = ref(0);
-let slideTimer: any = null;
-const isHoveringSlider = ref(false);
-
-const nextSlide = () => {
-  currentSlide.value = (currentSlide.value + 1) % heroSlides.length;
-  resetSlideTimer();
-};
-
-const prevSlide = () => {
-  currentSlide.value =
-    (currentSlide.value - 1 + heroSlides.length) % heroSlides.length;
-  resetSlideTimer();
-};
-
-const goToSlide = (idx: number) => {
-  currentSlide.value = idx;
-  resetSlideTimer();
-};
-
-const startSlideTimer = () => {
-  if (slideTimer) clearInterval(slideTimer);
-  slideTimer = setInterval(() => {
-    if (!isHoveringSlider.value) {
-      currentSlide.value = (currentSlide.value + 1) % heroSlides.length;
-    }
-  }, 5000);
-};
-
-const resetSlideTimer = () => {
-  startSlideTimer();
-};
-
-const onSliderMouseEnter = () => {
-  isHoveringSlider.value = true;
-};
-
-const onSliderMouseLeave = () => {
-  isHoveringSlider.value = false;
-};
-
-// Hỗ trợ Touch Swipe trên điện thoại
-let touchStartX = 0;
-let touchEndX = 0;
-
-const onTouchStart = (e: TouchEvent) => {
-  touchStartX = e.changedTouches[0].screenX;
-};
-
-const onTouchEnd = (e: TouchEvent) => {
-  touchEndX = e.changedTouches[0].screenX;
-  const diff = touchEndX - touchStartX;
-  if (Math.abs(diff) > 40) {
-    if (diff < 0) {
-      nextSlide();
-    } else {
-      prevSlide();
-    }
-  }
-};
+// 1. Dữ liệu 3 thẻ cổng thông tin vai trò (Role Portals)
 const portalCards = [
   {
     id: 'buyer',
@@ -471,101 +323,52 @@ const handleAddToCartHome = (item: any) => {
          1. FIRST FOLD: HERO BANNER & 3 THẺ VAI TRÒ
          ========================================================== -->
     <div class="first-fold-wrapper">
-      <!-- HERO BANNER SLIDER (CHUYỂN 4 SLIDE: GIỚI THIỆU - SELLER - SHIPPER - NGƯỜI DÙNG) -->
-      <section
-        class="hero-section hero-slider-container"
-        @mouseenter="onSliderMouseEnter"
-        @mouseleave="onSliderMouseLeave"
-        @touchstart.passive="onTouchStart"
-        @touchend.passive="onTouchEnd"
-      >
-        <div class="hero-slider-track-wrapper">
-          <div
-            class="hero-slider-track"
-            :style="{ transform: `translateX(-${currentSlide * 100}%)` }"
-          >
-            <div
-              v-for="(slide, idx) in heroSlides"
-              :key="slide.id"
-              class="hero-card"
-              :style="{ backgroundImage: `url('${slide.bgImage}')` }"
-            >
-              <div class="hero-overlay"></div>
-              <div class="hero-content">
-                <span class="hero-subheading">{{ slide.badge }}</span>
-                <h1 class="hero-title">{{ slide.title }}</h1>
-                <p class="hero-description">{{ slide.description }}</p>
-                <div class="hero-actions">
-                  <button
-                    class="btn-primary-warm"
-                    @click="goToPortal(slide.primaryBtnRoute, slide.primaryBtnNewTab)"
-                  >
-                    {{ slide.primaryBtnText }}
-                  </button>
-                  <button
-                    class="btn-secondary-warm"
-                    @click="goToPortal(slide.secondaryBtnRoute, slide.secondaryBtnNewTab)"
-                  >
-                    {{ slide.secondaryBtnText }}
-                  </button>
-                </div>
-              </div>
-
-              <!-- Nhân vật minh họa chính thức của dự án theo từng vai trò -->
-              <div class="hero-character-col" :class="slide.id + '-character-col'">
-                <div class="character-halo"></div>
-                <img
-                  :src="slide.illustration"
-                  :alt="slide.title"
-                  class="hero-role-illustration"
-                  :class="slide.id + '-illustration'"
-                  loading="eager"
-                />
-              </div>
+      <!-- HERO BANNER -->
+      <section class="hero-section">
+        <div class="hero-card">
+          <div class="hero-overlay"></div>
+          <div class="hero-content">
+            <span class="hero-subheading">Nông Sản & Đặc Sản Địa Phương</span>
+            <h1 class="hero-title">Chợ Địa Phương – Nông Dân Thân Thiện</h1>
+            <p class="hero-description">
+              Cầu nối trực tiếp giữa nhà vườn địa phương và gia đình bạn. Tươi
+              ngon mỗi ngày, hỗ trợ cộng đồng nông sản với dịch vụ giao hàng
+              nhanh trong bán kính 10km.
+            </p>
+            <div class="hero-actions">
+              <button class="btn-primary-warm" @click="goToRoute('/products')">
+                KHÁM PHÁ CHỢ
+              </button>
+              <button class="btn-secondary-warm" @click="goToRoute('/map')">
+                XEM TRÊN BẢN ĐỒ
+              </button>
             </div>
           </div>
-        </div>
 
-        <!-- Nút điều hướng Previous / Next -->
-        <button
-          type="button"
-          class="slider-nav-btn prev-btn"
-          @click.stop="prevSlide"
-          aria-label="Slide trước"
-          title="Slide trước"
-        >
-          <i class="bi bi-chevron-left"></i>
-        </button>
-        <button
-          type="button"
-          class="slider-nav-btn next-btn"
-          @click.stop="nextSlide"
-          aria-label="Slide tiếp theo"
-          title="Slide tiếp theo"
-        >
-          <i class="bi bi-chevron-right"></i>
-        </button>
-
-        <!-- Thanh chỉ số Slider Pagination Indicators góc trên bên phải -->
-        <div class="slider-controls-bar">
-          <div class="slider-index-badge">
-            <span class="curr-num">0{{ currentSlide + 1 }}</span>
-            <span class="sep">/</span>
-            <span class="total-num">0{{ heroSlides.length }}</span>
-          </div>
-
-          <div class="slider-dots">
-            <button
-              v-for="(_, idx) in heroSlides"
-              :key="'dot-' + idx"
-              type="button"
-              class="slider-dot"
-              :class="{ active: currentSlide === idx }"
-              @click.stop="goToSlide(idx)"
-              :aria-label="'Chuyển tới slide ' + (idx + 1)"
+          <!-- Họa tiết trang trí thủ công góc phải -->
+          <div class="hero-decoration">
+            <svg
+              class="deco-svg"
+              viewBox="0 0 200 200"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
             >
-              <span class="slider-dot-bar"></span>
-            </button>
+              <circle
+                cx="100"
+                cy="100"
+                r="80"
+                stroke="rgba(255,255,255,0.2)"
+                stroke-width="2"
+                stroke-dasharray="6 6"
+              />
+              <path
+                d="M60 130 C70 90, 130 90, 140 130"
+                stroke="rgba(255,255,255,0.4)"
+                stroke-width="3"
+                stroke-linecap="round"
+              />
+              <circle cx="100" cy="75" r="16" fill="rgba(255,255,255,0.5)" />
+            </svg>
           </div>
         </div>
       </section>
@@ -1031,144 +834,29 @@ const handleAddToCartHome = (item: any) => {
   position: relative;
   width: 100%;
 }
-.hero-slider-container {
-  border-radius: 18px;
-  overflow: hidden;
-  box-shadow: 0 10px 28px -6px rgba(43, 27, 20, 0.14);
-}
-.hero-slider-track-wrapper {
-  width: 100%;
-  overflow: hidden;
-}
-.hero-slider-track {
-  display: flex;
-  width: 100%;
-  transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
-}
 .hero-card {
   position: relative;
-  flex: 0 0 100%;
-  width: 100%;
-  min-height: 330px;
+  min-height: 290px;
   border-radius: 18px;
   overflow: hidden;
+  background-image: url('https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1600&q=80');
   background-size: cover;
   background-position: center 35%;
   display: flex;
   align-items: center;
-  padding-bottom: 60px;
-  box-sizing: border-box;
+  box-shadow: 0 10px 28px -6px rgba(43, 27, 20, 0.14);
+  padding-bottom: 50px;
 }
 .hero-overlay {
   position: absolute;
   inset: 0;
   background: linear-gradient(
     90deg,
-    rgba(34, 18, 12, 0.94) 0%,
-    rgba(60, 29, 17, 0.82) 48%,
-    rgba(216, 90, 42, 0.42) 100%
+    rgba(34, 18, 12, 0.9) 0%,
+    rgba(60, 29, 17, 0.78) 45%,
+    rgba(216, 90, 42, 0.38) 100%
   );
   z-index: 1;
-}
-
-/* Nút điều hướng Slider */
-.slider-nav-btn {
-  position: absolute;
-  top: calc(50% - 25px);
-  z-index: 6;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(8px);
-  border: 1.5px solid rgba(255, 255, 255, 0.45);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  opacity: 0;
-  transform: translateY(0);
-}
-.hero-slider-container:hover .slider-nav-btn {
-  opacity: 1;
-}
-.slider-nav-btn.prev-btn {
-  left: 16px;
-}
-.slider-nav-btn.next-btn {
-  right: 16px;
-}
-.slider-nav-btn:hover {
-  background: #d85a2a;
-  border-color: #ffffff;
-  transform: scale(1.1);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-}
-
-/* Thanh điều khiển chỉ số slide */
-.slider-controls-bar {
-  position: absolute;
-  top: 22px;
-  right: 24px;
-  z-index: 6;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: rgba(20, 10, 6, 0.52);
-  backdrop-filter: blur(8px);
-  padding: 6px 14px;
-  border-radius: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-}
-.slider-index-badge {
-  font-size: 13px;
-  font-weight: 700;
-  color: #ffe5d9;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  font-family: 'Plus Jakarta Sans', monospace, sans-serif;
-}
-.slider-index-badge .curr-num {
-  color: #ff9166;
-  font-weight: 800;
-}
-.slider-index-badge .sep {
-  opacity: 0.5;
-  font-size: 11px;
-}
-.slider-index-badge .total-num {
-  opacity: 0.85;
-}
-.slider-dots {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.slider-dot {
-  background: none;
-  border: none;
-  padding: 4px 0;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-}
-.slider-dot-bar {
-  display: block;
-  width: 8px;
-  height: 4px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.35);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.slider-dot.active .slider-dot-bar {
-  width: 26px;
-  background: #ff7a45;
-  box-shadow: 0 0 10px rgba(255, 122, 69, 0.85);
 }
 .hero-content {
   position: relative;
@@ -1272,66 +960,19 @@ const handleAddToCartHome = (item: any) => {
   border-style: solid;
   transform: translateY(-2px);
 }
-/* Cột hình minh họa nhân vật chính thức của dự án */
-.hero-character-col {
+.hero-decoration {
   position: absolute;
-  right: clamp(16px, 3.5vw, 48px);
-  bottom: 0;
-  height: 94%;
-  max-width: 440px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
+  right: 24px;
+  top: 24px;
   z-index: 2;
+  width: 130px;
+  height: 130px;
+  opacity: 0.35;
   pointer-events: none;
 }
-.character-halo {
-  position: absolute;
-  width: 320px;
-  height: 320px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(255, 122, 69, 0.35) 0%,
-    rgba(216, 90, 42, 0.12) 50%,
-    transparent 72%
-  );
-  filter: blur(24px);
-  bottom: 10px;
-  z-index: 1;
-}
-.hero-role-illustration {
-  position: relative;
-  z-index: 2;
-  max-height: 290px;
-  max-width: 380px;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.45));
-  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-  animation: floatIllustration 4s ease-in-out infinite;
-}
-
-@keyframes floatIllustration {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-8px);
-  }
-}
-
-.seller-illustration {
-  max-height: 310px;
-}
-.shipper-illustration {
-  max-height: 295px;
-}
-.buyer-illustration,
-.intro-illustration {
-  max-height: 290px;
+.deco-svg {
+  width: 100%;
+  height: 100%;
 }
 
 /* 3 ROLE PORTAL CARDS */
@@ -2053,40 +1694,11 @@ const handleAddToCartHome = (item: any) => {
   }
   .hero-card {
     min-height: auto;
-    padding-bottom: 24px;
+    padding-bottom: 20px;
     border-radius: 14px;
   }
-  .slider-nav-btn {
-    opacity: 0.9;
-    width: 36px;
-    height: 36px;
-    font-size: 15px;
-    top: calc(50% - 18px);
-  }
-  .slider-nav-btn.prev-btn {
-    left: 8px;
-  }
-  .slider-nav-btn.next-btn {
-    right: 8px;
-  }
-  .slider-controls-bar {
-    top: 12px;
-    right: 12px;
-    padding: 4px 10px;
-    gap: 8px;
-  }
-  .slider-index-badge {
-    font-size: 11px;
-  }
-  .slider-dot-bar {
-    width: 6px;
-    height: 3px;
-  }
-  .slider-dot.active .slider-dot-bar {
-    width: 18px;
-  }
   .hero-content {
-    padding: 44px 14px 20px 14px;
+    padding: 20px 14px;
   }
   .hero-actions {
     flex-direction: column;
@@ -2097,17 +1709,8 @@ const handleAddToCartHome = (item: any) => {
     width: 100%;
     text-align: center;
   }
-  .hero-character-col {
-    opacity: 0.18;
-    right: -15px;
-    bottom: -10px;
-    height: 180px;
-    max-width: 170px;
-    z-index: 1;
-  }
-  .hero-role-illustration {
-    max-height: 170px;
-    animation: none;
+  .hero-decoration {
+    display: none;
   }
   .portals-section {
     margin-top: 14px;
