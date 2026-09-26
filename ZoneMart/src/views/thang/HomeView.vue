@@ -481,7 +481,7 @@ const handleAddToCartHome = (item: any) => {
             :style="{ transform: `translateX(-${currentSlide * 100}%)` }"
           >
             <div
-              v-for="(slide, idx) in heroSlides"
+              v-for="slide in heroSlides"
               :key="slide.id"
               class="hero-card"
               :style="{ backgroundImage: `url('${slide.bgImage}')` }"
@@ -556,27 +556,19 @@ const handleAddToCartHome = (item: any) => {
           <i class="bi bi-chevron-right"></i>
         </button>
 
-        <!-- Thanh chỉ số Slider Pagination Indicators góc trên bên phải -->
-        <div class="slider-controls-bar">
-          <div class="slider-index-badge">
-            <span class="curr-num">0{{ currentSlide + 1 }}</span>
-            <span class="sep">/</span>
-            <span class="total-num">0{{ heroSlides.length }}</span>
-          </div>
-
-          <div class="slider-dots">
-            <button
-              v-for="(_, idx) in heroSlides"
-              :key="'dot-' + idx"
-              type="button"
-              class="slider-dot"
-              :class="{ active: currentSlide === idx }"
-              @click.stop="goToSlide(idx)"
-              :aria-label="'Chuyển tới slide ' + (idx + 1)"
-            >
-              <span class="slider-dot-bar"></span>
-            </button>
-          </div>
+        <!-- Chấm tròn chuyển slide (Pagination Dots) -->
+        <div class="slider-dots">
+          <button
+            v-for="(_, idx) in heroSlides"
+            :key="'dot-' + idx"
+            type="button"
+            class="slider-dot"
+            :class="{ active: currentSlide === idx }"
+            @click.stop="goToSlide(idx)"
+            :aria-label="'Chuyển tới slide ' + (idx + 1)"
+          >
+            <span class="slider-dot-bar"></span>
+          </button>
         </div>
       </section>
 
@@ -1119,45 +1111,21 @@ const handleAddToCartHome = (item: any) => {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
 
-/* Thanh điều khiển chỉ số slide */
-.slider-controls-bar {
+/* Thanh chấm điều hướng Slider */
+.slider-dots {
   position: absolute;
-  top: 22px;
-  right: 24px;
+  bottom: 58px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 6;
   display: flex;
   align-items: center;
-  gap: 12px;
-  background: rgba(20, 10, 6, 0.52);
+  gap: 8px;
+  background: rgba(20, 10, 6, 0.45);
   backdrop-filter: blur(8px);
   padding: 6px 14px;
   border-radius: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-}
-.slider-index-badge {
-  font-size: 13px;
-  font-weight: 700;
-  color: #ffe5d9;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  font-family: 'Plus Jakarta Sans', monospace, sans-serif;
-}
-.slider-index-badge .curr-num {
-  color: #ff9166;
-  font-weight: 800;
-}
-.slider-index-badge .sep {
-  opacity: 0.5;
-  font-size: 11px;
-}
-.slider-index-badge .total-num {
-  opacity: 0.85;
-}
-.slider-dots {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 .slider-dot {
   background: none;
@@ -2032,14 +2000,10 @@ const handleAddToCartHome = (item: any) => {
   .slider-nav-btn.next-btn {
     right: 8px;
   }
-  .slider-controls-bar {
-    top: 12px;
-    right: 12px;
+  .slider-dots {
+    bottom: 12px;
     padding: 4px 10px;
-    gap: 8px;
-  }
-  .slider-index-badge {
-    font-size: 11px;
+    gap: 6px;
   }
   .slider-dot-bar {
     width: 6px;
