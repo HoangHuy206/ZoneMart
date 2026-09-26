@@ -81,6 +81,7 @@ export interface HeroSlide {
   secondaryBtnRoute: string;
   secondaryBtnNewTab?: boolean;
   bgImage: string;
+  illustration: string;
 }
 
 const heroSlides: HeroSlide[] = [
@@ -98,6 +99,7 @@ const heroSlides: HeroSlide[] = [
     secondaryBtnNewTab: false,
     bgImage:
       'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1600&q=80',
+    illustration: '/images/anhxoanen_clean.png',
   },
   {
     id: 'seller',
@@ -112,7 +114,8 @@ const heroSlides: HeroSlide[] = [
     secondaryBtnRoute: '/seller-landing',
     secondaryBtnNewTab: true,
     bgImage:
-      'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1600&q=80',
+      'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1600&q=80',
+    illustration: '/images/anhxoanendkybanhang_clean.png',
   },
   {
     id: 'shipper',
@@ -127,7 +130,8 @@ const heroSlides: HeroSlide[] = [
     secondaryBtnRoute: '/shipper-landing',
     secondaryBtnNewTab: true,
     bgImage:
-      'https://images.unsplash.com/photo-1616401784845-180882ba9ba8?auto=format&fit=crop&w=1600&q=80',
+      'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1600&q=80',
+    illustration: '/images/anhxoanendkyshipper_clean.png',
   },
   {
     id: 'buyer',
@@ -142,7 +146,8 @@ const heroSlides: HeroSlide[] = [
     secondaryBtnRoute: '/register',
     secondaryBtnNewTab: false,
     bgImage:
-      'https://images.unsplash.com/photo-1579113800032-c38bd7635818?auto=format&fit=crop&w=1600&q=80',
+      'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1600&q=80',
+    illustration: '/images/anhxoanen_clean.png',
   },
 ];
 
@@ -506,30 +511,16 @@ const handleAddToCartHome = (item: any) => {
                 </div>
               </div>
 
-              <!-- Họa tiết trang trí thủ công góc phải -->
-              <div class="hero-decoration">
-                <svg
-                  class="deco-svg"
-                  viewBox="0 0 200 200"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <circle
-                    cx="100"
-                    cy="100"
-                    r="80"
-                    stroke="rgba(255,255,255,0.2)"
-                    stroke-width="2"
-                    stroke-dasharray="6 6"
-                  />
-                  <path
-                    d="M60 130 C70 90, 130 90, 140 130"
-                    stroke="rgba(255,255,255,0.4)"
-                    stroke-width="3"
-                    stroke-linecap="round"
-                  />
-                  <circle cx="100" cy="75" r="16" fill="rgba(255,255,255,0.5)" />
-                </svg>
+              <!-- Nhân vật minh họa chính thức của dự án theo từng vai trò -->
+              <div class="hero-character-col" :class="slide.id + '-character-col'">
+                <div class="character-halo"></div>
+                <img
+                  :src="slide.illustration"
+                  :alt="slide.title"
+                  class="hero-role-illustration"
+                  :class="slide.id + '-illustration'"
+                  loading="eager"
+                />
               </div>
             </div>
           </div>
@@ -1281,19 +1272,66 @@ const handleAddToCartHome = (item: any) => {
   border-style: solid;
   transform: translateY(-2px);
 }
-.hero-decoration {
+/* Cột hình minh họa nhân vật chính thức của dự án */
+.hero-character-col {
   position: absolute;
-  right: 24px;
-  top: 24px;
+  right: clamp(16px, 3.5vw, 48px);
+  bottom: 0;
+  height: 94%;
+  max-width: 440px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
   z-index: 2;
-  width: 130px;
-  height: 130px;
-  opacity: 0.35;
   pointer-events: none;
 }
-.deco-svg {
-  width: 100%;
-  height: 100%;
+.character-halo {
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 122, 69, 0.35) 0%,
+    rgba(216, 90, 42, 0.12) 50%,
+    transparent 72%
+  );
+  filter: blur(24px);
+  bottom: 10px;
+  z-index: 1;
+}
+.hero-role-illustration {
+  position: relative;
+  z-index: 2;
+  max-height: 290px;
+  max-width: 380px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 14px 28px rgba(0, 0, 0, 0.45));
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: floatIllustration 4s ease-in-out infinite;
+}
+
+@keyframes floatIllustration {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.seller-illustration {
+  max-height: 310px;
+}
+.shipper-illustration {
+  max-height: 295px;
+}
+.buyer-illustration,
+.intro-illustration {
+  max-height: 290px;
 }
 
 /* 3 ROLE PORTAL CARDS */
@@ -2059,8 +2097,17 @@ const handleAddToCartHome = (item: any) => {
     width: 100%;
     text-align: center;
   }
-  .hero-decoration {
-    display: none;
+  .hero-character-col {
+    opacity: 0.18;
+    right: -15px;
+    bottom: -10px;
+    height: 180px;
+    max-width: 170px;
+    z-index: 1;
+  }
+  .hero-role-illustration {
+    max-height: 170px;
+    animation: none;
   }
   .portals-section {
     margin-top: 14px;
