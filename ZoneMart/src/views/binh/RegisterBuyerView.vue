@@ -206,32 +206,29 @@ const handleRegister = async () => {
         <form @submit.prevent="handleRegister" class="form-body" method="post" action="/api/auth/register" novalidate itemscope itemtype="https://schema.org/WebPage">
           
           <!-- Họ và Tên -->
-          <div class="mb-3">
-            <label class="form-label fw-bold">Họ và Tên <span class="req text-danger">*</span></label>
-            <div class="input-group">
-              <span class="input-group-text"><i class="bi bi-person-fill"></i></span>
-              <input
-                v-model="form.fullName"
-                type="text"
-                class="form-control"
-                placeholder="VD: Nguyễn Văn A..."
-                required
-              />
-            </div>
+          <div class="field-item">
+            <label class="field-label">Họ và Tên <span class="req">*</span></label>
+            <input
+              v-model="form.fullName"
+              type="text"
+              class="field-input"
+              placeholder="VD: Nguyễn Văn A..."
+              required
+            />
           </div>
 
           <!-- Gmail -->
-          <div class="mb-3">
-            <label for="buyer-email" class="form-label fw-bold">Địa chỉ Gmail <span class="req text-danger">*</span></label>
-            <div class="input-group">
-              <span class="input-group-text"><i class="bi bi-envelope-fill"></i></span>
+          <div class="field-item">
+            <label for="buyer-email" class="field-label">Địa chỉ Gmail <span class="req">*</span></label>
+            <div class="input-icon-wrapper">
+              <i class="bi bi-envelope-fill input-leading-icon"></i>
               <input
                 id="buyer-email"
                 name="email"
                 v-model="form.email"
                 type="email"
                 autocomplete="email"
-                class="form-control"
+                class="field-input has-leading-icon"
                 placeholder="VD: nguyenvana@gmail.com"
                 required
                 aria-required="true"
@@ -240,83 +237,85 @@ const handleRegister = async () => {
           </div>
 
           <!-- Mật khẩu -->
-          <div class="mb-3">
-            <label for="buyer-password" class="form-label fw-bold">Mật khẩu <span class="req text-danger">*</span></label>
-            <div class="input-group">
-              <span class="input-group-text"><i class="bi bi-lock-fill"></i></span>
+          <div class="field-item">
+            <label for="buyer-password" class="field-label">Mật khẩu <span class="req">*</span></label>
+            <div class="password-wrapper input-icon-wrapper">
+              <i class="bi bi-lock-fill input-leading-icon"></i>
               <input
                 id="buyer-password"
                 name="new-password"
                 v-model="form.password"
                 :type="showPassword ? 'text' : 'password'"
                 autocomplete="new-password"
-                class="form-control"
+                class="field-input has-leading-icon has-trailing-btn"
                 placeholder="Nhập mật khẩu (6 - 16 ký tự)..."
                 minlength="6"
                 maxlength="16"
                 required
                 aria-required="true"
               />
-              <button type="button" class="btn btn-outline-secondary" @click="togglePassword" :title="showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'" aria-label="Ẩn hoặc hiện mật khẩu">
+              <button type="button" class="eye-toggle-btn" @click="togglePassword" :title="showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'" aria-label="Ẩn hoặc hiện mật khẩu">
                 <i :class="showPassword ? 'bi bi-eye-slash-fill' : 'bi bi-eye-fill'"></i>
               </button>
             </div>
           </div>
 
           <!-- Nhập lại mật khẩu -->
-          <div class="mb-3">
-            <label for="buyer-confirm-password" class="form-label fw-bold">Nhập lại mật khẩu <span class="req text-danger">*</span></label>
-            <div class="input-group">
-              <span class="input-group-text"><i class="bi bi-shield-lock-fill"></i></span>
+          <div class="field-item">
+            <label for="buyer-confirm-password" class="field-label">Nhập lại mật khẩu <span class="req">*</span></label>
+            <div class="password-wrapper input-icon-wrapper">
+              <i class="bi bi-shield-lock-fill input-leading-icon"></i>
               <input
                 id="buyer-confirm-password"
                 name="confirm-password"
                 v-model="form.confirmPassword"
                 :type="showConfirmPassword ? 'text' : 'password'"
                 autocomplete="new-password"
-                class="form-control"
+                class="field-input has-leading-icon has-trailing-btn"
                 placeholder="Nhập lại mật khẩu ở trên..."
                 minlength="6"
                 maxlength="16"
                 required
                 aria-required="true"
               />
-              <button type="button" class="btn btn-outline-secondary" @click="toggleConfirmPassword" :title="showConfirmPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'" aria-label="Ẩn hoặc hiện mật khẩu nhập lại">
+              <button type="button" class="eye-toggle-btn" @click="toggleConfirmPassword" :title="showConfirmPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'" aria-label="Ẩn hoặc hiện mật khẩu nhập lại">
                 <i :class="showConfirmPassword ? 'bi bi-eye-slash-fill' : 'bi bi-eye-fill'"></i>
               </button>
             </div>
           </div>
 
           <!-- Mã Captcha xác nhận -->
-          <div class="mb-3">
-            <label for="buyer-captcha" class="form-label fw-bold">Mã Captcha xác nhận <span class="req text-danger">*</span></label>
-            <div class="input-group">
-              <span class="input-group-text"><i class="bi bi-shield-check"></i></span>
-              <input
-                id="buyer-captcha"
-                name="captcha"
-                v-model="form.captchaInput"
-                type="text"
-                autocomplete="off"
-                class="form-control text-uppercase font-monospace fw-bold"
-                placeholder="Nhập 4 ký tự..."
-                maxlength="4"
-                required
-                aria-required="true"
-              />
-              <span class="input-group-text font-monospace fw-bold fs-5 px-3 bg-light text-primary" title="Mã xác thực Captcha">
-                {{ captchaCode }}
-              </span>
-              <button
-                type="button"
-                class="btn btn-outline-secondary refresh-captcha-btn"
-                :class="{ 'is-spinning': isRotatingCaptcha }"
-                @click="refreshCaptchaWithAnim"
-                title="Làm mới mã Captcha"
-                aria-label="Làm mới mã Captcha"
-              >
-                <i class="bi bi-arrow-clockwise"></i>
-              </button>
+          <div class="field-item">
+            <label for="buyer-captcha" class="field-label">Mã Captcha xác nhận <span class="req">*</span></label>
+            <div class="captcha-row">
+              <div class="input-icon-wrapper flex-1">
+                <i class="bi bi-shield-check input-leading-icon"></i>
+                <input
+                  id="buyer-captcha"
+                  name="captcha"
+                  v-model="form.captchaInput"
+                  type="text"
+                  autocomplete="off"
+                  class="field-input has-leading-icon captcha-input"
+                  placeholder="Nhập 4 ký tự..."
+                  maxlength="4"
+                  required
+                  aria-required="true"
+                />
+              </div>
+              <div class="captcha-badge" title="Mã xác thực Captcha">
+                <span class="captcha-text font-mono">{{ captchaCode }}</span>
+                <button
+                  type="button"
+                  class="refresh-captcha-btn"
+                  :class="{ 'is-spinning': isRotatingCaptcha }"
+                  @click="refreshCaptchaWithAnim"
+                  title="Làm mới mã Captcha"
+                  aria-label="Làm mới mã Captcha"
+                >
+                  <i class="bi bi-arrow-clockwise"></i>
+                </button>
+              </div>
             </div>
           </div>
 

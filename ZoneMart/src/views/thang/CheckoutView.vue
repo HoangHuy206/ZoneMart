@@ -1360,27 +1360,27 @@ const handlePlaceOrder = () => {
         </div>
 
         <div class="modal-body-form">
-          <div class="row g-3 mb-3">
-            <div class="col-12 col-md-6">
-              <label class="form-label fw-bold">Họ và tên người nhận <span class="text-danger">*</span></label>
-              <div class="input-group">
-                <span class="input-group-text"><i class="bi bi-person"></i></span>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label class="form-label">Họ và tên người nhận <span class="text-danger">*</span></label>
+              <div class="input-with-icon">
+                <i class="bi bi-person input-icon"></i>
                 <input
                   type="text"
-                  class="form-control"
+                  class="custom-input"
                   v-model="editForm.name"
                   placeholder="VD: Nguyễn Văn An"
                 />
               </div>
             </div>
 
-            <div class="col-12 col-md-6">
-              <label class="form-label fw-bold">Số điện thoại liên hệ <span class="text-danger">*</span></label>
-              <div class="input-group">
-                <span class="input-group-text"><i class="bi bi-telephone"></i></span>
+            <div class="form-group">
+              <label class="form-label">Số điện thoại liên hệ <span class="text-danger">*</span></label>
+              <div class="input-with-icon">
+                <i class="bi bi-telephone input-icon"></i>
                 <input
                   type="tel"
-                  class="form-control"
+                  class="custom-input"
                   v-model="editForm.phone"
                   placeholder="VD: 0987 654 321"
                 />
@@ -1450,33 +1450,33 @@ const handlePlaceOrder = () => {
             </div>
           </div>
 
-          <div class="mb-3">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <label class="form-label fw-bold mb-0">
+          <div class="form-group">
+            <div class="label-with-badge">
+              <label class="form-label">
                 Địa chỉ nhận hàng chi tiết <span class="text-danger">*</span>
               </label>
-              <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">
-                <i class="bi bi-geo-alt-fill me-1"></i> Tự động theo bản đồ
+              <span class="auto-filled-badge">
+                <i class="bi bi-geo-alt-fill text-danger me-1"></i> Cập nhật tự động theo bản đồ
               </span>
             </div>
             <textarea
               rows="3"
-              class="form-control highlight-textarea"
+              class="custom-textarea highlight-textarea"
               v-model="editForm.address"
               placeholder="VD: Số 18, Ngõ 165 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội"
             ></textarea>
-            <div class="form-text text-muted">
+            <div class="hint-subtext">
               <i class="bi bi-info-circle me-1"></i> Bạn có thể bổ sung thêm số phòng, số nhà, tầng lầu cụ thể vào ô trên nếu cần.
             </div>
           </div>
 
-          <div class="mb-3">
-            <label class="form-label fw-bold">Ghi chú cho tài xế</label>
-            <div class="input-group">
-              <span class="input-group-text"><i class="bi bi-chat-left-dots"></i></span>
+          <div class="form-group">
+            <label class="form-label">Ghi chú cho tài xế</label>
+            <div class="input-with-icon">
+              <i class="bi bi-chat-left-dots input-icon"></i>
               <input
                 type="text"
-                class="form-control"
+                class="custom-input"
                 v-model="editForm.note"
                 placeholder="VD: Bấm chuông tầng 2, gửi bác bảo vệ"
               />

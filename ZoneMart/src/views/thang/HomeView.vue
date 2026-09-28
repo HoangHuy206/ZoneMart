@@ -726,7 +726,6 @@ const handleAddToCartHome = (item: any) => {
           <!-- Thông tin sản phẩm -->
           <div class="product-body">
             <div class="product-location-row">
-              <span class="loc-badge"><i class="bi bi-geo-alt-fill"></i> {{ item.distance }}</span>
               <span class="time-badge"><i class="bi bi-lightning-charge-fill"></i> {{ item.deliveryTime }}</span>
             </div>
             <h4 class="product-title">{{ item.name }}</h4>

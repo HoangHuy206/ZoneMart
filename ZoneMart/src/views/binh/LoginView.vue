@@ -343,67 +343,89 @@ const handleLogin = async () => {
             ✅ {{ successMessage }}
           </div>
 
-          <!-- FORM NHẬP THÔNG TIN (BOOTSTRAP 5 OPTIMIZED) -->
+          <!-- FORM NHẬP THÔNG TIN -->
           <form @submit.prevent="handleLogin" class="form-body">
             <!-- Số điện thoại / Email -->
-            <div class="mb-3">
-              <div class="d-flex justify-content-between align-items-center mb-1">
-                <label class="form-label fw-bold mb-0">Tài khoản đăng nhập</label>
+            <div class="field-item">
+              <div class="label-row-between">
+                <label class="field-label">Tài khoản đăng nhập</label>
                 <span class="zalo-hint-tag"><i class="bi bi-shield-check"></i> SĐT Zalo / Email</span>
               </div>
-              <div class="input-group">
-                <span class="input-group-text"><i class="bi bi-person-fill"></i></span>
-                <input
-                  v-model="form.account"
-                  type="text"
-                  class="form-control"
-                  placeholder="Nhập SĐT Zalo đã liên kết hoặc Email"
-                  required
-                />
-              </div>
+              <input
+                v-model="form.account"
+                type="text"
+                class="field-input"
+                placeholder="Nhập SĐT Zalo đã liên kết hoặc Email"
+                required
+              />
             </div>
 
             <!-- Mật khẩu -->
-            <div class="mb-3">
-              <div class="d-flex justify-content-between align-items-center mb-1">
-                <label class="form-label fw-bold mb-0">Mật khẩu</label>
+            <div class="field-item">
+              <div class="label-row-between">
+                <label class="field-label">Mật khẩu</label>
                 <a
                   href="#"
                   @click.prevent="isForgotPasswordMode = true"
                   class="forgot-pass-link"
-                >Quên mật khẩu?</a>
+                  >Quên mật khẩu?</a
+                >
               </div>
-              <div class="input-group">
-                <span class="input-group-text"><i class="bi bi-lock-fill"></i></span>
+              <div class="password-wrapper">
                 <input
                   v-model="form.password"
                   :type="showPassword ? 'text' : 'password'"
-                  class="form-control"
+                  class="field-input"
                   placeholder="Nhập mật khẩu..."
                   required
                 />
                 <button
                   type="button"
-                  class="btn btn-outline-secondary eye-btn-bootstrap"
+                  class="eye-toggle-btn"
                   @click="togglePassword"
                   title="Ẩn/Hiện mật khẩu"
-                  aria-label="Ẩn hoặc hiện mật khẩu"
                 >
-                  <i :class="showPassword ? 'bi bi-eye-slash-fill' : 'bi bi-eye-fill'"></i>
+                  <svg
+                    v-if="!showPassword"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#9CA3AF"
+                    stroke-width="2"
+                  >
+                    <path
+                      d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"
+                    ></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                  <svg
+                    v-else
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#9CA3AF"
+                    stroke-width="2"
+                  >
+                    <path
+                      d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+                    ></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                  </svg>
                 </button>
               </div>
             </div>
 
             <!-- Checkbox Ghi nhớ -->
-            <div class="form-check mb-3">
-              <input
-                type="checkbox"
-                id="login-remember-device"
-                v-model="form.rememberMe"
-                class="form-check-input"
-              />
-              <label for="login-remember-device" class="form-check-label">
-                Ghi nhớ đăng nhập trên thiết bị này
+            <div class="form-options-row">
+              <label class="custom-checkbox-label">
+                <input
+                  type="checkbox"
+                  v-model="form.rememberMe"
+                  class="custom-checkbox"
+                />
+                <span>Ghi nhớ đăng nhập trên thiết bị này</span>
               </label>
             </div>
 

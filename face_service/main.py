@@ -49,7 +49,7 @@ print("[UNIFACE] UniFace Face Analyzer & MiniFASNet da san sang phuc vu!")
 
 class AnalyzeRequest(BaseModel):
     image: str # Base64 data URL hoặc chuỗi base64 thuần
-    check_spoof: Optional[bool] = True
+    check_spoof: Optional[bool] = None
 
 class CompareRequest(BaseModel):
     embedding1: List[float]
@@ -146,7 +146,8 @@ def analyze_face(req: AnalyzeRequest) -> Dict[str, Any]:
     # 2. Kiểm tra thực thể sống Anti-Spoofing (MiniFASNet Liveness Detection)
     is_real = True
     confidence = 1.0
-    if req.check_spoof:
+    should_check_spoof = True if req.check_spoof is None else bool(req.check_spoof)
+    if should_check_spoof:
         try:
             spoof_res = spoof_detector.predict(img, face.bbox)
             is_real = bool(spoof_res.is_real)
@@ -267,18 +268,20 @@ def detect_face(req: AnalyzeRequest) -> Dict[str, Any]:
         bbox = face.bbox.tolist()
         kps = face.landmarks.tolist()
 
-        # Kiểm tra thực thể sống Anti-Spoofing (MiniFASNet Liveness Detection)
+        # Kiểm tra thực thể sống Anti-Spoofing (MiniFASNet Liveness Detection) chỉ khi được chỉ định rõ
+        # (Mặc định bỏ qua trong tracking loop để đạt tốc độ nhận diện thời gian thực siêu mượt ~15ms)
         is_real = True
         spoof_conf = 1.0
-        try:
-            spoof_res = spoof_detector.predict(img, face.bbox)
-            is_real = bool(spoof_res.is_real)
-            spoof_conf = float(spoof_res.confidence)
-            if not is_real and spoof_conf < 0.90:
+        if req.check_spoof is True:
+            try:
+                spoof_res = spoof_detector.predict(img, face.bbox)
+                is_real = bool(spoof_res.is_real)
+                spoof_conf = float(spoof_res.confidence)
+                if not is_real and spoof_conf < 0.90:
+                    is_real = True
+            except Exception as ex:
+                print(f"⚠️ Anti-spoofing error: {ex}")
                 is_real = True
-        except Exception as ex:
-            print(f"⚠️ Anti-spoofing error: {ex}")
-            is_real = True
 
         # Tọa độ màn hình gương selfie (Screen Mirrored Coordinates: screen_x = w - raw_x)
         el_x, el_y = w - kps[0][0], kps[0][1] # Mắt trái trên màn hình

@@ -566,45 +566,42 @@ onMounted(() => {
             </button>
           </div>
 
-          <div class="mb-3">
-            <label class="form-label fw-bold">
-              Họ tên thật <span class="req text-danger">*</span>
-              <span class="hint-text text-muted ms-1">(6 - 16 ký tự, chỉ nhập chữ)</span>
+          <div class="form-group">
+            <label class="input-label">
+              Họ tên thật <span class="req">*</span>
+              <span class="hint-text">(6 - 16 ký tự, chỉ nhập chữ)</span>
             </label>
-            <div class="input-group">
-              <span class="input-group-text"><i class="bi bi-person-fill"></i></span>
-              <input
-                type="text"
-                v-model="form.fullName"
-                placeholder="VD: Nguyễn Văn A"
-                class="form-control"
-                maxlength="16"
-                required
-              />
-            </div>
+            <input
+              type="text"
+              v-model="form.fullName"
+              placeholder="VD: Nguyễn Văn A"
+              class="custom-input"
+              maxlength="16"
+              required
+            />
           </div>
 
-          <div class="mb-3">
-            <label for="shipper-cccd" class="form-label fw-bold">
-              Số CCCD (Căn cước công dân) <span class="req text-danger">*</span>
-              <span class="hint-text text-muted ms-1">(Đúng 12 số)</span>
-            </label>
-            <div class="input-group">
-              <span class="input-group-text"><i class="bi bi-card-text"></i></span>
-              <input
-                id="shipper-cccd"
-                name="cccdNumber"
-                type="text"
-                inputmode="numeric"
-                v-model="form.cccdNumber"
-                placeholder="VD: 001203004005"
-                class="form-control font-monospace"
-                maxlength="12"
-                required
-                aria-required="true"
-              />
+            <div class="form-group">
+              <label for="shipper-cccd" class="input-label">
+                Số CCCD (Căn cước công dân) <span class="req">*</span>
+                <span class="hint-text">(Đúng 12 số)</span>
+              </label>
+              <div class="input-icon-wrapper">
+                <i class="bi bi-card-text input-leading-icon"></i>
+                <input
+                  id="shipper-cccd"
+                  name="cccdNumber"
+                  type="text"
+                  inputmode="numeric"
+                  v-model="form.cccdNumber"
+                  placeholder="VD: 001203004005"
+                  class="custom-input has-leading-icon font-mono"
+                  maxlength="12"
+                  required
+                  aria-required="true"
+                />
+              </div>
             </div>
-          </div>
 
             <!-- NÚT UPLOAD CCCD MẶT TRƯỚC VÀ MẶT SAU -->
             <div class="form-group">
@@ -680,13 +677,13 @@ onMounted(() => {
           <!-- ==================== BƯỚC 2: THÔNG TIN XE CỘ & BẰNG LÁI ==================== -->
           <form v-else-if="currentStep === 2" key="shipper-step-2" @submit.prevent="goToNextStep" class="form-body" novalidate>
             <!-- Ô NHẬP BIỂN SỐ XE - TỰ ĐỘNG VIẾT HOA KHI NHẬP CHỮ -->
-            <div class="mb-3">
-              <label for="shipper-plate" class="form-label fw-bold">
-                Biển số xe <span class="req text-danger">*</span>
-                <span class="hint-text text-muted ms-1">(Tự viết hoa, VD: 29A1-999.99 hoặc 29A199999)</span>
+            <div class="form-group">
+              <label for="shipper-plate" class="input-label">
+                Biển số xe <span class="req">*</span>
+                <span class="hint-text">(Tự viết hoa, VD: 29A1-999.99 hoặc 29A199999)</span>
               </label>
-              <div class="input-group">
-                <span class="input-group-text"><i class="bi bi-card-heading"></i></span>
+              <div class="input-icon-wrapper">
+                <i class="bi bi-card-heading input-leading-icon"></i>
                 <input
                   id="shipper-plate"
                   name="licensePlate"
@@ -694,7 +691,7 @@ onMounted(() => {
                   :value="form.licensePlate"
                   @input="(e) => form.licensePlate = (e.target as HTMLInputElement).value.toUpperCase()"
                   placeholder="Ví dụ: 29A1-999.99"
-                  class="form-control text-uppercase font-monospace fw-bold"
+                  class="custom-input has-leading-icon uppercase-input font-mono"
                   maxlength="12"
                   required
                   aria-required="true"
@@ -854,8 +851,8 @@ onMounted(() => {
                   </Transition>
                 </div>
 
-                <div class="input-group flex-1">
-                  <span class="input-group-text"><i class="bi bi-credit-card-2-front-fill"></i></span>
+                <div class="input-icon-wrapper flex-1">
+                  <i class="bi bi-credit-card-2-front-fill input-leading-icon"></i>
                   <input
                     id="shipper-bank-account"
                     name="bankAccountNumber"
@@ -863,7 +860,7 @@ onMounted(() => {
                     inputmode="numeric"
                     v-model="form.bankAccountNumber"
                     placeholder="Số tài khoản (8-15 chữ số)"
-                    class="form-control font-monospace"
+                    class="custom-input bank-account-input has-leading-icon font-mono"
                     maxlength="15"
                     required
                     aria-required="true"
@@ -1841,40 +1838,6 @@ onMounted(() => {
 @media (max-width: 640px) {
   .modal-card-body {
     grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 992px) {
-  .login-page-container {
-    width: 100% !important;
-    height: auto !important;
-    min-height: 100vh !important;
-    max-height: none !important;
-    overflow-y: auto !important;
-    padding: 24px 16px !important;
-    justify-content: center !important;
-  }
-  .login-hero-layout {
-    flex-direction: column !important;
-    width: 100% !important;
-    max-width: 520px !important;
-    height: auto !important;
-    max-height: none !important;
-    transform: none !important;
-    gap: 16px !important;
-  }
-  .login-illustration-side {
-    display: none !important;
-  }
-  .login-card-floating {
-    width: 100% !important;
-    max-width: 100% !important;
-    padding: 20px 16px !important;
-    border-radius: 20px !important;
-    transform: none !important;
-  }
-  .bank-grid {
-    grid-template-columns: 1fr !important;
   }
 }
 

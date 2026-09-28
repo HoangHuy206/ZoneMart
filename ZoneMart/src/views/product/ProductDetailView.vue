@@ -239,7 +239,7 @@ const relatedProducts = computed(() => {
             <div class="badge-pill badge-express">
               <span class="pulse-dot"></span>
               <i class="bi bi-lightning-charge-fill"></i>
-              Giao hỏa tốc {{ product.store.distanceKm }}km ({{ product.store.deliveryTime }})
+              Giao hỏa tốc {{ product.store.deliveryTime }}
             </div>
           </div>
 
@@ -765,7 +765,7 @@ const relatedProducts = computed(() => {
               <img :src="rel.image" :alt="rel.name" loading="lazy" />
               <span v-if="rel.discountBadge" class="rel-badge">{{ rel.discountBadge }}</span>
               <div class="rel-distance-chip">
-                <i class="bi bi-geo-alt-fill"></i> {{ rel.store.distanceKm }}km
+                <i class="bi bi-lightning-charge-fill"></i> {{ rel.store.deliveryTime || '15 - 20 phút' }}
               </div>
             </div>
 

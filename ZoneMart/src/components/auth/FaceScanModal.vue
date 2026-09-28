@@ -48,7 +48,8 @@ let mediaStream: MediaStream | null = null;
 
 // Multi-angle Scanning State
 const currentStep = ref<FaceScanStep>('center');
-const stepProgress = ref(0); // 0 -> 100%
+const targetProgress = ref(0); // 0 -> 100% (Mục tiêu logic)
+const stepProgress = ref(0); // 0 -> 100% (Tiến trình mượt mà 60fps nội suy qua requestAnimationFrame)
 const completedSteps = ref<Record<FaceScanStep, boolean>>({
   center: false,
   left: false,
@@ -79,8 +80,10 @@ const checkServiceHealth = async () => {
   return false;
 };
 
-// Internal tracking & timers
-let trackingInterval: any = null;
+// Internal tracking & smooth animation timers
+let trackingTimer: any = null;
+let animationFrameId: number | null = null;
+let lastRafTime = performance.now();
 let isDetecting = false;
 let consecutiveFaceHits = 0;
 let consecutiveNoFaceHits = 0;
@@ -145,14 +148,14 @@ let baselineYaw = 0;
 let baselinePitch = 0;
 let hasCalibratedBaseline = false;
 
-// Chụp khung hình phân giải tối ưu (480x360) để gửi cho AI detector & MiniFASNet Anti-Spoofing
+// Chụp khung hình phân giải tối ưu (320x240 @ 0.70) để gửi cho AI detector với độ trễ siêu thấp (<2ms mã hóa)
 const getThumbnailBase64 = (): string | null => {
   if (!videoRef.value || !isCameraReady.value) return null;
   const video = videoRef.value;
   if (video.videoWidth === 0 || video.videoHeight === 0) return null;
 
-  const targetW = 480;
-  const targetH = Math.round(480 * (video.videoHeight / video.videoWidth)) || 360;
+  const targetW = 320;
+  const targetH = Math.round(320 * (video.videoHeight / video.videoWidth)) || 240;
 
   if (!captureCanvas || captureCanvas.width !== targetW || captureCanvas.height !== targetH) {
     captureCanvas = document.createElement('canvas');
@@ -163,10 +166,10 @@ const getThumbnailBase64 = (): string | null => {
 
   if (!captureCtx) return null;
   captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
-  return captureCanvas.toDataURL('image/jpeg', 0.85);
+  return captureCanvas.toDataURL('image/jpeg', 0.70);
 };
 
-// Gọi AI Microservice kiểm tra khuôn mặt, góc xoay, số lượng mặt và Anti-Spoofing thực thể sống
+// Gọi AI Microservice kiểm tra khuôn mặt, góc xoay, số lượng mặt (tốc độ cao ~15ms)
 const queryFaceDetector = async (): Promise<{
   hasFace: boolean;
   isReal: boolean;
@@ -182,12 +185,12 @@ const queryFaceDetector = async (): Promise<{
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1500);
+    const timeoutId = setTimeout(() => controller.abort(), 1200);
 
     const res = await fetch('http://127.0.0.1:8000/api/face/detect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: thumb }),
+      body: JSON.stringify({ image: thumb, check_spoof: false }),
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
@@ -246,9 +249,8 @@ const isAngleMatchingStep = (step: FaceScanStep, yaw: number, pitch: number): bo
 
   switch (step) {
     case 'center':
-      // Nhìn thẳng: gần tâm tự nhiên
-      return Math.abs(yaw) < 0.28 && Math.abs(pitch) < 0.28;
-      return Math.abs(yaw) < 0.35 && Math.abs(pitch) < 0.35;
+      // Nhìn thẳng: gần tâm tự nhiên (ngưỡng 0.36 thân thiện với vị trí webcam thực tế)
+      return Math.abs(yaw) < 0.36 && Math.abs(pitch) < 0.36;
 
     case 'left':
       // Quay sang Trái của người dùng (tương ứng yaw âm hoặc lệch trái so với lúc nhìn thẳng)
@@ -271,12 +273,71 @@ const isAngleMatchingStep = (step: FaceScanStep, yaw: number, pitch: number): bo
   }
 };
 
-// Vòng lặp phát hiện diện mạo khuôn mặt thời gian thực
+// Vòng lặp nội suy tiến trình quét mượt mà 60fps qua requestAnimationFrame
+const startAnimationLoop = () => {
+  stopAnimationLoop();
+  lastRafTime = performance.now();
+
+  const loop = (now: number) => {
+    const dt = Math.min((now - lastRafTime) / 1000, 0.1);
+    lastRafTime = now;
+
+    const target = targetProgress.value;
+    const current = stepProgress.value;
+    const diff = target - current;
+
+    if (Math.abs(diff) > 0.08) {
+      // Nội suy LERP siêu mượt: tăng tốc tự nhiên, hạ mượt mà
+      const speed = diff > 0 ? 11 : 7;
+      const step = diff * Math.min(1, dt * speed);
+      stepProgress.value = Number((current + step).toFixed(2));
+    } else {
+      stepProgress.value = target;
+    }
+
+    // Khi thanh tiến trình đạt ngưỡng 100% mượt mà
+    if (stepProgress.value >= 99.5 && target >= 100 && !isProcessing.value && scanStatus.value === 'tracking') {
+      stepProgress.value = 100;
+      if (props.mode === 'login') {
+        triggerScan();
+      } else {
+        completedSteps.value[currentStep.value] = true;
+        targetProgress.value = 0;
+        stepProgress.value = 0;
+        advanceToNextAngle();
+      }
+    }
+
+    animationFrameId = requestAnimationFrame(loop);
+  };
+
+  animationFrameId = requestAnimationFrame(loop);
+};
+
+const stopAnimationLoop = () => {
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+};
+
+// Vòng lặp phát hiện diện mạo khuôn mặt thời gian thực (tối ưu hóa tần số và chống khựng)
 const startPresenceTracker = () => {
   stopPresenceTracker();
+  startAnimationLoop();
 
-  trackingInterval = setInterval(async () => {
-    if (!isCameraReady.value || isProcessing.value || isDetecting) return;
+  const scheduleNext = (delay = 75) => {
+    if (trackingTimer) clearTimeout(trackingTimer);
+    if (!props.modelValue || !isCameraReady.value) return;
+    if (scanStatus.value === 'scanning' || scanStatus.value === 'success' || scanStatus.value === 'error') return;
+    trackingTimer = setTimeout(runTrackingCycle, delay);
+  };
+
+  const runTrackingCycle = async () => {
+    if (!isCameraReady.value || isProcessing.value || isDetecting) {
+      scheduleNext(100);
+      return;
+    }
     if (scanStatus.value === 'scanning' || scanStatus.value === 'success' || scanStatus.value === 'error') return;
 
     isDetecting = true;
@@ -288,6 +349,7 @@ const startPresenceTracker = () => {
         consecutiveFaceHits = 0;
         consecutiveNoFaceHits = 0;
         isFacePresent.value = false;
+        targetProgress.value = 0;
         stepProgress.value = 0;
         handleScanError(
           'Phát Hiện Ảnh Điện Thoại / Giả Mạo!',
@@ -301,6 +363,7 @@ const startPresenceTracker = () => {
         consecutiveFaceHits = 0;
         consecutiveNoFaceHits = 0;
         isFacePresent.value = false;
+        targetProgress.value = 0;
         stepProgress.value = 0;
         handleScanError(
           'Phát Hiện Nhiều Khuôn Mặt!',
@@ -343,46 +406,38 @@ const startPresenceTracker = () => {
         scanStatus.value = 'tracking';
 
         if (props.mode === 'login') {
-          // CHẾ ĐỘ ĐĂNG NHẬP: Góc quay tự nhiên rộng (yaw < 0.48, pitch < 0.50), tự động quét sau ~0.5s
+          // CHẾ ĐỘ ĐĂNG NHẬP: Góc quay tự nhiên rộng (yaw < 0.48, pitch < 0.50), tiến trình lướt êm ái
           const isAngleAcceptable = Math.abs(pose.yaw) < 0.48 && Math.abs(pose.pitch) < 0.50;
           if (isAngleAcceptable) {
-            stepProgress.value = Math.min(100, stepProgress.value + 25);
+            targetProgress.value = Math.min(100, targetProgress.value + 16);
           } else {
-            stepProgress.value = Math.min(100, stepProgress.value + 15);
-          }
-
-          if (stepProgress.value >= 100) {
-            triggerScan();
+            targetProgress.value = Math.min(100, targetProgress.value + 10);
           }
         } else {
           // CHẾ ĐỘ ĐĂNG KÝ: Quét tuần tự 5 góc (Thẳng -> Trái -> Phải -> Lên -> Xuống)
           const matched = isAngleMatchingStep(currentStep.value, pose.yaw, pose.pitch);
 
           if (matched) {
-            // Đang giữ đúng góc: Tăng tiến trình nhanh và mượt mà (~0.5s đạt 100%)
-            stepProgress.value = Math.min(100, stepProgress.value + 25);
-
-            if (stepProgress.value >= 100) {
-              completedSteps.value[currentStep.value] = true;
-              stepProgress.value = 0;
-              advanceToNextAngle();
-            }
+            targetProgress.value = Math.min(100, targetProgress.value + 18);
           } else {
-            // Chưa đúng góc: Giảm rất nhẹ (-2) để không bị thụt lùi khi camera rung lắc
-            if (stepProgress.value > 0) {
-              stepProgress.value = Math.max(0, stepProgress.value - 2);
+            // Chưa đúng góc: Giảm nhẹ để không bị thụt lùi khi camera rung lắc
+            if (targetProgress.value > 0) {
+              targetProgress.value = Math.max(0, targetProgress.value - 2);
             }
           }
         }
       } else {
-        // Không có mặt -> Chờ và hạ tiến trình
+        // Không có mặt -> Chờ và hạ tiến trình mượt mà
         scanStatus.value = 'waiting_face';
-        stepProgress.value = Math.max(0, stepProgress.value - 12);
+        targetProgress.value = Math.max(0, targetProgress.value - 8);
       }
     } finally {
       isDetecting = false;
+      scheduleNext(75);
     }
-  }, 130);
+  };
+
+  runTrackingCycle();
 };
 
 const advanceToNextAngle = () => {
@@ -401,10 +456,11 @@ const advanceToNextAngle = () => {
 };
 
 const stopPresenceTracker = () => {
-  if (trackingInterval) {
-    clearInterval(trackingInterval);
-    trackingInterval = null;
+  if (trackingTimer) {
+    clearTimeout(trackingTimer);
+    trackingTimer = null;
   }
+  stopAnimationLoop();
   isDetecting = false;
 };
 
@@ -483,6 +539,7 @@ const stopCamera = () => {
   }
 
   isFacePresent.value = false;
+  targetProgress.value = 0;
   stepProgress.value = 0;
   consecutiveFaceHits = 0;
   consecutiveNoFaceHits = 0;
@@ -518,6 +575,7 @@ const triggerScan = async () => {
 
   if (!isFacePresent.value) {
     scanStatus.value = 'waiting_face';
+    targetProgress.value = 0;
     stepProgress.value = 0;
     return;
   }
@@ -530,6 +588,8 @@ const triggerScan = async () => {
 
   isProcessing.value = true;
   scanStatus.value = 'scanning';
+  targetProgress.value = 100;
+  stepProgress.value = 100;
   statusTitle.value = 'Đang Quét Sinh Trắc Học...';
   statusSub.value = 'Kiểm tra chống giả mạo Anti-Spoofing & đối chiếu vector ArcFace...';
 
@@ -603,6 +663,7 @@ const handleScanError = (title: string, sub: string) => {
   scanStatus.value = 'error';
   statusTitle.value = title;
   statusSub.value = sub;
+  targetProgress.value = 0;
   stepProgress.value = 0;
   isProcessing.value = false;
 
@@ -629,10 +690,14 @@ const manualRetry = () => {
     down: false,
     verifying: false,
   };
+  targetProgress.value = 0;
   stepProgress.value = 0;
   consecutiveFaceHits = 0;
   consecutiveNoFaceHits = 0;
   scanStatus.value = 'waiting_face';
+  if (isCameraReady.value) {
+    startPresenceTracker();
+  }
 };
 
 // Đóng modal
@@ -668,12 +733,12 @@ onBeforeUnmount(() => {
         <AntigravityCanvas
           theme="cyber"
           :full-screen="true"
-          :particle-count="50"
-          :speed="0.75"
-          :gravity="-0.035"
-          :colors="['#38BDF8', '#00F0FF', '#34D399', '#10B981', '#818CF8', '#A78BFA', '#67E8F9']"
-          :interactive="true"
-          :opacity="0.9"
+          :particle-count="24"
+          :speed="0.55"
+          :gravity="-0.025"
+          :colors="['#38BDF8', '#00F0FF', '#34D399', '#10B981', '#818CF8']"
+          :interactive="false"
+          :opacity="0.75"
           :z-index="1"
         />
 
@@ -837,18 +902,22 @@ onBeforeUnmount(() => {
                   />
                   <circle
                     class="progress-ring-fill"
+                    :class="{ 'scanning': scanStatus === 'scanning' }"
                     cx="140"
                     cy="140"
                     r="125"
                     :style="{
                       strokeDasharray: '785',
-                      strokeDashoffset: (785 - (785 * stepProgress) / 100).toString()
+                      strokeDashoffset: (785 - (785 * stepProgress) / 100).toFixed(1)
                     }"
                   />
                 </svg>
 
-                <!-- High-tech Laser Scan Line -->
-                <div v-if="scanStatus === 'scanning'" class="laser-scanner-line"></div>
+                <!-- High-tech Laser Scan Effect (Luminous Cyber Beam & Aura Sweep) -->
+                <div v-if="scanStatus === 'scanning'" class="laser-scanner-container">
+                  <div class="laser-scanner-grid"></div>
+                  <div class="laser-scanner-beam"></div>
+                </div>
 
                 <!-- 4 Biometric Corners (Glowing Cyan -> Emerald Green) -->
                 <span
@@ -954,7 +1023,7 @@ onBeforeUnmount(() => {
 
               <!-- Progress Badge -->
               <div v-if="isFacePresent && stepProgress > 0 && scanStatus === 'tracking'" class="progress-pill">
-                {{ stepProgress }}%
+                {{ Math.round(stepProgress) }}%
               </div>
             </div>
           </div>
@@ -1325,8 +1394,13 @@ onBeforeUnmount(() => {
   stroke: #10b981;
   stroke-width: 5;
   stroke-linecap: round;
-  transition: stroke-dashoffset 0.12s ease-out;
-  filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.8));
+  filter: drop-shadow(0 0 7px rgba(16, 185, 129, 0.85));
+  will-change: stroke-dashoffset;
+}
+
+.progress-ring-fill.scanning {
+  stroke: #38bdf8;
+  filter: drop-shadow(0 0 9px rgba(56, 189, 248, 0.9));
 }
 
 /* 4 High-tech Corners */
@@ -1497,7 +1571,67 @@ onBeforeUnmount(() => {
   }
 }
 
-/* Animated Laser Scanner Line */
+/* Animated Laser Scanner (GPU-Accelerated 60fps) */
+.laser-scanner-container {
+  position: absolute;
+  inset: 0;
+  border-radius: 46%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.laser-scanner-grid {
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(rgba(56, 189, 248, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.08) 1px, transparent 1px);
+  background-size: 20px 20px;
+  animation: gridPulse 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes gridPulse {
+  0% { opacity: 0.2; }
+  100% { opacity: 0.6; }
+}
+
+.laser-scanner-beam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 40px;
+  background: linear-gradient(
+    180deg,
+    rgba(56, 189, 248, 0) 0%,
+    rgba(56, 189, 248, 0.2) 60%,
+    rgba(56, 189, 248, 0.5) 90%,
+    rgba(147, 197, 253, 0.95) 100%
+  );
+  border-bottom: 2.5px solid #38bdf8;
+  box-shadow: 0 4px 18px #38bdf8, 0 0 28px rgba(56, 189, 248, 0.6);
+  will-change: transform;
+  animation: smoothLaserSweep 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
+}
+
+@keyframes smoothLaserSweep {
+  0% {
+    transform: translateY(12px);
+    opacity: 0.35;
+  }
+  20% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(228px);
+    opacity: 0.35;
+  }
+}
+
 .laser-scanner-line {
   position: absolute;
   left: 0;
@@ -1505,15 +1639,18 @@ onBeforeUnmount(() => {
   height: 3px;
   background: linear-gradient(90deg, transparent, #38bdf8, #60a5fa, #38bdf8, transparent);
   box-shadow: 0 0 12px #38bdf8, 0 0 24px #38bdf8;
-  animation: laserScan 1.4s ease-in-out infinite alternate;
+  will-change: transform;
+  animation: laserScanSmooth 1.35s ease-in-out infinite alternate;
 }
 
-@keyframes laserScan {
+@keyframes laserScanSmooth {
   0% {
-    top: 10%;
+    transform: translateY(20px);
+    opacity: 0.3;
   }
   100% {
-    top: 90%;
+    transform: translateY(230px);
+    opacity: 0.9;
   }
 }
 

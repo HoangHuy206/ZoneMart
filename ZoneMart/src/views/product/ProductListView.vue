@@ -650,7 +650,7 @@ const resetFilters = () => {
               <!-- Live Distance Chip -->
               <div class="badge-distance-live">
                 <span class="pulse-dot"></span>
-                <span>{{ p.distanceKm }} km • {{ p.deliveryTime }}</span>
+                <span>{{ p.deliveryTime }}</span>
               </div>
 
               <!-- Discount Badge -->
@@ -780,7 +780,7 @@ const resetFilters = () => {
               <img :src="store.coverImage" :alt="store.name" class="store-cover-photo" loading="lazy" />
               <div class="store-dist-badge">
                 <span class="pulse-dot"></span>
-                <span>{{ store.distanceKm }} km • {{ store.deliveryTime }}</span>
+                <span>{{ store.deliveryTime }}</span>
               </div>
               <div class="store-category-tag">
                 {{ store.categoryName || 'Bách hóa & Ẩm thực' }}

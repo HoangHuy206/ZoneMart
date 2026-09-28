@@ -300,7 +300,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                     </div>
                     <div class="sugg-meta">
                       <span class="sugg-address"><i class="bi bi-geo-alt"></i> {{ s.address }}</span>
-                      <span class="sugg-dist">⚡ {{ s.distanceKm }}km • {{ s.deliveryTime }}</span>
+                      <span class="sugg-dist">⚡ {{ s.deliveryTime }}</span>
                     </div>
                   </div>
                   <span class="btn-visit-mini">Ghé quán</span>
