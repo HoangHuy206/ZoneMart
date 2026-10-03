@@ -539,6 +539,19 @@ const loadSellerOrdersAndKPIs = () => {
   if (localOrdersRaw) {
     try {
       sellerOrderList = JSON.parse(localOrdersRaw);
+      // Đảm bảo từng món hàng trong đơn đã lưu đều có ảnh (lấy từ sản phẩm gian hàng nếu bị thiếu)
+      sellerOrderList.forEach(ord => {
+        if (Array.isArray(ord.items)) {
+          ord.items.forEach(it => {
+            if (!it.image) {
+              const matchedProd = products.value.find(p => p.name.toLowerCase().trim() === it.name.toLowerCase().trim() || it.name.toLowerCase().trim().includes(p.name.toLowerCase().trim()) || p.name.toLowerCase().trim().includes(it.name.toLowerCase().trim()));
+              if (matchedProd && matchedProd.image) {
+                it.image = matchedProd.image;
+              }
+            }
+          });
+        }
+      });
     } catch {}
   }
 
@@ -572,12 +585,21 @@ const loadSellerOrdersAndKPIs = () => {
                   ? `${bo.total.toLocaleString("vi-VN")} đ`
                   : (bo.priceFormatted || "0 đ");
 
-                const mappedItems: OrderItem[] = Array.isArray(bo.items) ? bo.items.map((it: any) => ({
-                  name: it.name || "Sản phẩm",
-                  qty: it.quantity || it.qty || 1,
-                  price: it.price || 0,
-                  image: it.image || it.img || ""
-                })) : [];
+                const mappedItems: OrderItem[] = Array.isArray(bo.items) ? bo.items.map((it: any) => {
+                  let img = it.image || it.img || "";
+                  if (!img) {
+                    const matchedProd = products.value.find(p => p.name.toLowerCase().trim() === (it.name || "").toLowerCase().trim() || (it.name || "").toLowerCase().trim().includes(p.name.toLowerCase().trim()) || p.name.toLowerCase().trim().includes((it.name || "").toLowerCase().trim()));
+                    if (matchedProd && matchedProd.image) {
+                      img = matchedProd.image;
+                    }
+                  }
+                  return {
+                    name: it.name || "Sản phẩm",
+                    qty: it.quantity || it.qty || 1,
+                    price: it.price || 0,
+                    image: img
+                  };
+                }) : [];
 
                 const mappedSummary = mappedItems.length > 0
                   ? mappedItems.map(it => `${it.name} (x${it.qty})`).join(", ")
@@ -1448,6 +1470,38 @@ const getSellerOrderBadgeIcon = (status: string) => {
   if (s.includes("hủy")) return "bi bi-x-circle";
   return "bi bi-hourglass-split";
 };
+
+const getItemImage = (it: OrderItem) => {
+  if (it.image && it.image.trim()) return it.image;
+  const itName = (it.name || '').toLowerCase().trim();
+  const matchedProd = products.value.find(p => {
+    const pName = (p.name || '').toLowerCase().trim();
+    return pName === itName || itName.includes(pName) || pName.includes(itName);
+  });
+  if (matchedProd && matchedProd.image) return matchedProd.image;
+  
+  // Kiểm tra thêm từ cache toàn bộ sản phẩm đã lưu của hệ thống
+  try {
+    const rawProds = localStorage.getItem('zonemart_seller_products');
+    if (rawProds) {
+      const parsed = JSON.parse(rawProds);
+      if (Array.isArray(parsed)) {
+        const found = parsed.find((p: any) => {
+          const pName = (p.name || '').toLowerCase().trim();
+          return pName === itName || itName.includes(pName) || pName.includes(itName);
+        });
+        if (found && found.image) return found.image;
+      }
+    }
+  } catch {}
+
+  // Ảnh mặc định rau xà lách sạch chất lượng cao nếu là sản phẩm rau
+  if (itName.includes('xà lách') || itName.includes('rau')) {
+    return 'https://images.unsplash.com/photo-1622206151226-18ca2c9ab4a1?auto=format&fit=crop&w=300&q=80';
+  }
+
+  return '';
+};
 </script>
 
 <template>
@@ -2289,7 +2343,7 @@ const getSellerOrderBadgeIcon = (status: string) => {
                 </div>
                 <div v-for="(it, idx) in ord.items" :key="idx" class="item-line">
                   <div class="item-visual-group">
-                    <img v-if="it.image" :src="it.image" class="item-thumb-img" alt="product" />
+                    <img v-if="getItemImage(it)" :src="getItemImage(it)" class="item-thumb-img" alt="product" />
                     <div v-else class="item-thumb-fallback">
                       <i class="bi bi-basket2-fill"></i>
                     </div>
