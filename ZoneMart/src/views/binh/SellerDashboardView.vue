@@ -224,6 +224,7 @@ interface OrderItem {
   name: string;
   qty: number;
   price: number;
+  image?: string;
 }
 
 interface SellerOrder {
@@ -235,8 +236,8 @@ interface SellerOrder {
   customerAddress: string;
   orderDate: string;
   priceFormatted: string;
-  paymentMethod: "Chuyển khoản QR" | "Thẻ ngân hàng" | "Tiền mặt COD";
-  status: "Đang xử lý" | "Hoàn thành" | "Chờ xác nhận" | "Đang giao hàng";
+  paymentMethod: string;
+  status: string;
   items: OrderItem[];
   shipperInfo?: {
     name: string;
@@ -574,7 +575,8 @@ const loadSellerOrdersAndKPIs = () => {
                 const mappedItems: OrderItem[] = Array.isArray(bo.items) ? bo.items.map((it: any) => ({
                   name: it.name || "Sản phẩm",
                   qty: it.quantity || it.qty || 1,
-                  price: it.price || 0
+                  price: it.price || 0,
+                  image: it.image || it.img || ""
                 })) : [];
 
                 const mappedSummary = mappedItems.length > 0
@@ -1361,18 +1363,59 @@ const handleExecuteDelete = async () => {
   productToDelete.value = null;
 };
 
-// Xử lý đơn hàng
-const handleActionOrder = (order: SellerOrder) => {
-  if (order.status === "Đang xử lý" || order.status === "Chờ xác nhận") {
-    order.status = "Hoàn thành";
+// Xử lý đơn hàng: Người bán bấm Xác nhận đơn -> Báo người mua & Nổ đơn cho Shipper trong 3km
+const handleConfirmOrder = (order: SellerOrder) => {
+  order.status = "Đang tìm tài xế";
+  orderRealtimeService.sellerConfirmOrder(order.id);
+  const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+  if (cleanEmail) {
+    localStorage.setItem(`zonemart_seller_orders_${cleanEmail}`, JSON.stringify(orders.value));
+  }
+  recalculateKPIs();
+  triggerToast(`✅ Đã xác nhận đơn hàng ${order.orderCode}! Đang điều phối tài xế trong bán kính 3km...`);
+};
+
+// Người bán hủy đơn / từ chối
+const handleCancelOrder = (order: SellerOrder) => {
+  order.status = "Đã hủy";
+  orderRealtimeService.sellerCancelOrder(order.id, "Quán bận, từ chối nhận đơn");
+  const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+  if (cleanEmail) {
+    localStorage.setItem(`zonemart_seller_orders_${cleanEmail}`, JSON.stringify(orders.value));
+  }
+  recalculateKPIs();
+  triggerToast(`❌ Đã từ chối đơn hàng ${order.orderCode}.`);
+};
+
+// Người bán xóa sạch toàn bộ danh sách đơn hàng (reset hệ thống sạch sẽ)
+const isClearingOrders = ref(false);
+const handleClearAllSellerOrders = async () => {
+  if (!confirm("Bạn có chắc chắn muốn xóa sạch toàn bộ danh sách đơn hàng? Thao tác này sẽ làm mới danh sách.")) {
+    return;
+  }
+  isClearingOrders.value = true;
+  try {
+    orders.value = [];
     const cleanEmail = (currentUser.email || "").toLowerCase().trim();
     if (cleanEmail) {
-      localStorage.setItem(`zonemart_seller_orders_${cleanEmail}`, JSON.stringify(orders.value));
+      localStorage.removeItem(`zonemart_seller_orders_${cleanEmail}`);
     }
+    // Xóa cả trong cache hệ thống realtime
+    await orderRealtimeService.clearAllOrders();
     recalculateKPIs();
-    triggerToast(`Đơn hàng ${order.orderCode} đã hoàn tất và bàn giao thành công!`);
+    triggerToast("🗑️ Đã xóa sạch toàn bộ danh sách đơn hàng thành công!");
+  } catch (e: any) {
+    triggerToast("Lỗi khi xóa đơn hàng: " + (e?.message || ""));
+  } finally {
+    isClearingOrders.value = false;
+  }
+};
+
+const handleActionOrder = (order: SellerOrder) => {
+  if (order.status === "Chờ xác nhận" || order.status === "Đang xử lý") {
+    handleConfirmOrder(order);
   } else {
-    triggerToast(`Đang xem chi tiết đơn hàng ${order.orderCode}`);
+    triggerToast(`Đang xem chi tiết đơn hàng ${order.orderCode} (${order.status})`);
   }
 };
 
@@ -1387,6 +1430,24 @@ const displayedOrders = computed(() => {
       o.productSummary.toLowerCase().includes(q)
   );
 });
+
+const getSellerOrderBadgeClass = (status: string) => {
+  const s = String(status || "").toLowerCase();
+  if (s.includes("đã giao") || s.includes("hoàn thành")) return "badge-completed";
+  if (s.includes("đang giao") || s.includes("lấy hàng") || s.includes("quán")) return "badge-delivering";
+  if (s.includes("xác nhận") && (s.includes("chờ") || s.includes("tài xế") || s.includes("đã xác nhận"))) return "badge-waiting";
+  if (s.includes("hủy")) return "badge-cancelled";
+  return "badge-pending";
+};
+
+const getSellerOrderBadgeIcon = (status: string) => {
+  const s = String(status || "").toLowerCase();
+  if (s.includes("đã giao") || s.includes("hoàn thành")) return "bi bi-check2-circle";
+  if (s.includes("đang giao") || s.includes("lấy hàng") || s.includes("quán")) return "bi bi-bicycle";
+  if (s.includes("xác nhận") && (s.includes("chờ") || s.includes("tài xế") || s.includes("đã xác nhận"))) return "bi bi-broadcast";
+  if (s.includes("hủy")) return "bi bi-x-circle";
+  return "bi bi-hourglass-split";
+};
 </script>
 
 <template>
@@ -2175,37 +2236,135 @@ const displayedOrders = computed(() => {
           <div class="tab-header-flex">
             <div>
               <h2 class="tab-heading">Quy Trình Xử Lý Đơn Hàng</h2>
-              <p class="tab-subheading">Xác nhận đóng gói và điều phối tài xế giao hỏa tốc 10km</p>
+              <p class="tab-subheading">Xác nhận đóng gói và điều phối tài xế giao hỏa tốc 10km (Chỉ hiển thị đơn của {{ storeInfo.name }})</p>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <button 
+                type="button" 
+                class="btn-clear-orders"
+                :disabled="isClearingOrders"
+                @click="handleClearAllSellerOrders"
+                title="Xóa sạch toàn bộ đơn hàng và làm mới hệ thống"
+              >
+                <i class="bi bi-trash3-fill"></i>
+                <span>{{ isClearingOrders ? 'Đang xóa...' : 'Xóa sạch danh sách đơn' }}</span>
+              </button>
             </div>
           </div>
 
           <div v-if="orders.length > 0" class="orders-flow-grid">
             <div v-for="ord in orders" :key="ord.id" class="order-flow-card">
+              <!-- Card Header: Mã đơn + Huy hiệu trạng thái -->
               <div class="order-flow-header">
-                <span class="order-flow-code">{{ ord.orderCode }}</span>
-                <span class="order-badge" :class="ord.status === 'Hoàn thành' ? 'badge-completed' : 'badge-processing'">
-                  {{ ord.status }}
+                <div class="order-code-group">
+                  <div class="order-icon-wrapper">
+                    <i class="bi bi-receipt"></i>
+                  </div>
+                  <div>
+                    <span class="order-flow-code">{{ ord.orderCode }}</span>
+                    <span class="order-time-text">{{ ord.orderDate || 'Hôm nay' }}</span>
+                  </div>
+                </div>
+                <span class="order-flow-badge" :class="getSellerOrderBadgeClass(ord.status)">
+                  <i :class="getSellerOrderBadgeIcon(ord.status)"></i>
+                  <span>{{ ord.status }}</span>
                 </span>
               </div>
-              <p class="order-customer-info">
-                <b>{{ ord.customerName }}</b> — {{ ord.customerPhone }}<br />
-                <span class="address-text">{{ ord.customerAddress }}</span>
-              </p>
-              <div class="order-items-preview">
-                <div v-for="(it, idx) in ord.items" :key="idx" class="item-line">
-                  <span>{{ it.name }} (x{{ it.qty }})</span>
-                  <b>{{ (it.price * it.qty).toLocaleString('vi-VN') }} đ</b>
+
+              <!-- Customer info box -->
+              <div class="order-customer-box">
+                <div class="customer-avatar-mini">
+                  <i class="bi bi-person-fill"></i>
+                </div>
+                <div class="customer-detail-content">
+                  <div class="c-name">{{ ord.customerName }} <span class="c-phone"><i class="bi bi-telephone-fill ms-2 me-1"></i>{{ ord.customerPhone }}</span></div>
+                  <div class="c-address"><i class="bi bi-geo-alt-fill me-1 text-danger"></i>{{ ord.customerAddress }}</div>
                 </div>
               </div>
+
+              <!-- Items List Preview với hình ảnh sản phẩm -->
+              <div class="order-items-preview">
+                <div class="items-preview-title">
+                  <i class="bi bi-bag-check-fill me-1"></i> Danh sách sản phẩm ({{ ord.items?.length || 1 }})
+                </div>
+                <div v-for="(it, idx) in ord.items" :key="idx" class="item-line">
+                  <div class="item-visual-group">
+                    <img v-if="it.image" :src="it.image" class="item-thumb-img" alt="product" />
+                    <div v-else class="item-thumb-fallback">
+                      <i class="bi bi-basket2-fill"></i>
+                    </div>
+                    <span class="item-name">{{ it.name }}</span>
+                  </div>
+                  <div class="item-meta">
+                    <span class="item-qty">x{{ it.qty }}</span>
+                    <b class="item-price">{{ (it.price * it.qty).toLocaleString('vi-VN') }} đ</b>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Card Footer: Tổng tiền + Nút hành động -->
               <div class="order-total-footer">
-                <span>Tổng tiền: <b>{{ ord.priceFormatted }}</b> ({{ ord.paymentMethod }})</span>
-                <button
-                  type="button"
-                  class="btn-order-next"
-                  @click="handleActionOrder(ord)"
-                >
-                  {{ ord.status === 'Hoàn thành' ? 'Đã hoàn tất' : 'Xác nhận & Giao shipper' }}
-                </button>
+                <div class="order-price-summary">
+                  <span class="total-label">Tổng thanh toán:</span>
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="total-price-text">{{ ord.priceFormatted }}</span>
+                    <span class="payment-pill" :class="ord.paymentMethod?.toLowerCase().includes('qr') ? 'pill-qr' : 'pill-cod'">
+                      {{ ord.paymentMethod }}
+                    </span>
+                  </div>
+                </div>
+
+                <div class="order-action-buttons-group">
+                  <template v-if="ord.status === 'Chờ xác nhận' || ord.status === 'Đang xử lý'">
+                    <button
+                      type="button"
+                      class="btn-order-cancel"
+                      @click="handleCancelOrder(ord)"
+                      title="Từ chối đơn hàng này"
+                    >
+                      <i class="bi bi-x-circle me-1"></i> Hủy bỏ
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-order-confirm"
+                      @click="handleConfirmOrder(ord)"
+                      title="Xác nhận đơn và tìm tài xế giao hỏa tốc"
+                    >
+                      <i class="bi bi-check2-circle me-1"></i> Xác nhận đơn
+                    </button>
+                  </template>
+
+                  <template v-else-if="ord.status === 'Đang tìm tài xế' || ord.status.includes('tìm tài xế') || ord.status === 'Đã xác nhận đang chờ tài xế'">
+                    <div class="status-indicator-badge status-waiting">
+                      <span class="pulse-dot"></span>
+                      <i class="bi bi-broadcast me-1"></i> Đang tìm tài xế 10km...
+                    </div>
+                  </template>
+
+                  <template v-else-if="ord.status.includes('quán') || ord.status.includes('lấy hàng')">
+                    <div class="status-indicator-badge status-picking">
+                      <i class="bi bi-bicycle me-1"></i> Tài xế đang đến lấy hàng
+                    </div>
+                  </template>
+
+                  <template v-else-if="ord.status.includes('Đang giao') || ord.status.includes('khách')">
+                    <div class="status-indicator-badge status-delivering">
+                      <i class="bi bi-send-fill me-1"></i> Đang giao cho khách
+                    </div>
+                  </template>
+
+                  <template v-else-if="ord.status === 'Đã hủy'">
+                    <div class="status-indicator-badge status-cancelled">
+                      <i class="bi bi-slash-circle me-1"></i> Đơn đã hủy
+                    </div>
+                  </template>
+
+                  <template v-else>
+                    <div class="status-indicator-badge status-completed">
+                      <i class="bi bi-check-circle-fill me-1"></i> Đã hoàn thành
+                    </div>
+                  </template>
+                </div>
               </div>
             </div>
           </div>
@@ -4356,106 +4515,465 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: 6px;
 }
 
-/* ORDERS FLOW GRID */
+/* ================= ORDERS FLOW CSS ================= */
+.btn-clear-orders {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #FFF1F2;
+  color: #E11D48 !important;
+  border: 1.5px solid #FECDD3;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(225, 29, 72, 0.08);
+}
+
+.btn-clear-orders:hover:not(:disabled) {
+  background: #E11D48;
+  color: #FFFFFF !important;
+  border-color: #E11D48;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(225, 29, 72, 0.25);
+}
+
+.btn-clear-orders:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .orders-flow-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
+  gap: 22px;
+}
+
+@media (max-width: 768px) {
+  .orders-flow-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .order-flow-card {
   background: #FFFFFF;
   border: 1.5px solid #E2E8F0;
-  border-radius: 16px;
-  padding: 18px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
-  transition: all 0.25s ease;
+  border-radius: 20px;
+  padding: 22px;
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
 }
 
 .order-flow-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
+  transform: translateY(-3px);
+  border-color: #CBD5E1;
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.09);
 }
 
 .order-flow-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed #E2E8F0;
+}
+
+.order-code-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.order-icon-wrapper {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: #F1F5F9;
+  color: #0F172A;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
 }
 
 .order-flow-code {
-  font-size: 15px;
-  font-weight: 900;
+  font-size: 16px;
+  font-weight: 800;
   color: #0F172A !important;
+  display: block;
+  letter-spacing: -0.02em;
 }
 
-.order-customer-info {
-  font-size: 12.5px;
-  color: #334155 !important;
-  margin: 0 0 12px 0;
-}
-
-.order-customer-info b {
-  color: #0F172A !important;
-}
-
-.address-text {
-  color: #475569 !important;
+.order-time-text {
   font-size: 11.5px;
+  color: #64748B !important;
   font-weight: 500;
+  display: block;
 }
 
-.order-items-preview {
+/* Status Badges */
+.order-flow-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.order-flow-badge.badge-pending {
+  background: #FEF3C7;
+  color: #B45309 !important;
+  border: 1px solid #FDE68A;
+}
+
+.order-flow-badge.badge-waiting {
+  background: #EFF6FF;
+  color: #1D4ED8 !important;
+  border: 1px solid #BFDBFE;
+}
+
+.order-flow-badge.badge-delivering {
+  background: #ECFDF5;
+  color: #047857 !important;
+  border: 1px solid #A7F3D0;
+}
+
+.order-flow-badge.badge-completed {
+  background: #F0FDF4;
+  color: #15803D !important;
+  border: 1px solid #BBF7D0;
+}
+
+.order-flow-badge.badge-cancelled {
+  background: #FEF2F2;
+  color: #B91C1C !important;
+  border: 1px solid #FECACA;
+}
+
+/* Customer Box */
+.order-customer-box {
   background: #F8FAFC;
-  border: 1px solid #F1F5F9;
+  border: 1px solid #EDF2F7;
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.customer-avatar-mini {
+  width: 34px;
+  height: 34px;
   border-radius: 10px;
-  padding: 10px 12px;
-  margin-bottom: 12px;
+  background: #E2E8F0;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.customer-detail-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.c-name {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #0F172A !important;
+  margin-bottom: 3px;
+}
+
+.c-phone {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2563EB !important;
+}
+
+.c-address {
+  font-size: 12px;
+  color: #475569 !important;
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+/* Items Preview */
+.order-items-preview {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  flex: 1;
+}
+
+.items-preview-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748B !important;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .item-line {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
-  margin-bottom: 4px;
+  padding: 8px 0;
+  border-bottom: 1px dashed #F1F5F9;
+  font-size: 13px;
 }
 
-.item-line span {
-  color: #334155 !important;
+.item-line:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.item-visual-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding-right: 12px;
+}
+
+.item-thumb-img {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid #E2E8F0;
+  flex-shrink: 0;
+}
+
+.item-thumb-fallback {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: #F1F5F9;
+  color: #94A3B8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.item-name {
+  color: #1E293B !important;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.item-line b {
+.item-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.item-qty {
+  background: #F1F5F9;
+  color: #475569 !important;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.item-price {
   color: #0F172A !important;
   font-weight: 800;
+  font-size: 13px;
 }
 
+/* Footer & Actions */
 .order-total-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12.5px;
-  color: #334155 !important;
-  font-weight: 600;
+  padding-top: 14px;
+  border-top: 1px solid #F1F5F9;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
-.btn-order-next {
-  padding: 8px 16px;
-  background: #0F172A;
-  color: #FFFFFF !important;
-  border: none;
-  border-radius: 8px;
-  font-size: 12px;
+.order-price-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.total-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748B !important;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.total-price-text {
+  font-size: 18px;
+  font-weight: 900;
+  color: #D94E15 !important;
+  letter-spacing: -0.02em;
+}
+
+.payment-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+}
+
+.payment-pill.pill-cod {
+  background: #FEF3C7;
+  color: #92400E !important;
+}
+
+.payment-pill.pill-qr {
+  background: #E0E7FF;
+  color: #3730A3 !important;
+}
+
+.order-action-buttons-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Button styles */
+.btn-order-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 16px;
+  background: #FFFFFF;
+  color: #DC2626 !important;
+  border: 1.5px solid #FECACA;
+  border-radius: 12px;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-.btn-order-next:hover {
-  background: #1E293B;
+.btn-order-cancel:hover {
+  background: #FEF2F2;
+  border-color: #DC2626;
+  color: #B91C1C !important;
   transform: translateY(-1px);
+}
+
+.btn-order-confirm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 20px;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: #FFFFFF !important;
+  border: none;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+}
+
+.btn-order-confirm:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.45);
+}
+
+.btn-order-confirm:active,
+.btn-order-cancel:active {
+  transform: translateY(0);
+}
+
+/* Status Indicators in Action Group */
+.status-indicator-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.status-indicator-badge.status-waiting {
+  background: #EFF6FF;
+  color: #1D4ED8 !important;
+  border: 1px solid #BFDBFE;
+}
+
+.status-indicator-badge.status-picking {
+  background: #ECFEFF;
+  color: #0E7490 !important;
+  border: 1px solid #A5F3FC;
+}
+
+.status-indicator-badge.status-delivering {
+  background: #F0FDF4;
+  color: #15803D !important;
+  border: 1px solid #BBF7D0;
+}
+
+.status-indicator-badge.status-completed {
+  background: #F8FAFC;
+  color: #0F172A !important;
+  border: 1px solid #E2E8F0;
+}
+
+.status-indicator-badge.status-cancelled {
+  background: #FEF2F2;
+  color: #991B1B !important;
+  border: 1px solid #FECACA;
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2563EB;
+  margin-right: 8px;
+  animation: sellerPulse 1.5s infinite;
+}
+
+@keyframes sellerPulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(37, 99, 235, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+  }
 }
 
 /* SHIPMENT STATUS BOX - HIGH CONTRAST FIX */
