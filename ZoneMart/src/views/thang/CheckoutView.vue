@@ -603,7 +603,10 @@ const initPaymentSSE = () => {
       sseSource.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
-          if (data && data.paid && data.code && data.code.toUpperCase() === orderPaymentCode.value.toUpperCase()) {
+          const incomingCode = String(data?.code || "").toUpperCase();
+          const targetCode = orderPaymentCode.value.toUpperCase();
+          const isCodeMatch = incomingCode === targetCode || incomingCode.startsWith(targetCode) || targetCode.startsWith(incomingCode);
+          if (data && data.paid && isCodeMatch) {
             console.log(">>> [SSE PAYMENT CONFIRMED]:", data);
             onPaymentConfirmed(data.amount ? Number(data.amount) : undefined);
           }
@@ -683,7 +686,10 @@ const startPaymentListener = () => {
       const res = await fetch(checkUrl);
       if (res.ok) {
         const data = await res.json();
-        if (data && data.paid && data.code && data.code.toUpperCase() === orderPaymentCode.value.toUpperCase()) {
+        const incomingCode = String(data?.code || "").toUpperCase();
+        const targetCode = orderPaymentCode.value.toUpperCase();
+        const isCodeMatch = incomingCode === targetCode || incomingCode.startsWith(targetCode) || targetCode.startsWith(incomingCode);
+        if (data && data.paid && isCodeMatch) {
           onPaymentConfirmed(data.amount);
           return;
         }

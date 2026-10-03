@@ -47,9 +47,25 @@ const sseClients = new Set<(eventData: string) => void>()
 
 function extractOrderCode(text: string): string | null {
   if (!text) return null
+  // 1. Khớp chính xác mã đơn chuẩn ZoneMart: ZM kèm đúng 6 chữ số
+  const match6 = String(text).match(/\bZM(\d{6})\b/i) || String(text).match(/ZM(\d{6})(?!\d)/i)
+  if (match6) return `ZM${match6[1]}`.toUpperCase()
+
+  // 2. Trường hợp có dấu cách: ZM 948999
+  const matchSpace = String(text).match(/ZM[\s\-_]+(\d{6})(?!\d)/i)
+  if (matchSpace) return `ZM${matchSpace[1]}`.toUpperCase()
+
+  // 3. Khớp với danh sách đơn hàng đang chờ
   const clean = String(text).replace(/[\s\-_]/g, '').toUpperCase()
-  const match = clean.match(/ZM\d{4,8}/i)
-  return match ? match[0].toUpperCase() : null
+  for (const pendingCode of pendingOrdersCache.keys()) {
+    if (clean.includes(pendingCode.toUpperCase())) {
+      return pendingCode.toUpperCase()
+    }
+  }
+
+  // 4. Fallback các mã ZM từ 4 đến 8 chữ số
+  const matchLoose = clean.match(/ZM\d{6}/i) || clean.match(/ZM\d{4,8}/i)
+  return matchLoose ? matchLoose[0].toUpperCase() : null
 }
 
 function resolveTelegramToken(): string {
@@ -62,12 +78,13 @@ function resolveTelegramToken(): string {
       if (match) return match[1].trim().replace(/^["']|["']$/g, '')
     }
   } catch (e) {}
-  return ''
   try {
     const appsettingsPath = path.resolve(__dirname, '../server/appsettings.json')
     if (fs.existsSync(appsettingsPath)) {
       const data = JSON.parse(fs.readFileSync(appsettingsPath, 'utf8'))
-      if (data.TelegramSettings?.BotToken) return data.TelegramSettings.BotToken.trim()
+      if (data.TelegramSettings?.BotToken && data.TelegramSettings.BotToken !== 'YOUR_TELEGRAM_BOT_TOKEN') {
+        return data.TelegramSettings.BotToken.trim()
+      }
     }
   } catch (e) {}
   return '8873124743:AAGnQs8cqHBf8lolMKlgjl6jqEh2aF8XN_Y'
@@ -409,8 +426,15 @@ async function pollSepayTransactions(apiKey: string) {
     if (Array.isArray(txList) && txList.length > 0) {
       for (const tx of txList) {
         if (tx.transfer_type === 'out' || Number(tx.amount_out || 0) > 0) continue
-        const fullContent = `${tx.transaction_content || ''} ${tx.code || ''} ${tx.reference_number || ''} ${tx.content || ''}`
-        const code = extractOrderCode(fullContent)
+        // Ưu tiên trích xuất từ transaction_content hoặc content hoặc code đơn lẻ, KHÔNG ghép reference_number để tránh dính số tham chiếu
+        let code =
+          extractOrderCode(tx.transaction_content || '') ||
+          extractOrderCode(tx.content || '') ||
+          extractOrderCode(tx.code || '')
+        if (!code) {
+          const combined = `${tx.transaction_content || ''} ${tx.content || ''} ${tx.code || ''}`
+          code = extractOrderCode(combined)
+        }
         if (code) {
           const amount = Number(tx.amount_in || tx.amount || 0)
           const bankAccount = String(tx.account_number || tx.bank_account_id || '28122068866')
@@ -767,6 +791,14 @@ function vietQrPaymentPlugin(): Plugin {
           res.setHeader('Content-Type', 'application/json')
           res.statusCode = 200
 
+          // Tự động đồng bộ lại từ file .paid_orders.json nếu chưa có trong RAM
+          if (cleanCode && !paidOrdersCache.has(cleanCode)) {
+            const diskCache = loadPaidOrders()
+            for (const [k, v] of diskCache.entries()) {
+              paidOrdersCache.set(k, v)
+            }
+          }
+
           // Ưu tiên 1: Khớp chính xác mã đơn hàng
           if (cleanCode && paidOrdersCache.has(cleanCode)) {
             const data = paidOrdersCache.get(cleanCode)!
@@ -783,10 +815,19 @@ function vietQrPaymentPlugin(): Plugin {
             return
           }
 
-          // Ưu tiên 2: Tìm trong nội dung giao dịch raw của bất kỳ giao dịch nào đã lưu
+          // Ưu tiên 2: Khớp nếu key trong cache chứa mã đơn (ví dụ ZM94899903 chứa ZM948999) hoặc ngược lại
           for (const [key, val] of paidOrdersCache.entries()) {
             const rawStr = JSON.stringify(val.raw || {})
-            if (cleanCode && (key.includes(cleanCode) || rawStr.includes(cleanCode))) {
+            const keyUpper = key.toUpperCase()
+            const codeUpper = cleanCode.toUpperCase()
+            if (
+              cleanCode &&
+              (keyUpper === codeUpper ||
+               keyUpper.startsWith(codeUpper) ||
+               keyUpper.includes(codeUpper) ||
+               codeUpper.includes(keyUpper) ||
+               rawStr.toUpperCase().includes(codeUpper))
+            ) {
               res.end(
                 JSON.stringify({
                   paid: true,
@@ -794,7 +835,7 @@ function vietQrPaymentPlugin(): Plugin {
                   amount: val.amount,
                   time: val.time,
                   bankAccount: val.bankAccount,
-                  matchedBy: 'RAW_SEARCH',
+                  matchedBy: 'FUZZY_KEY_OR_RAW',
                 })
               )
               return
