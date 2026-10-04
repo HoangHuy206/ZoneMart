@@ -92,8 +92,12 @@ onMounted(async () => {
   // Kiểm tra trạng thái Face ID của gian hàng
   checkFaceStatus();
 
-  // Lắng nghe thông báo tài xế đã giao đơn hàng thành công theo thời gian thực
+  // Lắng nghe thông báo tài xế và trạng thái đơn hàng theo thời gian thực
   unsubscribeSellerOrder = orderRealtimeService.onOrderStatusChanged(({ orderId, status, order }) => {
+    const foundOrd = orders.value.find(
+      (o) => o.id === orderId || o.orderCode === orderId || o.orderCode === '#' + orderId
+    );
+
     if (status === "completed") {
       deliveredNotification.value = {
         show: true,
@@ -104,12 +108,8 @@ onMounted(async () => {
         total: order.total || 0
       };
 
-      // Tự động cập nhật trạng thái đơn trong danh sách quản lý đơn của tiệm
-      const foundOrd = orders.value.find(
-        (o) => o.id === orderId || o.orderCode === orderId || o.orderCode === '#' + orderId
-      );
       if (foundOrd) {
-        foundOrd.status = "Hoàn thành";
+        foundOrd.status = "Đã giao hàng";
       } else {
         orders.value.unshift({
           id: orderId,
@@ -121,7 +121,7 @@ onMounted(async () => {
           orderDate: "Vừa xong",
           priceFormatted: `${(order.total || 0).toLocaleString("vi-VN")} đ`,
           paymentMethod: (order.paymentMethod as any) || "Chuyển khoản QR",
-          status: "Hoàn thành",
+          status: "Đã giao hàng",
           items: (order.items || []).map((it: any) => ({
             name: it.name,
             qty: it.quantity || it.qty || 1,
@@ -129,15 +129,23 @@ onMounted(async () => {
           }))
         });
       }
-
-      const cleanEmail = (currentUser.email || "").toLowerCase().trim();
-      if (cleanEmail) {
-        localStorage.setItem(`zonemart_seller_orders_${cleanEmail}`, JSON.stringify(orders.value));
-      }
-      recalculateKPIs();
-
       triggerToast(`🎉 Tài xế đã giao đơn hàng #${order.orderCode || order.id} thành công!`);
+    } else if (status === "delivering" || status === "picking") {
+      if (foundOrd) {
+        foundOrd.status = "Đang giao hàng";
+        if (order.shipperInfo) foundOrd.shipperInfo = order.shipperInfo;
+      }
+    } else if (status === "confirmed") {
+      if (foundOrd) {
+        foundOrd.status = "Đã xác nhận đang chờ tài xế";
+      }
     }
+
+    const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+    if (cleanEmail) {
+      localStorage.setItem(`zonemart_seller_orders_${cleanEmail}`, JSON.stringify(orders.value));
+    }
+    recalculateKPIs();
   });
 });
 
@@ -605,9 +613,12 @@ const loadSellerOrdersAndKPIs = () => {
                   ? mappedItems.map(it => `${it.name} (x${it.qty})`).join(", ")
                   : (bo.productSummary || "Đơn hàng nông sản");
 
-                let mappedStatus: SellerOrder["status"] = "Đang xử lý";
-                if (bo.status === "completed" || bo.status === "Hoàn thành") mappedStatus = "Hoàn thành";
-                else if (bo.status === "delivering" || bo.status === "picking") mappedStatus = "Đang giao hàng";
+                let mappedStatus: SellerOrder["status"] = "Chờ xác nhận";
+                if (bo.status === "completed" || bo.status === "Hoàn thành" || bo.status === "Đã giao hàng") mappedStatus = "Đã giao hàng";
+                else if (bo.status === "delivering" || bo.status === "picking" || bo.status === "Đang giao hàng") mappedStatus = "Đang giao hàng";
+                else if (bo.status === "confirmed" || bo.status === "Đã xác nhận" || bo.status === "Đã xác nhận đang chờ tài xế") mappedStatus = "Đã xác nhận đang chờ tài xế";
+                else if (bo.status === "cancelled" || bo.status === "Đã hủy") mappedStatus = "Đã hủy";
+                else mappedStatus = "Chờ xác nhận";
 
                 const newOrd: SellerOrder = {
                   id: ordId,
@@ -625,7 +636,11 @@ const loadSellerOrdersAndKPIs = () => {
                 };
 
                 if (existingIdx >= 0) {
-                  sellerOrderList[existingIdx] = { ...sellerOrderList[existingIdx], ...newOrd };
+                  const existingOrder = sellerOrderList[existingIdx];
+                  const finalStatus = (existingOrder.status && existingOrder.status !== "Chờ xác nhận" && existingOrder.status !== "Đang xử lý" && (!bo.status || bo.status === "pending"))
+                    ? existingOrder.status
+                    : (mappedStatus || existingOrder.status || "Chờ xác nhận");
+                  sellerOrderList[existingIdx] = { ...existingOrder, ...newOrd, status: finalStatus };
                 } else {
                   sellerOrderList.unshift(newOrd);
                 }
@@ -1387,7 +1402,7 @@ const handleExecuteDelete = async () => {
 
 // Xử lý đơn hàng: Người bán bấm Xác nhận đơn -> Báo người mua & Nổ đơn cho Shipper trong 3km
 const handleConfirmOrder = (order: SellerOrder) => {
-  order.status = "Đang tìm tài xế";
+  order.status = "Đã xác nhận đang chờ tài xế";
   orderRealtimeService.sellerConfirmOrder(order.id);
   const cleanEmail = (currentUser.email || "").toLowerCase().trim();
   if (cleanEmail) {
@@ -2388,22 +2403,16 @@ const getItemImage = (it: OrderItem) => {
                     </button>
                   </template>
 
-                  <template v-else-if="ord.status === 'Đang tìm tài xế' || ord.status.includes('tìm tài xế') || ord.status === 'Đã xác nhận đang chờ tài xế'">
+                  <template v-else-if="ord.status === 'Đang tìm tài xế' || ord.status.includes('tìm tài xế') || ord.status === 'Đã xác nhận đang chờ tài xế' || ord.status.includes('chờ tài xế')">
                     <div class="status-indicator-badge status-waiting">
                       <span class="pulse-dot"></span>
-                      <i class="bi bi-broadcast me-1"></i> Đang tìm tài xế 10km...
+                      <i class="bi bi-broadcast me-1"></i> Đã xác nhận đang chờ tài xế
                     </div>
                   </template>
 
-                  <template v-else-if="ord.status.includes('quán') || ord.status.includes('lấy hàng')">
-                    <div class="status-indicator-badge status-picking">
-                      <i class="bi bi-bicycle me-1"></i> Tài xế đang đến lấy hàng
-                    </div>
-                  </template>
-
-                  <template v-else-if="ord.status.includes('Đang giao') || ord.status.includes('khách')">
+                  <template v-else-if="ord.status.includes('quán') || ord.status.includes('lấy hàng') || ord.status === 'Đang giao hàng' || ord.status.includes('Đang giao') || ord.status.includes('khách')">
                     <div class="status-indicator-badge status-delivering">
-                      <i class="bi bi-send-fill me-1"></i> Đang giao cho khách
+                      <i class="bi bi-bicycle me-1"></i> Đang giao hàng
                     </div>
                   </template>
 
@@ -2415,7 +2424,7 @@ const getItemImage = (it: OrderItem) => {
 
                   <template v-else>
                     <div class="status-indicator-badge status-completed">
-                      <i class="bi bi-check-circle-fill me-1"></i> Đã hoàn thành
+                      <i class="bi bi-check-circle-fill me-1"></i> Đã giao hàng
                     </div>
                   </template>
                 </div>
