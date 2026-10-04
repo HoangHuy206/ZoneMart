@@ -471,7 +471,7 @@ const scrollToRegisterForm = () => {
             </svg>
             Đăng Ký Tài Xế
           </button>
-          <router-link to="/login?role=shipper" class="btn-nav-login">Đăng Nhập</router-link>
+          <router-link to="/shipper-login" class="btn-nav-login">Đăng Nhập</router-link>
         </nav>
       </div>
     </header>
@@ -1365,7 +1365,7 @@ const scrollToRegisterForm = () => {
             <li><router-link to="/register-shipper">Cổng Đăng Ký Tài Xế Shipper</router-link></li>
             <li><router-link to="/register-seller">Cổng Đăng Ký Gian Hàng Seller</router-link></li>
             <li><router-link to="/">Trang Chủ Sàn ZoneMart</router-link></li>
-            <li><router-link to="/login?role=shipper">Đăng Nhập Tài Khoản Hệ Thống</router-link></li>
+            <li><router-link to="/shipper-login">Đăng Nhập Tài Khoản Hệ Thống</router-link></li>
             <li><router-link to="/admin">Cổng Quản Trị Viên Admin</router-link></li>
           </ul>
         </div>

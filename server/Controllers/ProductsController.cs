@@ -370,10 +370,73 @@ public class ProductsController : ControllerBase
                 AiStatus = "approved",
                 ImageUrl = "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=600&q=80",
                 CreatedAt = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = "65f099887766554433221105",
+                StoreId = "65f01234567890abcdef0002",
+                ProductName = "Sữa Tươi Tiệt Trùng Vinamilk 100% Nguyên Chất (Hộp 1L)",
+                Category = "Đồ uống & Sữa",
+                Description = "Sữa tươi tiệt trùng từ 100% sữa bò tươi nguyên chất giàu canxi và dinh dưỡng.",
+                Price = 38000,
+                Weight = 1.0,
+                StockQuantity = 100,
+                StockStatus = "in_stock",
+                ImageUrl = "https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=600&q=80",
+                CreatedAt = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = "65f099887766554433221106",
+                StoreId = "65f01234567890abcdef0002",
+                ProductName = "Sữa Đặc Có Đường Ông Thọ Đỏ Giàu Dinh Dưỡng (Hộp 380g)",
+                Category = "Đồ uống & Sữa",
+                Description = "Sữa đặc sánh mịn ngậy thơm, cực kỳ phù hợp pha cà phê, sinh tố hoặc ăn cùng bánh mì.",
+                Price = 25000,
+                Weight = 0.38,
+                StockQuantity = 60,
+                StockStatus = "in_stock",
+                ImageUrl = "https://images.unsplash.com/photo-1563636619-e9143da7973b?auto=format&fit=crop&w=600&q=80",
+                CreatedAt = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = "65f099887766554433221107",
+                StoreId = "65f01234567890abcdef0003",
+                ProductName = "Cơm Gà Xối Mỡ Da Giòn Nóng Hổi Giòn Tan",
+                Category = "Món ăn nóng",
+                Description = "Đùi gà xối mỡ chiên giòn rụm kẹp cơm chiên dẻo thơm hạt ngọc, ăn kèm dưa góp chua ngọt.",
+                Price = 55000,
+                Weight = 0.5,
+                StockQuantity = 45,
+                StockStatus = "in_stock",
+                ImageUrl = "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=600&q=80",
+                CreatedAt = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = "65f099887766554433221108",
+                StoreId = "65f01234567890abcdef0003",
+                ProductName = "Phở Bò Tái Nạm Hà Nội Nóng Hổi Đậm Đàm",
+                Category = "Món ăn nóng",
+                Description = "Phở bò truyền thống nước dùng ninh xương ngọt thanh đậm đà, thịt bò tái nạm tươi ngon.",
+                Price = 50000,
+                Weight = 0.6,
+                StockQuantity = 50,
+                StockStatus = "in_stock",
+                ImageUrl = "https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=600&q=80",
+                CreatedAt = DateTime.UtcNow
             }
         };
 
-        await _mongoService.Products.InsertManyAsync(products);
+        foreach (var p in products)
+        {
+            var existing = await _mongoService.Products.Find(x => x.Id == p.Id).FirstOrDefaultAsync();
+            if (existing == null)
+            {
+                await _mongoService.Products.InsertOneAsync(p);
+            }
+        }
     }
 }
 

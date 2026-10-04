@@ -11,7 +11,19 @@ import type { RouteRecordRaw } from 'vue-router';
  * ================================================================
  */
 export const binhRoutes: RouteRecordRaw[] = [
+    {
+    path: '/seller-login',
+    name: 'SellerLogin',
+    component: () => import('../../views/binh/SellerLoginView.vue'),
+    meta: { title: 'Đăng Nhập Gian Hàng - ZoneMart Seller', hideHeader: true, hideFooter: true },
+  },
   {
+    path: '/shipper-login',
+    name: 'ShipperLogin',
+    component: () => import('../../views/binh/ShipperLoginView.vue'),
+    meta: { title: 'Đăng Nhập Tài Xế - ZoneMart Driver', hideHeader: true, hideFooter: true },
+  },
+{
     path: '/login',
     name: 'Login',
     component: () => import('../../views/binh/LoginView.vue'),

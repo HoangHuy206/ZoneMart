@@ -69,12 +69,12 @@ const activeTab = ref<"dashboard" | "accounts" | "kyc" | "products" | "managers"
 // Loading & Notification Toast states
 const isLoading = ref<boolean>(false);
 const toastMessage = ref<string>("");
-const toastType = ref<"success" | "danger" | "warning">("success");
+const toastType = ref<"success" | "danger" | "warning" | "info">("success");
 const showToastState = ref<boolean>(false);
 const activeZoomImage = ref<string | null>(null);
 let toastTimer: any = null;
 
-const showToast = (msg: string, type: "success" | "danger" | "warning" = "success") => {
+const showToast = (msg: string, type: "success" | "danger" | "warning" | "info" = "success") => {
   toastMessage.value = msg;
   toastType.value = type;
   showToastState.value = true;
@@ -189,7 +189,7 @@ const totalUserCount = computed(() => stats.value.totalUsers || users.value.leng
 
 // Product Moderation Composable (Kiểm duyệt sản phẩm)
 const productModeration = useProductModeration();
-const { pendingReviewProducts, approveProductByManager, rejectProductByManager, allProducts } = productModeration;
+const { pendingReviewProducts, approveProductByManager, rejectProductByManager } = productModeration;
 const pendingProductsCount = computed(() => pendingReviewProducts.value.length);
 
 const showRejectProductModal = ref<boolean>(false);
