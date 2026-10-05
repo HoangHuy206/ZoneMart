@@ -71,7 +71,7 @@ onMounted(() => {
 
 const goToLoginWithIntent = (target: "seller" | "shipper") => {
   sessionStorage.setItem("pendingRegisterTarget", target);
-  router.push("/login");
+  router.push("/shipper-login");
 };
 
 // Trạng thái Modal Pop-up Thành Công giữa màn hình
@@ -469,7 +469,7 @@ const handleSubmitShipper = async () => {
 
 const closeSuccessModal = () => {
   showSuccessModal.value = false;
-  router.push("/login");
+  router.push("/shipper-login");
 };
 
 onMounted(() => {
@@ -496,7 +496,7 @@ onMounted(() => {
         
         <!-- THANH ĐIỀU HƯỚNG QUAY LẠI -->
         <div class="card-top-bar">
-          <button type="button" class="back-home-btn" @click="router.push('/login')" title="Quay lại trang Đăng Nhập">
+          <button type="button" class="back-home-btn" @click="router.push('/shipper-login')" title="Quay lại trang Đăng Nhập">
             ← Quay lại Đăng nhập
           </button>
         </div>
@@ -901,7 +901,7 @@ onMounted(() => {
         <div class="register-cta-box">
           <div class="cta-line">
             <span>Đã có tài khoản? </span>
-            <router-link to="/login" class="link-orange-bold">Đăng nhập ngay</router-link>
+            <router-link to="/shipper-login" class="link-orange-bold">Đăng nhập ngay</router-link>
           </div>
         </div>
 

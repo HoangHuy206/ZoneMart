@@ -8,6 +8,7 @@ export interface UserProfile {
   phoneEmail: string;
   role: UserRole;
   phone?: string;
+  address?: string;
   avatarUrl?: string;
   walletBalance?: number;
   storeName?: string;
@@ -148,10 +149,14 @@ export function useAuth() {
     localStorage.setItem('zonemart_user', JSON.stringify(freshUser));
     localStorage.setItem('isLoggedIn', 'true');
     localStorage.setItem('userRole', freshUser.role);
+    try {
+      sessionStorage.removeItem('zonemart_ai_chat_history');
+    } catch {}
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('zonemart:user-updated', { detail: freshUser }),
       );
+      window.dispatchEvent(new CustomEvent('zonemart:ai-chat-reset'));
     }
   };
 
@@ -178,6 +183,9 @@ export function useAuth() {
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('userRole');
     try {
+      sessionStorage.removeItem('zonemart_ai_chat_history');
+    } catch {}
+    try {
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -196,6 +204,7 @@ export function useAuth() {
       window.dispatchEvent(
         new CustomEvent('zonemart:user-updated', { detail: null }),
       );
+      window.dispatchEvent(new CustomEvent('zonemart:ai-chat-reset'));
     }
   };
 

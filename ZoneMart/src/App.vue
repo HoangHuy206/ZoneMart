@@ -7,6 +7,7 @@ import { useCart } from './composables/useCart';
 import { useProductCatalog } from './composables/useProductCatalog';
 import ZoneToast from './components/common/ZoneToast.vue';
 import TopProgressBar from './components/common/TopProgressBar.vue';
+import AiAssistantWidget from './components/common/AiAssistantWidget.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -161,6 +162,8 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
     <!-- Thanh tải tiến trình đỉnh trang & Toast thông báo hoạt họa toàn cục -->
     <TopProgressBar />
     <ZoneToast />
+    <!-- Trợ lý AI Chuyên Gia ZoneMart 24/7 (Khung chat góc dưới bên phải) -->
+    <AiAssistantWidget />
 
     <!-- Header chuẩn theo hình Sample Mockup (Tự động ẩn ở trang 404 qua meta.hideHeader) -->
     <header v-if="!$route.meta.hideHeader" class="navbar">

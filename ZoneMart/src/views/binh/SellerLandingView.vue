@@ -768,7 +768,7 @@ const submitSellerSupportTicket = async () => {
           <a href="#steps" class="nav-item">Quy Trình Mở Shop</a>
           <a href="#faq" class="nav-item">Hỏi Đáp FAQ</a>
           <button @click="scrollToRegisterForm" class="btn-nav-action-orange">Đăng Ký Gian Hàng</button>
-          <router-link to="/login?role=seller" class="btn-nav-login">Đăng Nhập</router-link>
+          <router-link to="/seller-login" class="btn-nav-login">Đăng Nhập</router-link>
         </nav>
       </div>
     </header>
@@ -1553,7 +1553,7 @@ const submitSellerSupportTicket = async () => {
             <li><router-link to="/register-shipper">Cổng Đăng Ký Tài Xế Shipper</router-link></li>
             <li><router-link to="/register-seller">Cổng Đăng Ký Gian Hàng Seller</router-link></li>
             <li><router-link to="/">Trang Chủ Sàn ZoneMart</router-link></li>
-            <li><router-link to="/login?role=seller">Đăng Nhập Tài Khoản Hệ Thống</router-link></li>
+            <li><router-link to="/seller-login">Đăng Nhập Tài Khoản Hệ Thống</router-link></li>
             <li><router-link to="/admin">Cổng Quản Trị Viên Admin</router-link></li>
           </ul>
         </div>

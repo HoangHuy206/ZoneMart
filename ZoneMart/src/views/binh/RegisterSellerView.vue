@@ -70,7 +70,7 @@ onMounted(() => {
 
 const goToLoginWithIntent = (target: "seller" | "shipper") => {
   sessionStorage.setItem("pendingRegisterTarget", target);
-  router.push("/login");
+  router.push("/seller-login");
 };
 
 // Trạng thái Modal Pop-up Thành Công giữa màn hình
@@ -480,7 +480,7 @@ const handleSubmitApplication = async () => {
 
 const closeSuccessModal = () => {
   showSuccessModal.value = false;
-  router.push("/login");
+  router.push("/seller-login");
 };
 
 // ================= MASCOT CHUẨN NILBUILD/PAGE-MASCOT (CHỈ DI CHUYỂN ĐẦU THEO CHUỘT) =================
@@ -775,7 +775,7 @@ onUnmounted(() => {
 
         <!-- THANH ĐIỀU HƯỚNG QUAY LẠI -->
         <div class="card-top-bar">
-          <button type="button" class="back-home-btn" @click="router.push('/login')" title="Quay lại trang Đăng Nhập">
+          <button type="button" class="back-home-btn" @click="router.push('/seller-login')" title="Quay lại trang Đăng Nhập">
             ← Quay lại Đăng nhập
           </button>
         </div>
@@ -1218,7 +1218,7 @@ onUnmounted(() => {
         <div class="register-cta-box">
           <div class="cta-line">
             <span>Đã có tài khoản? </span>
-            <router-link to="/login" class="link-orange-bold">Đăng nhập ngay</router-link>
+            <router-link to="/seller-login" class="link-orange-bold">Đăng nhập ngay</router-link>
           </div>
         </div>
 

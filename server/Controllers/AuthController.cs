@@ -27,6 +27,84 @@ public class AuthController : ControllerBase
     public static readonly ConcurrentDictionary<string, Shipper> InMemoryShippers = new();
     public static readonly ConcurrentDictionary<string, (string Otp, DateTime ExpiresAt)> ZaloOtps = new();
 
+    /// <summary>
+    /// Kiểm tra xem địa chỉ Gmail đã được đăng ký trên toàn bộ hệ thống ZoneMart chưa (Users, Stores, Shippers).
+    /// Truy xuất trực tiếp Database MongoDB làm nguồn chân lý thời gian thực.
+    /// Nếu tài khoản đã bị xóa khỏi MongoDB (kể cả chưa duyệt) thì cho phép đăng ký lại bình thường.
+    /// </summary>
+    public static async Task<(bool Exists, string DetailRole)> CheckEmailRegisteredAsync(MongoDbService mongoService, string email)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return (false, "");
+        string cleanEmail = email.Trim().ToLowerInvariant();
+
+        try
+        {
+            // 1. Kiểm tra trong MongoDB collection Stores (Gian hàng)
+            var storeFilter = Builders<Store>.Filter.Regex(s => s.PhoneEmail, new BsonRegularExpression($"^{Regex.Escape(cleanEmail)}$", "i"));
+            var existingStore = await mongoService.Stores.Find(storeFilter).FirstOrDefaultAsync();
+            if (existingStore != null && existingStore.Status != "deleted" && existingStore.Status != "Rejected")
+            {
+                return (true, "Gian hàng (Seller)");
+            }
+
+            // 2. Kiểm tra trong MongoDB collection Shippers (Tài xế)
+            var shipperFilter = Builders<Shipper>.Filter.Regex(s => s.PhoneNumber, new BsonRegularExpression($"^{Regex.Escape(cleanEmail)}$", "i"));
+            var existingShipper = await mongoService.Shippers.Find(shipperFilter).FirstOrDefaultAsync();
+            if (existingShipper != null && existingShipper.Status != "deleted" && existingShipper.Status != "Rejected")
+            {
+                return (true, "Tài xế (Shipper)");
+            }
+
+            // 3. Kiểm tra trong MongoDB collection Users (Buyer, Seller, Shipper, Admin)
+            var userFilter = Builders<User>.Filter.Regex(u => u.PhoneEmail, new BsonRegularExpression($"^{Regex.Escape(cleanEmail)}$", "i"));
+            var existingUser = await mongoService.Users.Find(userFilter).FirstOrDefaultAsync();
+            if (existingUser != null && !existingUser.IsDeleted && existingUser.AccountStatus != "deleted")
+            {
+                // Nếu User này là Seller nhưng Store tương ứng đã bị xóa trong Database Compass:
+                if (existingUser.IsSeller)
+                {
+                    if (existingStore == null)
+                    {
+                        // Store đã bị xóa hoàn toàn khỏi Database -> Tự động dọn dẹp User này để cho phép đăng ký lại
+                        await mongoService.Users.DeleteOneAsync(u => u.Id == existingUser.Id);
+                        existingUser = null;
+                    }
+                }
+                else if (existingUser.IsShipper)
+                {
+                    if (existingShipper == null)
+                    {
+                        // Shipper đã bị xóa hoàn toàn khỏi Database -> Tự động dọn dẹp User này để cho phép đăng ký lại
+                        await mongoService.Users.DeleteOneAsync(u => u.Id == existingUser.Id);
+                        existingUser = null;
+                    }
+                }
+
+                if (existingUser != null)
+                {
+                    string role = existingUser.IsSeller ? "Gian hàng (Seller)" : (existingUser.IsShipper ? "Tài xế (Shipper)" : "Khách hàng");
+                    return (true, role);
+                }
+            }
+
+            // 4. Nếu Database MongoDB không còn tài khoản này, đồng bộ xóa sạch khỏi bộ nhớ đệm InMemoryUsers
+            if (InMemoryUsers != null)
+            {
+                InMemoryUsers.TryRemove(cleanEmail, out _);
+                foreach (var k in InMemoryUsers.Keys.Where(k => string.Equals(k?.Trim(), cleanEmail, StringComparison.OrdinalIgnoreCase)).ToList())
+                {
+                    InMemoryUsers.TryRemove(k, out _);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [CheckEmailRegisteredAsync] Lỗi khi kiểm tra trùng Gmail: {ex.Message}");
+        }
+
+        return (false, "");
+    }
+
     static AuthController()
     {
         var demoSeller = new User
@@ -1050,29 +1128,11 @@ public class AuthController : ControllerBase
             return BadRequest(new { success = false, message = "Địa chỉ Gmail không đúng định dạng!" });
         }
 
-        // 1. Kiểm tra tài khoản đã tồn tại chưa (Ưu tiên kiểm tra CSDL MongoDB Atlas thực tế)
-        try
+        // 1. Kiểm tra tài khoản đã tồn tại chưa trên toàn bộ hệ thống (Users, Stores, Shippers)
+        var (isEmailTaken, roleDetail) = await CheckEmailRegisteredAsync(_mongoService, email);
+        if (isEmailTaken)
         {
-            var filter = Builders<User>.Filter.Eq(u => u.PhoneEmail, email);
-            var dbUser = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
-            if (dbUser != null)
-            {
-                InMemoryUsers[email] = dbUser;
-                return BadRequest(new { success = false, message = "Địa chỉ Gmail này đã được đăng ký tài khoản! Vui lòng đăng nhập hoặc sử dụng Gmail khác." });
-            }
-            else
-            {
-                // Nếu trong CSDL MongoDB không còn tồn tại (do vừa xóa thủ công từ DB), dọn sạch khỏi bộ nhớ tạm
-                InMemoryUsers.TryRemove(email, out _);
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"⚠️ [MongoDB Query Check Warning] {ex.Message}");
-            if (InMemoryUsers.ContainsKey(email))
-            {
-                return BadRequest(new { success = false, message = "Địa chỉ Gmail này đã được đăng ký tài khoản! Vui lòng đăng nhập hoặc sử dụng Gmail khác." });
-            }
+            return BadRequest(new { success = false, message = $"Oh no! Gmail {email} này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi! Vui lòng chọn Gmail khác nhé." });
         }
 
         // 2. Tạo đối tượng User mới cho Khách Hàng (Mã ID: CUST-0001, CUST-0002...)
@@ -1131,7 +1191,7 @@ public class AuthController : ControllerBase
     /// <summary>
     /// HÀM GỬI THƯ CẢM ƠN ĐĂNG KÝ TÀI KHOẢN QUA GMAIL SMTP
     /// </summary>
-    private static async Task SendThankYouEmailAsync(string toEmail, string fullName)
+    public static async Task SendThankYouEmailAsync(string toEmail, string fullName)
     {
         try
         {
@@ -1279,6 +1339,12 @@ public class AuthController : ControllerBase
         User? buyerUser = null;
         if (!string.IsNullOrEmpty(accountKey))
         {
+            var (isEmailTaken, roleDetail) = await CheckEmailRegisteredAsync(_mongoService, accountKey);
+            if (isEmailTaken)
+            {
+                return BadRequest(new { success = false, message = $"Oh no! Gmail {accountKey} này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi! Vui lòng chọn Gmail khác nhé." });
+            }
+
             try
             {
                 buyerUser = await _mongoService.Users.Find(u => u.PhoneEmail == accountKey).FirstOrDefaultAsync();
@@ -1446,6 +1512,12 @@ public class AuthController : ControllerBase
         User? buyerUser = null;
         if (!string.IsNullOrEmpty(accountKey))
         {
+            var (isEmailTaken, roleDetail) = await CheckEmailRegisteredAsync(_mongoService, accountKey);
+            if (isEmailTaken)
+            {
+                return BadRequest(new { success = false, message = $"Oh no! Gmail {accountKey} này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi! Vui lòng chọn Gmail khác nhé." });
+            }
+
             try
             {
                 buyerUser = await _mongoService.Users.Find(u => u.PhoneEmail == accountKey).FirstOrDefaultAsync();
@@ -1610,7 +1682,7 @@ public class AuthController : ControllerBase
     /// <summary>
     /// GỬI GMAIL CẢM ƠN NỘP HỒ SƠ SELLER (PENDING) - NỘI DUNG CHUẨN ZONEMART SELLER PORTAL
     /// </summary>
-    private static async Task SendSellerPendingEmailAsync(string toEmail, string storeName, string ownerFullName)
+    public static async Task SendSellerPendingEmailAsync(string toEmail, string storeName, string ownerFullName)
     {
         try
         {
@@ -1688,7 +1760,7 @@ public class AuthController : ControllerBase
     /// <summary>
     /// GỬI GMAIL CẢM ƠN NỘP HỒ SƠ SHIPPER (PENDING) - NGẮN GỌN & TỐI ƯU GIAO DIỆN MOBILE / ANDROID
     /// </summary>
-    private static async Task SendShipperPendingEmailAsync(string toEmail, string fullName, string licensePlate)
+    public static async Task SendShipperPendingEmailAsync(string toEmail, string fullName, string licensePlate)
     {
         try
         {
