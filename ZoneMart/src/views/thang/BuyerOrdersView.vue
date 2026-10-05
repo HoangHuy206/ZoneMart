@@ -99,30 +99,32 @@ const getOrderStoreName = (order: any): string => {
 };
 
 const getOrderStatusClass = (status: any): string => {
-  if (!status) return "processing";
+  if (!status) return "pending";
   const s = String(status).toLowerCase();
-  if (s.includes("thanh toán") || s.includes("completed") || s.includes("thành công")) return "completed";
-  if (s.includes("delivering") || s.includes("giao")) return "delivering";
-  if (s.includes("thanh toán") || s.includes("completed") || s.includes("thành công") || s.includes("giao thành công")) return "completed";
-  if (s.includes("delivering") || s.includes("đang giao cho bạn") || s.includes("đang giao")) return "delivering";
-  if (s.includes("picking") || s.includes("đang đi lấy")) return "picking";
+  if (s === "completed" || s.includes("thành công")) return "completed";
+  if (s === "delivering" || s.includes("vị trí của bạn") || s.includes("đang tới")) return "delivering";
+  if (s === "picking" || s.includes("đến quán") || s.includes("lấy hàng")) return "picking";
+  if (s === "confirmed" || s.includes("tìm tài xế") || s.includes("đã xác nhận")) return "confirmed";
+  if (s === "cancelled" || s.includes("hủy")) return "cancelled";
+  if (s === "pending" || s.includes("chờ quán")) return "pending";
   return "processing";
 };
 
-const getOrderStatusText = (status: any): string => {
-  if (!status) return "Đang xử lý";
+const getOrderStatusText = (status: any, orderObj?: any): string => {
+  if (orderObj?.statusText) return orderObj.statusText;
+  if (!status) return "Chờ quán xác nhận";
   if (typeof status === "string") {
     const clean = status.replace(/\s*\(TPBank\)/gi, "").replace(/\s*TPBank/gi, "").trim();
-    if (clean === "picking" || clean.includes("đang đi lấy")) return "Tài xế đang đi lấy đơn hàng";
-    if (clean === "delivering" || clean.includes("đang giao cho bạn")) return "Tài xế đang giao cho bạn";
-    if (clean === "completed" || clean.includes("thành công") || clean.includes("giao thành công")) return "Giao thành công";
-    if (clean.includes("Đã thanh toán")) return "Đã thanh toán";
-    if (clean === "completed") return "Giao hàng thành công";
-    if (clean === "delivering") return "Đang giao hàng (Hỏa tốc)";
-    if (clean === "pending") return "Đang chờ tài xế nhận đơn";
+    const s = clean.toLowerCase();
+    if (s === "pending" || s.includes("chờ quán") || s.includes("chờ xác nhận")) return "Chờ quán xác nhận";
+    if (s === "confirmed" || s.includes("tìm tài xế") || s.includes("đã xác nhận")) return "Đã xác nhận • Đang tìm tài xế";
+    if (s === "picking" || s.includes("đến quán") || s.includes("lấy hàng")) return "Tài xế đang đến quán lấy hàng";
+    if (s === "delivering" || s.includes("vị trí của bạn") || s.includes("đang tới")) return "Tài xế đang tới vị trí của bạn";
+    if (s === "completed" || s.includes("thành công") || s.includes("giao thành công")) return "Giao hàng thành công";
+    if (s === "cancelled" || s.includes("hủy")) return "Đã hủy đơn";
     return clean;
   }
-  return "Đang xử lý";
+  return "Chờ quán xác nhận";
 };
 
 const formatPaymentMethod = (method: any): string => {
@@ -308,23 +310,27 @@ onMounted(() => {
   fetchOrdersWithLoading(650);
   window.addEventListener("zonemart:refresh_buyer_orders", handleGlobalRefresh);
 
-  // Lắng nghe cập nhật trạng thái đơn hàng thời gian thực (từ Shipper)
+  // Lắng nghe cập nhật trạng thái đơn hàng thời gian thực (từ Seller & Shipper)
   unsubscribeRealTimeStatus = orderRealtimeService.onOrderStatusChanged(({ orderId, status, statusText, order }) => {
     const found = orders.value.find((o) => o.id === orderId || o.orderId === orderId);
     if (found) {
       found.status = status;
       found.statusText = statusText;
-      if (order.shipperInfo) found.shipperInfo = order.shipperInfo;
+      if (order?.shipperInfo) found.shipperInfo = order.shipperInfo;
     } else {
       loadBuyerOrders();
     }
 
-    if (status === "picking") {
-      triggerRealTimeToast(`🚴 Đơn #${orderId}: Tài xế đang đi lấy đơn hàng tại quán!`);
+    if (status === "confirmed") {
+      triggerRealTimeToast(`📋 Đơn #${orderId}: Quán đã xác nhận và đang tìm tài xế!`);
+    } else if (status === "picking") {
+      triggerRealTimeToast(`🚴 Đơn #${orderId}: Tài xế đang đến quán lấy hàng!`);
     } else if (status === "delivering") {
-      triggerRealTimeToast(`📦 Đơn #${orderId}: Tài xế đang giao cho bạn! Vui lòng chú ý điện thoại.`);
+      triggerRealTimeToast(`📦 Đơn #${orderId}: Tài xế đang tới vị trí của bạn!`);
     } else if (status === "completed") {
-      triggerRealTimeToast(`🎉 Đơn #${orderId}: Đã giao thành công! Cảm ơn bạn đã đặt hàng tại ZoneMart.`);
+      triggerRealTimeToast(`🎉 Đơn #${orderId}: Giao hàng thành công! Cảm ơn bạn đã đặt hàng tại ZoneMart.`);
+    } else if (status === "cancelled") {
+      triggerRealTimeToast(`❌ Đơn #${orderId}: Đơn hàng đã bị hủy (${statusText || 'Quán bận'}).`);
     }
   });
 });
@@ -577,8 +583,10 @@ const handleReportIssue = (order: any) => {
               <i v-if="getOrderStatusClass(order.status) === 'completed'" class="bi bi-check-circle-fill me-1"></i>
               <i v-else-if="getOrderStatusClass(order.status) === 'delivering'" class="bi bi-bicycle me-1"></i>
               <i v-else-if="getOrderStatusClass(order.status) === 'picking'" class="bi bi-geo-alt-fill me-1"></i>
+              <i v-else-if="getOrderStatusClass(order.status) === 'confirmed'" class="bi bi-radar me-1"></i>
+              <i v-else-if="getOrderStatusClass(order.status) === 'cancelled'" class="bi bi-x-circle me-1"></i>
               <i v-else class="bi bi-hourglass-split me-1"></i>
-              <span>{{ getOrderStatusText(order.status || order.statusText) }}</span>
+              <span>{{ getOrderStatusText(order.status, order) }}</span>
             </div>
           </div>
 
@@ -593,7 +601,7 @@ const handleReportIssue = (order: any) => {
                 <span class="plate-tag">{{ order.shipperInfo.licensePlate }}</span>
               </div>
               <small class="shipper-live-desc">
-                {{ getOrderStatusClass(order.status) === 'picking' ? 'Tài xế đang trên đường đến quán lấy món hàng cho bạn' : 'Tài xế đã nhận món từ quán và đang giao hỏa tốc đến bạn' }}
+                {{ getOrderStatusClass(order.status) === 'picking' ? 'Tài xế đang trên đường đến quán lấy món hàng cho bạn' : 'Tài xế đang tới vị trí của bạn' }}
               </small>
             </div>
           </div>
@@ -1204,6 +1212,25 @@ const handleReportIssue = (order: any) => {
   border: 1px solid #bfdbfe;
 }
 
+.status-pill.picking {
+  background: #e0f2fe;
+  color: #0284c7;
+  border: 1px solid #7dd3fc;
+}
+
+.status-pill.confirmed {
+  background: #fdf4ff;
+  color: #9333ea;
+  border: 1px solid #f0abfc;
+}
+
+.status-pill.cancelled {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.status-pill.pending,
 .status-pill.processing {
   background: #fffbeb;
   color: #d97706;

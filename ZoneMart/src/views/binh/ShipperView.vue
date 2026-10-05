@@ -27,7 +27,9 @@ const showIncomingModal = ref(false);
 const incomingCountdown = ref(30);
 let incomingTimer: any = null;
 const incomingDistance = ref(0);
-let unsubscribeOrderCreated: (() => void) | null = null;
+let unsubscribeOrderDispatch: (() => void) | null = null;
+let unsubscribeStatusChanged: (() => void) | null = null;
+const ignoredOrderIds = new Set<string>();
 
 // 1. Trạng thái hoạt động (Mặc định: Tạm nghỉ)
 const isOnline = ref(false);
@@ -647,6 +649,84 @@ const recenterMap = () => {
   locateAndTrackDriver(false);
 };
 
+// Xử lý kiểm tra và kích hoạt nổ đơn hỏa tốc trong bán kính 3km
+const triggerIncomingOrderCheck = (order: RealtimeOrder) => {
+  if (!order || !order.id) return;
+
+  // 1. Chỉ nổ đơn khi Shipper đang BẬT HOẠT ĐỘNG
+  if (!isOnline.value) {
+    console.log("[ShipperView] Tài xế đang TẮT hoạt động -> Không nổ đơn.");
+    return;
+  }
+
+  // 2. Chỉ nổ đơn khi đơn đã được quán XÁC NHẬN (chờ tài xế)
+  if (order.status !== "confirmed") {
+    console.log("[ShipperView] Đơn chưa được Quán xác nhận -> Không nổ đơn.");
+    return;
+  }
+
+  // 3. Nếu tài xế đã bỏ qua / hủy bỏ đơn này thì không nổ lại
+  if (ignoredOrderIds.has(order.id)) {
+    return;
+  }
+
+  // 4. Nếu đang bận giao đơn khác thì không nổ đơn đè
+  if (currentStep.value !== "idle" && currentStep.value !== "delivered") {
+    console.log("[ShipperView] Tài xế đang bận đơn khác -> Không nổ đơn.");
+    return;
+  }
+
+  // 5. Tính khoảng cách thực tế từ vị trí hiện tại của Shipper tới Quán (Haversine)
+  const storeLat = order.store?.lat ?? 21.0345;
+  const storeLng = order.store?.lng ?? 105.7960;
+  const dist = orderRealtimeService.calculateDistanceKm(
+    driverLocation.value.lat,
+    driverLocation.value.lng,
+    storeLat,
+    storeLng
+  );
+
+  incomingDistance.value = dist;
+
+  // QUY TẮC: Trong vòng bán kính 3km thì LẬP TỨC NỔ ĐƠN, ngược lại nếu > 3km thì KHÔNG NỔ ĐƠN
+  if (dist <= 3.0) {
+    console.log(`[ShipperView] Đơn #${order.id} nằm trong bán kính 3km (${dist} km) -> NỔ ĐƠN!`);
+    incomingOrder.value = order;
+    showIncomingModal.value = true;
+    incomingCountdown.value = 30;
+
+    // Phát chuông báo nổ đơn
+    orderRealtimeService.playOrderAlertSound();
+    triggerToast(`🚨 NỔ ĐƠN HỎA TỐC! Quán cách bạn ${dist} km (Bán kính <= 3km)`);
+
+    if (incomingTimer) clearInterval(incomingTimer);
+    incomingTimer = setInterval(() => {
+      incomingCountdown.value--;
+      if (incomingCountdown.value <= 0) {
+        clearInterval(incomingTimer);
+        showIncomingModal.value = false;
+        incomingOrder.value = null;
+      }
+    }, 1000);
+  } else {
+    console.log(`[ShipperView] Đơn nằm ngoài bán kính 3km (${dist} km) -> Bỏ qua, không nổ đơn.`);
+    triggerToast(`ℹ️ Có đơn mới ngoài bán kính 3km (${dist} km) - Không nổ đơn.`);
+  }
+};
+
+// Kiểm tra danh sách đơn hàng đã được quán xác nhận đang chờ tài xế
+const checkForPendingConfirmedOrders = () => {
+  if (!isOnline.value) return;
+  if (currentStep.value !== "idle" && currentStep.value !== "delivered") return;
+  const allOrders = orderRealtimeService.getAllOrders();
+  const pendingOrd = allOrders.find(
+    (o) => o.status === "confirmed" && !ignoredOrderIds.has(o.id)
+  );
+  if (pendingOrd) {
+    triggerIncomingOrderCheck(pendingOrd);
+  }
+};
+
 // Xử lý bật/tắt online
 const toggleOnline = () => {
   isOnline.value = !isOnline.value;
@@ -659,6 +739,9 @@ const toggleOnline = () => {
     // Tự động định vị ngay lập tức vị trí thực tế của người dùng
     locateAndTrackDriver(false);
     startLocationWatch();
+    setTimeout(() => {
+      checkForPendingConfirmedOrders();
+    }, 500);
   } else {
     stopLocationWatch();
     triggerToast("🔴 Đã TẮT nhận đơn. Bạn đang ở trạng thái tạm nghỉ.");
@@ -695,7 +778,7 @@ const handleAcceptIncomingOrder = async () => {
   };
   currentStep.value = "accepted";
 
-  // Thông báo tới Buyer thời gian thực: "Tài xế đang đi lấy đơn hàng"
+  // Thông báo tới Buyer & Seller thời gian thực: "Tài xế đang đến quán lấy hàng"
   orderRealtimeService.acceptOrder(order.id, driverProfile);
   triggerToast(`Đã nhận đơn #${order.id}! Đang tự động định vị tuyến đường ngắn nhất đến Quán...`);
 
@@ -705,8 +788,11 @@ const handleAcceptIncomingOrder = async () => {
 const handleDeclineOrder = () => {
   if (incomingTimer) clearInterval(incomingTimer);
   showIncomingModal.value = false;
+  if (incomingOrder.value) {
+    ignoredOrderIds.add(incomingOrder.value.id);
+  }
   incomingOrder.value = null;
-  triggerToast("Đã từ chối đơn hàng.");
+  triggerToast("Đã bỏ qua đơn. Đơn hàng vẫn ở trạng thái chờ tài xế khác.");
 };
 
 // Xử lý luồng đơn hàng: 1. Đã lấy hàng thành công tại quán -> vẽ đường ngắn nhất tới Khách
@@ -714,7 +800,7 @@ const handleConfirmPicked = async () => {
   currentStep.value = "picked";
   if (activeOrder.value) {
     const orderId = activeOrder.value.id || activeOrder.value.orderId;
-    // Thông báo tới Buyer thời gian thực: "Tài xế đang giao cho bạn"
+    // Thông báo tới Buyer thời gian thực: "Tài xế đang tới vị trí của bạn"
     orderRealtimeService.confirmOrderPicked(orderId);
   }
   triggerToast("Đã lấy đơn hàng thành công! Đang tự động định vị tuyến đường ngắn nhất đến Khách...");
@@ -791,68 +877,32 @@ onMounted(() => {
   checkFaceStatus();
   initMap();
 
-  // Lắng nghe đơn hàng mới từ hệ thống thời gian thực (Kiểm tra bán kính 3km)
-  unsubscribeOrderCreated = orderRealtimeService.onOrderCreated((order) => {
-    // 1. Chỉ nổ đơn khi Shipper đang BẬT HOẠT ĐỘNG
-    if (!isOnline.value) {
-      console.log("[ShipperView] Tài xế đang TẮT hoạt động -> Không nổ đơn.");
-      return;
-    }
+  // 1. Lắng nghe sự kiện quán đã XÁC NHẬN đơn hàng -> Sẵn sàng nổ đơn trong bán kính 3km
+  unsubscribeOrderDispatch = orderRealtimeService.onOrderDispatchReady((order) => {
+    triggerIncomingOrderCheck(order);
+  });
 
-    // 2. Nếu đang bận giao đơn khác thì không nổ đơn đè
-    if (currentStep.value !== "idle" && currentStep.value !== "delivered") {
-      console.log("[ShipperView] Tài xế đang bận đơn khác -> Không nổ đơn.");
-      return;
-    }
-
-    // 3. Tính khoảng cách thực tế từ vị trí hiện tại của Shipper tới Quán (Haversine)
-    const storeLat = order.store?.lat ?? 21.0345;
-    const storeLng = order.store?.lng ?? 105.7960;
-    const dist = orderRealtimeService.calculateDistanceKm(
-      driverLocation.value.lat,
-      driverLocation.value.lng,
-      storeLat,
-      storeLng
-    );
-
-    incomingDistance.value = dist;
-
-    // QUY TẮC: Trong vòng bán kính 3km thì LẬP TỨC NỔ ĐƠN, ngược lại nếu > 3km thì KHÔNG NỔ ĐƠN
-    if (dist <= 3.0) {
-      console.log(`[ShipperView] Đơn nằm trong bán kính 3km (${dist} km) -> NỔ ĐƠN!`);
-      incomingOrder.value = order;
-      showIncomingModal.value = true;
-      incomingCountdown.value = 30;
-
-      // Phát chuông báo nổ đơn
-      orderRealtimeService.playOrderAlertSound();
-      triggerToast(`🚨 NỔ ĐƠN HỎA TỐC! Quán cách bạn ${dist} km (Bán kính <= 3km)`);
-
-      if (incomingTimer) clearInterval(incomingTimer);
-      incomingTimer = setInterval(() => {
-        incomingCountdown.value--;
-        if (incomingCountdown.value <= 0) {
-          clearInterval(incomingTimer);
-          showIncomingModal.value = false;
-          incomingOrder.value = null;
-        }
-      }, 1000);
-    } else {
-      console.log(`[ShipperView] Đơn nằm ngoài bán kính 3km (${dist} km) -> Bỏ qua, không nổ đơn.`);
-      triggerToast(`ℹ️ Có đơn mới ngoài bán kính 3km (${dist} km) - Không nổ đơn.`);
+  // 2. Lắng nghe trạng thái đơn chuyển sang 'confirmed'
+  unsubscribeStatusChanged = orderRealtimeService.onOrderStatusChanged(({ status, order }) => {
+    if (status === "confirmed" && order) {
+      triggerIncomingOrderCheck(order);
     }
   });
 
-  // Nếu đang mở hoạt động sẵn, tự động định vị vị trí người dùng
+  // Nếu đang mở hoạt động sẵn, tự động định vị vị trí người dùng & kiểm tra đơn chờ
   if (isOnline.value) {
     locateAndTrackDriver(true);
     startLocationWatch();
+    setTimeout(() => {
+      checkForPendingConfirmedOrders();
+    }, 600);
   }
 });
 
 onUnmounted(() => {
   if (incomingTimer) clearInterval(incomingTimer);
-  if (unsubscribeOrderCreated) unsubscribeOrderCreated();
+  if (unsubscribeOrderDispatch) unsubscribeOrderDispatch();
+  if (unsubscribeStatusChanged) unsubscribeStatusChanged();
   stopLocationWatch();
   if (map) {
     map.remove();
@@ -1074,7 +1124,6 @@ onUnmounted(() => {
               <i class="bi bi-telephone-fill"></i> Gọi Quán
             </a>
             <button class="btn btn-primary flex-1" @click="handleConfirmPicked">
-              <i class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></i> ĐÃ LẤY HÀNG <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i>
               <i class="bi bi-box-arrow-in-down me-1" aria-hidden="true"></i> ĐÃ LẤY ĐƠN HÀNG THÀNH CÔNG <i class="bi bi-arrow-right ms-1" aria-hidden="true"></i>
             </button>
           </div>
@@ -1097,8 +1146,7 @@ onUnmounted(() => {
               <i class="bi bi-telephone-fill"></i> Gọi Khách
             </a>
             <button class="btn btn-success flex-1" @click="handleConfirmDelivered">
-              <i class="bi bi-check2-circle me-1" aria-hidden="true"></i> ĐÃ GIAO XONG
-              <i class="bi bi-check2-circle me-1" aria-hidden="true"></i> ĐÃ GIAO THÀNH CÔNG
+              <i class="bi bi-check2-circle me-1" aria-hidden="true"></i> GIAO HÀNG THÀNH CÔNG
             </button>
           </div>
           <button class="btn-report-link" @click="handleReportIssue">

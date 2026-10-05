@@ -32,7 +32,7 @@ export interface RealtimeOrder {
   shippingFee: number;
   paymentMethod: string;
   createdAt: string;
-  status: "pending" | "picking" | "delivering" | "completed" | "cancelled";
+  status: "pending" | "confirmed" | "picking" | "delivering" | "completed" | "cancelled";
   statusText?: string;
   customer: OrderLocation;
   store: OrderLocation;
@@ -51,8 +51,12 @@ export type StatusEventCallback = (payload: { orderId: string; status: string; s
 
 class OrderRealtimeService {
   private channel: BroadcastChannel | null = null;
+  private sseSource: EventSource | null = null;
   private orderCreatedListeners: OrderEventCallback[] = [];
   private orderStatusListeners: StatusEventCallback[] = [];
+  private orderDispatchListeners: OrderEventCallback[] = [];
+  private ordersClearedListeners: (() => void)[] = [];
+  private cachedOrdersMap = new Map<string, RealtimeOrder>();
   private audioCtx: AudioContext | null = null;
   private readonly CHANNEL_NAME = "zonemart_order_realtime_channel";
   private readonly STORAGE_KEY = "zonemart_active_delivery_order";
@@ -60,6 +64,77 @@ class OrderRealtimeService {
   constructor() {
     this.initChannel();
     this.initStorageListener();
+    this.initServerSync();
+  }
+
+  /**
+   * Kết nối Server-Sent Events (SSE) và tự động đồng bộ xuyên trình duyệt (Chrome, Cốc Cốc, Mobile)
+   */
+  private initServerSync() {
+    if (typeof window === "undefined") return;
+
+    // 1. Kết nối SSE để nhận sự kiện tức thì
+    if ("EventSource" in window) {
+      try {
+        this.sseSource = new EventSource("/api/realtime/events");
+        this.sseSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            this.handleIncomingMessage(data, true);
+          } catch (e) {}
+        };
+        this.sseSource.onerror = () => {
+          // Tự động thử lại khi server restart
+        };
+      } catch (e) {}
+    }
+
+    // 2. Định kỳ kéo danh sách đơn từ Server (Fall-safe Polling mỗi 1.5s)
+    setInterval(() => {
+      this.syncOrdersFromServer();
+    }, 1500);
+
+    // Kéo ngay lần đầu
+    setTimeout(() => {
+      this.syncOrdersFromServer();
+    }, 200);
+  }
+
+  /**
+   * Đồng bộ dữ liệu đơn hàng từ server về bộ nhớ và localStorage
+   */
+  public async syncOrdersFromServer() {
+    try {
+      const res = await fetch("/api/realtime/orders");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.orders)) {
+          data.orders.forEach((ord: RealtimeOrder) => {
+            const existing = this.cachedOrdersMap.get(ord.id);
+            const isNew = !existing;
+            const isStatusChanged = existing && existing.status !== ord.status;
+
+            this.cachedOrdersMap.set(ord.id, ord);
+
+            if (isNew) {
+              this.orderCreatedListeners.forEach((cb) => cb(ord));
+            } else if (isStatusChanged) {
+              this.orderStatusListeners.forEach((cb) =>
+                cb({
+                  orderId: ord.id,
+                  status: ord.status,
+                  statusText: ord.statusText || "",
+                  order: ord
+                })
+              );
+              if (ord.status === "confirmed") {
+                this.orderDispatchListeners.forEach((cb) => cb(ord));
+              }
+            }
+          });
+        }
+      }
+    } catch (e) {}
   }
 
   /**
@@ -94,15 +169,52 @@ class OrderRealtimeService {
   }
 
   /**
-   * Xử lý gói tin nhận được từ các tab/cửa sổ khác
+   * Xử lý gói tin nhận được từ các tab/cửa sổ khác hoặc Server SSE
    */
-  private handleIncomingMessage(data: any) {
+  private handleIncomingMessage(data: any, fromServer = false) {
     if (!data || !data.type) return;
 
-    if (data.type === "ORDER_CREATED" && data.order) {
+    if (data.type === "ORDERS_CLEARED") {
+      this.cachedOrdersMap.clear();
+      this.clearActiveOrder();
+      this.ordersClearedListeners.forEach((cb) => cb());
+    } else if (data.type === "ORDER_CREATED" && data.order) {
+      this.cachedOrdersMap.set(data.order.id, data.order);
       this.orderCreatedListeners.forEach((cb) => cb(data.order));
     } else if (data.type === "ORDER_STATUS_CHANGED" && data.payload) {
-      this.orderStatusListeners.forEach((cb) => cb(data.payload));
+      const p = data.payload;
+      if (p.order) this.cachedOrdersMap.set(p.order.id, p.order);
+      this.orderStatusListeners.forEach((cb) => cb(p));
+      this.updateUserOrdersHistory(p.order || { id: p.orderId, status: p.status, statusText: p.statusText });
+    } else if (data.type === "ORDER_DISPATCH_READY" && data.order) {
+      this.cachedOrdersMap.set(data.order.id, data.order);
+      this.orderDispatchListeners.forEach((cb) => cb(data.order));
+    }
+  }
+
+  /**
+   * Lắng nghe sự kiện toàn bộ đơn hàng bị xóa sạch
+   */
+  public onOrdersCleared(callback: () => void) {
+    this.ordersClearedListeners.push(callback);
+    return () => {
+      this.ordersClearedListeners = this.ordersClearedListeners.filter((c) => c !== callback);
+    };
+  }
+
+  /**
+   * Gọi API xóa sạch toàn bộ đơn trên server & broadcast cho mọi client
+   */
+  public async clearAllOrders(): Promise<boolean> {
+    try {
+      this.cachedOrdersMap.clear();
+      this.clearActiveOrder();
+      const res = await fetch("/api/realtime/orders/clear", { method: "POST" });
+      this.broadcast({ type: "ORDERS_CLEARED" });
+      return res.ok;
+    } catch (e) {
+      this.broadcast({ type: "ORDERS_CLEARED" });
+      return false;
     }
   }
 
@@ -258,7 +370,21 @@ class OrderRealtimeService {
    * 1. NGƯỜI MUA: Phát đơn hàng mới sau khi đặt hàng / thanh toán
    */
   public dispatchNewOrder(order: RealtimeOrder) {
+    if (!order.status) order.status = "pending";
+    if (!order.statusText) order.statusText = "Chờ quán xác nhận";
+    this.cachedOrdersMap.set(order.id, order);
     this.saveActiveOrder(order);
+    this.updateUserOrdersHistory(order);
+
+    // Đồng bộ lên Server (0ms xuyên trình duyệt)
+    try {
+      fetch("/api/realtime/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(order)
+      }).catch(() => {});
+    } catch (e) {}
+
     this.broadcast({
       type: "ORDER_CREATED",
       order
@@ -266,14 +392,124 @@ class OrderRealtimeService {
   }
 
   /**
-   * 2. TÀI XẾ: Đồng ý nhận đơn
+   * 2. NGƯỜI BÁN: Xác nhận đơn hàng -> Chuyển sang tìm tài xế trong 3km
+   */
+  public sellerConfirmOrder(orderId: string): RealtimeOrder | null {
+    let order = this.cachedOrdersMap.get(orderId) || this.getActiveOrder();
+    if (!order) {
+      order = {
+        id: orderId,
+        orderCode: orderId,
+        total: 40000,
+        shippingFee: 15000,
+        paymentMethod: "Tiền mặt COD",
+        createdAt: "Vừa xong",
+        status: "confirmed",
+        statusText: "Đã xác nhận • Đang tìm tài xế",
+        customer: { lat: 21.0333, lng: 105.7983, name: "Khách hàng ZoneMart", address: "Hà Nội" },
+        store: { lat: 21.0345, lng: 105.7960, name: "test Gian Hàng", address: "Cầu Giấy, Hà Nội" },
+        items: []
+      };
+    }
+
+    order.status = "confirmed";
+    order.statusText = "Đã xác nhận • Đang tìm tài xế";
+    this.cachedOrdersMap.set(orderId, order);
+    this.saveActiveOrder(order);
+    this.updateUserOrdersHistory(order);
+
+    // Đồng bộ lên Server
+    try {
+      fetch("/api/realtime/orders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          status: "confirmed",
+          statusText: "Đã xác nhận • Đang tìm tài xế"
+        })
+      }).catch(() => {});
+    } catch (e) {}
+
+    this.broadcast({
+      type: "ORDER_STATUS_CHANGED",
+      payload: {
+        orderId,
+        status: "confirmed",
+        statusText: "Đã xác nhận • Đang tìm tài xế",
+        order
+      }
+    });
+
+    // Phát tín hiệu nổ đơn cho các tài xế trong 3km
+    this.broadcast({
+      type: "ORDER_DISPATCH_READY",
+      order
+    });
+
+    return order;
+  }
+
+  /**
+   * 2b. NGƯỜI BÁN: Hủy bỏ / từ chối đơn hàng
+   */
+  public sellerCancelOrder(orderId: string, reason = "Quán bận, từ chối nhận đơn"): RealtimeOrder | null {
+    let order = this.cachedOrdersMap.get(orderId) || this.getActiveOrder();
+    if (order) {
+      order.status = "cancelled";
+      order.statusText = reason;
+      this.cachedOrdersMap.set(orderId, order);
+      this.saveActiveOrder(order);
+      this.updateUserOrdersHistory(order);
+
+      try {
+        fetch("/api/realtime/orders", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            orderId,
+            status: "cancelled",
+            statusText: reason
+          })
+        }).catch(() => {});
+      } catch (e) {}
+
+      this.broadcast({
+        type: "ORDER_STATUS_CHANGED",
+        payload: {
+          orderId,
+          status: "cancelled",
+          statusText: reason,
+          order
+        }
+      });
+    }
+    return order;
+  }
+
+  /**
+   * 3. TÀI XẾ: Đồng ý nhận đơn -> Định vị đi đến Quán lấy hàng
    */
   public acceptOrder(orderId: string, shipperInfo: any): RealtimeOrder | null {
-    const active = this.getActiveOrder();
-    if (!active || active.id !== orderId) return null;
+    let active = this.cachedOrdersMap.get(orderId) || this.getActiveOrder();
+    if (!active) {
+      active = {
+        id: orderId,
+        orderCode: orderId,
+        total: 40000,
+        shippingFee: 15000,
+        paymentMethod: "Tiền mặt COD",
+        createdAt: "Vừa xong",
+        status: "picking",
+        statusText: "Tài xế đang đến quán lấy hàng",
+        customer: { lat: 21.0333, lng: 105.7983, name: "Khách hàng ZoneMart", address: "Hà Nội" },
+        store: { lat: 21.0345, lng: 105.7960, name: "test Gian Hàng", address: "Cầu Giấy, Hà Nội" },
+        items: []
+      };
+    }
 
     active.status = "picking";
-    active.statusText = "Tài xế đang đi lấy đơn hàng";
+    active.statusText = "Tài xế đang đến quán lấy hàng";
     active.shipperInfo = {
       name: shipperInfo.fullName || shipperInfo.name || "Tài xế ZoneMart",
       phone: shipperInfo.phoneEmail || shipperInfo.phone || "0912 888 999",
@@ -282,15 +518,30 @@ class OrderRealtimeService {
       avatarUrl: shipperInfo.avatarUrl || ""
     };
 
+    this.cachedOrdersMap.set(orderId, active);
     this.saveActiveOrder(active);
     this.updateUserOrdersHistory(active);
+
+    // Đồng bộ lên Server
+    try {
+      fetch("/api/realtime/orders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          status: "picking",
+          statusText: "Tài xế đang đến quán lấy hàng",
+          shipperInfo: active.shipperInfo
+        })
+      }).catch(() => {});
+    } catch (e) {}
 
     this.broadcast({
       type: "ORDER_STATUS_CHANGED",
       payload: {
         orderId,
         status: "picking",
-        statusText: "Tài xế đang đi lấy đơn hàng",
+        statusText: "Tài xế đang đến quán lấy hàng",
         order: active
       }
     });
@@ -299,24 +550,38 @@ class OrderRealtimeService {
   }
 
   /**
-   * 3. TÀI XẾ: Đã lấy đơn hàng thành công tại quán
+   * 4. TÀI XẾ: Đã lấy đơn hàng thành công tại quán -> Định vị chuyển qua Người Dùng
    */
   public confirmOrderPicked(orderId: string): RealtimeOrder | null {
-    const active = this.getActiveOrder();
-    if (!active || active.id !== orderId) return null;
+    let active = this.cachedOrdersMap.get(orderId) || this.getActiveOrder();
+    if (!active) return null;
 
     active.status = "delivering";
-    active.statusText = "Tài xế đang giao cho bạn";
+    active.statusText = "Tài xế đang tới vị trí của bạn";
 
+    this.cachedOrdersMap.set(orderId, active);
     this.saveActiveOrder(active);
     this.updateUserOrdersHistory(active);
+
+    // Đồng bộ lên Server
+    try {
+      fetch("/api/realtime/orders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          status: "delivering",
+          statusText: "Tài xế đang tới vị trí của bạn"
+        })
+      }).catch(() => {});
+    } catch (e) {}
 
     this.broadcast({
       type: "ORDER_STATUS_CHANGED",
       payload: {
         orderId,
         status: "delivering",
-        statusText: "Tài xế đang giao cho bạn",
+        statusText: "Tài xế đang tới vị trí của bạn",
         order: active
       }
     });
@@ -325,18 +590,32 @@ class OrderRealtimeService {
   }
 
   /**
-   * 4. TÀI XẾ: Đã giao thành công tới khách hàng
+   * 5. TÀI XẾ: Đã giao thành công tới khách hàng -> Cập nhật Giao thành công cả 2 bên
    */
   public confirmOrderDelivered(orderId: string): RealtimeOrder | null {
-    const active = this.getActiveOrder();
-    if (!active || active.id !== orderId) return null;
+    let active = this.cachedOrdersMap.get(orderId) || this.getActiveOrder();
+    if (!active) return null;
 
     active.status = "completed";
     active.statusText = "Giao thành công";
 
+    this.cachedOrdersMap.set(orderId, active);
     this.saveActiveOrder(active);
     this.updateUserOrdersHistory(active);
     this.playSuccessChime();
+
+    // Đồng bộ lên Server
+    try {
+      fetch("/api/realtime/orders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          status: "completed",
+          statusText: "Giao thành công"
+        })
+      }).catch(() => {});
+    } catch (e) {}
 
     this.broadcast({
       type: "ORDER_STATUS_CHANGED",
@@ -352,12 +631,22 @@ class OrderRealtimeService {
   }
 
   /**
-   * Lắng nghe sự kiện nổ đơn mới (cho Shipper)
+   * Lắng nghe sự kiện nổ đơn mới (cho Seller & Shipper)
    */
   public onOrderCreated(callback: OrderEventCallback) {
     this.orderCreatedListeners.push(callback);
     return () => {
       this.orderCreatedListeners = this.orderCreatedListeners.filter((c) => c !== callback);
+    };
+  }
+
+  /**
+   * Lắng nghe sự kiện quán đã xác nhận, sẵn sàng điều phối tài xế (cho Shipper)
+   */
+  public onOrderDispatchReady(callback: OrderEventCallback) {
+    this.orderDispatchListeners.push(callback);
+    return () => {
+      this.orderDispatchListeners = this.orderDispatchListeners.filter((c) => c !== callback);
     };
   }
 
@@ -369,6 +658,13 @@ class OrderRealtimeService {
     return () => {
       this.orderStatusListeners = this.orderStatusListeners.filter((c) => c !== callback);
     };
+  }
+
+  /**
+   * Lấy toàn bộ danh sách đơn hàng đã đồng bộ
+   */
+  public getAllOrders(): RealtimeOrder[] {
+    return Array.from(this.cachedOrdersMap.values());
   }
 
   /**

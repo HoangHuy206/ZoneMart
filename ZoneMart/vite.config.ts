@@ -274,6 +274,82 @@ function savePendingOrders(cache: Map<string, PendingOrderData>) {
 
 const pendingOrdersCache = loadPendingOrders()
 
+interface RealtimeOrderServer {
+  id: string
+  orderCode?: string
+  total: number
+  shippingFee: number
+  paymentMethod: string
+  createdAt: string
+  status: 'pending' | 'confirmed' | 'picking' | 'delivering' | 'completed' | 'cancelled'
+  statusText?: string
+  customer: {
+    lat: number
+    lng: number
+    address?: string
+    name?: string
+    phone?: string
+  }
+  store: {
+    lat: number
+    lng: number
+    address?: string
+    name?: string
+    phone?: string
+  }
+  items: Array<{
+    id?: string
+    productId?: string
+    name: string
+    price: number
+    quantity: number
+    image?: string
+    shop?: string
+  }>
+  shipperInfo?: {
+    name: string
+    phone: string
+    licensePlate: string
+    shipperCode?: string
+    avatarUrl?: string
+  }
+}
+
+const REALTIME_ORDERS_FILE = path.resolve(__dirname, '.realtime_orders.json')
+const realtimeSseClients = new Set<(data: string) => void>()
+
+function loadRealtimeOrders(): Map<string, RealtimeOrderServer> {
+  const map = new Map<string, RealtimeOrderServer>()
+  try {
+    if (fs.existsSync(REALTIME_ORDERS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(REALTIME_ORDERS_FILE, 'utf-8'))
+      for (const [k, v] of Object.entries(data)) {
+        map.set(k, v as RealtimeOrderServer)
+      }
+    }
+  } catch (e) {}
+
+  return map
+}
+
+function saveRealtimeOrders(cache: Map<string, RealtimeOrderServer>) {
+  try {
+    const obj = Object.fromEntries(cache)
+    fs.writeFileSync(REALTIME_ORDERS_FILE, JSON.stringify(obj, null, 2), 'utf-8')
+  } catch (e) {}
+}
+
+const realtimeOrdersCache = loadRealtimeOrders()
+
+function broadcastRealtimeOrder(type: string, payload: any) {
+  const msg = JSON.stringify({ type, ...payload })
+  realtimeSseClients.forEach((send) => {
+    try {
+      send(msg)
+    } catch (e) {}
+  })
+}
+
 function parseAndRecordTransactionText(text: string): boolean {
   if (!text) return false
   const code = extractOrderCode(text)
@@ -680,8 +756,9 @@ function vietQrPaymentPlugin(): Plugin {
 
       server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
         const rawUrl = req.url || ''
-        // Fast-path cực nhanh: Nếu không phải là API thanh toán hoặc webhook, chuyển tiếp ngay lập tức cho Vite mà không xử lý gì thêm
+        // Fast-path cực nhanh: Cho phép cả /api/realtime và /api/payment
         if (
+          !rawUrl.startsWith('/api/realtime') &&
           !rawUrl.startsWith('/api/payment') &&
           !rawUrl.startsWith('/bank') &&
           !rawUrl.startsWith('/tingo') &&
@@ -696,7 +773,7 @@ function vietQrPaymentPlugin(): Plugin {
         const pathname = url.pathname
 
         res.setHeader('Access-Control-Allow-Origin', '*')
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS')
         res.setHeader('Access-Control-Allow-Headers', '*')
 
         if (req.method === 'OPTIONS') {
@@ -724,14 +801,150 @@ function vietQrPaymentPlugin(): Plugin {
                   time: Date.now(),
                 })
                 savePendingOrders(pendingOrdersCache)
-                console.log(`>>> [ORDER REGISTERED] Mã: #${cleanCode}, Món: ${(data.items || []).length} sản phẩm`)
-              }
+                console.log(`>>> [ORDER REGISTERED] Mã: #${cleanCode}, Món: ${(data.items || []).length} sản phẩm`)              }
               res.setHeader('Content-Type', 'application/json')
               res.statusCode = 200
               res.end(JSON.stringify({ ok: true }))
             } catch (e) {
               res.statusCode = 400
               res.end(JSON.stringify({ ok: false }))
+            }
+          })
+          return
+        }
+
+        // ========================================================
+        // API REALTIME SSE: GET /api/realtime/events
+        // ========================================================
+        if (pathname === '/api/realtime/events' && req.method === 'GET') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache, no-transform',
+            Connection: 'keep-alive',
+            'Access-Control-Allow-Origin': '*',
+          })
+          res.write(': heartbeat\n\n')
+
+          const send = (data: string) => {
+            try {
+              res.write(`data: ${data}\n\n`)
+            } catch (e) {}
+          }
+          realtimeSseClients.add(send)
+
+          const keepAliveTimer = setInterval(() => {
+            try {
+              res.write(': ping\n\n')
+            } catch (e) {
+              clearInterval(keepAliveTimer)
+            }
+          }, 15000)
+
+          req.on('close', () => {
+            clearInterval(keepAliveTimer)
+            realtimeSseClients.delete(send)
+          })
+          return
+        }
+
+        // ========================================================
+        // API REALTIME ORDERS: GET /api/realtime/orders
+        // ========================================================
+        if (pathname === '/api/realtime/orders' && req.method === 'GET') {
+          res.setHeader('Content-Type', 'application/json')
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          const orders = Array.from(realtimeOrdersCache.values()).reverse()
+          res.statusCode = 200
+          res.end(JSON.stringify({ success: true, orders }))
+          return
+        }
+
+        // ========================================================
+        // API REALTIME ORDERS: POST /api/realtime/orders/clear
+        // ========================================================
+        if (pathname === '/api/realtime/orders/clear' && req.method === 'POST') {
+          try {
+            realtimeOrdersCache.clear()
+            pendingOrdersCache.clear()
+            saveRealtimeOrders(realtimeOrdersCache)
+            savePendingOrders(pendingOrdersCache)
+            broadcastRealtimeOrder('ORDERS_CLEARED', { success: true })
+            console.log(`>>> [REALTIME ORDERS CLEARED] Da xoa sach toan bo don hang tren he thong.`)
+            res.setHeader('Content-Type', 'application/json')
+            res.statusCode = 200
+            res.end(JSON.stringify({ success: true, message: 'Đã xóa toàn bộ đơn hàng thành công.' }))
+          } catch (e: any) {
+            res.statusCode = 500
+            res.end(JSON.stringify({ success: false, error: e.message }))
+          }
+          return
+        }
+
+        // ========================================================
+        // API REALTIME ORDERS: POST /api/realtime/orders
+        // ========================================================
+        if (pathname === '/api/realtime/orders' && req.method === 'POST') {
+          let body = ''
+          req.on('data', (c) => (body += c))
+          req.on('end', () => {
+            try {
+              const order: RealtimeOrderServer = JSON.parse(body)
+              if (order && order.id) {
+                if (!order.status) order.status = 'pending'
+                if (!order.statusText) order.statusText = 'Chờ quán xác nhận'
+                realtimeOrdersCache.set(order.id, order)
+                saveRealtimeOrders(realtimeOrdersCache)
+                broadcastRealtimeOrder('ORDER_CREATED', { order })
+                console.log(`>>> [REALTIME ORDER POSTED] Đơn: #${order.id}, Quán: ${order.store?.name}`)
+              }
+              res.setHeader('Content-Type', 'application/json')
+              res.statusCode = 200
+              res.end(JSON.stringify({ success: true, order }))
+            } catch (e: any) {
+              res.statusCode = 400
+              res.end(JSON.stringify({ success: false, error: e.message }))
+            }
+          })
+          return
+        }
+
+        // ========================================================
+        // API REALTIME ORDERS: PUT /api/realtime/orders
+        // ========================================================
+        if (pathname === '/api/realtime/orders' && req.method === 'PUT') {
+          let body = ''
+          req.on('data', (c) => (body += c))
+          req.on('end', () => {
+            try {
+              const data = JSON.parse(body)
+              const orderId = data.orderId || data.id
+              const existing = realtimeOrdersCache.get(orderId)
+              if (existing) {
+                if (data.status) existing.status = data.status
+                if (data.statusText) existing.statusText = data.statusText
+                if (data.shipperInfo) existing.shipperInfo = data.shipperInfo
+                realtimeOrdersCache.set(orderId, existing)
+                saveRealtimeOrders(realtimeOrdersCache)
+
+                broadcastRealtimeOrder('ORDER_STATUS_CHANGED', {
+                  payload: {
+                    orderId,
+                    status: existing.status,
+                    statusText: existing.statusText,
+                    order: existing
+                  }
+                })
+
+                if (existing.status === 'confirmed') {
+                  broadcastRealtimeOrder('ORDER_DISPATCH_READY', { order: existing })
+                }
+              }
+              res.setHeader('Content-Type', 'application/json')
+              res.statusCode = 200
+              res.end(JSON.stringify({ success: true, order: existing }))
+            } catch (e: any) {
+              res.statusCode = 400
+              res.end(JSON.stringify({ success: false, error: e.message }))
             }
           })
           return
@@ -1048,7 +1261,7 @@ export default defineConfig({
     port: 5173,
     allowedHosts: true,
     proxy: {
-      '^/api/(?!payment)': {
+      '^/api/(?!(payment|realtime))': {
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
       },
