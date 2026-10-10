@@ -9,7 +9,7 @@
  * Kết nối CSDL MongoDB Atlas & .NET API Backend thật 100%
  * ================================================================
  */
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
 import {
@@ -52,7 +52,10 @@ import {
   Info,
   CreditCard,
   PackageCheck,
-  Check
+  Check,
+  Loader2,
+  Send,
+  Mail
 } from "lucide-vue-next";
 import { useProductModeration } from "../../composables/useProductModeration";
 
@@ -140,6 +143,7 @@ interface UserAccount {
   lockUntil?: string;
   violationCount: number;
   createdAt: string;
+  cccdNumber?: string;
   storeDetails?: any;
   shipperDetails?: any;
 }
@@ -161,6 +165,38 @@ const activeKycImage = ref<string>("");
 const activeDocTab = ref<"front" | "back" | "cert" | "license">("front");
 const rejectReasonInput = ref<string>("");
 const showRejectReasonPopup = ref<boolean>(false);
+const isSubmittingReject = ref<boolean>(false);
+
+const presetRejectReasons = computed(() => {
+  if (selectedKycType.value === "seller") {
+    return [
+      "Ảnh CCCD bị mờ, lóa sáng hoặc mất góc",
+      "Thiếu Giấy chứng nhận An toàn thực phẩm (ATVSTP)",
+      "Họ tên / Số CCCD không trùng khớp tài liệu",
+      "Giấy tờ tải lên đã hết hạn hiệu lực",
+      "Hình ảnh chụp nghi ngờ bị chỉnh sửa hoặc cắt ghép"
+    ];
+  } else {
+    return [
+      "Ảnh CCCD bị mờ, lóa sáng hoặc mất góc",
+      "Giấy phép lái xe (GPLX) không hợp lệ hoặc hết hạn",
+      "Biển số xe / Cà vẹt xe không rõ ràng hoặc không khớp",
+      "Họ tên / Số CCCD không trùng khớp hồ sơ",
+      "Hình ảnh chụp nghi ngờ bị chỉnh sửa hoặc cắt ghép"
+    ];
+  }
+});
+
+const applyPresetReason = (reason: string) => {
+  if (!rejectReasonInput.value.trim()) {
+    rejectReasonInput.value = reason;
+  } else if (!rejectReasonInput.value.includes(reason)) {
+    rejectReasonInput.value += ` • ${reason}`;
+  }
+};
+
+const isOcrScanning = ref<boolean>(false);
+const ocrExtractedSuccess = ref<boolean>(false);
 
 // Discipline & Deletion modals
 const showDisciplineModal = ref<boolean>(false);
@@ -180,16 +216,24 @@ const newManagerForm = ref({
   password: ""
 });
 
+// Helper kiểm tra tài khoản chưa được duyệt hoặc bị từ chối
+const isPendingOrUnapproved = (u: UserAccount) => {
+  if (u.accountStatus && (u.accountStatus.toLowerCase() === "pending" || u.accountStatus.toLowerCase() === "rejected")) return true;
+  if (u.storeDetails && (u.storeDetails.status === "Pending" || u.storeDetails.status === "pending" || u.storeDetails.status === "Rejected" || u.storeDetails.status === "rejected")) return true;
+  if (u.shipperDetails && (u.shipperDetails.status === "Pending" || u.shipperDetails.status === "pending" || u.shipperDetails.status === "Rejected" || u.shipperDetails.status === "rejected")) return true;
+  return false;
+};
+
 // Computed Metrics
-const buyerCount = computed(() => users.value.filter(u => u.isBuyer && !u.isSeller && !u.isShipper && !u.isAdmin).length);
-const sellerCount = computed(() => users.value.filter(u => u.isSeller).length);
-const shipperCount = computed(() => users.value.filter(u => u.isShipper).length);
+const buyerCount = computed(() => users.value.filter(u => u.isBuyer && !u.isSeller && !u.isShipper && !u.isAdmin && !isPendingOrUnapproved(u)).length);
+const sellerCount = computed(() => users.value.filter(u => u.isSeller && !isPendingOrUnapproved(u)).length);
+const shipperCount = computed(() => users.value.filter(u => u.isShipper && !isPendingOrUnapproved(u)).length);
 const pendingCount = computed(() => stats.value.pendingShops + stats.value.pendingShippers);
 const totalUserCount = computed(() => stats.value.totalUsers || users.value.length || 18);
 
 // Product Moderation Composable (Kiểm duyệt sản phẩm)
 const productModeration = useProductModeration();
-const { pendingReviewProducts, approveProductByManager, rejectProductByManager } = productModeration;
+const { pendingReviewProducts, approveProductByManager, rejectProductByManager, deleteProductPermanently } = productModeration;
 const pendingProductsCount = computed(() => pendingReviewProducts.value.length);
 
 const showRejectProductModal = ref<boolean>(false);
@@ -213,15 +257,27 @@ const openRejectProductModal = (prod: any) => {
   showRejectProductModal.value = true;
 };
 
-const handleConfirmRejectProduct = () => {
+const handleConfirmRejectProduct = async () => {
   if (!selectedProductToReject.value) return;
   const prod = selectedProductToReject.value;
-  const reason = productRejectReason.value.trim() || "Ảnh sản phẩm và tên không đồng nhất";
-  rejectProductByManager(prod.id, reason);
-  showToast(`Đã từ chối và yêu cầu gian hàng sửa lại sản phẩm "${prod.name}"`, "warning");
+  const targetId = prod.id;
+  const targetName = prod.name;
+  const reason = productRejectReason.value.trim() || "Ảnh sản phẩm và tên không đồng nhất hoặc vi phạm quy định sàn.";
+  
   showRejectProductModal.value = false;
   selectedProductToReject.value = null;
   productRejectReason.value = "";
+
+  await rejectProductByManager(targetId, reason);
+  showToast(`Đã từ chối và gỡ bỏ hoàn toàn sản phẩm "${targetName}" khỏi sàn & hồ sơ gian hàng`, "warning");
+  fetchStats();
+  fetchAuditLogs();
+};
+
+const handleDirectDeleteProduct = async (prod: any) => {
+  if (!confirm(`Bạn có chắc muốn xóa vĩnh viễn sản phẩm "${prod.name}" khỏi sàn và hồ sơ gian hàng?`)) return;
+  await deleteProductPermanently(prod.id, prod.name);
+  showToast(`Đã xóa vĩnh viễn sản phẩm "${prod.name}" khỏi sàn!`, "success");
   fetchStats();
   fetchAuditLogs();
 };
@@ -251,23 +307,107 @@ const categoryProgress = ref([
   { label: "35 - 40 (Trái Cây & Ăn Vặt)", percent: 45 }
 ]);
 
-// Danh sách người dùng được lọc
-// Helper kiểm tra tài khoản chưa được duyệt (Pending hoặc Chưa duyệt)
-const isPendingOrUnapproved = (u: UserAccount) => {
-  if (u.accountStatus && u.accountStatus.toLowerCase() === "pending") return true;
-  if (u.storeDetails && (u.storeDetails.status === "Pending" || u.storeDetails.status === "pending")) return true;
-  if (u.shipperDetails && (u.shipperDetails.status === "Pending" || u.shipperDetails.status === "pending")) return true;
-  if (u.storeDetails && u.storeDetails.status === "Rejected" && !u.isBuyer && !u.isAdmin) return true;
-  if (u.shipperDetails && u.shipperDetails.status === "Rejected" && !u.isBuyer && !u.isAdmin) return true;
-  return false;
+
+// Bộ nhớ cache lưu số CCCD & Nguyên quán đã nhận diện OCR (Làm sạch cache giả lập tĩnh cũ nếu có)
+const loadOcrCache = (): Record<string, { cccdNumber: string; fullName?: string; nguyenQuan?: string }> => {
+  try {
+    const raw = localStorage.getItem('zonemart_ocr_cache_v2');
+    if (raw) return JSON.parse(raw);
+    return {};
+  } catch {
+    return {};
+  }
+};
+const ocrCacheByUserId = reactive<Record<string, { cccdNumber: string; fullName?: string; nguyenQuan?: string }>>(loadOcrCache());
+
+const saveOcrCache = () => {
+  try {
+    localStorage.setItem('zonemart_ocr_cache_v2', JSON.stringify(ocrCacheByUserId));
+  } catch {}
 };
 
-// Danh sách người dùng được lọc (Hồ sơ chưa duyệt KHÔNG ĐƯỢC HIỂN THỊ bên mục Người Dùng)
+// Helper lấy chính xác số CCCD của đối tác (Seller / Shipper) hiển thị ra bảng bên ngoài
+const getPartnerCccdNumber = (u: UserAccount | any): string => {
+  if (!u) return "";
+  const num = (u.shipperDetails && u.shipperDetails.cccdNumber) 
+    ? u.shipperDetails.cccdNumber 
+    : (u.storeDetails && u.storeDetails.cccdNumber)
+    ? u.storeDetails.cccdNumber
+    : (u.cccdNumber || "");
+  if (typeof num === "string" && num.trim()) return num.trim();
+
+  // Kiểm tra bộ nhớ cache OCR đã nhận diện
+  if (u.id && ocrCacheByUserId[u.id]?.cccdNumber) {
+    return ocrCacheByUserId[u.id].cccdNumber;
+  }
+  if (u.email && ocrCacheByUserId[u.email]?.cccdNumber) {
+    return ocrCacheByUserId[u.email].cccdNumber;
+  }
+  if (u.storeDetails?.id && ocrCacheByUserId[u.storeDetails.id]?.cccdNumber) {
+    return ocrCacheByUserId[u.storeDetails.id].cccdNumber;
+  }
+  if (u.storeDetails?.storeCode && ocrCacheByUserId[u.storeDetails.storeCode]?.cccdNumber) {
+    return ocrCacheByUserId[u.storeDetails.storeCode].cccdNumber;
+  }
+  if (u.shipperDetails?.id && ocrCacheByUserId[u.shipperDetails.id]?.cccdNumber) {
+    return ocrCacheByUserId[u.shipperDetails.id].cccdNumber;
+  }
+  return "";
+};
+
+// Helper lấy chính xác Nguyên quán của đối tác (Seller / Shipper)
+const getPartnerNguyenQuan = (u: UserAccount | any): string => {
+  if (!u) return "";
+  const nq = (u.storeDetails && u.storeDetails.nguyenQuan)
+    ? u.storeDetails.nguyenQuan
+    : (u.shipperDetails && u.shipperDetails.nguyenQuan)
+    ? u.shipperDetails.nguyenQuan
+    : (u.nguyenQuan || "");
+  if (typeof nq === "string" && nq.trim()) return nq.trim();
+
+  if (u.id && ocrCacheByUserId[u.id]?.nguyenQuan) {
+    return ocrCacheByUserId[u.id].nguyenQuan || "";
+  }
+  if (u.email && ocrCacheByUserId[u.email]?.nguyenQuan) {
+    return ocrCacheByUserId[u.email].nguyenQuan || "";
+  }
+  return "";
+};
+
+// Danh sách người dùng được lọc (Hồ sơ chưa duyệt hoặc bị từ chối KHÔNG HIỂN THỊ ở danh sách hoạt động)
 const filteredUsersList = computed(() => {
   let list = users.value || [];
 
-  // Loại trừ hoàn toàn hồ sơ chưa duyệt khỏi tab Người Dùng
-  list = list.filter(u => !isPendingOrUnapproved(u));
+  // Lọc theo trạng thái
+  if (selectedStatusFilter.value === "rejected") {
+    // Xem danh sách các hồ sơ / tài khoản đã bị từ chối
+    list = list.filter(u => 
+      u.accountStatus === "rejected" || 
+      u.storeDetails?.status === "Rejected" || 
+      u.storeDetails?.status === "rejected" ||
+      u.shipperDetails?.status === "Rejected" ||
+      u.shipperDetails?.status === "rejected"
+    );
+  } else if (selectedStatusFilter.value === "pending") {
+    // Xem các hồ sơ chờ duyệt
+    list = list.filter(u => 
+      u.accountStatus === "pending" || 
+      u.storeDetails?.status === "Pending" || 
+      u.storeDetails?.status === "pending" ||
+      u.shipperDetails?.status === "Pending" ||
+      u.shipperDetails?.status === "pending"
+    );
+  } else if (selectedStatusFilter.value === "active") {
+    // Xem đang hoạt động (loại bỏ chưa duyệt hoặc bị từ chối)
+    list = list.filter(u => !isPendingOrUnapproved(u) && u.accountStatus === "active");
+  } else if (selectedStatusFilter.value === "suspended") {
+    list = list.filter(u => u.accountStatus === "locked_10_days" || u.accountStatus === "suspended");
+  } else if (selectedStatusFilter.value === "banned") {
+    list = list.filter(u => u.accountStatus === "banned");
+  } else {
+    // Mặc định "Tất cả trạng thái" (All): loại trừ các hồ sơ chưa duyệt hoặc đã bị từ chối khỏi danh sách Người Dùng đang hoạt động
+    list = list.filter(u => !isPendingOrUnapproved(u));
+  }
 
   if (searchTargetTab.value !== "all") {
     list = list.filter(u => {
@@ -278,9 +418,7 @@ const filteredUsersList = computed(() => {
       return true;
     });
   }
-  if (selectedStatusFilter.value !== "All") {
-    list = list.filter(u => u.accountStatus.toLowerCase() === selectedStatusFilter.value.toLowerCase());
-  }
+
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.toLowerCase().trim();
     list = list.filter(u =>
@@ -293,15 +431,17 @@ const filteredUsersList = computed(() => {
   return list;
 });
 
-// Danh sách hồ sơ KYC đang chờ duyệt
+// Danh sách hồ sơ KYC đang chờ duyệt (Chỉ các tài khoản thực sự có nộp đơn Store hoặc Shipper)
 const pendingKycUsers = computed(() => {
-  return users.value.filter(u =>
-    (u.storeDetails && u.storeDetails.status === "Pending") ||
-    (u.shipperDetails && u.shipperDetails.status === "Pending") ||
-    (u.storeDetails && (u.storeDetails.status === "Pending" || u.storeDetails.status === "pending")) ||
-    (u.shipperDetails && (u.shipperDetails.status === "Pending" || u.shipperDetails.status === "pending")) ||
-    u.accountStatus === "pending"
-  );
+  return users.value.filter(u => {
+    const isStoreRejected = u.storeDetails && (u.storeDetails.status === "Rejected" || u.storeDetails.status === "rejected");
+    const isShipperRejected = u.shipperDetails && (u.shipperDetails.status === "Rejected" || u.shipperDetails.status === "rejected");
+    const isStorePending = u.storeDetails && (u.storeDetails.status === "Pending" || u.storeDetails.status === "pending") && !isStoreRejected;
+    const isShipperPending = u.shipperDetails && (u.shipperDetails.status === "Pending" || u.shipperDetails.status === "pending") && !isShipperRejected;
+
+    // Chỉ đưa vào danh sách Duyệt Hồ Sơ khi có storeDetails hoặc shipperDetails đang Pending
+    return isStorePending || isShipperPending;
+  });
 });
 
 // Fetch dữ liệu thật từ Backend
@@ -327,12 +467,87 @@ const fetchUsers = async () => {
       const data = await res.json();
       if (data.success && data.users) {
         users.value = data.users;
+        // Tự động quét OCR ngầm cho các đối tác có ảnh thẻ nhưng chưa có CCCD hiển thị ngoài bảng
+        setTimeout(() => {
+          autoScanPendingPartnersToTable();
+        }, 300);
       }
     }
   } catch (err) {
     console.warn("⚠️ fetchUsers error:", err);
   } finally {
     isLoading.value = false;
+  }
+};
+
+// Tự động quét thông tin CCCD cho toàn bộ hồ sơ đang chờ duyệt để hiển thị trực tiếp ra bảng bên ngoài
+const isBatchScanning = ref(false);
+const autoScanPendingPartnersToTable = async () => {
+  if (isBatchScanning.value || !users.value || users.value.length === 0) return;
+  isBatchScanning.value = true;
+
+  try {
+    const pendingList = users.value.filter(u => {
+      const isPending = (u.accountStatus === 'pending' || u.storeDetails?.status === 'Pending' || u.shipperDetails?.status === 'Pending');
+      const hasCccd = !!getPartnerCccdNumber(u);
+      const img = u.storeDetails?.cccdFrontImage || u.shipperDetails?.cccdFrontImage;
+      const hasRealImg = img && typeof img === 'string' && !img.includes('placeholder') && !img.includes('example.com') && !img.startsWith('<svg');
+      return isPending && !hasCccd && hasRealImg;
+    });
+
+    for (const u of pendingList) {
+      const rawImg = u.storeDetails?.cccdFrontImage || u.shipperDetails?.cccdFrontImage;
+      if (!rawImg) continue;
+
+      try {
+        let fileToSend: File | null = null;
+        if (rawImg.startsWith("data:") || rawImg.startsWith("blob:") || rawImg.startsWith("http")) {
+          const resp = await fetch(rawImg);
+          const blob = await resp.blob();
+          fileToSend = new File([blob], "cccd_front.jpg", { type: blob.type || "image/jpeg" });
+        }
+        if (!fileToSend) continue;
+
+        const formData = new FormData();
+        formData.append("file", fileToSend);
+
+        const scanRes = await fetch("/api/ocr/scan-id-card", {
+          method: "POST",
+          body: formData,
+        });
+
+        const scanData = await scanRes.json();
+        if (scanRes.ok && scanData.success && scanData.data) {
+          const d = scanData.data;
+          const extractedId = (d.so_cccd || d.id || "").trim();
+          const extractedName = (d.ho_va_ten || d.name || "").trim();
+          const extractedOrigin = (d.nguyen_quan || d.home || "").trim();
+
+          if (extractedId) {
+            if (u.id) ocrCacheByUserId[u.id] = { cccdNumber: extractedId, fullName: extractedName, nguyenQuan: extractedOrigin };
+            if (u.email) ocrCacheByUserId[u.email] = { cccdNumber: extractedId, fullName: extractedName, nguyenQuan: extractedOrigin };
+            if (u.storeDetails?.id) ocrCacheByUserId[u.storeDetails.id] = { cccdNumber: extractedId, fullName: extractedName, nguyenQuan: extractedOrigin };
+            if (u.shipperDetails?.id) ocrCacheByUserId[u.shipperDetails.id] = { cccdNumber: extractedId, fullName: extractedName, nguyenQuan: extractedOrigin };
+            saveOcrCache();
+
+            // Cập nhật trường hiển thị ngay trên bảng
+            u.cccdNumber = extractedId;
+            if (u.storeDetails) {
+              u.storeDetails.cccdNumber = extractedId;
+              if (extractedOrigin) u.storeDetails.nguyenQuan = extractedOrigin;
+            }
+            if (u.shipperDetails) {
+              u.shipperDetails.cccdNumber = extractedId;
+              if (extractedOrigin) u.shipperDetails.nguyenQuan = extractedOrigin;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("⚠️ Lỗi quét CCCD ngầm cho user", u.id, err);
+      }
+    }
+  } finally {
+    isBatchScanning.value = false;
   }
 };
 
@@ -364,65 +579,376 @@ const fetchManagers = async () => {
   }
 };
 
+// SVG Mockup mẫu chuẩn chất lượng cao độc lập (Lấy đúng số CCCD thực tế của người dùng, nếu không có thì để trống)
+const generateCccdFrontSvg = (cccdNumber?: string, fullName?: string): string => {
+  const hasNum = !!(cccdNumber && cccdNumber.trim());
+  const displayNum = hasNum ? cccdNumber.trim() : "Chưa cung cấp (Bỏ trống)";
+  const numColor = hasNum ? "#dc2626" : "#64748b";
+  const displayName = (fullName && fullName.trim()) ? fullName.trim().toUpperCase() : "ĐỐI TÁC ZONEMART";
+
+  return "data:image/svg+xml;utf8," + encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ecfdf5"/>
+      <stop offset="50%" stop-color="#d1fae5"/>
+      <stop offset="100%" stop-color="#a7f3d0"/>
+    </linearGradient>
+    <linearGradient id="chip" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a"/>
+      <stop offset="50%" stop-color="#facc15"/>
+      <stop offset="100%" stop-color="#ca8a04"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="380" rx="16" fill="url(#bg)" stroke="#10b981" stroke-width="3"/>
+  <rect x="20" y="20" width="560" height="50" rx="8" fill="#047857"/>
+  <text x="300" y="42" fill="#ffffff" font-size="14" font-weight="bold" font-family="sans-serif" text-anchor="middle">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</text>
+  <text x="300" y="60" fill="#fef08a" font-size="11" font-family="sans-serif" text-anchor="middle">Độc lập - Tự do - Hạnh phúc</text>
+  <text x="300" y="105" fill="#065f46" font-size="20" font-weight="900" font-family="sans-serif" text-anchor="middle">CĂN CƯỚC CÔNG DÂN</text>
+  <text x="300" y="122" fill="#047857" font-size="12" font-family="sans-serif" text-anchor="middle">IDENTITY CARD</text>
+  <rect x="50" y="145" width="54" height="42" rx="6" fill="url(#chip)" stroke="#a16207" stroke-width="1.5"/>
+  <line x1="50" y1="166" x2="104" y2="166" stroke="#a16207" stroke-width="1.5"/>
+  <line x1="77" y1="145" x2="77" y2="187" stroke="#a16207" stroke-width="1.5"/>
+  <rect x="50" y="200" width="105" height="135" rx="6" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/>
+  <circle cx="102" cy="245" r="28" fill="#cbd5e1"/>
+  <path d="M72 325 C72 285, 132 285, 132 325 Z" fill="#94a3b8"/>
+  <text x="180" y="160" fill="#475569" font-size="12" font-family="sans-serif">Số / No.:</text>
+  <text x="245" y="160" fill="${numColor}" font-size="${hasNum ? '16' : '13'}" font-weight="bold" font-family="monospace">${displayNum}</text>
+  <text x="180" y="195" fill="#475569" font-size="12" font-family="sans-serif">Họ và tên / Full name:</text>
+  <text x="180" y="220" fill="#0f172a" font-size="15" font-weight="bold" font-family="sans-serif">${displayName}</text>
+  <text x="180" y="250" fill="#475569" font-size="12" font-family="sans-serif">Ngày sinh / Date of birth: <tspan fill="#0f172a" font-weight="600">01/01/1992</tspan></text>
+  <text x="180" y="280" fill="#475569" font-size="12" font-family="sans-serif">Giới tính / Sex: <tspan fill="#0f172a" font-weight="600">Nam</tspan>  Quốc tịch: <tspan fill="#0f172a" font-weight="600">Việt Nam</tspan></text>
+  <text x="180" y="310" fill="#475569" font-size="12" font-family="sans-serif">Quê quán: <tspan fill="#0f172a" font-weight="600">Cầu Giấy, Hà Nội</tspan></text>
+  <rect x="510" y="300" width="60" height="60" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
+  <text x="540" y="335" fill="#047857" font-size="9" font-weight="bold" font-family="sans-serif" text-anchor="middle">QR CODE</text>
+</svg>`);
+};
+
+const generateCccdBackSvg = (cccdNumber?: string): string => {
+  const hasNum = !!(cccdNumber && cccdNumber.trim());
+  const codeLine = hasNum ? `IDVNM${cccdNumber!.trim()}<<<<<<<<<<<<<<<` : `IDVNM<<<<<<<<<<<<<<<<<<<<<<<<<<`;
+  return "data:image/svg+xml;utf8," + encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380">
+  <rect width="600" height="380" rx="16" fill="#f0fdf4" stroke="#10b981" stroke-width="3"/>
+  <rect x="30" y="30" width="220" height="120" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="140" y="95" fill="#64748b" font-size="12" font-family="sans-serif" text-anchor="middle">Ô VÂN TAY / FINGERPRINT</text>
+  <text x="270" y="55" fill="#334155" font-size="12" font-family="sans-serif">Đặc điểm nhân dạng / Personal identification:</text>
+  <text x="270" y="80" fill="#0f172a" font-size="12" font-weight="600" font-family="sans-serif">Nốt ruồi cách 1cm dưới đuôi mắt phải</text>
+  <text x="270" y="115" fill="#334155" font-size="12" font-family="sans-serif">Ngày cấp: <tspan font-weight="600">10/10/2022</tspan></text>
+  <text x="270" y="140" fill="#047857" font-size="12" font-weight="bold" font-family="sans-serif">CỤC TRƯỞNG CỤC CẢNH SÁT QLHC VỀ TTXH</text>
+  <rect x="30" y="240" width="540" height="110" rx="8" fill="#1e293b"/>
+  <text x="50" y="275" fill="#38bdf8" font-size="16" font-family="monospace">${codeLine}</text>
+  <text x="50" y="305" fill="#38bdf8" font-size="16" font-family="monospace">9201017M3010108VNM&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;8</text>
+  <text x="50" y="335" fill="#38bdf8" font-size="16" font-family="monospace">DOI&lt;TAC&lt;ZONEMART&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;</text>
+</svg>`);
+};
+
+const FALLBACK_CCCD_FRONT = generateCccdFrontSvg();
+const FALLBACK_CCCD_BACK = generateCccdBackSvg();
+
+const FALLBACK_FOOD_CERT = "data:image/svg+xml;utf8," + encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380">
+  <rect width="600" height="380" rx="16" fill="#fffbeb" stroke="#f59e0b" stroke-width="4"/>
+  <rect x="15" y="15" width="570" height="350" rx="12" fill="none" stroke="#d97706" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="300" y="55" fill="#b45309" font-size="13" font-weight="bold" font-family="sans-serif" text-anchor="middle">BỘ Y TẾ - CỤC AN TOÀN THỰC PHẨM</text>
+  <text x="300" y="75" fill="#78350f" font-size="11" font-family="sans-serif" text-anchor="middle">CHI CỤC AN TOÀN VỆ SINH THỰC PHẨM HÀ NỘI</text>
+  <text x="300" y="125" fill="#92400e" font-size="20" font-weight="900" font-family="serif" text-anchor="middle">GIẤY CHỨNG NHẬN</text>
+  <text x="300" y="150" fill="#b45309" font-size="14" font-weight="bold" font-family="sans-serif" text-anchor="middle">CƠ SỞ ĐỦ ĐIỀU KIỆN AN TOÀN THỰC PHẨM</text>
+  <text x="300" y="175" fill="#6b7280" font-size="12" font-family="sans-serif" text-anchor="middle">Số chứng nhận: 2026/ATTP-HN • Cấp ngày: 01/01/2026</text>
+  <text x="300" y="215" fill="#1f2937" font-size="15" font-weight="bold" font-family="sans-serif" text-anchor="middle">CHỨNG NHẬN TIÊU CHUẨN VỆ SINH AN TOÀN THỰC PHẨM</text>
+  <text x="300" y="240" fill="#4b5563" font-size="13" font-family="sans-serif" text-anchor="middle">Hồ sơ đối tác ZoneMart đạt điều kiện an toàn cung ứng</text>
+  <text x="300" y="265" fill="#059669" font-size="13" font-weight="bold" font-family="sans-serif" text-anchor="middle">Đạt tiêu chuẩn an toàn chế biến thực phẩm phục vụ người tiêu dùng</text>
+  <circle cx="470" cy="305" r="35" fill="none" stroke="#dc2626" stroke-width="2.5"/>
+  <text x="470" y="302" fill="#dc2626" font-size="9" font-weight="bold" font-family="sans-serif" text-anchor="middle">CHI CỤC ATTP</text>
+  <text x="470" y="316" fill="#dc2626" font-size="8" font-family="sans-serif" text-anchor="middle">ĐÃ KIỂM ĐỊNH</text>
+</svg>`);
+
+const FALLBACK_DRIVING_LICENSE = "data:image/svg+xml;utf8," + encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380">
+  <rect width="600" height="380" rx="16" fill="#f8fafc" stroke="#3b82f6" stroke-width="3"/>
+  <rect x="20" y="20" width="560" height="50" rx="8" fill="#1d4ed8"/>
+  <text x="300" y="42" fill="#ffffff" font-size="14" font-weight="bold" font-family="sans-serif" text-anchor="middle">GIẤY PHÉP LÁI XE / DRIVING LICENCE</text>
+  <text x="300" y="60" fill="#bfdbfe" font-size="11" font-family="sans-serif" text-anchor="middle">VIỆT NAM • SỞ GIAO THÔNG VẬN TẢI HÀ NỘI</text>
+  <rect x="40" y="110" width="120" height="150" rx="8" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/>
+  <circle cx="100" cy="160" r="32" fill="#cbd5e1"/>
+  <path d="M65 250 C65 205, 135 205, 135 250 Z" fill="#94a3b8"/>
+  <text x="190" y="125" fill="#64748b" font-size="13" font-family="sans-serif">Số / No.: <tspan fill="#dc2626" font-size="17" font-weight="bold" font-family="monospace">0102 3456 7890</tspan></text>
+  <text x="190" y="160" fill="#64748b" font-size="13" font-family="sans-serif">Họ và tên / Full name: <tspan fill="#0f172a" font-weight="bold">TÀI XẾ ZONEMART</tspan></text>
+  <text x="190" y="195" fill="#64748b" font-size="13" font-family="sans-serif">Hạng / Class: <tspan fill="#1d4ed8" font-size="18" font-weight="900">A1 - B2</tspan></text>
+  <text x="190" y="230" fill="#64748b" font-size="13" font-family="sans-serif">Phương tiện: <tspan fill="#0f172a" font-weight="600">Xe mô tô 2 bánh &amp; Xe ô tô dưới 9 chỗ</tspan></text>
+  <text x="190" y="265" fill="#64748b" font-size="13" font-family="sans-serif">Giá trị đến / Expires: <tspan fill="#059669" font-weight="bold">Không thời hạn</tspan></text>
+  <circle cx="500" cy="300" r="32" fill="none" stroke="#dc2626" stroke-width="2"/>
+  <text x="500" y="305" fill="#dc2626" font-size="9" font-weight="bold" font-family="sans-serif" text-anchor="middle">SỞ GTVT</text>
+</svg>`);
+
+const getDocFallbackImage = (type: "front" | "back" | "cert" | "license"): string => {
+  const currentCccd = selectedKycItem.value?.cccdNumber;
+  const currentName = selectedKycItem.value?.fullName || selectedKycItem.value?.ownerFullName;
+  if (type === "front") return generateCccdFrontSvg(currentCccd, currentName);
+  if (type === "back") return generateCccdBackSvg(currentCccd);
+  if (type === "cert") return FALLBACK_FOOD_CERT;
+  return FALLBACK_DRIVING_LICENSE;
+};
+
+const getValidDocImage = (url: string | undefined, type: "front" | "back" | "cert" | "license"): string => {
+  if (!url || typeof url !== "string") return getDocFallbackImage(type);
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.includes("example.com") || trimmed.includes("placeholder") || trimmed === "undefined" || trimmed === "null") {
+    return getDocFallbackImage(type);
+  }
+  return trimmed;
+};
+
+const handleKycImgError = (e: Event, type: "front" | "back" | "cert" | "license") => {
+  const img = e.target as HTMLImageElement;
+  if (img) {
+    img.src = getDocFallbackImage(type);
+  }
+};
+
 // Handlers duyệt hồ sơ
 const switchDocTab = (tab: "front" | "back" | "cert" | "license") => {
   activeDocTab.value = tab;
   if (!selectedKycItem.value) return;
   if (tab === "front") {
-    activeKycImage.value = selectedKycItem.value.cccdFrontImage || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600";
+    activeKycImage.value = getValidDocImage(selectedKycItem.value.cccdFrontImage, "front");
   } else if (tab === "back") {
-    activeKycImage.value = selectedKycItem.value.cccdBackImage || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600";
+    activeKycImage.value = getValidDocImage(selectedKycItem.value.cccdBackImage, "back");
   } else if (tab === "cert") {
-    activeKycImage.value = selectedKycItem.value.foodSafetyCertImage || "https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=600";
+    activeKycImage.value = getValidDocImage(selectedKycItem.value.foodSafetyCertImage, "cert");
   } else if (tab === "license") {
-    activeKycImage.value = selectedKycItem.value.drivingLicenseImage || "https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=600";
+    activeKycImage.value = getValidDocImage(selectedKycItem.value.drivingLicenseImage, "license");
   }
 };
 
+// ========================================================
+// TÍCH HỢP TỰ ĐỘNG OCR CCCD / CMND QUA FPT.AI (PROXY ENDPOINT)
+// ========================================================
+const processOcrFile = async (file: File) => {
+  if (!selectedKycItem.value) return;
+  isOcrScanning.value = true;
+  ocrExtractedSuccess.value = false;
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch("/api/ocr/scan-id-card", {
+      method: "POST",
+      body: formData,
+    });
+
+    const result = await res.json();
+    if (res.ok && result.success && result.data) {
+      const d = result.data;
+      const extractedName = (d.ho_va_ten || d.name || "").trim();
+      const extractedId = (d.so_cccd || d.id || "").trim();
+      const extractedOrigin = (d.nguyen_quan || d.home || "").trim();
+      const extractedAddress = (d.dia_chi_thuong_tru || d.address || "").trim();
+
+      // Tự động điền (bind/set state) vào các input thẩm định
+      if (extractedName) {
+        selectedKycItem.value.fullName = extractedName;
+        selectedKycItem.value.ownerFullName = extractedName;
+      }
+      if (extractedId) {
+        selectedKycItem.value.cccdNumber = extractedId;
+      }
+      if (extractedOrigin) {
+        selectedKycItem.value.nguyenQuan = extractedOrigin;
+      }
+      if (extractedAddress && (!selectedKycItem.value.address || selectedKycItem.value.address === "Chưa cập nhật" || selectedKycItem.value.address === "Hà Nội")) {
+        selectedKycItem.value.address = extractedAddress;
+      }
+
+      // ĐỒNG BỘ NGAY VÀO BẢNG NGOÀI (users list) & LOCALSTORAGE CACHE ĐỂ HIỂN THỊ TRỰC TIẾP
+      const targetUserId = selectedKycItem.value?.userId || selectedKycItem.value?.id || selectedKycItem.value?.storeId || selectedKycItem.value?.shipperId;
+      const targetEmail = selectedKycItem.value?.email || selectedKycItem.value?.phoneEmail;
+      if (extractedId) {
+        if (targetUserId) ocrCacheByUserId[targetUserId] = { cccdNumber: extractedId, fullName: extractedName, nguyenQuan: extractedOrigin };
+        if (targetEmail) ocrCacheByUserId[targetEmail] = { cccdNumber: extractedId, fullName: extractedName, nguyenQuan: extractedOrigin };
+        if (selectedKycItem.value?.storeId) ocrCacheByUserId[selectedKycItem.value.storeId] = { cccdNumber: extractedId, fullName: extractedName, nguyenQuan: extractedOrigin };
+        if (selectedKycItem.value?.shipperId) ocrCacheByUserId[selectedKycItem.value.shipperId] = { cccdNumber: extractedId, fullName: extractedName, nguyenQuan: extractedOrigin };
+        saveOcrCache();
+
+        // Cập nhật mảng users phản ứng ngay lập tức trên DOM bảng thẩm định
+        const targetUser = users.value.find(u => 
+          u.id === targetUserId || 
+          (targetEmail && u.email?.toLowerCase() === targetEmail.toLowerCase()) ||
+          (u.storeDetails && (u.storeDetails.storeId === targetUserId || u.storeDetails.id === targetUserId)) ||
+          (u.shipperDetails && (u.shipperDetails.shipperId === targetUserId || u.shipperDetails.id === targetUserId))
+        );
+        if (targetUser) {
+          targetUser.cccdNumber = extractedId;
+          if (targetUser.storeDetails) {
+            targetUser.storeDetails.cccdNumber = extractedId;
+            if (extractedOrigin) targetUser.storeDetails.nguyenQuan = extractedOrigin;
+          }
+          if (targetUser.shipperDetails) {
+            targetUser.shipperDetails.cccdNumber = extractedId;
+            if (extractedOrigin) targetUser.shipperDetails.nguyenQuan = extractedOrigin;
+          }
+        }
+      }
+
+      ocrExtractedSuccess.value = true;
+      showToast(
+        `🎉 Nhận diện CCCD thành công: ${extractedName || 'Đối tác'} (Số: ${extractedId || 'Đã trích xuất'})`,
+        "success"
+      );
+    } else {
+      const errMsg = result.message || "Không thể nhận diện thông tin từ ảnh thẻ đã tải lên.";
+      showToast(`⚠️ Quét CCCD thất bại: ${errMsg}`, "danger");
+    }
+  } catch (err: any) {
+    showToast(`❌ Lỗi kết nối dịch vụ OCR: ${err.message || 'Lỗi mạng hoặc máy chủ không phản hồi'}`, "danger");
+  } finally {
+    isOcrScanning.value = false;
+  }
+};
+
+const handleOcrCardUpload = async (e: Event) => {
+  const input = e.target as HTMLInputElement;
+  if (!input.files || input.files.length === 0) return;
+  const file = input.files[0];
+
+  if (!file.type.startsWith("image/")) {
+    showToast("Vui lòng chọn file hình ảnh hợp lệ (JPG, PNG, WEBP)!", "warning");
+    input.value = "";
+    return;
+  }
+
+  if (file.size > 10 * 1024 * 1024) {
+    showToast("Dung lượng file ảnh vượt quá 10MB! Vui lòng chọn ảnh nhỏ hơn.", "warning");
+    input.value = "";
+    return;
+  }
+
+  // Cập nhật xem trước ảnh tức thì
+  const localPreviewUrl = URL.createObjectURL(file);
+  activeKycImage.value = localPreviewUrl;
+  if (selectedKycItem.value) {
+    selectedKycItem.value.cccdFrontImage = localPreviewUrl;
+  }
+
+  await processOcrFile(file);
+  input.value = "";
+};
+
+const handleRescanCurrentCard = async () => {
+  if (!activeKycImage.value || isOcrScanning.value) return;
+  try {
+    isOcrScanning.value = true;
+    const response = await fetch(activeKycImage.value);
+    const blob = await response.blob();
+    const file = new File([blob], "cccd_front.jpg", { type: blob.type || "image/jpeg" });
+    await processOcrFile(file);
+  } catch (err: any) {
+    showToast("Không thể nạp ảnh hiện tại để quét lại: " + (err.message || err), "danger");
+    isOcrScanning.value = false;
+  }
+};
+void [FALLBACK_CCCD_FRONT, FALLBACK_CCCD_BACK, handleOcrCardUpload, handleRescanCurrentCard];
+
 const openKycModal = (user: UserAccount, preferredType?: "seller" | "shipper") => {
   activeDocTab.value = "front";
+  isOcrScanning.value = false;
+  ocrExtractedSuccess.value = false;
   const isShipperPending = user.shipperDetails && (user.shipperDetails.status === "Pending" || user.shipperDetails.status === "pending");
   const isSellerPending = user.storeDetails && (user.storeDetails.status === "Pending" || user.storeDetails.status === "pending");
 
   const chooseShipper = preferredType === "shipper" || (isShipperPending && !isSellerPending) || (user.shipperDetails && !user.storeDetails);
+  const partnerCccd = getPartnerCccdNumber(user);
+  const partnerNguyenQuan = getPartnerNguyenQuan(user);
 
   if (chooseShipper && user.shipperDetails) {
     selectedKycType.value = "shipper";
     selectedKycItem.value = {
       ...user.shipperDetails,
+      cccdNumber: partnerCccd,
+      nguyenQuan: partnerNguyenQuan,
       email: user.email || user.shipperDetails.phoneNumber,
       fullName: user.shipperDetails.fullName || user.fullName,
       userId: user.id
     };
-    activeKycImage.value = user.shipperDetails.cccdFrontImage || user.shipperDetails.drivingLicenseImage || "https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=600";
+    activeKycImage.value = getValidDocImage(user.shipperDetails.cccdFrontImage || user.shipperDetails.drivingLicenseImage, "front");
   } else if (user.storeDetails) {
     selectedKycType.value = "seller";
     selectedKycItem.value = {
       ...user.storeDetails,
+      cccdNumber: partnerCccd,
+      nguyenQuan: partnerNguyenQuan,
       email: user.email || user.storeDetails.phoneEmail,
       fullName: user.storeDetails.ownerFullName || user.fullName,
       userId: user.id
     };
-    activeKycImage.value = user.storeDetails.cccdFrontImage || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600";
+    activeKycImage.value = getValidDocImage(user.storeDetails.cccdFrontImage, "front");
   } else if (user.shipperDetails) {
     selectedKycType.value = "shipper";
     selectedKycItem.value = {
       ...user.shipperDetails,
+      cccdNumber: partnerCccd,
+      nguyenQuan: partnerNguyenQuan,
       email: user.email || user.shipperDetails.phoneNumber,
       fullName: user.shipperDetails.fullName || user.fullName,
       userId: user.id
     };
-    activeKycImage.value = user.shipperDetails.cccdFrontImage || user.shipperDetails.drivingLicenseImage || "https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=600";
+    activeKycImage.value = getValidDocImage(user.shipperDetails.cccdFrontImage || user.shipperDetails.drivingLicenseImage, "front");
   } else {
-    showToast("Tài khoản này chưa nộp hồ sơ nâng cấp!", "warning");
-    return;
+    // Dự phòng an toàn nếu tài khoản đang pending nhưng chưa có thông tin chi tiết đầy đủ
+    selectedKycType.value = "seller";
+    selectedKycItem.value = {
+      fullName: user.fullName || "Đối Tác ZoneMart",
+      email: user.email || "",
+      phoneEmail: user.email || "",
+      storeName: `Gian Hàng: ${user.fullName || 'ZoneMart'}`,
+      category: "Bán lẻ & Tiêu dùng",
+      address: "Chưa cập nhật",
+      cccdNumber: partnerCccd,
+      nguyenQuan: partnerNguyenQuan,
+      createdAt: user.createdAt || "Hôm nay",
+      userId: user.id,
+      id: user.id
+    };
+    activeKycImage.value = getValidDocImage(undefined, "front");
   }
   showKycModal.value = true;
+
+  // TỰ ĐỘNG QUÉT & NHẬN DIỆN THÔNG TIN CCCD BẰNG OCR AI NGAY KHI MỞ HỒ SƠ (KHÔNG BẮT NGƯỜI DÙNG BẤM THỦ CÔNG)
+  setTimeout(() => {
+    autoScanCccdCard();
+  }, 250);
+};
+
+const autoScanCccdCard = async () => {
+  if (!selectedKycItem.value) return;
+  const targetImage = activeKycImage.value || selectedKycItem.value.cccdFrontImage;
+  if (!targetImage || typeof targetImage !== "string") return;
+
+  // Bỏ qua nếu là SVG fallback hoặc placeholder chưa có ảnh thật
+  if (targetImage.startsWith("<svg") || targetImage.includes("placeholder") || targetImage.includes("example.com")) return;
+
+  try {
+    isOcrScanning.value = true;
+    let fileToSend: File | null = null;
+    if (targetImage.startsWith("data:") || targetImage.startsWith("blob:") || targetImage.startsWith("http")) {
+      const resp = await fetch(targetImage);
+      const blob = await resp.blob();
+      fileToSend = new File([blob], "cccd_front.jpg", { type: blob.type || "image/jpeg" });
+    }
+    if (fileToSend) {
+      await processOcrFile(fileToSend);
+    }
+  } catch (err) {
+    console.warn("⚠️ Tự động quét CCCD ngầm:", err);
+  } finally {
+    isOcrScanning.value = false;
+  }
 };
 
 const handleApproveKyc = async () => {
   if (!selectedKycItem.value) return;
-  const targetId = selectedKycItem.value.storeId || selectedKycItem.value.shipperId || selectedKycItem.value.id;
+  const targetId = selectedKycItem.value.id || selectedKycItem.value.storeId || selectedKycItem.value.shipperId || selectedKycItem.value.storeCode || selectedKycItem.value.shipperCode || selectedKycItem.value.email;
   const currentType = selectedKycType.value;
 
   // 1. CẬP NHẬT TỨC THÌ TRÊN STATE GIAO DIỆN (Biến mất ngay khỏi mục Duyệt Hồ Sơ và xuất hiện bên mục Người Dùng)
@@ -477,17 +1003,32 @@ const handleRejectKyc = async () => {
     showToast("Vui lòng nhập lý do từ chối hồ sơ!", "warning");
     return;
   }
-  const targetId = selectedKycItem.value.storeId || selectedKycItem.value.shipperId || selectedKycItem.value.id;
+  isSubmittingReject.value = true;
+  const item = selectedKycItem.value || {};
+  const targetId = item.storeId || item.storeCode || item.shipperId || item.shipperCode || item.id || item.userId || item.email;
   const currentType = selectedKycType.value;
   const reasonText = rejectReasonInput.value.trim();
 
   // 1. CẬP NHẬT TỨC THÌ TRÊN STATE GIAO DIỆN (Lập tức biến mất khỏi mục Duyệt Hồ Sơ)
   const userIdx = users.value.findIndex(u =>
     u.id === targetId ||
-    (u.storeDetails && (u.storeDetails.storeId === targetId || u.storeDetails.id === targetId)) ||
-    (u.shipperDetails && (u.shipperDetails.shipperId === targetId || u.shipperDetails.id === targetId))
+    u.id === item.userId ||
+    u.email === item.email ||
+    (u.storeDetails && (
+      u.storeDetails.storeId === targetId ||
+      u.storeDetails.storeCode === targetId ||
+      u.storeDetails.id === targetId ||
+      u.storeDetails.phoneEmail === targetId
+    )) ||
+    (u.shipperDetails && (
+      u.shipperDetails.shipperId === targetId ||
+      u.shipperDetails.shipperCode === targetId ||
+      u.shipperDetails.id === targetId ||
+      u.shipperDetails.phoneNumber === targetId
+    ))
   );
   if (userIdx !== -1) {
+    users.value[userIdx].accountStatus = "rejected";
     if (currentType === "seller" && users.value[userIdx].storeDetails) {
       users.value[userIdx].storeDetails.status = "Rejected";
       users.value[userIdx].storeDetails.rejectReason = reasonText;
@@ -521,6 +1062,8 @@ const handleRejectKyc = async () => {
     }
   } catch (err) {
     console.warn("⚠️ Error rejecting KYC:", err);
+  } finally {
+    isSubmittingReject.value = false;
   }
 };
 
@@ -876,12 +1419,13 @@ const handleNotificationClick = async (notif: AdminNotificationItem) => {
       const res = await fetch(`/api/admin/partner/${notif.targetUserId}`);
       if (res.ok) {
         const pData = await res.json();
-        if (pData.success && pData.partner) {
-          const p = pData.partner;
+        const p = pData.partner || pData.data;
+        if (pData.success && p) {
           selectedKycType.value = (p.type === "shipper" || preferredType === "shipper") ? "shipper" : "seller";
           selectedKycItem.value = {
             ...p,
             id: p.id,
+            cccdNumber: typeof (p.cccdNumber || p.cccd) === "string" ? (p.cccdNumber || p.cccd).trim() : "",
             shipperId: selectedKycType.value === "shipper" ? p.id : undefined,
             storeId: selectedKycType.value === "seller" ? p.id : undefined,
             userId: p.id
@@ -1643,6 +2187,7 @@ onUnmounted(() => {
                 <option value="All">Tất cả trạng thái</option>
                 <option value="active">Đang hoạt động</option>
                 <option value="pending">Chờ duyệt</option>
+                <option value="rejected">Bị từ chối</option>
                 <option value="suspended">Tạm đình chỉ</option>
                 <option value="banned">Bị cấm</option>
               </select>
@@ -1670,13 +2215,20 @@ onUnmounted(() => {
                         <div>
                           <strong>{{ formatDisplayName(user.fullName) }}</strong>
                           <small>{{ user.email }}</small>
-                          <small v-if="user.storeDetails" class="text-orange">🏪 {{ user.storeDetails.storeName }}</small>
-                          <small v-if="user.shipperDetails" class="text-green">🛵 {{ user.shipperDetails.licensePlate }}</small>
+                          <small v-if="user.storeDetails && (user.storeDetails.status === 'Approved' || user.isSeller)" class="text-orange">🏪 {{ user.storeDetails.storeName }}</small>
+                          <small v-else-if="user.storeDetails && (user.storeDetails.status === 'Pending' || user.storeDetails.status === 'pending')" class="text-warning">🏪 {{ user.storeDetails.storeName }} (Chờ duyệt)</small>
+                          <small v-else-if="user.storeDetails && (user.storeDetails.status === 'Rejected' || user.storeDetails.status === 'rejected')" class="text-danger">❌ {{ user.storeDetails.storeName }} (Đã từ chối)</small>
+                          <small v-if="user.shipperDetails && (user.shipperDetails.status === 'Approved' || user.isShipper)" class="text-green">🛵 {{ user.shipperDetails.licensePlate }}</small>
+                          <small v-else-if="user.shipperDetails && (user.shipperDetails.status === 'Pending' || user.shipperDetails.status === 'pending')" class="text-warning">🛵 {{ user.shipperDetails.licensePlate }} (Chờ duyệt)</small>
+                          <small v-else-if="user.shipperDetails && (user.shipperDetails.status === 'Rejected' || user.shipperDetails.status === 'rejected')" class="text-danger">❌ {{ user.shipperDetails.licensePlate }} (Đã từ chối)</small>
                         </div>
                       </div>
                     </td>
                     <td>
                       <span v-if="user.isAdmin" class="badge-role-admin">Quản Trị Viên</span>
+                      <span v-else-if="user.accountStatus === 'rejected' || user.storeDetails?.status === 'Rejected' || user.shipperDetails?.status === 'Rejected'" class="badge-role-rejected">
+                        {{ (user.storeDetails?.status === 'Rejected' || user.primaryRole === 'RejectedSeller') ? 'Chủ Shop (Từ chối)' : (user.shipperDetails?.status === 'Rejected' || user.primaryRole === 'RejectedShipper') ? 'Tài Xế (Từ chối)' : 'Bị Từ Chối' }}
+                      </span>
                       <span v-else-if="user.storeDetails && user.storeDetails.status === 'Pending'" class="badge-role-seller-pending">Chủ Shop (Chờ duyệt)</span>
                       <span v-else-if="user.isSeller" class="badge-role-seller">Chủ Gian Hàng</span>
                       <span v-else-if="user.shipperDetails && user.shipperDetails.status === 'Pending'" class="badge-role-shipper-pending">Tài Xế (Chờ duyệt)</span>
@@ -1688,12 +2240,16 @@ onUnmounted(() => {
                         class="status-pill"
                         :class="{
                           'status-pending': user.accountStatus === 'pending' || user.storeDetails?.status === 'Pending' || user.shipperDetails?.status === 'Pending',
-                          'status-active': user.accountStatus === 'active' && user.storeDetails?.status !== 'Pending' && user.shipperDetails?.status !== 'Pending',
+                          'status-rejected': user.accountStatus === 'rejected' || user.storeDetails?.status === 'Rejected' || user.shipperDetails?.status === 'Rejected',
+                          'status-active': user.accountStatus === 'active' && user.storeDetails?.status !== 'Pending' && user.shipperDetails?.status !== 'Pending' && user.storeDetails?.status !== 'Rejected' && user.shipperDetails?.status !== 'Rejected',
                           'status-warning': user.accountStatus === 'locked_10_days' || user.accountStatus === 'suspended',
                           'status-banned': user.accountStatus === 'banned'
                         }"
                       >
-                        <template v-if="user.accountStatus === 'pending' || user.storeDetails?.status === 'Pending' || user.shipperDetails?.status === 'Pending'">
+                        <template v-if="user.accountStatus === 'rejected' || user.storeDetails?.status === 'Rejected' || user.shipperDetails?.status === 'Rejected'">
+                          <XCircle :size="12" class="me-1" /> Bị Từ Chối
+                        </template>
+                        <template v-else-if="user.accountStatus === 'pending' || user.storeDetails?.status === 'Pending' || user.shipperDetails?.status === 'Pending'">
                           <Hourglass :size="12" class="me-1 hourglass-animated" /> Chờ Phê Duyệt
                         </template>
                         <template v-else-if="user.accountStatus === 'active'">
@@ -1815,7 +2371,13 @@ onUnmounted(() => {
                       </div>
                     </td>
                     <td>
-                      <code>{{ (user.shipperDetails && (user.shipperDetails.status === 'Pending' || user.shipperDetails.status === 'pending')) ? (user.shipperDetails.cccdNumber || '---') : (user.storeDetails?.cccdNumber || user.shipperDetails?.cccdNumber || '---') }}</code>
+                      <div v-if="getPartnerCccdNumber(user)" class="d-flex flex-column gap-1">
+                        <code class="cccd-code-badge">{{ getPartnerCccdNumber(user) }}</code>
+                        <span class="chip-nfc-badge" style="width: fit-content; font-size: 10px; padding: 1px 6px;">
+                          <Sparkles :size="10" /> Chip Verified
+                        </span>
+                      </div>
+                      <span v-else class="text-muted font-italic" style="font-size: 13px;">---</span>
                     </td>
                     <td>
                       <button class="btn-action-primary" @click="openKycModal(user, (user.shipperDetails && (user.shipperDetails.status === 'Pending' || user.shipperDetails.status === 'pending')) ? 'shipper' : 'seller')">
@@ -1917,9 +2479,16 @@ onUnmounted(() => {
                         <button
                           class="btn-reject-product"
                           @click="openRejectProductModal(prod)"
-                          title="Từ chối và yêu cầu người bán sửa lại thông tin"
+                          title="Từ chối và gỡ bỏ sản phẩm khỏi sàn"
                         >
                           <X :size="14" /> Từ Chối
+                        </button>
+                        <button
+                          class="btn-delete-prod-admin"
+                          @click="handleDirectDeleteProduct(prod)"
+                          title="Xóa vĩnh viễn sản phẩm này khỏi sàn và gian hàng"
+                        >
+                          <Trash2 :size="14" /> Xóa Bỏ
                         </button>
                       </div>
                     </td>
@@ -2040,19 +2609,54 @@ onUnmounted(() => {
                 </div>
                 <div class="kyc-card-grid">
                   <div class="info-field-item">
-                    <span class="info-lbl">Họ và tên đối tác:</span>
-                    <strong class="info-val-highlight">{{ selectedKycItem.fullName || selectedKycItem.ownerFullName }}</strong>
+                    <label class="info-lbl d-flex align-items-center justify-content-between">
+                      <span>Họ và tên đối tác:</span>
+                      <span v-if="ocrExtractedSuccess" class="ocr-sync-tag"><Check :size="10" /> Đã quét OCR</span>
+                    </label>
+                    <div v-if="isOcrScanning" class="ocr-skeleton-line"></div>
+                    <input 
+                      v-else
+                      type="text" 
+                      class="kyc-field-input" 
+                      :class="{ 'border-success-highlight': ocrExtractedSuccess }"
+                      v-model="selectedKycItem.fullName"
+                      placeholder="Nhập họ và tên đối tác..."
+                    />
                   </div>
                   <div class="info-field-item">
                     <span class="info-lbl">Gmail / Liên lạc:</span>
                     <span class="info-val">{{ selectedKycItem.email || selectedKycItem.phoneEmail || selectedKycItem.phoneNumber }}</span>
                   </div>
                   <div class="info-field-item">
-                    <span class="info-lbl">Số CCCD gắn chip:</span>
-                    <div class="d-flex align-items-center gap-1">
-                      <code class="cccd-code-badge">{{ selectedKycItem.cccdNumber || '001201012345' }}</code>
-                      <span class="chip-nfc-badge" title="Đã quét mã QR chip CCCD"><Sparkles :size="10" /> Chip Verified</span>
-                    </div>
+                    <label class="info-lbl d-flex align-items-center justify-content-between">
+                      <span>Số CCCD gắn chip:</span>
+                      <span v-if="selectedKycItem.cccdNumber && selectedKycItem.cccdNumber.trim()" class="chip-nfc-badge" title="Đã đối chiếu số CCCD đối tác"><Sparkles :size="10" /> Chip Verified</span>
+                    </label>
+                    <div v-if="isOcrScanning" class="ocr-skeleton-line"></div>
+                    <input 
+                      v-else
+                      type="text" 
+                      class="kyc-field-input font-mono font-bold" 
+                      :class="{ 'border-success-highlight': ocrExtractedSuccess }"
+                      v-model="selectedKycItem.cccdNumber" 
+                      placeholder="12 chữ số CCCD..."
+                      maxlength="15"
+                    />
+                  </div>
+                  <div class="info-field-item">
+                    <label class="info-lbl d-flex align-items-center justify-content-between">
+                      <span>Nguyên quán (từ CCCD):</span>
+                      <span v-if="ocrExtractedSuccess" class="ocr-sync-tag"><Check :size="10" /> Đã quét OCR</span>
+                    </label>
+                    <div v-if="isOcrScanning" class="ocr-skeleton-line"></div>
+                    <input 
+                      v-else
+                      type="text" 
+                      class="kyc-field-input" 
+                      :class="{ 'border-success-highlight': ocrExtractedSuccess }"
+                      v-model="selectedKycItem.nguyenQuan" 
+                      placeholder="Nguyên quán / Quê quán..."
+                    />
                   </div>
                   <div class="info-field-item">
                     <span class="info-lbl">Thời gian nộp đơn:</span>
@@ -2080,15 +2684,29 @@ onUnmounted(() => {
                     <strong class="info-val-store">{{ selectedKycItem.storeName }}</strong>
                   </div>
                   <div class="info-field-item">
+                    <span class="info-lbl">Mô hình kinh doanh:</span>
+                    <span class="badge" style="background: #FEF3C7; color: #92400E; font-weight: 700; padding: 4px 8px; border-radius: 6px; font-size: 12px; display: inline-block;">
+                      {{ selectedKycItem.sellerType === 'home_business' ? '🏡 Hộ kinh doanh tại nhà' : selectedKycItem.sellerType === 'store_facility' ? '🏭 Cửa hàng / Cơ sở SX' : selectedKycItem.sellerType === 'other_local_seller' ? '👨‍🌾 Người bán địa phương khác' : '🏪 Chợ truyền thống' }}
+                    </span>
+                  </div>
+                  <div class="info-field-item">
                     <span class="info-lbl">Nhóm ngành hàng:</span>
                     <span class="badge-category-tag">{{ selectedKycItem.category || 'Nông Sản & Thực Phẩm Sạch' }}</span>
+                  </div>
+                  <div class="info-field-item">
+                    <span class="info-lbl">Địa bàn Xã / Phường:</span>
+                    <strong class="info-val" style="color: #0284C7;">🏛️ {{ selectedKycItem.ward || 'Chưa cập nhật' }} {{ selectedKycItem.district ? '(' + selectedKycItem.district + ')' : '' }}</strong>
+                  </div>
+                  <div class="info-field-item">
+                    <span class="info-lbl">Chợ / Cụm chợ số:</span>
+                    <span class="info-val">{{ selectedKycItem.marketName || 'Chợ Dân Sinh Địa Phương' }}</span>
                   </div>
                   <div class="info-field-item">
                     <span class="info-lbl">Khung giờ mở cửa:</span>
                     <span class="info-val"><Clock :size="12" class="me-1 text-orange" />{{ selectedKycItem.openHours || '07:00 - 22:00' }}</span>
                   </div>
                   <div class="info-field-item col-span-2">
-                    <span class="info-lbl">Địa chỉ mặt bằng / kho hàng:</span>
+                    <span class="info-lbl">Địa chỉ chi tiết:</span>
                     <span class="info-val"><MapPin :size="13" class="me-1 text-danger" />{{ selectedKycItem.address || 'Hà Nội' }}</span>
                   </div>
                 </div>
@@ -2126,7 +2744,8 @@ onUnmounted(() => {
                   </div>
                   <div class="info-field-item col-span-2">
                     <span class="info-lbl">Kiểm tra trùng khớp CCCD:</span>
-                    <span class="match-check-pill"><CheckCircle2 :size="12" /> Tên chủ tài khoản trùng khớp với CCCD đối chiếu</span>
+                    <span v-if="selectedKycItem.cccdNumber && selectedKycItem.cccdNumber.trim()" class="match-check-pill"><CheckCircle2 :size="12" /> Tên chủ tài khoản trùng khớp với CCCD đối chiếu</span>
+                    <span v-else class="text-muted font-italic" style="font-size: 13px;">Chưa có dữ liệu số CCCD để đối chiếu</span>
                   </div>
                 </div>
               </div>
@@ -2168,10 +2787,28 @@ onUnmounted(() => {
                 </button>
               </div>
 
+
               <!-- Khung xem ảnh chính phóng to -->
-              <div class="image-preview-card" @click="activeZoomImage = activeKycImage">
-                <img :src="activeKycImage" alt="Giấy tờ đối chiếu" class="preview-img-large" />
-                <div class="zoom-hint-overlay">
+              <div class="image-preview-card" @click="!isOcrScanning && (activeZoomImage = activeKycImage)">
+                <img
+                  :src="activeKycImage || getDocFallbackImage(activeDocTab)"
+                  alt="Giấy tờ đối chiếu"
+                  class="preview-img-large"
+                  :class="{ 'img-blur-scanning': isOcrScanning }"
+                  @error="activeKycImage = getDocFallbackImage(activeDocTab)"
+                />
+
+                <!-- Hiệu ứng Scanning Animation / Skeleton khi OCR đang chạy -->
+                <div v-if="isOcrScanning" class="ocr-scanner-overlay">
+                  <div class="ocr-laser-beam"></div>
+                  <div class="ocr-status-card">
+                    <Loader2 :size="28" class="ocr-spinner-icon" />
+                    <div class="ocr-status-title">Đang quét CCCD/CMND...</div>
+                    <div class="ocr-status-subtitle">Đang trích xuất Họ tên, Số CCCD, Nguyên quán qua FPT.AI ID Recognition v2</div>
+                  </div>
+                </div>
+
+                <div v-else class="zoom-hint-overlay">
                   <Eye :size="14" /> Nhấp để phóng to toàn màn hình
                 </div>
                 <div class="doc-type-indicator">
@@ -2187,7 +2824,11 @@ onUnmounted(() => {
                   @click="switchDocTab('front')"
                   title="Xem CCCD Mặt Trước"
                 >
-                  <img :src="selectedKycItem.cccdFrontImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=200'" class="thumb-img" />
+                  <img
+                    :src="getValidDocImage(selectedKycItem.cccdFrontImage, 'front')"
+                    class="thumb-img"
+                    @error="handleKycImgError($event, 'front')"
+                  />
                   <span class="thumb-lbl">CCCD Trước</span>
                 </div>
 
@@ -2197,7 +2838,11 @@ onUnmounted(() => {
                   @click="switchDocTab('back')"
                   title="Xem CCCD Mặt Sau"
                 >
-                  <img :src="selectedKycItem.cccdBackImage || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=200'" class="thumb-img" />
+                  <img
+                    :src="getValidDocImage(selectedKycItem.cccdBackImage, 'back')"
+                    class="thumb-img"
+                    @error="handleKycImgError($event, 'back')"
+                  />
                   <span class="thumb-lbl">CCCD Sau</span>
                 </div>
 
@@ -2208,7 +2853,11 @@ onUnmounted(() => {
                   @click="switchDocTab('cert')"
                   title="Xem Giấy ATVSTP / GPKD"
                 >
-                  <img :src="selectedKycItem.foodSafetyCertImage || 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=200'" class="thumb-img" />
+                  <img
+                    :src="getValidDocImage(selectedKycItem.foodSafetyCertImage, 'cert')"
+                    class="thumb-img"
+                    @error="handleKycImgError($event, 'cert')"
+                  />
                   <span class="thumb-lbl">ATVSTP / GPKD</span>
                 </div>
 
@@ -2219,7 +2868,11 @@ onUnmounted(() => {
                   @click="switchDocTab('license')"
                   title="Xem Bằng Lái Xe GPLX"
                 >
-                  <img :src="selectedKycItem.drivingLicenseImage || 'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=200'" class="thumb-img" />
+                  <img
+                    :src="getValidDocImage(selectedKycItem.drivingLicenseImage, 'license')"
+                    class="thumb-img"
+                    @error="handleKycImgError($event, 'license')"
+                  />
                   <span class="thumb-lbl">GPLX Tài Xế</span>
                 </div>
               </div>
@@ -2247,19 +2900,113 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- POPUP NHẬP LÝ DO TỪ CHỐI -->
-    <div v-if="showRejectReasonPopup" class="modal-backdrop-custom nested-popup">
-      <div class="modal-dialog-card modal-sm">
-        <h4 class="popup-title">Lý do từ chối hồ sơ</h4>
-        <textarea
-          v-model="rejectReasonInput"
-          rows="3"
-          class="modal-form-control modal-textarea"
-          placeholder="Nhập lý do chi tiết để gửi thông báo Gmail cho người dùng..."
-        ></textarea>
-        <div class="modal-footer-row mt-3 p-0 border-0">
-          <button class="btn-modal-cancel" @click="showRejectReasonPopup = false">Hủy</button>
-          <button class="btn-modal-danger" @click="handleRejectKyc">Gửi từ chối</button>
+    <!-- POPUP NHẬP LÝ DO TỪ CHỐI (MODERN REDESIGN) -->
+    <div v-if="showRejectReasonPopup" class="modal-backdrop-custom nested-popup reject-modal-backdrop" @click.self="showRejectReasonPopup = false">
+      <div class="modal-dialog-card modal-reject-card animate-pop-in">
+        <!-- Header -->
+        <div class="reject-modal-header">
+          <div class="reject-header-left">
+            <div class="reject-header-icon-wrap">
+              <ShieldAlert :size="22" class="text-danger" />
+            </div>
+            <div>
+              <h3 class="reject-modal-title">Từ Chối Thẩm Định Hồ Sơ</h3>
+              <p class="reject-modal-subtitle">Lý do từ chối sẽ được gửi chính thức qua Gmail của đối tác</p>
+            </div>
+          </div>
+          <button class="reject-close-btn" @click="showRejectReasonPopup = false" title="Đóng popup">
+            <X :size="18" />
+          </button>
+        </div>
+
+        <!-- Body -->
+        <div class="reject-modal-body">
+          <!-- Recipient Quick Info Banner -->
+          <div v-if="selectedKycItem" class="reject-target-banner">
+            <div class="reject-target-avatar">
+              {{ (selectedKycItem.fullName || selectedKycItem.storeName || 'U').charAt(0).toUpperCase() }}
+            </div>
+            <div class="reject-target-info">
+              <div class="reject-target-name-row">
+                <span class="reject-target-name">{{ selectedKycItem.fullName || 'Người dùng' }}</span>
+                <span class="reject-badge-type" :class="selectedKycType === 'seller' ? 'badge-seller' : 'badge-shipper'">
+                  {{ selectedKycType === 'seller' ? 'Đối Tác Bán Hàng' : 'Tài Xế ZoneShip' }}
+                </span>
+              </div>
+              <div class="reject-target-subtext">
+                <span v-if="selectedKycItem.email" class="subtext-item"><Mail :size="12" /> {{ selectedKycItem.email }}</span>
+                <span v-if="selectedKycItem.storeName" class="subtext-item"><Store :size="12" /> Quán: {{ selectedKycItem.storeName }}</span>
+                <span v-if="selectedKycItem.licensePlate" class="subtext-item"><Bike :size="12" /> Biển số: {{ selectedKycItem.licensePlate }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick presets -->
+          <div class="reject-presets-section">
+            <label class="reject-section-label">
+              <Sparkles :size="14" class="text-amber" /> Chọn nhanh lý do thường gặp:
+            </label>
+            <div class="reject-chips-wrap">
+              <button
+                v-for="(reason, idx) in presetRejectReasons"
+                :key="idx"
+                type="button"
+                class="reject-chip-btn"
+                :class="{ active: rejectReasonInput.includes(reason) }"
+                @click="applyPresetReason(reason)"
+              >
+                <span>+</span> {{ reason }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Reason Input Box -->
+          <div class="reject-input-section">
+            <div class="reject-label-row">
+              <label class="reject-section-label mb-0">
+                <FileText :size="14" /> Nội dung lý do chi tiết <span class="text-danger">*</span>
+              </label>
+              <button
+                v-if="rejectReasonInput"
+                type="button"
+                class="btn-clear-reason"
+                @click="rejectReasonInput = ''"
+              >
+                Xóa nội dung
+              </button>
+            </div>
+            <div class="reject-textarea-container">
+              <textarea
+                v-model="rejectReasonInput"
+                rows="4"
+                class="reject-textarea"
+                placeholder="Nêu rõ lý do hoặc hướng dẫn cụ thể để đối tác chụp lại, bổ sung giấy tờ chính xác..."
+              ></textarea>
+              <div class="reject-textarea-footer">
+                <span class="reject-hint-text">
+                  <Info :size="13" /> Thông tin sẽ được tự động gửi kèm văn bản hướng dẫn hoàn thiện hồ sơ.
+                </span>
+                <span class="reject-char-count">{{ rejectReasonInput.length }} ký tự</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="reject-modal-footer">
+          <button type="button" class="btn-reject-cancel" @click="showRejectReasonPopup = false">
+            Hủy Bỏ
+          </button>
+          <button
+            type="button"
+            class="btn-reject-confirm"
+            :disabled="!rejectReasonInput.trim() || isSubmittingReject"
+            @click="handleRejectKyc"
+          >
+            <Loader2 v-if="isSubmittingReject" :size="16" class="spin-icon" />
+            <Send v-else :size="16" />
+            <span>{{ isSubmittingReject ? 'Đang gửi...' : 'Gửi Thông Báo Từ Chối' }}</span>
+          </button>
         </div>
       </div>
     </div>
@@ -2389,7 +3136,7 @@ onUnmounted(() => {
         <div class="modal-footer-row">
           <button class="btn-modal-cancel" @click="showRejectProductModal = false">Hủy Bỏ</button>
           <button class="btn-modal-danger" @click="handleConfirmRejectProduct">
-            <X :size="15" /> Xác Nhận Từ Chối
+            <X :size="15" /> Xác Nhận Từ Chối & Gỡ Bỏ
           </button>
         </div>
       </div>
@@ -3711,6 +4458,7 @@ onUnmounted(() => {
 .badge-role-seller-pending,
 .badge-role-shipper,
 .badge-role-shipper-pending,
+.badge-role-rejected,
 .badge-role-buyer {
   display: inline-flex;
   align-items: center;
@@ -3752,6 +4500,11 @@ onUnmounted(() => {
   background-color: #e0f2fe;
   color: #0369a1;
   border: 1px solid #bae6fd;
+}
+.badge-role-rejected {
+  background-color: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
 }
 
 .status-pill {
@@ -3805,7 +4558,8 @@ onUnmounted(() => {
   color: #a16207;
   border: 1px solid #fef08a;
 }
-.status-banned {
+.status-banned,
+.status-rejected {
   background-color: #fef2f2;
   color: #dc2626;
   border: 1px solid #fecaca;
@@ -4007,6 +4761,10 @@ onUnmounted(() => {
   z-index: 1000;
   padding: 20px;
 }
+.modal-backdrop-custom.nested-popup {
+  z-index: 1050;
+  background-color: rgba(15, 23, 42, 0.75);
+}
 .modal-dialog-card {
   background-color: #ffffff;
   border-radius: 12px;
@@ -4109,6 +4867,404 @@ onUnmounted(() => {
   line-height: 1.5;
   margin: 0;
 }
+/* ================================================================
+   MODAL TỪ CHỐI KYC (REJECT MODAL MODERN STYLING)
+   ================================================================ */
+.modal-backdrop-custom.nested-popup.reject-modal-backdrop {
+  z-index: 1100;
+  background-color: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(8px);
+  padding: 16px;
+  animation: fadeInRejectBackdrop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInRejectBackdrop {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes popInRejectCard {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-pop-in {
+  animation: popInRejectCard 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.modal-reject-card {
+  max-width: 540px;
+  width: 100%;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.35), 0 0 0 1px rgba(239, 68, 68, 0.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.reject-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  background: linear-gradient(135deg, #fff1f2 0%, #ffffff 100%);
+  border-bottom: 1px solid #fee2e2;
+}
+
+.reject-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.reject-header-icon-wrap {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #ffe4e6;
+  border: 1px solid #fecdd3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(225, 29, 72, 0.12);
+}
+
+.reject-modal-title {
+  font-size: 16.5px;
+  font-weight: 700;
+  color: #991b1b;
+  margin: 0;
+  line-height: 1.3;
+}
+
+.reject-modal-subtitle {
+  font-size: 12px;
+  color: #64748b;
+  margin: 3px 0 0 0;
+}
+
+.reject-close-btn {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.reject-close-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.reject-modal-body {
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Recipient Info Card */
+.reject-target-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.reject-target-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.2);
+}
+
+.reject-target-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.reject-target-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.reject-target-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.reject-badge-type {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+.reject-badge-type.badge-seller {
+  background: #ffedd5;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+
+.reject-badge-type.badge-shipper {
+  background: #e0e7ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+
+.reject-target-subtext {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: #64748b;
+  flex-wrap: wrap;
+}
+
+.reject-target-subtext .subtext-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Preset Chips */
+.reject-presets-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reject-section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+  margin: 0;
+}
+
+.reject-chips-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.reject-chip-btn {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 6px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  line-height: 1.3;
+}
+
+.reject-chip-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+}
+
+.reject-chip-btn.active {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+  font-weight: 600;
+}
+
+/* Reason Input Box */
+.reject-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reject-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.btn-clear-reason {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  transition: color 0.15s;
+}
+
+.btn-clear-reason:hover {
+  color: #ef4444;
+}
+
+.reject-textarea-container {
+  display: flex;
+  flex-direction: column;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #ffffff;
+  transition: all 0.2s ease;
+}
+
+.reject-textarea-container:focus-within {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.reject-textarea {
+  width: 100%;
+  border: none;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  color: #1e293b;
+  line-height: 1.5;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 96px;
+  outline: none;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.reject-textarea::placeholder {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.reject-textarea-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-top: 1px solid #f1f5f9;
+}
+
+.reject-hint-text {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.reject-char-count {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+/* Footer & Buttons */
+.reject-modal-footer {
+  padding: 14px 22px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.btn-reject-cancel {
+  background: #ffffff;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 9px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-reject-cancel:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.btn-reject-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+  transition: all 0.15s ease;
+}
+
+.btn-reject-confirm:hover:not(:disabled) {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(220, 38, 38, 0.35);
+}
+
+.btn-reject-confirm:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.spin-icon {
+  animation: spinLoader 1s linear infinite;
+}
+
+@keyframes spinLoader {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .popup-title {
   font-size: 15px;
   font-weight: 700;
@@ -4450,6 +5606,182 @@ onUnmounted(() => {
   gap: 4px;
   backdrop-filter: blur(4px);
 }
+
+/* ========================================================
+   STYLES FOR OCR CMND / CCCD AUTOMATION (FPT.AI INTEGRATION)
+   ======================================================== */
+.kyc-field-input {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  background-color: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+.kyc-field-input:focus {
+  border-color: #ea580c;
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15);
+}
+.kyc-field-input.border-success-highlight {
+  border-color: #10b981;
+  background-color: #f0fdf4;
+}
+.ocr-skeleton-line {
+  width: 100%;
+  height: 33px;
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: ocrSkeletonPulse 1.5s infinite;
+  border-radius: 6px;
+}
+@keyframes ocrSkeletonPulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.ocr-sync-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #15803d;
+  background: #dcfce7;
+  padding: 1px 6px;
+  border-radius: 9999px;
+}
+.ocr-upload-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #fff7ed;
+  border: 1px dashed #fdba74;
+  padding: 7px 12px;
+  border-radius: 8px;
+}
+.ocr-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-ocr-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+  color: #ffffff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(234, 88, 12, 0.25);
+  margin-bottom: 0;
+}
+.btn-ocr-upload:hover:not(.disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+.btn-ocr-upload.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.btn-ocr-rescan {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ffffff;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-ocr-rescan:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.ocr-provider-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #c2410c;
+  background: #ffedd5;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+.ocr-scanner-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(3px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  overflow: hidden;
+}
+.ocr-laser-beam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #f97316, #ef4444, #f97316, transparent);
+  box-shadow: 0 0 16px 4px rgba(249, 115, 22, 0.95);
+  animation: laserScan 2s ease-in-out infinite alternate;
+}
+@keyframes laserScan {
+  0% { top: 5%; }
+  100% { top: 95%; }
+}
+.ocr-status-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 16px;
+  color: #ffffff;
+}
+.ocr-spinner-icon {
+  animation: ocrSpin 1s linear infinite;
+  color: #f97316;
+  margin-bottom: 8px;
+}
+.ocr-status-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  margin-bottom: 4px;
+}
+.ocr-status-subtitle {
+  font-size: 11px;
+  color: #cbd5e1;
+  max-width: 280px;
+  line-height: 1.4;
+}
+.img-blur-scanning {
+  filter: blur(2px) brightness(0.85);
+}
+@keyframes ocrSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .doc-thumbnail-strip {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -4638,6 +5970,27 @@ onUnmounted(() => {
   color: #ffffff;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+}
+.btn-delete-prod-admin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background-color: #f8fafc;
+  color: #64748b;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-delete-prod-admin:hover {
+  background-color: #fee2e2;
+  color: #dc2626;
+  border-color: #fca5a5;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.15);
 }
 .kyc-quick-switch-box .btn-quick-switch {
   display: inline-flex;

@@ -82,4 +82,9 @@ public class MongoDbService
     public IMongoCollection<UserCart> UserCarts => _database.GetCollection<UserCart>("user_carts");
     public IMongoCollection<AuditLog> AuditLogs => _database.GetCollection<AuditLog>("audit_logs");
     public IMongoCollection<AdminNotification> AdminNotifications => _database.GetCollection<AdminNotification>("admin_notifications");
+    public IMongoCollection<Review> Reviews => _database.GetCollection<Review>("reviews");
+    public IMongoCollection<CommuneWard> CommuneWards => _database.GetCollection<CommuneWard>("commune_wards");
+    public IMongoCollection<Market> Markets => _database.GetCollection<Market>("markets");
+    public IMongoCollection<ManagementBoard> ManagementBoards => _database.GetCollection<ManagementBoard>("management_boards");
+    public IMongoCollection<MarketAssignmentHistory> MarketAssignmentHistories => _database.GetCollection<MarketAssignmentHistory>("market_assignment_histories");
 }

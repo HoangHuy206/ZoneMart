@@ -15,6 +15,7 @@
  */
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
+import { useToast } from "../../composables/useToast";
 import { orderRealtimeService } from "../../services/orderRealtimeService";
 import {
   useProductModeration,
@@ -25,6 +26,7 @@ import FaceScanModal from "../../components/auth/FaceScanModal.vue";
 import { apiFetch } from "../../utils/apiConfig";
 
 const router = useRouter();
+const toast = useToast();
 
 // Điều hướng Tab chính trong Sidebar
 type NavKey =
@@ -46,6 +48,22 @@ const currentUser = reactive({
   email: "",
   avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80"
 });
+
+// Subscriptions thời gian thực & thông báo nổ đơn mới
+let unsubscribeOrderCreated: (() => void) | null = null;
+let unsubscribeSellerOrder: (() => void) | null = null;
+
+const newIncomingOrderNotification = ref<{
+  show: boolean;
+  orderCode: string;
+  customerName: string;
+  customerPhone: string;
+  customerAddress: string;
+  paymentMethod: string;
+  isQr: boolean;
+  formattedPrice: string;
+  items: OrderItem[];
+} | null>(null);
 
 onMounted(async () => {
   const savedUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
@@ -81,7 +99,7 @@ onMounted(async () => {
             localStorage.removeItem("userRole");
             localStorage.removeItem("currentUser");
             localStorage.removeItem("zonemart_user");
-            alert("Tài khoản của bạn đã bị xóa khỏi hệ thống! Vui lòng liên hệ Ban Quản Trị.");
+            toast.error("Tài khoản của bạn đã bị xóa khỏi hệ thống! Vui lòng liên hệ Ban Quản Trị.", "Tài Khoản Không Tồn Tại");
             router.replace("/login");
           }
         })
@@ -92,11 +110,119 @@ onMounted(async () => {
   // Kiểm tra trạng thái Face ID của gian hàng
   checkFaceStatus();
 
+  // Lắng nghe sự kiện NỔ ĐƠN HÀNG MỚI theo thời gian thực (cho Người bán)
+  unsubscribeOrderCreated = orderRealtimeService.onOrderCreated((order) => {
+    if (!order) return;
+
+    // CHỈ XỬ LÝ NẾU ĐƠN HÀNG THỰC SỰ THUỘC VỀ GIAN HÀNG NÀY!
+    if (!isOrderForCurrentSeller(order)) return;
+
+    const isQr = (order.paymentMethod && (
+      order.paymentMethod.toLowerCase().includes("qr") ||
+      order.paymentMethod.toLowerCase().includes("chuyển khoản") ||
+      order.paymentMethod.toLowerCase().includes("online_qr")
+    )) || (order.status as any) === "Đã thanh toán" || order.total === 0;
+
+    // Khi quét mã QR thanh toán thì tổng tiền nổ đơn gian hàng hiển thị là 0đ
+    const formattedPrice = isQr ? "0 đ" : `${(order.total || 0).toLocaleString("vi-VN")} đ`;
+
+    const mappedItems: OrderItem[] = Array.isArray(order.items) ? order.items.map((it: any) => {
+      let img = it.image || it.img || "";
+      if (!img) {
+        const matchedProd = products.value.find(p => p.name.toLowerCase().trim() === (it.name || "").toLowerCase().trim());
+        if (matchedProd && matchedProd.image) img = matchedProd.image;
+      }
+      return {
+        name: it.name || "Sản phẩm",
+        qty: it.quantity || it.qty || 1,
+        price: it.price || 0,
+        image: img
+      };
+    }) : [];
+
+    const mappedSummary = mappedItems.length > 0
+      ? mappedItems.map(it => `${it.name} (x${it.qty})`).join(", ")
+      : "Đơn hàng mới";
+
+    const orderCode = order.orderCode || (order.id ? `#${order.id.slice(-6).toUpperCase()}` : "#ZM" + Math.floor(1000 + Math.random() * 9000));
+
+    const newSellerOrder: SellerOrder = {
+      id: order.id,
+      orderCode: orderCode,
+      productSummary: mappedSummary,
+      customerName: order.customer?.name || "Khách hàng ZoneMart",
+      customerPhone: order.customer?.phone || "0912 345 678",
+      customerAddress: order.customer?.address || "Hà Nội",
+      orderDate: order.createdAt || "Vừa xong",
+      priceFormatted: formattedPrice,
+      paymentMethod: order.paymentMethod || (isQr ? "Chuyển khoản QR" : "Tiền mặt COD"),
+      status: "Chờ xác nhận",
+      items: mappedItems,
+      shipperInfo: order.shipperInfo
+    };
+
+    const existingIdx = orders.value.findIndex(o => o.id === order.id || o.orderCode === orderCode);
+    if (existingIdx >= 0) {
+      orders.value[existingIdx] = { ...orders.value[existingIdx], ...newSellerOrder };
+    } else {
+      orders.value.unshift(newSellerOrder);
+    }
+
+    // Trừ tồn kho sản phẩm tức thì khi có đơn hàng mới nổ
+    if (Array.isArray(order.items) && order.items.length > 0) {
+      try {
+        const deductedOrders: string[] = JSON.parse(localStorage.getItem("zonemart_deducted_stock_orders") || "[]");
+        const currentOrderId = order.id || order.orderCode;
+        if (currentOrderId && !deductedOrders.includes(currentOrderId)) {
+          productModeration.reduceStockForPurchasedItems(order.items.map((it: any) => ({
+            id: it.id || it.productId,
+            name: it.name,
+            quantity: it.quantity || it.qty || 1
+          })));
+          deductedOrders.push(currentOrderId);
+          localStorage.setItem("zonemart_deducted_stock_orders", JSON.stringify(deductedOrders));
+        }
+      } catch (e) {
+        console.warn("Lỗi trừ tồn kho khi nổ đơn hàng mới:", e);
+      }
+    }
+
+    // Phát âm thanh nổ đơn
+    orderRealtimeService.playOrderAlertSound();
+
+    // Toast thông báo nổ đơn
+    triggerToast(`🔔 NỔ ĐƠN HỎA TỐC! Mã đơn ${orderCode} • ${isQr ? '0 đ (Đã thanh toán QR)' : formattedPrice}`);
+
+    // Bật popup nổ đơn mới cho gian hàng
+    newIncomingOrderNotification.value = {
+      show: true,
+      orderCode: orderCode,
+      customerName: newSellerOrder.customerName,
+      customerPhone: newSellerOrder.customerPhone,
+      customerAddress: newSellerOrder.customerAddress,
+      paymentMethod: newSellerOrder.paymentMethod,
+      isQr,
+      formattedPrice,
+      items: mappedItems
+    };
+
+    const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+    if (cleanEmail) {
+      localStorage.setItem(`zonemart_seller_orders_${cleanEmail}`, JSON.stringify(orders.value));
+    }
+    recalculateKPIs();
+  });
+
   // Lắng nghe thông báo tài xế và trạng thái đơn hàng theo thời gian thực
   unsubscribeSellerOrder = orderRealtimeService.onOrderStatusChanged(({ orderId, status, order }) => {
     const foundOrd = orders.value.find(
       (o) => o.id === orderId || o.orderCode === orderId || o.orderCode === '#' + orderId
     );
+
+    // Nếu đơn hàng này không thuộc gian hàng này VÀ chưa từng có trong danh sách đơn của tiệm -> BỎ QUA HOÀN TOÀN
+    if (!foundOrd && !isOrderForCurrentSeller(order)) {
+      return;
+    }
 
     if (status === "completed") {
       deliveredNotification.value = {
@@ -110,7 +236,7 @@ onMounted(async () => {
 
       if (foundOrd) {
         foundOrd.status = "Đã giao hàng";
-      } else {
+      } else if (isOrderForCurrentSeller(order)) {
         orders.value.unshift({
           id: orderId,
           orderCode: order.orderCode || `#${orderId.slice(-6).toUpperCase()}`,
@@ -151,6 +277,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (unsubscribeSellerOrder) unsubscribeSellerOrder();
+  if (unsubscribeOrderCreated) unsubscribeOrderCreated();
 });
 
 // Thông báo giao đơn hàng thành công nổi bật dành cho người bán
@@ -163,7 +290,6 @@ const deliveredNotification = ref<{
   total: number;
 } | null>(null);
 
-let unsubscribeSellerOrder: (() => void) | null = null;
 
 // Tên hiển thị chào mừng lịch sự
 const greetingName = computed(() => {
@@ -328,6 +454,94 @@ function removeVietnameseTones(str: string): string {
     .replace(/Đ/g, "D")
     .toLowerCase();
 }
+
+// Kiểm tra một đơn hàng có thực sự thuộc về gian hàng của Seller hiện tại hay không
+const isOrderForCurrentSeller = (bo: any): boolean => {
+  if (!bo) return false;
+  const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+  const currentStore = (storeInfo.name || "").toLowerCase().trim();
+  const currentStoreId = (storeInfo.id || "").toLowerCase().trim();
+
+  // 1. Gian hàng demo Ba Vì (seller@zonemart.vn)
+  if (cleanEmail === "seller@zonemart.vn") {
+    if (bo.id === "ord-01" || bo.id === "ord-02") return true;
+    const boStoreName = (bo.store?.name || bo.storeName || "").toLowerCase().trim();
+    if (boStoreName && (boStoreName.includes("ba vì") || boStoreName.includes("zonemart") || boStoreName === currentStore)) {
+      return true;
+    }
+    if (Array.isArray(bo.items) && bo.items.some((it: any) => {
+      const itShop = (it.shop || it.storeName || "").toLowerCase().trim();
+      return itShop && (itShop.includes("ba vì") || itShop.includes("zonemart"));
+    })) {
+      return true;
+    }
+    return false;
+  }
+
+  // 2. Tài khoản Seller thật (ví dụ: HoangHuy2006, email hh28122006666@gmail.com):
+  // Phải có định danh chính xác thuộc gian hàng này. Tuyệt đối không khớp với chuỗi rỗng!
+  if (!cleanEmail && !currentStore) return false;
+
+  // A. Khớp theo email seller
+  const boSellerEmail = (bo.sellerEmail || bo.store?.email || "").toLowerCase().trim();
+  if (boSellerEmail && cleanEmail && boSellerEmail === cleanEmail) {
+    return true;
+  }
+
+  // B. Khớp theo store ID
+  const boStoreId = (bo.store?.id || bo.storeId || "").toLowerCase().trim();
+  if (currentStoreId && boStoreId && (boStoreId === currentStoreId || boStoreId === `store_${currentStoreId}`)) {
+    return true;
+  }
+
+  // C. Khớp theo tên gian hàng:
+  const boStoreName = (bo.store?.name || bo.storeName || "").toLowerCase().trim();
+  if (currentStore && boStoreName) {
+    if (boStoreName === currentStore) return true;
+    // Bỏ qua các tên shop mặc định không phải của seller này
+    if (boStoreName !== "vườn rau ba vì (cầu giấy)" && boStoreName !== "gian hàng zonemart" && !boStoreName.includes("ba vì")) {
+      if (boStoreName.includes(currentStore) || currentStore.includes(boStoreName)) {
+        return true;
+      }
+    }
+  }
+
+  // D. Khớp theo từng mặt hàng trong đơn:
+  if (Array.isArray(bo.items) && bo.items.length > 0) {
+    const hasItemBelongingToSeller = bo.items.some((it: any) => {
+      const itEmail = (it.sellerEmail || "").toLowerCase().trim();
+      if (itEmail && cleanEmail && itEmail === cleanEmail) return true;
+
+      const itStoreId = (it.storeId || "").toLowerCase().trim();
+      if (currentStoreId && itStoreId && (itStoreId === currentStoreId || itStoreId === `store_${currentStoreId}`)) return true;
+
+      const itShop = (it.shop || it.storeName || "").toLowerCase().trim();
+      if (currentStore && itShop) {
+        if (itShop === currentStore) return true;
+        if (itShop !== "vườn rau ba vì (cầu giấy)" && itShop !== "gian hàng zonemart" && !itShop.includes("ba vì")) {
+          if (itShop.includes(currentStore) || currentStore.includes(itShop)) return true;
+        }
+      }
+
+      // Khớp theo ID sản phẩm do người bán này đăng bán
+      if (products.value.length > 0) {
+        const itId = it.id || it.productId;
+        const itName = (it.name || "").toLowerCase().trim();
+        return products.value.some((p) => {
+          if (itId && (p.id === itId || (p as any).productId === itId)) return true;
+          const pName = (p.name || "").toLowerCase().trim();
+          return Boolean(pName && itName && pName === itName);
+        });
+      }
+
+      return false;
+    });
+
+    if (hasItemBelongingToSeller) return true;
+  }
+
+  return false;
+};
 
 // Danh sách sản phẩm của gian hàng sau khi lọc theo ô tìm kiếm
 const displayedSellerProducts = computed(() => {
@@ -538,7 +752,6 @@ const recalculateKPIs = () => {
 // Tải danh sách đơn hàng thực tế của gian hàng
 const loadSellerOrdersAndKPIs = () => {
   const cleanEmail = (currentUser.email || "").toLowerCase().trim();
-  const currentStore = (storeInfo.name || "").toLowerCase().trim();
 
   let sellerOrderList: SellerOrder[] = [];
 
@@ -546,20 +759,24 @@ const loadSellerOrdersAndKPIs = () => {
   const localOrdersRaw = localStorage.getItem(`zonemart_seller_orders_${cleanEmail}`);
   if (localOrdersRaw) {
     try {
-      sellerOrderList = JSON.parse(localOrdersRaw);
-      // Đảm bảo từng món hàng trong đơn đã lưu đều có ảnh (lấy từ sản phẩm gian hàng nếu bị thiếu)
-      sellerOrderList.forEach(ord => {
-        if (Array.isArray(ord.items)) {
-          ord.items.forEach(it => {
-            if (!it.image) {
-              const matchedProd = products.value.find(p => p.name.toLowerCase().trim() === it.name.toLowerCase().trim() || it.name.toLowerCase().trim().includes(p.name.toLowerCase().trim()) || p.name.toLowerCase().trim().includes(it.name.toLowerCase().trim()));
-              if (matchedProd && matchedProd.image) {
-                it.image = matchedProd.image;
+      const parsedOrders = JSON.parse(localOrdersRaw);
+      if (Array.isArray(parsedOrders)) {
+        // Lọc bỏ triệt để các đơn hàng bị rò rỉ từ các shop khác hoặc đơn buyer test cũ
+        sellerOrderList = parsedOrders.filter(ord => isOrderForCurrentSeller(ord));
+        // Đảm bảo từng món hàng trong đơn đã lưu đều có ảnh (lấy từ sản phẩm gian hàng nếu bị thiếu)
+        sellerOrderList.forEach(ord => {
+          if (Array.isArray(ord.items)) {
+            ord.items.forEach(it => {
+              if (!it.image) {
+                const matchedProd = products.value.find(p => p.name.toLowerCase().trim() === it.name.toLowerCase().trim() || it.name.toLowerCase().trim().includes(p.name.toLowerCase().trim()) || p.name.toLowerCase().trim().includes(it.name.toLowerCase().trim()));
+                if (matchedProd && matchedProd.image) {
+                  it.image = matchedProd.image;
+                }
               }
-            }
-          });
-        }
-      });
+            });
+          }
+        });
+      }
     } catch {}
   }
 
@@ -573,77 +790,67 @@ const loadSellerOrdersAndKPIs = () => {
           const buyerOrders = JSON.parse(raw);
           if (Array.isArray(buyerOrders)) {
             buyerOrders.forEach((bo: any) => {
-              const boStoreName = (bo.store?.name || "").toLowerCase().trim();
-              const isMatchStore = currentStore && (boStoreName === currentStore || boStoreName.includes(currentStore) || currentStore.includes(boStoreName));
+              // CHỈ LẤY ĐƠN THỰC SỰ THUỘC VỀ SELLER NÀY!
+              if (!isOrderForCurrentSeller(bo)) return;
 
-              const hasMatchingItem = Array.isArray(bo.items) && bo.items.some((it: any) => {
-                const itName = (it.name || "").toLowerCase().trim();
-                return products.value.some((p) => {
-                  const pName = p.name.toLowerCase().trim();
-                  return pName === itName || itName.includes(pName) || pName.includes(itName);
-                });
-              });
+              const ordId = bo.orderId || bo.id || `ord-${Math.random().toString(36).substr(2, 6)}`;
+              const code = bo.orderCode || (bo.id ? `#${bo.id.slice(-6).toUpperCase()}` : "#ZM" + Math.floor(1000 + Math.random() * 9000));
 
-              if (isMatchStore || hasMatchingItem) {
-                const ordId = bo.orderId || bo.id || `ord-${Math.random().toString(36).substr(2, 6)}`;
-                const code = bo.orderCode || (bo.id ? `#${bo.id.slice(-6).toUpperCase()}` : "#ZM" + Math.floor(1000 + Math.random() * 9000));
+              const existingIdx = sellerOrderList.findIndex(o => o.id === ordId || o.orderCode === code);
+              const formattedPrice = typeof bo.total === "number"
+                ? `${bo.total.toLocaleString("vi-VN")} đ`
+                : (bo.priceFormatted || "0 đ");
 
-                const existingIdx = sellerOrderList.findIndex(o => o.id === ordId || o.orderCode === code);
-                const formattedPrice = typeof bo.total === "number"
-                  ? `${bo.total.toLocaleString("vi-VN")} đ`
-                  : (bo.priceFormatted || "0 đ");
-
-                const mappedItems: OrderItem[] = Array.isArray(bo.items) ? bo.items.map((it: any) => {
-                  let img = it.image || it.img || "";
-                  if (!img) {
-                    const matchedProd = products.value.find(p => p.name.toLowerCase().trim() === (it.name || "").toLowerCase().trim() || (it.name || "").toLowerCase().trim().includes(p.name.toLowerCase().trim()) || p.name.toLowerCase().trim().includes((it.name || "").toLowerCase().trim()));
-                    if (matchedProd && matchedProd.image) {
-                      img = matchedProd.image;
-                    }
+              const mappedItems: OrderItem[] = Array.isArray(bo.items) ? bo.items.map((it: any) => {
+                let img = it.image || it.img || "";
+                if (!img) {
+                  const matchedProd = products.value.find(p => p.name.toLowerCase().trim() === (it.name || "").toLowerCase().trim() || (it.name || "").toLowerCase().trim().includes(p.name.toLowerCase().trim()) || p.name.toLowerCase().trim().includes((it.name || "").toLowerCase().trim()));
+                  if (matchedProd && matchedProd.image) {
+                    img = matchedProd.image;
                   }
-                  return {
-                    name: it.name || "Sản phẩm",
-                    qty: it.quantity || it.qty || 1,
-                    price: it.price || 0,
-                    image: img
-                  };
-                }) : [];
-
-                const mappedSummary = mappedItems.length > 0
-                  ? mappedItems.map(it => `${it.name} (x${it.qty})`).join(", ")
-                  : (bo.productSummary || "Đơn hàng nông sản");
-
-                let mappedStatus: SellerOrder["status"] = "Chờ xác nhận";
-                if (bo.status === "completed" || bo.status === "Hoàn thành" || bo.status === "Đã giao hàng") mappedStatus = "Đã giao hàng";
-                else if (bo.status === "delivering" || bo.status === "picking" || bo.status === "Đang giao hàng") mappedStatus = "Đang giao hàng";
-                else if (bo.status === "confirmed" || bo.status === "Đã xác nhận" || bo.status === "Đã xác nhận đang chờ tài xế") mappedStatus = "Đã xác nhận đang chờ tài xế";
-                else if (bo.status === "cancelled" || bo.status === "Đã hủy") mappedStatus = "Đã hủy";
-                else mappedStatus = "Chờ xác nhận";
-
-                const newOrd: SellerOrder = {
-                  id: ordId,
-                  orderCode: code,
-                  productSummary: mappedSummary,
-                  customerName: bo.customer?.name || bo.customerName || "Khách hàng ZoneMart",
-                  customerPhone: bo.customer?.phone || bo.customerPhone || "0912 345 678",
-                  customerAddress: bo.customer?.address || bo.shippingAddress || bo.customerAddress || "Khu vực Hà Nội",
-                  orderDate: bo.createdAt || bo.orderDate || "Hôm nay",
-                  priceFormatted: formattedPrice,
-                  paymentMethod: bo.paymentMethod || "Chuyển khoản QR",
-                  status: mappedStatus,
-                  items: mappedItems,
-                  shipperInfo: bo.shipper
-                };
-
-                if (existingIdx >= 0) {
-                  const existingOrder = sellerOrderList[existingIdx];
-                  const finalStatus = (existingOrder.status && existingOrder.status !== "Chờ xác nhận" && existingOrder.status !== "Đang xử lý" && (!bo.status || bo.status === "pending"))
-                    ? existingOrder.status
-                    : (mappedStatus || existingOrder.status || "Chờ xác nhận");
-                  sellerOrderList[existingIdx] = { ...existingOrder, ...newOrd, status: finalStatus };
-                } else {
-                  sellerOrderList.unshift(newOrd);
                 }
+                return {
+                  name: it.name || "Sản phẩm",
+                  qty: it.quantity || it.qty || 1,
+                  price: it.price || 0,
+                  image: img
+                };
+              }) : [];
+
+              const mappedSummary = mappedItems.length > 0
+                ? mappedItems.map(it => `${it.name} (x${it.qty})`).join(", ")
+                : (bo.productSummary || "Đơn hàng nông sản");
+
+              let mappedStatus: SellerOrder["status"] = "Chờ xác nhận";
+              if (bo.status === "completed" || bo.status === "Hoàn thành" || bo.status === "Đã giao hàng") mappedStatus = "Đã giao hàng";
+              else if (bo.status === "delivering" || bo.status === "picking" || bo.status === "Đang giao hàng") mappedStatus = "Đang giao hàng";
+              else if (bo.status === "confirmed" || bo.status === "Đã xác nhận" || bo.status === "Đã xác nhận đang chờ tài xế") mappedStatus = "Đã xác nhận đang chờ tài xế";
+              else if (bo.status === "cancelled" || bo.status === "Đã hủy") mappedStatus = "Đã hủy";
+              else mappedStatus = "Chờ xác nhận";
+
+              const newOrd: SellerOrder = {
+                id: ordId,
+                orderCode: code,
+                productSummary: mappedSummary,
+                customerName: bo.customer?.name || bo.customerName || "Khách hàng ZoneMart",
+                customerPhone: bo.customer?.phone || bo.customerPhone || "0912 345 678",
+                customerAddress: bo.customer?.address || bo.shippingAddress || bo.customerAddress || "Khu vực Hà Nội",
+                orderDate: bo.createdAt || bo.orderDate || "Hôm nay",
+                priceFormatted: formattedPrice,
+                paymentMethod: bo.paymentMethod || "Chuyển khoản QR",
+                status: mappedStatus,
+                items: mappedItems,
+                shipperInfo: bo.shipper
+              };
+
+              if (existingIdx >= 0) {
+                const existingOrder = sellerOrderList[existingIdx];
+                const finalStatus = (existingOrder.status && existingOrder.status !== "Chờ xác nhận" && existingOrder.status !== "Đang xử lý" && (!bo.status || bo.status === "pending"))
+                  ? existingOrder.status
+                  : (mappedStatus || existingOrder.status || "Chờ xác nhận");
+                sellerOrderList[existingIdx] = { ...existingOrder, ...newOrd, status: finalStatus };
+              } else {
+                sellerOrderList.unshift(newOrd);
               }
             });
           }
@@ -701,6 +908,34 @@ const loadSellerOrdersAndKPIs = () => {
     localStorage.setItem(`zonemart_seller_orders_${cleanEmail}`, JSON.stringify(orders.value));
   }
   recalculateKPIs();
+
+  // Tự động kiểm tra và trừ tồn kho cho các đơn hàng thật trước đó chưa được trừ (bao gồm đơn vừa thanh toán)
+  try {
+    const deductedOrders: string[] = JSON.parse(localStorage.getItem("zonemart_deducted_stock_orders") || "[]");
+    const mockOrderIds = ["zm-ord-001", "zm-ord-002", "zm-ord-003", "zm-ord-004"];
+    let hasNewDeductions = false;
+
+    sellerOrderList.forEach(ord => {
+      const ordId = ord.id || ord.orderCode;
+      if (ordId && !mockOrderIds.includes(ordId) && !deductedOrders.includes(ordId)) {
+        if (Array.isArray(ord.items) && ord.items.length > 0) {
+          productModeration.reduceStockForPurchasedItems(ord.items.map((it: any) => ({
+            id: it.id || it.productId,
+            name: it.name,
+            quantity: it.qty || it.quantity || 1
+          })));
+        }
+        deductedOrders.push(ordId);
+        hasNewDeductions = true;
+      }
+    });
+
+    if (hasNewDeductions) {
+      localStorage.setItem("zonemart_deducted_stock_orders", JSON.stringify(deductedOrders));
+    }
+  } catch (err) {
+    console.warn("Lỗi kiểm tra trừ tồn kho trong loadSellerOrdersAndKPIs:", err);
+  }
 };
 
 // Tải đánh giá của gian hàng
@@ -924,6 +1159,7 @@ const imageVisualTag = ref<string>("unknown");
 
 const newProductForm = reactive({
   name: "",
+  itemType: "product", // "product" | "service"
   category: "Rau củ quả",
   price: 25000,
   unit: "Bó 500g",
@@ -1368,32 +1604,7 @@ const confirmDeleteProduct = (prod: ModeratedProduct) => {
 const handleExecuteDelete = async () => {
   if (!productToDelete.value) return;
   const target = productToDelete.value;
-  const pIdx = productModeration.allProducts.value.findIndex(p => p.id === target.id);
-  if (pIdx !== -1) {
-    productModeration.allProducts.value.splice(pIdx, 1);
-    productModeration.saveProducts();
-  }
-
-  // Gọi API backend xóa sản phẩm khỏi CSDL bằng cả ID và tên sản phẩm
-  try {
-    const encodedName = encodeURIComponent(target.name);
-    await fetch(`http://localhost:5000/api/products/${target.id}?name=${encodedName}`, {
-      method: "DELETE"
-    }).catch(() => {});
-    await fetch(`http://localhost:5000/api/products/${encodedName}`, {
-      method: "DELETE"
-    }).catch(() => {});
-  } catch {}
-
-  // Kích hoạt đồng bộ tức thì sang trang Danh sách sản phẩm (/products) và toàn sàn
-  window.dispatchEvent(new CustomEvent("zonemart:products-changed"));
-  if (typeof BroadcastChannel !== "undefined") {
-    try {
-      const channel = new BroadcastChannel("zonemart_products_channel");
-      channel.postMessage({ type: "PRODUCT_DELETED", id: target.id, name: target.name });
-      channel.close();
-    } catch {}
-  }
+  await productModeration.deleteProductPermanently(target.id, target.name);
 
   triggerToast(`Đã xóa vĩnh viễn sản phẩm "${target.name}" khỏi gian hàng!`);
   showDeleteConfirmModal.value = false;
@@ -2652,13 +2863,36 @@ const getItemImage = (it: OrderItem) => {
         </div>
 
         <div class="modal-body-fields">
+          <!-- CHỌN LOẠI NIÊM YẾT: SẢN PHẨM HOẶC DỊCH VỤ ĐỊA PHƯƠNG -->
           <div class="field-item">
-            <label>Tên sản phẩm <span class="text-danger">*</span></label>
+            <label>Hình thức niêm yết trên Chợ Số <span class="text-danger">*</span></label>
+            <div style="display: flex; gap: 8px; margin-top: 4px;">
+              <button
+                type="button"
+                style="flex: 1; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;"
+                :style="newProductForm.itemType === 'product' ? 'background: #EA580C; color: #fff; border: 1.5px solid #EA580C;' : 'background: #fff; color: #475569; border: 1.5px solid #CBD5E1;'"
+                @click="newProductForm.itemType = 'product'"
+              >
+                📦 Sản Phẩm Vật Lý
+              </button>
+              <button
+                type="button"
+                style="flex: 1; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;"
+                :style="newProductForm.itemType === 'service' ? 'background: #EA580C; color: #fff; border: 1.5px solid #EA580C;' : 'background: #fff; color: #475569; border: 1.5px solid #CBD5E1;'"
+                @click="newProductForm.itemType = 'service'; if (newProductForm.category === 'Rau củ quả') newProductForm.category = 'Dịch vụ địa phương';"
+              >
+                🛠️ Dịch Vụ Địa Phương
+              </button>
+            </div>
+          </div>
+
+          <div class="field-item">
+            <label>{{ newProductForm.itemType === 'service' ? 'Tên dịch vụ' : 'Tên sản phẩm' }} <span class="text-danger">*</span></label>
             <input
               v-model="newProductForm.name"
               type="text"
               class="field-input"
-              placeholder="VD: Xà lách mỡ VietGAP Ba Vì, Thịt ba chỉ tươi..."
+              :placeholder="newProductForm.itemType === 'service' ? 'VD: Dịch vụ chế biến cỗ tiệc tại nhà, Mài dao kéo lưu động...' : 'VD: Xà lách mỡ VietGAP Ba Vì, Thịt ba chỉ tươi...'"
               required
             />
           </div>
@@ -2672,6 +2906,7 @@ const getItemImage = (it: OrderItem) => {
                 <option value="Trái cây tươi">Trái cây tươi</option>
                 <option value="Thực phẩm bổ dưỡng">Thực phẩm bổ dưỡng</option>
                 <option value="Món ăn nóng">Món ăn nóng</option>
+                <option value="Dịch vụ địa phương">Dịch vụ địa phương (Gia công/Sửa chữa/Sơ chế...)</option>
                 <option value="Khác">Khác (Ngành hàng khác)</option>
               </select>
             </div>

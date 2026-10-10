@@ -1394,6 +1394,7 @@ public class AuthController : ControllerBase
                 PasswordHash = pwd,
                 Password = pwd,
                 FullName = request.OwnerFullName.Trim(),
+                CccdNumber = !string.IsNullOrWhiteSpace(request.CccdNumber) ? request.CccdNumber.Trim() : "",
                 IsBuyer = true,
                 IsShipper = false,
                 IsSeller = false,
@@ -1412,6 +1413,15 @@ public class AuthController : ControllerBase
                 Console.WriteLine($"⚠️ [MongoDB User Insert Warning] {dbEx.Message}");
             }
         }
+        else if (buyerUser != null && !string.IsNullOrWhiteSpace(request.CccdNumber))
+        {
+            buyerUser.CccdNumber = request.CccdNumber.Trim();
+            try
+            {
+                await _mongoService.Users.UpdateOneAsync(u => u.Id == buyerUser.Id, Builders<User>.Update.Set(u => u.CccdNumber, request.CccdNumber.Trim()));
+            }
+            catch { }
+        }
 
         var newStore = new Store
         {
@@ -1423,12 +1433,22 @@ public class AuthController : ControllerBase
             Category = string.IsNullOrWhiteSpace(request.Category) ? "Thực phẩm & Nhu yếu phẩm" : request.Category.Trim(),
             Address = request.Address.Trim(),
             OpenHours = string.IsNullOrWhiteSpace(request.OpenHours) ? "07:00 - 22:00" : request.OpenHours.Trim(),
+            Location = new GeoPoint { Coordinates = [request.Longitude ?? 105.7983, request.Latitude ?? 21.0333] },
             OwnerFullName = request.OwnerFullName.Trim(),
+            CccdNumber = !string.IsNullOrWhiteSpace(request.CccdNumber) ? request.CccdNumber.Trim() : "",
+            NguyenQuan = !string.IsNullOrWhiteSpace(request.NguyenQuan) ? request.NguyenQuan.Trim() : "",
             CccdFrontImage = request.CccdFrontImage ?? "",
             CccdBackImage = request.CccdBackImage ?? "",
             FoodSafetyCertImage = request.FoodSafetyCertImage ?? "",
             BankName = request.BankName.Trim(),
             BankAccountNumber = request.BankAccountNumber.Trim(),
+            SellerType = string.IsNullOrWhiteSpace(request.SellerType) ? "traditional_market" : request.SellerType.Trim(),
+            Ward = !string.IsNullOrWhiteSpace(request.Ward) ? request.Ward.Trim() : "",
+            District = !string.IsNullOrWhiteSpace(request.District) ? request.District.Trim() : "",
+            MarketName = !string.IsNullOrWhiteSpace(request.MarketName) ? request.MarketName.Trim() : "",
+            RegistrationFee = 0,
+            FeePaymentStatus = "waived",
+            FeePaymentNote = "Được miễn phí theo Chương trình Chuyển đổi số Chợ địa phương",
             Status = "Pending", // BẮT BUỘC PENDING để Quản trị viên xét duyệt
             CreatedAt = DateTime.UtcNow
         };
@@ -1542,6 +1562,7 @@ public class AuthController : ControllerBase
                 .Set(u => u.PasswordHash, pwd)
                 .Set(u => u.Password, pwd)
                 .Set(u => u.UserCode, userCode)
+                .Set(u => u.CccdNumber, request.CccdNumber?.Trim() ?? "")
                 .Set(u => u.AccountStatus, "pending");
             try
             {
@@ -1549,6 +1570,7 @@ public class AuthController : ControllerBase
                 buyerUser.PasswordHash = pwd;
                 buyerUser.Password = pwd;
                 buyerUser.UserCode = userCode;
+                buyerUser.CccdNumber = request.CccdNumber?.Trim() ?? "";
                 buyerUser.AccountStatus = "pending";
                 InMemoryUsers[accountKey] = buyerUser;
             }
@@ -1569,6 +1591,7 @@ public class AuthController : ControllerBase
                 PasswordHash = pwd,
                 Password = pwd,
                 FullName = request.FullName.Trim(),
+                CccdNumber = request.CccdNumber?.Trim() ?? "",
                 IsBuyer = true,
                 IsShipper = false,
                 IsSeller = false,
@@ -2822,6 +2845,138 @@ public class AuthController : ControllerBase
             return StatusCode(500, new { success = false, message = "Lỗi khi đăng nhập bằng khuôn mặt: " + ex.Message });
         }
     }
+
+    /// <summary>
+    /// API quét và trích xuất tự động Số CCCD và Nguyên quán từ ảnh giấy tờ (CMND / CCCD)
+    /// </summary>
+    [HttpPost("ocr-cccd")]
+    public async Task<IActionResult> OcrCccd([FromBody] OcrCccdRequest req)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(req.Image))
+            {
+                return BadRequest(new { success = false, message = "Vui lòng cung cấp ảnh CCCD!" });
+            }
+
+            string rawImg = req.Image.Trim();
+            string mimeType = "image/jpeg";
+            string base64Data = rawImg;
+
+            if (rawImg.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                var commaIdx = rawImg.IndexOf(',');
+                if (commaIdx >= 0)
+                {
+                    var meta = rawImg.Substring(5, commaIdx - 5);
+                    var semiIdx = meta.IndexOf(';');
+                    if (semiIdx >= 0)
+                    {
+                        mimeType = meta.Substring(0, semiIdx);
+                    }
+                    base64Data = rawImg.Substring(commaIdx + 1);
+                }
+            }
+
+            string extractedCccdNumber = "";
+            string extractedNguyenQuan = "";
+
+            // Thử gọi AI trích xuất nếu có cấu hình Gemini
+            try
+            {
+                var builder = new ConfigurationBuilder()
+                    .SetBasePath(Directory.GetCurrentDirectory())
+                    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false);
+                var config = builder.Build();
+                string geminiKey = config["GeminiSettings:ApiKey"] ?? "";
+                string geminiModel = config["GeminiSettings:Model"] ?? "gemini-1.5-flash";
+
+                if (!string.IsNullOrEmpty(geminiKey) && geminiKey != "YOUR_GEMINI_API_KEY")
+                {
+                    string promptText = "Bạn là trợ lý AI chuyên nhận diện chính xác giấy tờ tùy thân Việt Nam (CMND 9 số hoặc CCCD 12 số). " +
+                        "Hãy đọc bức ảnh này và trích xuất đúng: " +
+                        "1) Số CMND hoặc CCCD (chỉ gồm các chữ số liền nhau, chính xác 100%, không thừa thiếu số nào). " +
+                        "2) Nguyên quán (hoặc Quê quán). " +
+                        "Trả về duy nhất định dạng JSON thuần không bọc trong markdown: {\"cccdNumber\": \"...\", \"nguyenQuan\": \"...\"}";
+
+                    var geminiPayload = new
+                    {
+                        contents = new[]
+                        {
+                            new
+                            {
+                                parts = new object[]
+                                {
+                                    new { text = promptText },
+                                    new
+                                    {
+                                        inline_data = new
+                                        {
+                                            mime_type = mimeType,
+                                            data = base64Data
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        generationConfig = new
+                        {
+                            temperature = 0.1,
+                            maxOutputTokens = 200
+                        }
+                    };
+
+                    string url = $"https://generativelanguage.googleapis.com/v1beta/models/{geminiModel}:generateContent?key={geminiKey}";
+                    using var content = new StringContent(JsonSerializer.Serialize(geminiPayload), Encoding.UTF8, "application/json");
+                    var geminiRes = await _faceHttpClient.PostAsync(url, content);
+                    if (geminiRes.IsSuccessStatusCode)
+                    {
+                        var resStr = await geminiRes.Content.ReadAsStringAsync();
+                        using var doc = JsonDocument.Parse(resStr);
+                        var candidates = doc.RootElement.GetProperty("candidates");
+                        if (candidates.GetArrayLength() > 0)
+                        {
+                            var text = candidates[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString() ?? "";
+                            text = text.Replace("```json", "").Replace("```", "").Trim();
+                            try
+                            {
+                                using var parsedJson = JsonDocument.Parse(text);
+                                if (parsedJson.RootElement.TryGetProperty("cccdNumber", out var cccdEl))
+                                {
+                                    extractedCccdNumber = cccdEl.GetString()?.Trim() ?? "";
+                                }
+                                if (parsedJson.RootElement.TryGetProperty("nguyenQuan", out var nqEl))
+                                {
+                                    extractedNguyenQuan = nqEl.GetString()?.Trim() ?? "";
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ [Gemini Vision OCR Error]: {ex.Message}");
+            }
+
+            return Ok(new
+            {
+                success = true,
+                cccdNumber = extractedCccdNumber,
+                nguyenQuan = extractedNguyenQuan
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = "Lỗi khi nhận diện CCCD: " + ex.Message });
+        }
+    }
+}
+
+public class OcrCccdRequest
+{
+    public string Image { get; set; } = string.Empty;
 }
 
 public class RegisterFaceRequest
@@ -2861,13 +3016,21 @@ public class RegisterSellerRequest
     public string Address { get; set; } = string.Empty;
     public string OpenHours { get; set; } = string.Empty;
     public string OwnerFullName { get; set; } = string.Empty;
+    public string CccdNumber { get; set; } = string.Empty;
+    public string NguyenQuan { get; set; } = string.Empty;
     public string CccdFrontImage { get; set; } = string.Empty;
     public string CccdBackImage { get; set; } = string.Empty;
     public string FoodSafetyCertImage { get; set; } = string.Empty;
     public string BankName { get; set; } = string.Empty;
     public string BankAccountNumber { get; set; } = string.Empty;
+    public string SellerType { get; set; } = string.Empty;
+    public string Ward { get; set; } = string.Empty;
+    public string District { get; set; } = string.Empty;
+    public string MarketName { get; set; } = string.Empty;
     public string PhoneEmail { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
 }
 
 public class RegisterShipperRequest

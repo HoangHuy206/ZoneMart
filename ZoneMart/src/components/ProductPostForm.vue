@@ -172,6 +172,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
+import { useToast } from '../composables/useToast';
 
 interface ProductModerationResponse {
   isApproved: boolean;
@@ -188,6 +189,8 @@ interface ProductModerationResponse {
     warningMessage: string;
   };
 }
+
+const toast = useToast();
 
 const form = reactive({
   productName: '',
@@ -236,7 +239,7 @@ const handleFileDrop = (e: DragEvent) => {
 
 const processSelectedFile = (file: File) => {
   if (!file.type.startsWith('image/')) {
-    alert('Vui lòng chọn file hình ảnh hợp lệ (JPG, PNG, WEBP).');
+    toast.warning('Vui lòng chọn file hình ảnh hợp lệ (JPG, PNG, WEBP).', 'Ảnh Không Hợp Lệ');
     return;
   }
   imageFile.value = file;
@@ -256,7 +259,7 @@ const clearImage = () => {
 
 const handleFormSubmit = async () => {
   if (!form.productName || !imageFile.value) {
-    alert('Vui lòng nhập tên sản phẩm và chọn ảnh.');
+    toast.warning('Vui lòng nhập tên sản phẩm và chọn ảnh.', 'Thiếu Thông Tin');
     return;
   }
 
@@ -325,14 +328,14 @@ const executeFinalSubmit = async () => {
       body: finalData
     });
 
-    alert('🎉 Đăng sản phẩm thành công lên ZoneMart!');
+    toast.success('Đăng sản phẩm thành công lên ZoneMart!', '🎉 Thành Công');
     
     form.productName = '';
     form.price = 25000;
     clearImage();
   } catch (error) {
     console.error('Lỗi khi lưu sản phẩm:', error);
-    alert('Có lỗi xảy ra khi lưu sản phẩm. Vui lòng thử lại!');
+    toast.error('Có lỗi xảy ra khi lưu sản phẩm. Vui lòng thử lại!', 'Lỗi Đăng Sản Phẩm');
   } finally {
     isSubmitting.value = false;
   }

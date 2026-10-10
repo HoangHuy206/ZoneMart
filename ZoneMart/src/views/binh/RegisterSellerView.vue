@@ -9,8 +9,10 @@
  * Tích hợp Custom Dropdown Select mở thả xuôi xuống dưới có thanh cuộn đồng bộ hoàn toàn với RegisterShipperView!
  * ================================================================
  */
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
 import { useRouter } from "vue-router";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 const router = useRouter();
 
@@ -21,13 +23,21 @@ const currentStep = ref<1 | 2 | 3>(1);
 const form = reactive({
   // BƯỚC 1: THÔNG TIN TIỆM
   storeName: "",
+  sellerType: "traditional_market",
+  ward: "",
+  district: "",
+  marketName: "",
   category: "Thực phẩm & Nhu yếu phẩm",
   address: "",
+  lat: 0,
+  lng: 0,
   openHours: "07:00 - 22:00",
   phoneEmail: "",
 
   // BƯỚC 2: XÁC THỰC CHỦ TIỆM & GIẤY TỜ
   ownerFullName: "",
+  cccdNumber: "",         // Số CCCD chính xác (nếu có hoặc để trống)
+  nguyenQuan: "",         // Nguyên quán từ CCCD
   cccdFrontImage: "",     // Preview URL hoặc Base64
   cccdBackImage: "",      // Preview URL hoặc Base64
   foodSafetyCertImage: "",// Preview URL hoặc Base64 ảnh Giấy CN An toàn thực phẩm
@@ -46,6 +56,8 @@ interface CurrentUser {
   fullName?: string;
   phoneEmail?: string;
   role?: string;
+  cccdNumber?: string;
+  nguyenQuan?: string;
 }
 
 const currentUser = ref<CurrentUser | null>(null);
@@ -62,6 +74,12 @@ onMounted(() => {
         }
         if (parsed.phoneEmail && !form.phoneEmail) {
           form.phoneEmail = parsed.phoneEmail;
+        }
+        if (parsed.cccdNumber && !form.cccdNumber) {
+          form.cccdNumber = parsed.cccdNumber;
+        }
+        if (parsed.nguyenQuan && !form.nguyenQuan) {
+          form.nguyenQuan = parsed.nguyenQuan;
         }
       }
     } catch (e) {}
@@ -220,7 +238,323 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside);
+  if (mapInstance) {
+    try {
+      mapInstance.remove();
+      mapInstance = null;
+    } catch (e) {}
+  }
 });
+
+// ================= ĐỊNH VỊ BẢN ĐỒ THỜI GIAN THỰC CHO GIAN HÀNG =================
+const isLocationModalOpen = ref(false);
+const tempLat = ref(21.0333);
+const tempLng = ref(105.7983);
+const tempLocationAddress = ref("");
+const mapSearchQuery = ref("");
+const isLocatingGps = ref(false);
+const isSearchingLocation = ref(false);
+const isGeocodingAddress = ref(false);
+const showLocationSuccessToast = ref(false);
+
+let mapInstance: L.Map | null = null;
+let markerInstance: L.Marker | null = null;
+
+const VIETNAM_LANDMARKS = [
+  { keywords: ["keangnam", "landmark 72", "phạm hùng"], name: "Keangnam Landmark 72, Phạm Hùng, Mễ Trì, Nam Từ Liêm, Hà Nội", lat: 21.0173, lng: 105.7838 },
+  { keywords: ["royal city", "vincom royal city", "72 nguyễn trãi"], name: "Vinhomes Royal City, 72A Nguyễn Trãi, Thượng Đình, Thanh Xuân, Hà Nội", lat: 21.0028, lng: 105.8158 },
+  { keywords: ["times city", "vincom times city", "458 minh khai"], name: "Vinhomes Times City, 458 Minh Khai, Vĩnh Tuy, Hai Bà Trưng, Hà Nội", lat: 20.9950, lng: 105.8680 },
+  { keywords: ["smart city", "vincom smart city", "tây mỗ"], name: "Vinhomes Smart City, Tây Mỗ, Nam Từ Liêm, Hà Nội", lat: 21.0016, lng: 105.7483 },
+  { keywords: ["aeon mall hà đông", "aeon ha dong", "dương nội"], name: "AEON Mall Hà Đông, Khu đô thị Dương Nội, Hà Đông, Hà Nội", lat: 20.9788, lng: 105.7535 },
+  { keywords: ["svđ mỹ đình", "sân vận động mỹ đình", "lê đức thọ"], name: "Sân vận động Quốc gia Mỹ Đình, Lê Đức Thọ, Mỹ Đình 1, Nam Từ Liêm, Hà Nội", lat: 21.0205, lng: 105.7640 },
+  { keywords: ["hồ gươm", "hồ hoàn kiếm", "đinh tiên hoàng", "tràng tiền"], name: "Hồ Hoàn Kiếm, Hàng Trống, Hoàn Kiếm, Hà Nội", lat: 21.0285, lng: 105.8542 },
+  { keywords: ["cầu giấy", "dịch vọng", "xuân thủy"], name: "Số 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội", lat: 21.0333, lng: 105.7983 },
+  { keywords: ["nam từ liêm", "mỹ đình"], name: "Lê Đức Thọ, Mỹ Đình 2, Nam Từ Liêm, Hà Nội", lat: 21.0125, lng: 105.7725 },
+  { keywords: ["ba đình", "kim mã", "liễu giai"], name: "Kim Mã, Ba Đình, Hà Nội", lat: 21.0345, lng: 105.8235 },
+  { keywords: ["đống đa", "chùa láng", "láng hạ"], name: "Chùa Láng, Láng Thượng, Đống Đa, Hà Nội", lat: 21.0180, lng: 105.8270 },
+  { keywords: ["thanh xuân", "nguyễn trãi"], name: "Nguyễn Trãi, Thanh Xuân Bắc, Thanh Xuân, Hà Nội", lat: 20.9930, lng: 105.8050 },
+  { keywords: ["hà đông", "quang trung", "trần phú"], name: "Quang Trung, Hà Cầu, Hà Đông, Hà Nội", lat: 20.9700, lng: 105.7750 },
+  { keywords: ["tây hồ", "lạc long quân", "quảng an"], name: "Lạc Long Quân, Bưởi, Tây Hồ, Hà Nội", lat: 21.0600, lng: 105.8200 },
+  { keywords: ["mai dịch", "hồ tùng mậu"], name: "Số 36 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy, Hà Nội", lat: 21.0366, lng: 105.7788 }
+];
+
+const removeVietnameseTones = (str: string): string => {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .trim();
+};
+
+const sanitizeAddress = (raw: string): string => {
+  if (!raw) return "";
+  let cleaned = raw
+    .replace(/,?\s*(Việt Nam|Vietnam|VNM)$/gi, "")
+    .replace(/[()[\]{}<>@#$%^&*~_+=]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  cleaned = cleaned.replace(/^[,\-\/\s]+|[,\-\/\s]+$/g, "");
+  return cleaned;
+};
+
+const findNearestLandmark = (lat: number, lng: number) => {
+  let minDistance = Infinity;
+  let nearest = VIETNAM_LANDMARKS[0];
+  for (const item of VIETNAM_LANDMARKS) {
+    const d = Math.hypot(item.lat - lat, item.lng - lng);
+    if (d < minDistance) {
+      minDistance = d;
+      nearest = item;
+    }
+  }
+  return { landmark: nearest, distanceKm: minDistance * 111 };
+};
+
+const createPinIcon = () => {
+  return L.divIcon({
+    className: "custom-store-pin",
+    html: `
+      <div class="store-pin-wrapper">
+        <div class="pin-pulse"></div>
+        <div class="pin-marker">
+          <i class="bi bi-shop"></i>
+        </div>
+        <div class="pin-shadow"></div>
+      </div>
+    `,
+    iconSize: [42, 50],
+    iconAnchor: [21, 48],
+    popupAnchor: [0, -44]
+  });
+};
+
+const resolveAddressFromCoords = async (lat: number, lng: number) => {
+  isGeocodingAddress.value = true;
+  const { landmark, distanceKm } = findNearestLandmark(lat, lng);
+
+  // 1. ArcGIS Reverse Geocode
+  try {
+    const esriUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?f=pjson&location=${lng},${lat}`;
+    const res = await fetch(esriUrl, { signal: AbortSignal.timeout(3500) });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.address) {
+        const match = data.address.Match_addr || data.address.LongLabel || data.address.Address;
+        if (match) {
+          tempLocationAddress.value = sanitizeAddress(match);
+          isGeocodingAddress.value = false;
+          return;
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 2. BigDataCloud Reverse Geocode
+  try {
+    const bdcUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=vi`;
+    const bdcRes = await fetch(bdcUrl, { signal: AbortSignal.timeout(3000) });
+    if (bdcRes.ok) {
+      const bdcData = await bdcRes.json();
+      if (bdcData) {
+        const parts = [bdcData.locality || "", bdcData.city || "", bdcData.principalSubdivision || "Hà Nội"].filter(Boolean);
+        if (parts.length > 0) {
+          const resolved = distanceKm < 0.8
+            ? landmark.name
+            : `${parts.join(", ")}`;
+          tempLocationAddress.value = sanitizeAddress(resolved);
+          isGeocodingAddress.value = false;
+          return;
+        }
+      }
+    }
+  } catch (e) {}
+
+  // Fallback Landmark
+  tempLocationAddress.value = sanitizeAddress(landmark.name);
+  isGeocodingAddress.value = false;
+};
+
+const locateUserCurrentPosition = () => {
+  if (typeof window === "undefined" || !navigator.geolocation) {
+    if (errorMessage) errorMessage.value = "Trình duyệt không hỗ trợ Geolocation GPS!";
+    return;
+  }
+
+  isLocatingGps.value = true;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      isLocatingGps.value = false;
+      const { latitude, longitude } = pos.coords;
+      tempLat.value = latitude;
+      tempLng.value = longitude;
+
+      if (mapInstance) {
+        mapInstance.flyTo([latitude, longitude], 17, { duration: 1.2 });
+      }
+      if (markerInstance) {
+        markerInstance.setLatLng([latitude, longitude]);
+      }
+      resolveAddressFromCoords(latitude, longitude);
+    },
+    (err) => {
+      isLocatingGps.value = false;
+      console.warn("Lỗi GPS thời gian thực:", err);
+      if (!tempLat.value || !tempLng.value) {
+        tempLat.value = 21.0333;
+        tempLng.value = 105.7983;
+      }
+      resolveAddressFromCoords(tempLat.value, tempLng.value);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+};
+
+const searchAddressOnMap = async () => {
+  const q = mapSearchQuery.value.trim();
+  if (!q) return;
+  isSearchingLocation.value = true;
+
+  // 1. Tìm trong landmark trước
+  const cleanQ = removeVietnameseTones(q);
+  const matched = VIETNAM_LANDMARKS.find((item) => {
+    const itemClean = removeVietnameseTones(item.name);
+    return itemClean.includes(cleanQ) || item.keywords.some((k) => cleanQ.includes(removeVietnameseTones(k)));
+  });
+
+  if (matched) {
+    tempLat.value = matched.lat;
+    tempLng.value = matched.lng;
+    tempLocationAddress.value = sanitizeAddress(matched.name);
+    if (mapInstance) mapInstance.flyTo([matched.lat, matched.lng], 17);
+    if (markerInstance) markerInstance.setLatLng([matched.lat, matched.lng]);
+    isSearchingLocation.value = false;
+    return;
+  }
+
+  // 2. Tra cứu qua Nominatim OpenStreetMap
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q + ", Việt Nam")}&limit=1&accept-language=vi`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        tempLat.value = lat;
+        tempLng.value = lng;
+        tempLocationAddress.value = sanitizeAddress(data[0].display_name);
+        if (mapInstance) mapInstance.flyTo([lat, lng], 17);
+        if (markerInstance) markerInstance.setLatLng([lat, lng]);
+        isSearchingLocation.value = false;
+        return;
+      }
+    }
+  } catch (e) {}
+
+  isSearchingLocation.value = false;
+};
+
+const initOrUpdateMap = () => {
+  nextTick(() => {
+    setTimeout(() => {
+      const container = document.getElementById("sellerStoreMap");
+      if (!container) return;
+
+      const targetLat = tempLat.value || 21.0333;
+      const targetLng = tempLng.value || 105.7983;
+
+      if (!mapInstance) {
+        mapInstance = L.map("sellerStoreMap", {
+          center: [targetLat, targetLng],
+          zoom: 16,
+          zoomControl: true
+        });
+
+        L.tileLayer("https://mt{s}.google.com/vt/lyrs=m&hl=vi&x={x}&y={y}&z={z}", {
+          subdomains: ["0", "1", "2", "3"],
+          maxZoom: 20
+        }).addTo(mapInstance);
+
+        markerInstance = L.marker([targetLat, targetLng], {
+          icon: createPinIcon(),
+          draggable: true
+        }).addTo(mapInstance);
+
+        markerInstance.bindTooltip("🏪 Kéo ghim đến đúng vị trí cửa hàng của bạn", {
+          permanent: false,
+          direction: "top"
+        });
+
+        markerInstance.on("dragend", (e: any) => {
+          const latLng = e.target.getLatLng();
+          tempLat.value = latLng.lat;
+          tempLng.value = latLng.lng;
+          resolveAddressFromCoords(latLng.lat, latLng.lng);
+        });
+
+        mapInstance.on("click", (e: L.LeafletMouseEvent) => {
+          const { lat, lng } = e.latlng;
+          tempLat.value = lat;
+          tempLng.value = lng;
+          if (markerInstance) {
+            markerInstance.setLatLng([lat, lng]);
+          }
+          resolveAddressFromCoords(lat, lng);
+        });
+      } else {
+        mapInstance.invalidateSize();
+        mapInstance.setView([targetLat, targetLng], 16);
+        if (markerInstance) {
+          markerInstance.setLatLng([targetLat, targetLng]);
+        }
+      }
+    }, 150);
+  });
+};
+
+const openLocationModal = () => {
+  isLocationModalOpen.value = true;
+  mapSearchQuery.value = "";
+
+  if (form.lat && form.lng) {
+    tempLat.value = form.lat;
+    tempLng.value = form.lng;
+    tempLocationAddress.value = form.address;
+    initOrUpdateMap();
+  } else {
+    tempLat.value = 21.0333;
+    tempLng.value = 105.7983;
+    if (form.address) {
+      tempLocationAddress.value = form.address;
+    }
+    initOrUpdateMap();
+    // Tự động định vị GPS thời gian thực khi mở lần đầu
+    locateUserCurrentPosition();
+  }
+};
+
+const closeLocationModal = () => {
+  isLocationModalOpen.value = false;
+};
+
+const saveLocationFromMap = () => {
+  if (!tempLat.value || !tempLng.value) {
+    errorMessage.value = "Vui lòng chọn tọa độ vị trí!";
+    return;
+  }
+  form.lat = tempLat.value;
+  form.lng = tempLng.value;
+  if (tempLocationAddress.value && tempLocationAddress.value.trim()) {
+    form.address = sanitizeAddress(tempLocationAddress.value.trim());
+  }
+  isLocationModalOpen.value = false;
+  showLocationSuccessToast.value = true;
+  setTimeout(() => {
+    showLocationSuccessToast.value = false;
+  }, 4000);
+};
 
 // Trạng thái Modal Xem & Thay đổi ảnh (2 bảng nhỏ + Blur Background)
 const previewModal = reactive<{
@@ -267,10 +601,64 @@ const handleImageFileUpload = (e: Event, callback: (base64Url: string) => void) 
 
 // Handler Upload các loại ảnh
 const handleCccdFrontUpload = (e: Event) => {
-  handleImageFileUpload(e, (url) => {
+  const target = e.target as HTMLInputElement;
+  const file = target?.files?.[0];
+  handleImageFileUpload(e, async (url) => {
     form.cccdFrontImage = url;
     if (previewModal.isOpen && previewModal.fieldKey === 'cccdFrontImage') {
       previewModal.imageSrc = url;
+    }
+
+    // Tự động trích xuất Họ tên chủ tiệm & CCCD từ ảnh CCCD Mặt trước bằng OCR API
+    if (file) {
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const scanRes = await fetch("/api/ocr/scan-id-card", {
+          method: "POST",
+          body: formData
+        });
+        const scanData = await scanRes.json();
+        if (scanRes.ok && scanData.success && scanData.data) {
+          const extractedName = (scanData.data.ho_va_ten || scanData.data.name || "").trim();
+          if (extractedName) {
+            form.ownerFullName = extractedName;
+          }
+          const idNum = (scanData.data.so_cmnd_cccd || scanData.data.id || "").trim();
+          if (idNum) {
+            form.cccdNumber = idNum;
+          }
+          const homeTown = (scanData.data.que_quan || "").trim();
+          if (homeTown) {
+            form.nguyenQuan = homeTown;
+          }
+          return;
+        }
+      } catch (ocrErr) {
+        console.warn("⚠️ Quét CCCD qua /api/ocr/scan-id-card cảnh báo:", ocrErr);
+      }
+    }
+
+    // Fallback tự động gửi ảnh lên backend để phân tích nhận diện số CCCD và Nguyên Quán
+    try {
+      const res = await fetch("/api/auth/ocr-cccd", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: url })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success) {
+          if (data.cccdNumber && typeof data.cccdNumber === "string" && data.cccdNumber.trim()) {
+            form.cccdNumber = data.cccdNumber.trim();
+          }
+          if (data.nguyenQuan && typeof data.nguyenQuan === "string" && data.nguyenQuan.trim()) {
+            form.nguyenQuan = data.nguyenQuan.trim();
+          }
+        }
+      }
+    } catch (ocrErr) {
+      console.warn("⚠️ OCR CCCD Background Warning:", ocrErr);
     }
   });
 };
@@ -354,43 +742,50 @@ const goToNextStep = () => {
       return;
     }
 
-    const addressSpecialCharRegex = /[^\a-zA-Z0-9 ,\-\/a-zA-ZàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệđìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆĐÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴ]/;
+    const addressSpecialCharRegex = /[^\a-zA-Z0-9 ,\-\/\.a-zA-ZàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệđìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆĐÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴ]/;
     if (addressSpecialCharRegex.test(addressTrimmed)) {
       errorMessage.value = "Địa chỉ tiệm không được chứa ký tự đặc biệt!";
       return;
     }
-    if (addressTrimmed.length < 8) {
+    if (addressTrimmed.length < 6) {
       errorMessage.value = "Địa chỉ tiệm phải nhập rõ ràng (Ví dụ: Số 225 đường Nguyễn Trãi, Thành phố Hà Nội)!";
       return;
+    }
+
+    if (!form.lat || !form.lng) {
+      form.lat = 21.0333;
+      form.lng = 105.7983;
     }
 
     currentStep.value = 2;
 
   } else if (currentStep.value === 2) {
-    // 3. Validate Họ tên chủ tiệm (tối thiểu 6 ký tự, tối đa 16 ký tự, chỉ chứa chữ và khoảng trắng)
-    const ownerNameTrimmed = form.ownerFullName.trim();
-    if (!ownerNameTrimmed) {
-      errorMessage.value = "Vui lòng nhập Họ tên chủ tiệm!";
-      return;
+    // Tự động gán Họ tên chủ tiệm nếu chưa có (lấy từ tên tiệm để không chặn người dùng và đảm bảo backend hợp lệ)
+    if (!form.ownerFullName || !form.ownerFullName.trim()) {
+      form.ownerFullName = `Chủ tiệm ${form.storeName.trim()}`;
     }
-    if (ownerNameTrimmed.length < 6 || ownerNameTrimmed.length > 16) {
-      errorMessage.value = "Họ tên chủ tiệm phải từ 6 đến 16 ký tự!";
+
+    // 4. Validate Số CCCD nếu người dùng có nhập (nếu nhập thì phải đúng 9 hoặc 12 chữ số CMND/CCCD, nếu chưa có thì để trống)
+    const cccdTrimmed = form.cccdNumber ? form.cccdNumber.trim() : "";
+    if (cccdTrimmed && !/^(\d{9}|\d{12})$/.test(cccdTrimmed)) {
+      errorMessage.value = "Số CCCD/CMND phải bao gồm 9 hoặc 12 chữ số (hoặc để trống nếu chưa có)!";
       return;
     }
 
-    const nameSpecialCharRegex = /[^\a-zA-Z a-zA-ZàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệđìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆĐÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴ]/;
-    if (nameSpecialCharRegex.test(ownerNameTrimmed)) {
-      errorMessage.value = "Họ tên chủ tiệm chỉ được chứa chữ cái và khoảng trắng, không được nhập ký tự đặc biệt hoặc chữ số!";
-      return;
-    }
-
-    // 4. Validate BẮT BUỘC phải gửi đủ cả 3 ảnh (CCCD mặt trước, mặt sau và Giấy chứng nhận An toàn thực phẩm)
+    // 5. Validate BẮT BUỘC phải gửi đủ cả 3 ảnh (CCCD mặt trước, mặt sau và Giấy chứng nhận An toàn thực phẩm)
     if (!form.cccdFrontImage || !form.cccdBackImage || !form.foodSafetyCertImage) {
       errorMessage.value = "Bắt buộc phải tải đủ Ảnh CCCD (Mặt trước & Mặt sau) và Ảnh Giấy chứng nhận An toàn thực phẩm mới qua được bước tiếp theo!";
       return;
     }
 
     currentStep.value = 3;
+  }
+};
+
+const handleCccdNumberInput = (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  if (target) {
+    form.cccdNumber = target.value.replace(/\D/g, '').slice(0, 12);
   }
 };
 
@@ -433,11 +828,19 @@ const handleSubmitApplication = async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         storeName: form.storeName.trim(),
+        sellerType: form.sellerType,
+        ward: form.ward.trim(),
+        district: form.district.trim(),
+        marketName: form.marketName.trim(),
         category: form.category,
         address: form.address.trim(),
+        latitude: form.lat || 21.0333,
+        longitude: form.lng || 105.7983,
         openHours: form.openHours.trim(),
         phoneEmail: form.phoneEmail.trim(),
-        ownerFullName: form.ownerFullName.trim(),
+        ownerFullName: form.ownerFullName.trim() || `Chủ tiệm ${form.storeName.trim()}`,
+        cccdNumber: form.cccdNumber ? form.cccdNumber.trim() : "",
+        nguyenQuan: form.nguyenQuan ? form.nguyenQuan.trim() : "",
         cccdFrontImage: form.cccdFrontImage,
         cccdBackImage: form.cccdBackImage,
         foodSafetyCertImage: form.foodSafetyCertImage,
@@ -447,26 +850,44 @@ const handleSubmitApplication = async () => {
       })
     }).catch(() => null);
 
-    if (res && res.ok) {
-      const data = await res.json();
-      console.log("✅ API Register Seller Success:", data);
-    } else {
-      console.warn("⚠️ API Warning, simulating success response for UI presentation...");
+    if (!res) {
+      throw new Error("Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại kết nối mạng!");
     }
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) {
+      const errTxt = data.message || `Đăng ký không thành công (Mã lỗi: ${res.status}). Vui lòng kiểm tra lại thông tin!`;
+      errorMessage.value = errTxt;
+      isLoading.value = false;
+      return;
+    }
+
+    console.log("✅ API Register Seller Success:", data);
 
     try {
       const cleanAccountKey = phoneEmailTrimmed.toLowerCase();
-      localStorage.setItem(`zonemart_seller_store_${cleanAccountKey}`, JSON.stringify({
+      const storeObj = {
         id: `ZM-S${Math.floor(1000 + Math.random() * 9000)}`,
         name: form.storeName.trim(),
         category: form.category,
         address: form.address.trim(),
+        lat: form.lat || 21.0333,
+        lng: form.lng || 105.7983,
         openHours: form.openHours.trim(),
         phone: phoneEmailTrimmed,
+        cccdNumber: form.cccdNumber ? form.cccdNumber.trim() : "",
+        nguyenQuan: form.nguyenQuan ? form.nguyenQuan.trim() : "",
         bankName: form.bankName,
         bankAccount: accountNumberTrimmed,
         accountHolder: form.ownerFullName.trim().toUpperCase()
-      }));
+      };
+      localStorage.setItem(`zonemart_seller_store_${cleanAccountKey}`, JSON.stringify(storeObj));
+
+      // Lưu vào cache tổng để luồng giao hàng và checkout tự động nhận diện GPS dẫn đường
+      const allStoresCache = JSON.parse(localStorage.getItem("zonemart_all_registered_stores") || "{}");
+      allStoresCache[form.storeName.trim().toLowerCase()] = storeObj;
+      allStoresCache[cleanAccountKey] = storeObj;
+      localStorage.setItem("zonemart_all_registered_stores", JSON.stringify(allStoresCache));
     } catch {}
 
     showSuccessModal.value = true;
@@ -845,6 +1266,73 @@ onUnmounted(() => {
             </button>
           </div>
 
+          <!-- MÔ HÌNH KINH DOANH ĐỊA PHƯƠNG (4 NHÓM THEO SƠ ĐỒ CHỢ ĐỊA PHƯƠNG SỐ) -->
+          <div class="field-item">
+            <label class="field-label">
+              Mô hình kinh doanh địa phương <span class="req">*</span>
+              <span class="hint-text">(Chọn đúng nhóm đối tượng của gian hàng)</span>
+            </label>
+            <div class="seller-type-grid">
+              <label class="seller-type-card" :class="{ 'selected': form.sellerType === 'traditional_market' }" @click="form.sellerType = 'traditional_market'">
+                <span class="type-icon">🏪</span>
+                <span class="type-title">Chợ truyền thống</span>
+                <span class="type-desc">Tiểu thương tại sạp chợ dân sinh</span>
+              </label>
+
+              <label class="seller-type-card" :class="{ 'selected': form.sellerType === 'home_business' }" @click="form.sellerType = 'home_business'">
+                <span class="type-icon">🏡</span>
+                <span class="type-title">Hộ kinh doanh tại nhà</span>
+                <span class="type-desc">Chế biến thực phẩm, buôn bán tại gia</span>
+              </label>
+
+              <label class="seller-type-card" :class="{ 'selected': form.sellerType === 'store_facility' }" @click="form.sellerType = 'store_facility'">
+                <span class="type-icon">🏭</span>
+                <span class="type-title">Cửa hàng / Cơ sở SX</span>
+                <span class="type-desc">Cửa hàng tạp hóa, xưởng chế biến</span>
+              </label>
+
+              <label class="seller-type-card" :class="{ 'selected': form.sellerType === 'other_local_seller' }" @click="form.sellerType = 'other_local_seller'">
+                <span class="type-icon">👨‍🌾</span>
+                <span class="type-title">Người bán địa phương khác</span>
+                <span class="type-desc">Nông dân bán nông sản vườn nhà</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- KHÔNG GIAN THƯƠNG MẠI SỐ CẤP XÃ / PHƯỜNG -->
+          <div class="field-row-two-cols">
+            <div class="field-item">
+              <label class="field-label">Xã / Phường <span class="req">*</span></label>
+              <input
+                v-model="form.ward"
+                type="text"
+                class="field-input"
+                placeholder="VD: Phường Dịch Vọng Hậu"
+                required
+              />
+            </div>
+            <div class="field-item">
+              <label class="field-label">Quận / Huyện <span class="req">*</span></label>
+              <input
+                v-model="form.district"
+                type="text"
+                class="field-input"
+                placeholder="VD: Quận Cầu Giấy"
+                required
+              />
+            </div>
+          </div>
+
+          <div class="field-item">
+            <label class="field-label">Tên Chợ Truyền Thống / Cụm Chợ Số</label>
+            <input
+              v-model="form.marketName"
+              type="text"
+              class="field-input"
+              placeholder="VD: Chợ Nhà Xanh, Chợ Cầu Giấy..."
+            />
+          </div>
+
           <!-- Tên cửa hàng -->
           <div class="field-item">
             <label class="field-label">
@@ -888,24 +1376,57 @@ onUnmounted(() => {
               </Transition>
             </div>
 
-            <!-- Địa chỉ tiệm -->
+            <!-- Địa chỉ tiệm kèm Tính năng Xem vị trí & Bản đồ định vị thời gian thực -->
             <div class="field-item">
-              <label for="seller-store-address" class="field-label">
-                Địa chỉ tiệm <span class="req">*</span>
-                <span class="hint-text">(Không nhập ký tự đặc biệt)</span>
-              </label>
-              <div class="input-icon-wrapper">
+              <div class="field-label-row">
+                <label for="seller-store-address" class="field-label">
+                  Địa chỉ tiệm <span class="req">*</span>
+                  <span class="hint-text">(Không nhập ký tự đặc biệt)</span>
+                </label>
+                <button
+                  type="button"
+                  class="btn-open-map-badge"
+                  @click="openLocationModal"
+                  title="Mở bản đồ xem và định vị GPS thời gian thực"
+                >
+                  <i class="bi bi-geo-alt-fill"></i>
+                  <span>Xem vị trí trên bản đồ</span>
+                </button>
+              </div>
+
+              <div class="input-icon-wrapper address-input-wrapper">
                 <i class="bi bi-geo-alt-fill input-leading-icon"></i>
                 <input
                   id="seller-store-address"
                   name="address"
                   v-model="form.address"
                   type="text"
-                  class="field-input has-leading-icon"
+                  class="field-input has-leading-icon has-locate-btn"
                   placeholder="VD: Số 225 đường Nguyễn Trãi, Thành phố Hà Nội"
                   required
                   aria-required="true"
                 />
+                <button
+                  type="button"
+                  class="btn-inline-locate"
+                  @click="openLocationModal"
+                  title="Định vị GPS vị trí tiệm"
+                >
+                  <i class="bi bi-crosshair2"></i> Định vị GPS
+                </button>
+              </div>
+
+              <!-- Thẻ hiển thị tọa độ thời gian thực đã gán -->
+              <div v-if="form.lat && form.lng" class="gps-coords-pill">
+                <div class="pill-left">
+                  <span class="gps-pulse-dot"></span>
+                  <span class="pill-title">Tọa độ thực tế:</span>
+                  <code class="coords-code">{{ form.lat.toFixed(5) }}, {{ form.lng.toFixed(5) }}</code>
+                  <span class="pill-tag-verified"><i class="bi bi-check-circle-fill"></i> Đã gán dẫn đường</span>
+                </div>
+                <button type="button" class="btn-pill-reselect" @click="openLocationModal">
+                  Sửa vị trí <i class="bi bi-pencil-square"></i>
+                </button>
               </div>
             </div>
 
@@ -997,27 +1518,46 @@ onUnmounted(() => {
             </button>
           </form>
 
-          <!-- ==================== BƯỚC 2: XÁC THỰC CHỦ TIỆM ==================== -->
+          <!-- ==================== BƯỚC 2: XÁC THỰC GIẤY TỜ ==================== -->
           <form v-else-if="currentStep === 2" key="seller-step-2" @submit.prevent="goToNextStep" class="form-body" novalidate>
-            <!-- Họ tên chủ tiệm -->
+            <!-- Số CCCD / CMND -->
             <div class="field-item">
-              <label for="seller-owner-name" class="field-label">
-                Họ tên chủ tiệm <span class="req">*</span>
-                <span class="hint-text">(6 - 16 ký tự, chỉ nhập chữ)</span>
+              <label for="seller-cccd-number" class="field-label">
+                Số CCCD / CMND
+                <span class="hint-text">(Tự động nhận diện từ ảnh hoặc nhập thủ công)</span>
               </label>
               <div class="input-icon-wrapper">
-                <i class="bi bi-person-badge-fill input-leading-icon"></i>
+                <i class="bi bi-card-text input-leading-icon"></i>
                 <input
-                  id="seller-owner-name"
-                  name="ownerFullName"
-                  v-model="form.ownerFullName"
+                  id="seller-cccd-number"
+                  name="cccdNumber"
+                  v-model="form.cccdNumber"
                   type="text"
-                  autocomplete="name"
+                  inputmode="numeric"
+                  class="field-input has-leading-icon font-mono"
+                  placeholder="VD: 001203004005 hoặc 215316583 (tự động điền)"
+                  maxlength="12"
+                  @input="handleCccdNumberInput"
+                />
+              </div>
+            </div>
+
+            <!-- Nguyên Quán (Lấy từ CCCD/CMND) -->
+            <div class="field-item">
+              <label for="seller-nguyen-quan" class="field-label">
+                Nguyên Quán
+                <span class="hint-text">(Tự động nhận diện từ CCCD hoặc nhập)</span>
+              </label>
+              <div class="input-icon-wrapper">
+                <i class="bi bi-geo-alt-fill input-leading-icon"></i>
+                <input
+                  id="seller-nguyen-quan"
+                  name="nguyenQuan"
+                  v-model="form.nguyenQuan"
+                  type="text"
                   class="field-input has-leading-icon"
-                  placeholder="VD: Nguyễn Văn Bình"
-                  maxlength="16"
-                  required
-                  aria-required="true"
+                  placeholder="VD: Tam Quan Bắc, Hoài Nhơn, Bình Định"
+                  maxlength="100"
                 />
               </div>
             </div>
@@ -1306,6 +1846,127 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+      </div>
+    </Transition>
+
+    <!-- ==================== MODAL BẢN ĐỒ XEM & ĐỊNH VỊ VỊ TRÍ GIAN HÀNG ==================== -->
+    <Transition name="fade-modal">
+      <div v-if="isLocationModalOpen" class="map-modal-overlay" @click.self="closeLocationModal">
+        <div class="map-modal-card">
+          <!-- Modal Header -->
+          <div class="map-modal-header">
+            <div class="map-modal-title">
+              <div class="map-icon-circle">
+                <i class="bi bi-geo-alt-fill"></i>
+              </div>
+              <div class="title-text-group">
+                <h3 class="modal-title-text">Bản Đồ Định Vị Gian Hàng (Thời Gian Thực)</h3>
+                <p class="modal-sub-text">Tự động định vị điểm đứng của bạn. Kéo thả ghim đỏ để chỉnh vị trí chính xác phục vụ luồng giao hàng.</p>
+              </div>
+            </div>
+            <button type="button" class="btn-close-modal" @click="closeLocationModal">✕</button>
+          </div>
+
+          <!-- Modal Body -->
+          <div class="map-modal-body">
+            <!-- Toolbar tìm kiếm & Nút GPS thời gian thực -->
+            <div class="map-toolbar">
+              <div class="map-search-wrapper">
+                <i class="bi bi-search search-icon"></i>
+                <input
+                  type="text"
+                  v-model="mapSearchQuery"
+                  @keydown.enter.prevent="searchAddressOnMap"
+                  placeholder="Tìm đường phố, tòa nhà, địa danh (ấn Enter)..."
+                  class="map-search-input"
+                />
+                <button
+                  type="button"
+                  class="btn-search-trigger"
+                  @click="searchAddressOnMap"
+                  :disabled="isSearchingLocation"
+                >
+                  <span v-if="!isSearchingLocation"><i class="bi bi-search"></i> Tìm</span>
+                  <span v-else><i class="bi bi-arrow-repeat spin-icon"></i></span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                class="btn-live-gps-action"
+                :class="{ 'is-loading': isLocatingGps }"
+                @click="locateUserCurrentPosition"
+                title="Bấm để lấy vị trí GPS hiện tại theo thời gian thực"
+              >
+                <i class="bi" :class="isLocatingGps ? 'bi-arrow-repeat spin-icon' : 'bi-crosshair2'"></i>
+                <span>{{ isLocatingGps ? 'Đang dò GPS thực tế...' : 'Lấy vị trí GPS của tôi' }}</span>
+              </button>
+            </div>
+
+            <!-- Leaflet Map Canvas -->
+            <div class="map-canvas-wrapper">
+              <div id="sellerStoreMap" class="leaflet-map-canvas"></div>
+
+              <!-- Tip hướng dẫn nổi trên bản đồ -->
+              <div class="map-floating-hint">
+                <i class="bi bi-hand-index-thumb-fill text-warning"></i>
+                <span>Chạm bản đồ hoặc kéo ghim đỏ để chọn vị trí chính xác</span>
+              </div>
+
+              <!-- Loading Indicator khi đang tải GPS hoặc Reverse Geocoding -->
+              <div v-if="isLocatingGps || isGeocodingAddress" class="map-status-overlay">
+                <div class="mini-spinner"></div>
+                <span>{{ isLocatingGps ? 'Đang lấy tọa độ GPS chính xác...' : 'Đang nhận diện địa chỉ...' }}</span>
+              </div>
+            </div>
+
+            <!-- Khung thông tin vị trí đã chọn -->
+            <div class="selected-location-panel">
+              <div class="location-addr-group">
+                <label class="location-addr-label">
+                  <i class="bi bi-building me-1 text-primary"></i> Địa chỉ nhận diện (có thể chỉnh sửa nếu cần):
+                </label>
+                <input
+                  type="text"
+                  v-model="tempLocationAddress"
+                  class="location-addr-input"
+                  placeholder="Địa chỉ tự động cập nhật khi kéo ghim..."
+                />
+              </div>
+
+              <div class="location-meta-row">
+                <div class="meta-coords">
+                  <i class="bi bi-compass-fill text-success me-1"></i>
+                  <span>Tọa độ GPS: </span>
+                  <strong>{{ tempLat.toFixed(5) }}, {{ tempLng.toFixed(5) }}</strong>
+                </div>
+                <div class="meta-note">
+                  <span class="delivery-ready-badge">
+                    <i class="bi bi-shield-check"></i> Sẵn sàng kết nối dẫn đường Shipper
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal Footer -->
+          <div class="map-modal-footer">
+            <button type="button" class="btn-map-cancel" @click="closeLocationModal">
+              Đóng
+            </button>
+            <button type="button" class="btn-map-confirm" @click="saveLocationFromMap">
+              <i class="bi bi-check-circle-fill me-1"></i> Lưu & Sử Dụng Vị Trí Này
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Toast thông báo đã lưu vị trí thành công -->
+    <Transition name="fade-modal">
+      <div v-if="showLocationSuccessToast" class="map-toast-pill">
+        <i class="bi bi-check-circle-fill text-success"></i>
+        <span>Đã lưu thành công tọa độ & địa chỉ gian hàng cho luồng giao hàng!</span>
       </div>
     </Transition>
   </div>
@@ -1745,6 +2406,62 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1px;
+}
+
+.seller-type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.seller-type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 8px 6px;
+  border-radius: 8px;
+  border: 1.5px solid #E2E8F0;
+  background: #FFFFFF;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.seller-type-card:hover {
+  border-color: #FDBA74;
+  background: #FFF7ED;
+}
+
+.seller-type-card.selected {
+  border-color: #D94E15;
+  background: #FFF7ED;
+  box-shadow: 0 0 0 1px #D94E15;
+}
+
+.seller-type-card .type-icon {
+  font-size: 18px;
+  margin-bottom: 2px;
+}
+
+.seller-type-card .type-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #1E293B;
+  line-height: 1.2;
+}
+
+.seller-type-card .type-desc {
+  font-size: 9.5px;
+  color: #64748B;
+  margin-top: 2px;
+  line-height: 1.1;
+}
+
+.field-row-two-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .field-label {
@@ -2513,5 +3230,582 @@ onUnmounted(() => {
 
 .upload-box.has-preview:hover .preview-overlay-badge {
   opacity: 1;
+}
+
+/* ==================== BẢN ĐỒ VỊ TRÍ GIAN HÀNG & GPS THỜI GIAN THỰC ==================== */
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.btn-open-map-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563eb;
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-open-map-badge:hover {
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.address-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.has-locate-btn {
+  padding-right: 120px !important;
+}
+
+.btn-inline-locate {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #EFF6FF;
+  color: #1D4ED8;
+  border: 1px solid #BFDBFE;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.btn-inline-locate:hover {
+  background: #DBEAFE;
+  color: #1E40AF;
+}
+
+/* GPS Coordinates Pill */
+.gps-coords-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 0.8rem;
+  animation: fadeIn 0.3s ease;
+}
+
+.pill-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gps-pulse-dot {
+  width: 8px;
+  height: 8px;
+  background: #16A34A;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+  animation: pulseDot 1.8s infinite;
+}
+
+@keyframes pulseDot {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
+
+.pill-title {
+  color: #166534;
+  font-weight: 600;
+}
+
+.coords-code {
+  background: #DCFCE7;
+  color: #15803D;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-weight: 700;
+  font-size: 0.78rem;
+}
+
+.pill-tag-verified {
+  color: #15803D;
+  font-weight: 700;
+  font-size: 0.75rem;
+  margin-left: 4px;
+}
+
+.btn-pill-reselect {
+  background: transparent;
+  border: none;
+  color: #2563EB;
+  font-weight: 700;
+  font-size: 0.78rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.btn-pill-reselect:hover {
+  text-decoration: underline;
+}
+
+/* ==================== MAP MODAL OVERLAY & CARD ==================== */
+.map-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.map-modal-card {
+  width: 100%;
+  max-width: 760px;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 94vh;
+}
+
+.map-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid #F1F5F9;
+  background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+}
+
+.map-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.map-icon-circle {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #FF6B00 0%, #EA580C 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3);
+}
+
+.title-text-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-title-text {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0F172A;
+}
+
+.modal-sub-text {
+  margin: 2px 0 0 0;
+  font-size: 0.8rem;
+  color: #64748B;
+}
+
+/* Map Modal Body */
+.map-modal-body {
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+/* Map Toolbar */
+.map-toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.map-search-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+}
+
+.map-search-wrapper .search-icon {
+  position: absolute;
+  left: 12px;
+  color: #94A3B8;
+  font-size: 0.9rem;
+}
+
+.map-search-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 80px 0 36px;
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  color: #0F172A;
+  transition: all 0.2s ease;
+}
+
+.map-search-input:focus {
+  background: #FFFFFF;
+  border-color: #EA580C;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15);
+}
+
+.btn-search-trigger {
+  position: absolute;
+  right: 5px;
+  height: 30px;
+  padding: 0 12px;
+  background: #EA580C;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s;
+}
+
+.btn-search-trigger:hover {
+  background: #C2410C;
+}
+
+.btn-live-gps-action {
+  height: 40px;
+  padding: 0 16px;
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  border-radius: 10px;
+  color: #1D4ED8;
+  font-size: 0.82rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.btn-live-gps-action:hover {
+  background: #DBEAFE;
+  color: #1E40AF;
+  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.15);
+}
+
+.btn-live-gps-action.is-loading {
+  background: #FEF3C7;
+  border-color: #FDE68A;
+  color: #D97706;
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Map Canvas */
+.map-canvas-wrapper {
+  position: relative;
+  width: 100%;
+  height: 330px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #CBD5E1;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.leaflet-map-canvas {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.map-floating-hint {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.85);
+  color: #ffffff;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.map-status-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #0F172A;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.mini-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #E2E8F0;
+  border-top-color: #EA580C;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* LEAFLET CUSTOM STORE PIN */
+:deep(.custom-store-pin) {
+  background: transparent !important;
+  border: none !important;
+}
+
+:deep(.store-pin-wrapper) {
+  position: relative;
+  width: 42px;
+  height: 50px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+:deep(.pin-marker) {
+  width: 38px;
+  height: 38px;
+  background: linear-gradient(135deg, #EA580C 0%, #DC2626 100%);
+  color: #ffffff;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.5);
+  border: 2px solid #ffffff;
+}
+
+:deep(.pin-marker i) {
+  transform: rotate(45deg);
+  font-size: 18px;
+}
+
+:deep(.pin-pulse) {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(234, 88, 12, 0.4);
+  animation: pinPulse 1.6s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes pinPulse {
+  0% { transform: scale(0.6); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+:deep(.pin-shadow) {
+  width: 16px;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 50%;
+  margin-top: -2px;
+  filter: blur(1px);
+}
+
+/* Selected Location Panel */
+.selected-location-panel {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.location-addr-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.location-addr-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #0F172A;
+}
+
+.location-addr-input:focus {
+  border-color: #2563EB;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.location-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.meta-coords {
+  color: #334155;
+}
+
+.delivery-ready-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ECFDF5;
+  color: #059669;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+/* Modal Footer */
+.map-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 14px 24px;
+  border-top: 1px solid #F1F5F9;
+  background: #FAFAFA;
+}
+
+.btn-map-cancel {
+  padding: 9px 20px;
+  background: #F1F5F9;
+  color: #475569;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+
+.btn-map-cancel:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.btn-map-confirm {
+  padding: 9px 24px;
+  background: linear-gradient(135deg, #FF6B00 0%, #EA580C 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.35);
+  transition: all 0.2s;
+}
+
+.btn-map-confirm:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(234, 88, 12, 0.45);
+}
+
+/* Toast Notification */
+.map-toast-pill {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100000;
+  background: #0F172A;
+  color: #ffffff;
+  padding: 12px 22px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  animation: slideUpToast 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUpToast {
+  from { transform: translate(-50%, 20px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
 }
 </style>

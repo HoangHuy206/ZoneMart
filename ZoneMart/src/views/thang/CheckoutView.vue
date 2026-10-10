@@ -17,11 +17,15 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useCart } from "../../composables/useCart";
 import { useAuth } from "../../composables/useAuth";
+import { useToast } from "../../composables/useToast";
 import { orderRealtimeService } from "../../services/orderRealtimeService";
+import { useProductModeration } from "../../composables/useProductModeration";
 
 const router = useRouter();
 const cart = useCart();
 const auth = useAuth();
+const toast = useToast();
+const productModeration = useProductModeration();
 
 // Khóa phân vùng lưu địa chỉ riêng cho từng tài khoản
 const ADDRESS_STORAGE_PREFIX = "zonemart_user_address_";
@@ -68,10 +72,11 @@ let toastTimer: any = null;
 const triggerToast = (msg: string) => {
   toastMessage.value = msg;
   showToast.value = true;
+  toast.info(msg, "Thông Báo");
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
     showToast.value = false;
-  }, 3200);
+  }, 3000);
 };
 
 // ================================================================
@@ -445,6 +450,55 @@ const playPaymentSuccessChime = () => {
   } catch (e) {}
 };
 
+// Tự động tìm vị trí & tọa độ GPS thực tế của Gian Hàng / Người Bán
+const resolveStoreDispatchLocation = (shopName: string) => {
+  try {
+    const clean = (shopName || "").trim().toLowerCase();
+    
+    // 1. Kiểm tra cache toàn bộ gian hàng đã đăng ký có GPS
+    const allStores = JSON.parse(localStorage.getItem("zonemart_all_registered_stores") || "{}");
+    if (allStores[clean]) {
+      const s = allStores[clean];
+      return {
+        lat: s.lat || 21.0345,
+        lng: s.lng || 105.7960,
+        name: s.name || shopName,
+        address: s.address || "Hà Nội",
+        phone: s.phone || "0988 123 456"
+      };
+    }
+
+    // 2. Tìm trong danh sách seller stores
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("zonemart_seller_store_")) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.name && (parsed.name.toLowerCase() === clean || clean.includes(parsed.name.toLowerCase()) || parsed.name.toLowerCase().includes(clean))) {
+            return {
+              lat: parsed.lat || 21.0345,
+              lng: parsed.lng || 105.7960,
+              name: parsed.name,
+              address: parsed.address || "Hà Nội",
+              phone: parsed.phone || "0988 123 456"
+            };
+          }
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 3. Mặc định dự phòng (Cầu Giấy, Hà Nội)
+  return {
+    lat: 21.0345,
+    lng: 105.7960,
+    name: shopName,
+    address: "Số 48 Cầu Giấy, Quan Hoa, Cầu Giấy, Hà Nội",
+    phone: "0988 123 456"
+  };
+};
+
 // KHI TIỀN THỰC SỰ VÀO -> BẬT HIỆU ỨNG THÀNH CÔNG VÀ LƯU ĐƠN
 const onPaymentConfirmed = (paidAmount?: number) => {
   if (paymentState.value === "SUCCESS") return;
@@ -456,11 +510,15 @@ const onPaymentConfirmed = (paidAmount?: number) => {
   const now = new Date();
   const dateStr = now.toLocaleDateString("vi-VN") + " " + now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 
+  const firstShopName = selectedCartItems.value[0]?.shop || "Vườn Rau Ba Vì (Cầu Giấy)";
+  const storeDispatch = resolveStoreDispatchLocation(firstShopName);
+
   const newOrder = {
     id: orderId,
     date: dateStr,
     total: finalAmount,
     status: "Đã thanh toán",
+    store: storeDispatch,
     itemsCount: cart.selectedItemsCount.value,
     items: selectedCartItems.value.map(item => ({
       name: item.name,
@@ -488,13 +546,25 @@ const onPaymentConfirmed = (paidAmount?: number) => {
     localStorage.setItem(orderKey, JSON.stringify(existing));
   } catch (e) {}
 
+  // Trừ số lượng tồn kho của sản phẩm sau khi thanh toán thành công
+  try {
+    productModeration.reduceStockForPurchasedItems(selectedCartItems.value);
+    const deductedOrders: string[] = JSON.parse(localStorage.getItem("zonemart_deducted_stock_orders") || "[]");
+    if (!deductedOrders.includes(orderId)) {
+      deductedOrders.push(orderId);
+      localStorage.setItem("zonemart_deducted_stock_orders", JSON.stringify(deductedOrders));
+    }
+  } catch (err) {
+    console.warn("Lỗi trừ tồn kho sản phẩm khi thanh toán thành công:", err);
+  }
+
   // Phát tán sự kiện nổ đơn thời gian thực tới Shipper & Seller
   try {
     const firstShopName = selectedCartItems.value[0]?.shop || "Vườn Rau Ba Vì (Cầu Giấy)";
     orderRealtimeService.dispatchNewOrder({
       id: orderId,
       orderCode: orderId,
-      total: finalAmount,
+      total: 0, // Khách quét mã QR thanh toán thành công -> Nổ đơn bên gian hàng là 0đ
       shippingFee: shippingFee.value || 15000,
       paymentMethod: "Chuyển khoản QR",
       createdAt: dateStr,
@@ -507,13 +577,7 @@ const onPaymentConfirmed = (paidAmount?: number) => {
         phone: buyerPhone.value,
         address: shippingAddress.value
       },
-      store: {
-        lat: 21.0345,
-        lng: 105.7960,
-        name: firstShopName,
-        address: "Số 48 Cầu Giấy, Quan Hoa, Cầu Giấy, Hà Nội",
-        phone: "0988 123 456"
-      },
+      store: resolveStoreDispatchLocation(firstShopName),
       items: selectedCartItems.value.map(item => ({
         id: item.id,
         name: item.name,
@@ -793,15 +857,15 @@ const saveAddress = () => {
   const trimmedAddress = editForm.value.address.trim();
 
   if (!trimmedName) {
-    alert("Vui lòng nhập họ và tên người nhận hàng!");
+    toast.warning("Vui lòng nhập họ và tên người nhận hàng!", "Thiếu Họ Tên");
     return;
   }
   if (!trimmedPhone || trimmedPhone.length < 9) {
-    alert("Vui lòng nhập số điện thoại người nhận hợp lệ!");
+    toast.warning("Vui lòng nhập số điện thoại người nhận hợp lệ!", "Số Điện Thoại");
     return;
   }
   if (!trimmedAddress || trimmedAddress.length < 6) {
-    alert("Vui lòng định vị trên bản đồ hoặc nhập địa chỉ nhận hàng chi tiết!");
+    toast.warning("Vui lòng định vị trên bản đồ hoặc nhập địa chỉ nhận hàng chi tiết!", "Thiếu Địa Chỉ");
     return;
   }
 
@@ -861,7 +925,7 @@ const handleSelectExpress = (val: boolean) => {
 // Đặt hàng COD
 const handlePlaceOrder = () => {
   if (selectedCartItems.value.length === 0) {
-    alert("Bạn chưa chọn món nào để thanh toán! Vui lòng quay lại giỏ hàng và chọn món.");
+    toast.info("Bạn chưa chọn món nào để thanh toán! Vui lòng quay lại giỏ hàng và chọn món.", "Giỏ Hàng Rỗng");
     router.push("/cart");
     return;
   }
@@ -875,11 +939,15 @@ const handlePlaceOrder = () => {
   const now = new Date();
   const dateStr = now.toLocaleDateString("vi-VN") + " " + now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 
+  const firstShopName = selectedCartItems.value[0]?.shop || "Vườn Rau Ba Vì (Cầu Giấy)";
+  const storeDispatch = resolveStoreDispatchLocation(firstShopName);
+
   const newOrder = {
     id: orderId,
     date: dateStr,
     total: finalTotal.value,
     status: "Chờ xác nhận (COD)",
+    store: storeDispatch,
     itemsCount: cart.selectedItemsCount.value,
     items: selectedCartItems.value.map(item => ({
       name: item.name,
@@ -906,6 +974,18 @@ const handlePlaceOrder = () => {
     localStorage.setItem(orderKey, JSON.stringify(existing));
   } catch (e) {}
 
+  // Trừ số lượng tồn kho của sản phẩm khi đặt hàng COD
+  try {
+    productModeration.reduceStockForPurchasedItems(selectedCartItems.value);
+    const deductedOrders: string[] = JSON.parse(localStorage.getItem("zonemart_deducted_stock_orders") || "[]");
+    if (!deductedOrders.includes(orderId)) {
+      deductedOrders.push(orderId);
+      localStorage.setItem("zonemart_deducted_stock_orders", JSON.stringify(deductedOrders));
+    }
+  } catch (err) {
+    console.warn("Lỗi trừ tồn kho sản phẩm khi đặt hàng COD:", err);
+  }
+
   // Phát tán sự kiện nổ đơn thời gian thực tới Shipper & Seller
   try {
     const firstShopName = selectedCartItems.value[0]?.shop || "Vườn Rau Ba Vì (Cầu Giấy)";
@@ -925,13 +1005,7 @@ const handlePlaceOrder = () => {
         phone: buyerPhone.value,
         address: shippingAddress.value
       },
-      store: {
-        lat: 21.0345,
-        lng: 105.7960,
-        name: firstShopName,
-        address: "Số 48 Cầu Giấy, Quan Hoa, Cầu Giấy, Hà Nội",
-        phone: "0988 123 456"
-      },
+      store: resolveStoreDispatchLocation(firstShopName),
       items: selectedCartItems.value.map(item => ({
         id: item.id,
         name: item.name,
@@ -945,7 +1019,7 @@ const handlePlaceOrder = () => {
     console.warn("Lỗi phát đơn thời gian thực COD:", e);
   }
 
-  alert(`🎉 Đặt hàng thành công mã #${orderId}!\nĐơn hàng sẽ được giao tới: ${shippingAddress.value}\nNgười nhận: ${buyerName.value} (${buyerPhone.value})`);
+  toast.success(`Đơn hàng #${orderId} đã được tạo thành công! Sẽ giao tới ${buyerName.value} (${buyerPhone.value}).`, "🎉 Đặt Hàng Thành Công", 5000);
   cart.clearCart();
   router.push("/buyer-orders");
 };

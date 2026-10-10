@@ -140,27 +140,31 @@ public class AdminController : ControllerBase
 
             if (store != null)
             {
+                var partnerData = new
+                {
+                    id = store.Id,
+                    type = "seller",
+                    name = store.StoreName,
+                    applicant = store.OwnerFullName,
+                    cccd = store.CccdNumber ?? "",
+                    cccdNumber = store.CccdNumber ?? "",
+                    nguyenQuan = store.NguyenQuan ?? "",
+                    address = store.Address,
+                    category = store.Category,
+                    date = store.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+                    status = store.Status,
+                    rejectReason = store.RejectReason,
+                    bankName = store.BankName,
+                    bankAccountNumber = store.BankAccountNumber,
+                    cccdFrontImage = store.CccdFrontImage,
+                    cccdBackImage = store.CccdBackImage,
+                    foodSafetyCertImage = store.FoodSafetyCertImage
+                };
                 return Ok(new
                 {
                     success = true,
-                    data = new
-                    {
-                        id = store.Id,
-                        type = "seller",
-                        name = store.StoreName,
-                        applicant = store.OwnerFullName,
-                        cccd = store.CccdNumber,
-                        address = store.Address,
-                        category = store.Category,
-                        date = store.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
-                        status = store.Status,
-                        rejectReason = store.RejectReason,
-                        bankName = store.BankName,
-                        bankAccountNumber = store.BankAccountNumber,
-                        cccdFrontImage = store.CccdFrontImage,
-                        cccdBackImage = store.CccdBackImage,
-                        foodSafetyCertImage = store.FoodSafetyCertImage
-                    }
+                    data = partnerData,
+                    partner = partnerData
                 });
             }
             else
@@ -179,28 +183,32 @@ public class AdminController : ControllerBase
 
                 if (shipper == null) return NotFound(new { success = false, message = "Không tìm thấy hồ sơ đối tác" });
 
+                var shipperData = new
+                {
+                    id = shipper.Id,
+                    type = "shipper",
+                    name = $"Tài Xế: {shipper.FullName}",
+                    applicant = shipper.FullName,
+                    cccd = shipper.CccdNumber ?? "",
+                    cccdNumber = shipper.CccdNumber ?? "",
+                    nguyenQuan = shipper.NguyenQuan ?? "",
+                    address = $"{shipper.VehicleModel} - {shipper.LicensePlate}",
+                    category = shipper.VehicleType,
+                    date = shipper.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+                    status = shipper.Status,
+                    rejectReason = shipper.RejectReason,
+                    bankName = shipper.BankName,
+                    bankAccountNumber = shipper.BankAccountNumber,
+                    cccdFrontImage = shipper.CccdFrontImage,
+                    cccdBackImage = shipper.CccdBackImage,
+                    drivingLicenseImage = shipper.DrivingLicenseImage,
+                    avatarUrl = shipper.AvatarUrl
+                };
                 return Ok(new
                 {
                     success = true,
-                    data = new
-                    {
-                        id = shipper.Id,
-                        type = "shipper",
-                        name = $"Tài Xế: {shipper.FullName}",
-                        applicant = shipper.FullName,
-                        cccd = shipper.CccdNumber,
-                        address = $"{shipper.VehicleModel} - {shipper.LicensePlate}",
-                        category = shipper.VehicleType,
-                        date = shipper.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
-                        status = shipper.Status,
-                        rejectReason = shipper.RejectReason,
-                        bankName = shipper.BankName,
-                        bankAccountNumber = shipper.BankAccountNumber,
-                        cccdFrontImage = shipper.CccdFrontImage,
-                        cccdBackImage = shipper.CccdBackImage,
-                        drivingLicenseImage = shipper.DrivingLicenseImage,
-                        avatarUrl = shipper.AvatarUrl
-                    }
+                    data = shipperData,
+                    partner = shipperData
                 });
             }
         }
@@ -225,6 +233,67 @@ public class AdminController : ControllerBase
             {
                 await _mongoService.Stores.DeleteManyAsync(s => s.StoreName == "Demobanhang1234" || s.Id == "6aa116df481fb0a8422e859d");
                 await _mongoService.AdminNotifications.DeleteManyAsync(n => n.TargetName == "Demobanhang1234" || n.Message.Contains("Demobanhang1234"));
+
+                // Tự động chuẩn hóa các URL mẫu example.com sang ảnh giấy tờ thực tế
+                var brokenStores = await _mongoService.Stores.Find(s => 
+                    (s.CccdFrontImage != null && s.CccdFrontImage.Contains("example.com")) ||
+                    (s.CccdBackImage != null && s.CccdBackImage.Contains("example.com")) ||
+                    (s.FoodSafetyCertImage != null && s.FoodSafetyCertImage.Contains("example.com"))
+                ).ToListAsync();
+
+                foreach (var bs in brokenStores)
+                {
+                    bool storeChanged = false;
+                    if (bs.CccdFrontImage != null && bs.CccdFrontImage.Contains("example.com"))
+                    {
+                        bs.CccdFrontImage = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80";
+                        storeChanged = true;
+                    }
+                    if (bs.CccdBackImage != null && bs.CccdBackImage.Contains("example.com"))
+                    {
+                        bs.CccdBackImage = "https://images.unsplash.com/photo-1633158829585-23ba8f7c8caf?auto=format&fit=crop&w=600&q=80";
+                        storeChanged = true;
+                    }
+                    if (bs.FoodSafetyCertImage != null && bs.FoodSafetyCertImage.Contains("example.com"))
+                    {
+                        bs.FoodSafetyCertImage = "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=600&q=80";
+                        storeChanged = true;
+                    }
+                    if (storeChanged)
+                    {
+                        await _mongoService.Stores.ReplaceOneAsync(s => s.Id == bs.Id, bs);
+                    }
+                }
+
+                var brokenShippers = await _mongoService.Shippers.Find(sh =>
+                    (sh.CccdFrontImage != null && sh.CccdFrontImage.Contains("example.com")) ||
+                    (sh.CccdBackImage != null && sh.CccdBackImage.Contains("example.com")) ||
+                    (sh.DrivingLicenseImage != null && sh.DrivingLicenseImage.Contains("example.com"))
+                ).ToListAsync();
+
+                foreach (var bsh in brokenShippers)
+                {
+                    bool shChanged = false;
+                    if (bsh.CccdFrontImage != null && bsh.CccdFrontImage.Contains("example.com"))
+                    {
+                        bsh.CccdFrontImage = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80";
+                        shChanged = true;
+                    }
+                    if (bsh.CccdBackImage != null && bsh.CccdBackImage.Contains("example.com"))
+                    {
+                        bsh.CccdBackImage = "https://images.unsplash.com/photo-1633158829585-23ba8f7c8caf?auto=format&fit=crop&w=600&q=80";
+                        shChanged = true;
+                    }
+                    if (bsh.DrivingLicenseImage != null && bsh.DrivingLicenseImage.Contains("example.com"))
+                    {
+                        bsh.DrivingLicenseImage = "https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=600&q=80";
+                        shChanged = true;
+                    }
+                    if (shChanged)
+                    {
+                        await _mongoService.Shippers.ReplaceOneAsync(sh => sh.Id == bsh.Id, bsh);
+                    }
+                }
             }
             catch { }
 
@@ -253,8 +322,10 @@ public class AdminController : ControllerBase
 
                 string primaryRole = u.IsAdmin ? "Admin" 
                     : u.IsManager ? "Manager" 
-                    : (store != null && store.Status == "Pending") ? "Seller" 
-                    : (shipper != null && shipper.Status == "Pending") ? "Shipper" 
+                    : (store != null && (store.Status == "Pending" || store.Status == "pending")) ? "Seller" 
+                    : (shipper != null && (shipper.Status == "Pending" || shipper.Status == "pending")) ? "Shipper" 
+                    : (store != null && (store.Status == "Rejected" || store.Status == "rejected")) ? "RejectedSeller"
+                    : (shipper != null && (shipper.Status == "Rejected" || shipper.Status == "rejected")) ? "RejectedShipper"
                     : u.IsSeller ? "Seller" 
                     : u.IsShipper ? "Shipper" 
                     : "Buyer";
@@ -262,9 +333,26 @@ public class AdminController : ControllerBase
                 string accountStatus = u.AccountStatus ?? "active";
                 if (accountStatus != "banned" && accountStatus != "locked_10_days" && accountStatus != "suspended")
                 {
-                    if ((store != null && store.Status == "Pending") || (shipper != null && shipper.Status == "Pending") || u.AccountStatus == "pending")
+                    if ((store != null && (store.Status == "Pending" || store.Status == "pending")) || (shipper != null && (shipper.Status == "Pending" || shipper.Status == "pending")) || u.AccountStatus == "pending")
                     {
                         accountStatus = "pending";
+                    }
+                    else if ((store != null && (store.Status == "Rejected" || store.Status == "rejected")) || (shipper != null && (shipper.Status == "Rejected" || shipper.Status == "rejected")) || u.AccountStatus == "rejected")
+                    {
+                        accountStatus = "rejected";
+                        if (u.AccountStatus != "rejected")
+                        {
+                            u.AccountStatus = "rejected";
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    var up = Builders<User>.Update.Set(x => x.AccountStatus, "rejected");
+                                    await _mongoService.Users.UpdateOneAsync(x => x.Id == u.Id, up);
+                                }
+                                catch { }
+                            });
+                        }
                     }
                 }
 
@@ -284,6 +372,9 @@ public class AdminController : ControllerBase
                     lockUntil = u.LockUntil,
                     violationCount = u.ViolationCount,
                     createdAt = u.CreatedAt.ToString("dd/MM/yyyy"),
+                    cccdNumber = (store != null && !string.IsNullOrWhiteSpace(store.CccdNumber)) ? store.CccdNumber.Trim()
+                        : (shipper != null && !string.IsNullOrWhiteSpace(shipper.CccdNumber)) ? shipper.CccdNumber.Trim()
+                        : (!string.IsNullOrWhiteSpace(u.CccdNumber) ? u.CccdNumber.Trim() : string.Empty),
                     storeDetails = store != null ? new
                     {
                         storeId = store.Id,
@@ -292,6 +383,10 @@ public class AdminController : ControllerBase
                         ownerFullName = store.OwnerFullName,
                         phoneEmail = store.PhoneEmail,
                         address = store.Address,
+                        sellerType = store.SellerType,
+                        ward = store.Ward,
+                        district = store.District,
+                        marketName = store.MarketName,
                         category = store.Category,
                         openHours = store.OpenHours,
                         bankName = store.BankName,
@@ -299,6 +394,7 @@ public class AdminController : ControllerBase
                         status = store.Status,
                         rejectReason = store.RejectReason,
                         cccdNumber = store.CccdNumber,
+                        nguyenQuan = store.NguyenQuan,
                         cccdFrontImage = store.CccdFrontImage,
                         cccdBackImage = store.CccdBackImage,
                         foodSafetyCertImage = store.FoodSafetyCertImage,
@@ -318,6 +414,7 @@ public class AdminController : ControllerBase
                         status = shipper.Status,
                         rejectReason = shipper.RejectReason,
                         cccdNumber = shipper.CccdNumber,
+                        nguyenQuan = shipper.NguyenQuan,
                         cccdFrontImage = shipper.CccdFrontImage,
                         cccdBackImage = shipper.CccdBackImage,
                         drivingLicenseImage = shipper.DrivingLicenseImage,
@@ -353,6 +450,7 @@ public class AdminController : ControllerBase
                         lockUntil = null,
                         violationCount = 0,
                         createdAt = store.CreatedAt.ToString("dd/MM/yyyy"),
+                        cccdNumber = store.CccdNumber?.Trim() ?? string.Empty,
                         storeDetails = new
                         {
                             storeId = store.Id,
@@ -368,6 +466,7 @@ public class AdminController : ControllerBase
                             status = store.Status,
                             rejectReason = store.RejectReason,
                             cccdNumber = store.CccdNumber,
+                            nguyenQuan = store.NguyenQuan,
                             cccdFrontImage = store.CccdFrontImage,
                             cccdBackImage = store.CccdBackImage,
                             foodSafetyCertImage = store.FoodSafetyCertImage,
@@ -405,6 +504,7 @@ public class AdminController : ControllerBase
                         lockUntil = null,
                         violationCount = 0,
                         createdAt = shipper.CreatedAt.ToString("dd/MM/yyyy"),
+                        cccdNumber = shipper.CccdNumber?.Trim() ?? string.Empty,
                         storeDetails = null,
                         shipperDetails = new
                         {
@@ -420,6 +520,7 @@ public class AdminController : ControllerBase
                             status = shipper.Status,
                             rejectReason = shipper.RejectReason,
                             cccdNumber = shipper.CccdNumber,
+                            nguyenQuan = shipper.NguyenQuan,
                             cccdFrontImage = shipper.CccdFrontImage,
                             cccdBackImage = shipper.CccdBackImage,
                             drivingLicenseImage = shipper.DrivingLicenseImage,
@@ -487,19 +588,25 @@ public class AdminController : ControllerBase
         try
         {
             string emailToSend = "";
-            string nameToEmail = "";
 
             if (req.Type.ToLower() == "seller")
             {
-                var store = await _mongoService.Stores.Find(s => s.Id == req.TargetId).FirstOrDefaultAsync();
+                var storeFilter = Builders<Store>.Filter.Or(
+                    Builders<Store>.Filter.Eq(s => s.Id, req.TargetId),
+                    Builders<Store>.Filter.Eq(s => s.StoreCode, req.TargetId),
+                    Builders<Store>.Filter.Eq(s => s.UserId, req.TargetId),
+                    Builders<Store>.Filter.Eq(s => s.PhoneEmail, req.TargetId)
+                );
+                var store = await _mongoService.Stores.Find(storeFilter).FirstOrDefaultAsync();
                 if (store == null) return NotFound(new { success = false, message = "Không tìm thấy hồ sơ Cửa hàng!" });
 
                 var storeUpdate = Builders<Store>.Update
                     .Set(s => s.Status, "Approved")
                     .Set(s => s.RejectReason, null);
-                await _mongoService.Stores.UpdateOneAsync(s => s.Id == req.TargetId, storeUpdate);
+                await _mongoService.Stores.UpdateOneAsync(s => s.Id == store.Id, storeUpdate);
                 store.Status = "Approved";
                 if (store.Id != null) AuthController.InMemoryStores[store.Id] = store;
+                if (!string.IsNullOrEmpty(store.StoreCode)) AuthController.InMemoryStores[store.StoreCode] = store;
 
                 // Cập nhật User chính xác: kích hoạt AccountStatus = "active" và IsSeller = true
                 var filterList = new List<FilterDefinition<User>>();
@@ -539,56 +646,132 @@ public class AdminController : ControllerBase
                     await _mongoService.Stores.UpdateOneAsync(s => s.Id == store.Id, Builders<Store>.Update.Set(s => s.UserId, user.Id));
                     store.UserId = user.Id ?? "";
                     if (store.Id != null) AuthController.InMemoryStores[store.Id] = store;
-
-                    emailToSend = user.PhoneEmail;
-                    nameToEmail = user.FullName;
-                }
-                else
-                {
-                    emailToSend = (!string.IsNullOrEmpty(store.PhoneEmail) && store.PhoneEmail.Contains("@")) 
-                        ? store.PhoneEmail 
-                        : (store.UserId.Contains("@") ? store.UserId : "");
-                    nameToEmail = store.OwnerFullName;
                 }
 
-                // Gửi Gmail thông báo Phê duyệt thành công
-                _ = Task.Run(async () =>
+                // Trích xuất chính xác Email và Tên để gửi thông báo Gmail
+                string cleanEmail = "";
+                if (user != null && !string.IsNullOrWhiteSpace(user.PhoneEmail) && user.PhoneEmail.Contains("@"))
                 {
-                    string subject = "[ZoneMart] Thông Báo Phê Duyệt Hồ Sơ Mở Cửa Hàng Thành Công!";
-                    string htmlBody = $@"
-                        <div style='font-family: Arial, sans-serif; background: #FFF7ED; padding: 24px;'>
-                            <div style='max-width: 520px; margin: 0 auto; background: #ffffff; border-radius: 20px; padding: 24px; border: 1.5px solid #FED7AA; box-shadow: 0 10px 30px rgba(0,0,0,0.05);'>
-                                <h2 style='color: #D94E15; margin-bottom: 8px;'>🎉 CHÚC MỪNG GIAN HÀNG CỦA BẠN ĐÃ ĐƯỢC PHÊ DUYỆT!</h2>
-                                <p style='color: #334155; font-size: 14px;'>Xin chào <b>{nameToEmail}</b>,</p>
-                                <p style='color: #334155; font-size: 14px; line-height: 1.6;'>
-                                    Hồ sơ đăng ký mở gian hàng <b style='color: #D94E15;'>""{store.StoreName}""</b> trên hệ thống ZoneMart đã được Ban Quản Lý phê duyệt chính thức.
-                                </p>
-                                <div style='background: #FFF7ED; border-left: 4px solid #D94E15; padding: 14px; margin: 16px 0; border-radius: 8px;'>
-                                    <p style='margin: 0; color: #9A3412; font-weight: bold; font-size: 13.5px;'>🛡️ QUY ĐỊNH TUÂN THỦ DÀNH CHO CHỦ TIỆM:</p>
-                                    <p style='margin: 6px 0 0 0; color: #78350F; font-size: 13px; line-height: 1.5;'>Vui lòng luôn nghiêm túc tuân thủ quy định <b>An toàn vệ sinh thực phẩm</b>, bảo đảm cung cấp hàng hóa/thực phẩm tươi sạch, đóng gói cẩn thận và phục vụ khách hàng uy tín, chu đáo.</p>
-                                </div>
-                                <div style='text-align: center; margin-top: 24px;'>
-                                    <a href='http://localhost:5173/login?role=seller' style='background: #D94E15; color: #ffffff; text-decoration: none; padding: 13px 28px; border-radius: 25px; font-weight: bold; display: inline-block;'>Bắt Đầu Quản Lý Gian Hàng Ngay ➔</a>
-                                </div>
-                            </div>
-                        </div>";
-                    if (!string.IsNullOrWhiteSpace(emailToSend) && emailToSend.Contains("@"))
+                    cleanEmail = user.PhoneEmail.Trim().ToLower();
+                }
+                if (string.IsNullOrWhiteSpace(cleanEmail) && !string.IsNullOrWhiteSpace(store.PhoneEmail) && store.PhoneEmail.Contains("@"))
+                {
+                    cleanEmail = store.PhoneEmail.Trim().ToLower();
+                }
+                if (string.IsNullOrWhiteSpace(cleanEmail) && !string.IsNullOrWhiteSpace(store.UserId) && store.UserId.Contains("@"))
+                {
+                    cleanEmail = store.UserId.Trim().ToLower();
+                }
+
+                string cleanName = !string.IsNullOrWhiteSpace(user?.FullName) 
+                    ? user.FullName.Trim() 
+                    : (!string.IsNullOrWhiteSpace(store.OwnerFullName) 
+                        ? store.OwnerFullName.Trim() 
+                        : store.StoreName);
+
+                string storeCode = !string.IsNullOrWhiteSpace(store.StoreCode) ? store.StoreCode : ("SEL-" + (store.Id?.Substring(Math.Max(0, store.Id.Length - 4)) ?? "8839").ToUpper());
+                emailToSend = cleanEmail;
+
+                // Gửi Gmail chúc mừng phê duyệt gian hàng thành công
+                if (!string.IsNullOrWhiteSpace(cleanEmail))
+                {
+                    _ = Task.Run(async () =>
                     {
-                        await SendEmailViaMailKitAsync(emailToSend, subject, htmlBody, "ZoneMart Support");
-                    }
-                });
+                        try
+                        {
+                            string subject = $"[ZoneMart] 🎉 CHÚC MỪNG: Gian hàng \"{store.StoreName}\" của bạn đã được phê duyệt thành công!";
+                            string htmlBody = $@"
+                                <div style='background-color: #FFF7ED; padding: 32px 12px; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;'>
+                                    <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 580px; background: #FFFFFF; border-radius: 24px; border: 1.5px solid #FED7AA; box-shadow: 0 15px 35px rgba(217, 78, 21, 0.12); overflow: hidden; margin: 0 auto; padding: 32px 28px;'>
+                                        <tr>
+                                            <td align='center' style='padding-bottom: 20px; border-bottom: 1px solid #FFEDD5;'>
+                                                <div style='font-size: 26px; font-weight: 900; color: #D94E15; letter-spacing: -0.5px;'>
+                                                    Zone<span style='color: #10B981;'>Mart</span> <span style='font-size: 15px; color: #D94E15; background: #FFEDD5; padding: 3px 12px; border-radius: 20px;'>SELLER PORTAL</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td align='center' style='padding: 24px 0 16px 0;'>
+                                                <h2 style='color: #C2410C; font-size: 22px; font-weight: 900; margin: 0 0 8px 0;'>🎉 HỒ SƠ GIAN HÀNG ĐÃ ĐƯỢC PHÊ DUYỆT!</h2>
+                                                <p style='color: #475569; font-size: 15px; margin: 0;'>Xin chúc mừng chủ tiệm <b>{cleanName}</b>,</p>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td style='color: #334155; font-size: 14.5px; line-height: 1.65;'>
+                                                <p style='margin-bottom: 16px;'>
+                                                    Ban quản lý <b>ZoneMart Seller</b> trân trọng thông báo: Hồ sơ đăng ký mở gian hàng đối tác của bạn đã được thẩm định đạt chuẩn và <b>CHÍNH THỨC ĐƯỢC PHÊ DUYỆT</b> trên toàn sàn!
+                                                </p>
+
+                                                <div style='background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%); border: 1.5px solid #FED7AA; border-radius: 18px; padding: 20px; margin: 20px 0;'>
+                                                    <h4 style='color: #C2410C; margin: 0 0 12px 0; font-size: 15px;'>🏪 THÔNG TIN GIAN HÀNG KÍCH HOẠT:</h4>
+                                                    <ul style='margin: 0; padding-left: 18px; color: #334155; font-size: 14px; line-height: 1.7;'>
+                                                        <li><b>Tên Gian Hàng:</b> <span style='color: #D94E15; font-weight: 800;'>{store.StoreName}</span></li>
+                                                        <li><b>Mã Định Danh (Seller ID):</b> <span style='color: #0284C7; font-weight: 700;'>{storeCode}</span></li>
+                                                        <li><b>Tài Khoản / Gmail Đăng Nhập:</b> <b>{cleanEmail}</b></li>
+                                                        <li><b>Ngành Hàng Kinh Doanh:</b> {store.Category}</li>
+                                                        <li><b>Trạng Thái:</b> <span style='background: #DCFCE7; color: #15803D; padding: 2px 10px; border-radius: 12px; font-weight: 700; font-size: 13px;'>ĐÃ KÍCH HOẠT SẴN SÀNG MỞ BÁN</span></li>
+                                                    </ul>
+                                                </div>
+
+                                                <div style='background: #F0FDF4; border-left: 4px solid #16A34A; padding: 14px 16px; margin: 18px 0; border-radius: 8px;'>
+                                                    <p style='margin: 0; color: #166534; font-weight: bold; font-size: 13.5px;'>💡 HƯỚNG DẪN BẮT ĐẦU KINH DOANH:</p>
+                                                    <ol style='margin: 6px 0 0 0; padding-left: 20px; color: #14532D; font-size: 13px; line-height: 1.6;'>
+                                                        <li>Đăng nhập vào Kênh Người Bán (Seller Dashboard) với tài khoản Gmail của bạn.</li>
+                                                        <li>Đăng tải các món ăn, thực phẩm tươi ngon và cập nhật bảng giá.</li>
+                                                        <li>Bật công tắc nhận đơn để khách hàng xung quanh có thể đặt món ngay lập tức.</li>
+                                                    </ol>
+                                                </div>
+
+                                                <div style='text-align: center; margin: 28px 0 16px 0;'>
+                                                    <a href='http://localhost:5173/login?role=seller' style='background: #D94E15; color: #FFFFFF; font-size: 15px; font-weight: 800; text-decoration: none; padding: 14px 36px; border-radius: 30px; display: inline-block; box-shadow: 0 8px 20px rgba(217, 78, 21, 0.3);'>
+                                                        BẮT ĐẦU MỞ BÁN NGAY BÂY GIỜ ➔
+                                                    </a>
+                                                </div>
+
+                                                <p style='color: #64748B; font-size: 12.5px; text-align: center; margin-top: 14px;'>
+                                                    <i>Lưu ý: Quý đối tác vui lòng luôn nghiêm túc tuân thủ quy chuẩn An toàn vệ sinh thực phẩm và quy chế hoạt động của ZoneMart.</i>
+                                                </p>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td align='center' style='padding-top: 24px; border-top: 1px solid #FFEDD5; color: #94A3B8; font-size: 12px;'>
+                                                Trân trọng,<br />
+                                                <b style='color: #D94E15; font-size: 13.5px;'>BAN QUẢN LÝ ĐỐI TÁC GIAN HÀNG ZONEMART</b><br />
+                                                Hotline Hỗ Trợ: 1900 6868 • Email: dobinh225599@gmail.com
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </div>";
+
+                            Console.WriteLine($"📧 [Approve KYC] Đang gửi Gmail chúc mừng tới {cleanEmail} ({cleanName})...");
+                            bool sent = await SendEmailViaMailKitAsync(cleanEmail, subject, htmlBody, "ZoneMart Support");
+                            Console.WriteLine(sent ? $"✅ [Approve KYC] Gửi Gmail thành công tới {cleanEmail}!" : $"⚠️ [Approve KYC] Không thể gửi Gmail tới {cleanEmail}!");
+                        }
+                        catch (Exception mailEx)
+                        {
+                            Console.WriteLine($"⚠️ [Approve KYC Mail Error]: {mailEx.Message}");
+                        }
+                    });
+                }
             }
             else if (req.Type.ToLower() == "shipper")
             {
-                var shipper = await _mongoService.Shippers.Find(s => s.Id == req.TargetId).FirstOrDefaultAsync();
+                var shipperFilter = Builders<Shipper>.Filter.Or(
+                    Builders<Shipper>.Filter.Eq(s => s.Id, req.TargetId),
+                    Builders<Shipper>.Filter.Eq(s => s.ShipperCode, req.TargetId),
+                    Builders<Shipper>.Filter.Eq(s => s.UserId, req.TargetId),
+                    Builders<Shipper>.Filter.Eq(s => s.PhoneNumber, req.TargetId)
+                );
+                var shipper = await _mongoService.Shippers.Find(shipperFilter).FirstOrDefaultAsync();
                 if (shipper == null) return NotFound(new { success = false, message = "Không tìm thấy hồ sơ Tài xế!" });
 
                 var shipperUpdate = Builders<Shipper>.Update
                     .Set(s => s.Status, "Approved")
                     .Set(s => s.RejectReason, null);
-                await _mongoService.Shippers.UpdateOneAsync(s => s.Id == req.TargetId, shipperUpdate);
+                await _mongoService.Shippers.UpdateOneAsync(s => s.Id == shipper.Id, shipperUpdate);
                 shipper.Status = "Approved";
                 if (shipper.Id != null) AuthController.InMemoryShippers[shipper.Id] = shipper;
+                if (!string.IsNullOrEmpty(shipper.ShipperCode)) AuthController.InMemoryShippers[shipper.ShipperCode] = shipper;
 
                 var filterList = new List<FilterDefinition<User>>();
                 if (!string.IsNullOrEmpty(shipper.UserId) && MongoDB.Bson.ObjectId.TryParse(shipper.UserId, out _))
@@ -626,84 +809,104 @@ public class AdminController : ControllerBase
                     await _mongoService.Shippers.UpdateOneAsync(s => s.Id == shipper.Id, Builders<Shipper>.Update.Set(s => s.UserId, user.Id));
                     shipper.UserId = user.Id ?? "";
                     if (shipper.Id != null) AuthController.InMemoryShippers[shipper.Id] = shipper;
+                }
 
-                    emailToSend = user.PhoneEmail;
-                    nameToEmail = user.FullName;
-                }
-                else
+                string cleanEmail = "";
+                if (user != null && !string.IsNullOrWhiteSpace(user.PhoneEmail) && user.PhoneEmail.Contains("@"))
                 {
-                    emailToSend = (!string.IsNullOrEmpty(shipper.PhoneNumber) && shipper.PhoneNumber.Contains("@")) 
-                        ? shipper.PhoneNumber 
-                        : "";
-                    nameToEmail = shipper.FullName;
+                    cleanEmail = user.PhoneEmail.Trim().ToLower();
                 }
+                if (string.IsNullOrWhiteSpace(cleanEmail) && !string.IsNullOrWhiteSpace(shipper.PhoneNumber) && shipper.PhoneNumber.Contains("@"))
+                {
+                    cleanEmail = shipper.PhoneNumber.Trim().ToLower();
+                }
+                if (string.IsNullOrWhiteSpace(cleanEmail) && !string.IsNullOrWhiteSpace(shipper.UserId) && shipper.UserId.Contains("@"))
+                {
+                    cleanEmail = shipper.UserId.Trim().ToLower();
+                }
+
+                string cleanName = !string.IsNullOrWhiteSpace(user?.FullName) 
+                    ? user.FullName.Trim() 
+                    : (!string.IsNullOrWhiteSpace(shipper.FullName) 
+                        ? shipper.FullName.Trim() 
+                        : "Quý Tài Xế");
 
                 string shipperCode = string.IsNullOrEmpty(shipper.ShipperCode) ? $"ZM-DRV-8839" : shipper.ShipperCode;
+                emailToSend = cleanEmail;
 
-                _ = Task.Run(async () =>
+                if (!string.IsNullOrWhiteSpace(cleanEmail))
                 {
-                    string subject = $"[ZoneMart Driver] 🎉 THÔNG BÁO DUYỆT HỒ SƠ TÀI XẾ #{shipperCode} THÀNH CÔNG!";
-                    string htmlBody = $@"
-                        <div style='background-color: #F0F9FF; padding: 32px 12px; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;'>
-                            <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 580px; background: #FFFFFF; border-radius: 24px; border: 1.5px solid #BAE6FD; box-shadow: 0 15px 35px rgba(2, 132, 199, 0.12); overflow: hidden; margin: 0 auto; padding: 32px 28px;'>
-                                <tr>
-                                    <td align='center' style='padding-bottom: 20px; border-bottom: 1px solid #E0F2FE;'>
-                                        <div style='font-size: 26px; font-weight: 900; color: #0284C7; letter-spacing: -0.5px;'>
-                                            Zone<span style='color: #D94E15;'>Mart</span> <span style='font-size: 16px; color: #0284C7; background: #E0F2FE; padding: 3px 10px; border-radius: 20px;'>DRIVER PORTAL</span>
-                                        </div>
-                                    </td>
-                                </tr>
-
-                                <tr>
-                                    <td align='center' style='padding: 24px 0 16px 0;'>
-                                        <h2 style='color: #0369A1; font-size: 22px; font-weight: 900; margin: 0 0 8px 0;'>🎉 HỒ SƠ ĐÃ ĐƯỢC PHÊ DUYỆT CHÍNH THỨC!</h2>
-                                        <p style='color: #475569; font-size: 15px; margin: 0;'>Xin chúc mừng tài xế <b>{nameToEmail}</b>,</p>
-                                    </td>
-                                </tr>
-
-                                <tr>
-                                    <td style='color: #334155; font-size: 14.5px; line-height: 1.65;'>
-                                        <p style='margin-bottom: 16px;'>
-                                            Ban quản lý <b>ZoneMart Driver</b> xin vui mừng thông báo: Hồ sơ đăng ký tài xế giao hàng đối tác của bạn đã được thẩm định và <b>DUYỆT THÀNH CÔNG</b>!
-                                        </p>
-
-                                        <div style='background: linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%); border: 1.5px solid #BAE6FD; border-radius: 18px; padding: 20px; margin: 20px 0;'>
-                                            <h4 style='color: #0369A1; margin: 0 0 12px 0; font-size: 15px;'>🪪 THÔNG TIN TÀI KHOẢN TÀI XẾ CỦA BẠN:</h4>
-                                            <ul style='margin: 0; padding-left: 18px; color: #334155; font-size: 14px; line-height: 1.7;'>
-                                                <li><b>Mã Định Danh Tài Xế (ID):</b> <span style='color: #0284C7; font-weight: 800;'>{shipperCode}</span></li>
-                                                <li><b>Biển Số Xe Đăng Ký:</b> <span style='color: #D94E15; font-weight: 700;'>{shipper.LicensePlate}</span></li>
-                                                <li><b>Khu Vực Chạy Chính:</b> {shipper.OperatingArea}</li>
-                                                <li><b>Trạng Thái:</b> <span style='background: #DCFCE7; color: #15803D; padding: 2px 10px; border-radius: 12px; font-weight: 700; font-size: 13px;'>ĐÃ KÍCH HOẠT SẴN SÀNG NHẬN ĐƠN</span></li>
-                                            </ul>
-                                        </div>
-
-                                        <p style='margin-bottom: 20px; text-align: center;'>
-                                            Bạn có thể dùng Số điện thoại/Gmail đăng ký và Mật khẩu vừa tạo để đăng nhập ngay vào ứng dụng ZoneMart Driver.
-                                        </p>
-
-                                        <div style='text-align: center; margin: 24px 0;'>
-                                            <a href='http://localhost:5173/login?role=shipper' style='background: #0284C7; color: #FFFFFF; font-size: 15px; font-weight: 800; text-decoration: none; padding: 14px 36px; border-radius: 30px; display: inline-block; box-shadow: 0 8px 20px rgba(2, 132, 199, 0.3);'>
-                                                ĐĂNG NHẬP ZONEMART DRIVER NGAY ➔
-                                            </a>
-                                        </div>
-                                    </td>
-                                </tr>
-
-                                <tr>
-                                    <td align='center' style='padding-top: 24px; border-top: 1px solid #E0F2FE; color: #94A3B8; font-size: 12px;'>
-                                        Trân trọng,<br />
-                                        <b style='color: #0369A1; font-size: 13.5px;'>BAN QUẢN LÝ TÀI XẾ ZONEMART DRIVER</b><br />
-                                        Hotline CSKH: 1900 6868 • Email: dobinh225599@gmail.com
-                                    </td>
-                                </tr>
-                            </table>
-                        </div>";
-
-                    if (!string.IsNullOrWhiteSpace(emailToSend) && emailToSend.Contains("@"))
+                    _ = Task.Run(async () =>
                     {
-                        await SendEmailViaMailKitAsync(emailToSend, subject, htmlBody, "ZoneMart Fleet");
-                    }
-                });
+                        try
+                        {
+                            string subject = $"[ZoneMart Driver] 🎉 THÔNG BÁO DUYỆT HỒ SƠ TÀI XẾ #{shipperCode} THÀNH CÔNG!";
+                            string htmlBody = $@"
+                                <div style='background-color: #F0F9FF; padding: 32px 12px; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif;'>
+                                    <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 580px; background: #FFFFFF; border-radius: 24px; border: 1.5px solid #BAE6FD; box-shadow: 0 15px 35px rgba(2, 132, 199, 0.12); overflow: hidden; margin: 0 auto; padding: 32px 28px;'>
+                                        <tr>
+                                            <td align='center' style='padding-bottom: 20px; border-bottom: 1px solid #E0F2FE;'>
+                                                <div style='font-size: 26px; font-weight: 900; color: #0284C7; letter-spacing: -0.5px;'>
+                                                    Zone<span style='color: #D94E15;'>Mart</span> <span style='font-size: 16px; color: #0284C7; background: #E0F2FE; padding: 3px 10px; border-radius: 20px;'>DRIVER PORTAL</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+
+                                        <tr>
+                                            <td align='center' style='padding: 24px 0 16px 0;'>
+                                                <h2 style='color: #0369A1; font-size: 22px; font-weight: 900; margin: 0 0 8px 0;'>🎉 HỒ SƠ ĐÃ ĐƯỢC PHÊ DUYỆT CHÍNH THỨC!</h2>
+                                                <p style='color: #475569; font-size: 15px; margin: 0;'>Xin chúc mừng tài xế <b>{cleanName}</b>,</p>
+                                            </td>
+                                        </tr>
+
+                                        <tr>
+                                            <td style='color: #334155; font-size: 14.5px; line-height: 1.65;'>
+                                                <p style='margin-bottom: 16px;'>
+                                                    Ban quản lý <b>ZoneMart Driver</b> xin vui mừng thông báo: Hồ sơ đăng ký tài xế giao hàng đối tác của bạn đã được thẩm định và <b>DUYỆT THÀNH CÔNG</b>!
+                                                </p>
+
+                                                <div style='background: linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%); border: 1.5px solid #BAE6FD; border-radius: 18px; padding: 20px; margin: 20px 0;'>
+                                                    <h4 style='color: #0369A1; margin: 0 0 12px 0; font-size: 15px;'>🪪 THÔNG TIN TÀI KHOẢN TÀI XẾ CỦA BẠN:</h4>
+                                                    <ul style='margin: 0; padding-left: 18px; color: #334155; font-size: 14px; line-height: 1.7;'>
+                                                        <li><b>Mã Định Danh Tài Xế (ID):</b> <span style='color: #0284C7; font-weight: 800;'>{shipperCode}</span></li>
+                                                        <li><b>Biển Số Xe Đăng Ký:</b> <span style='color: #D94E15; font-weight: 700;'>{shipper.LicensePlate}</span></li>
+                                                        <li><b>Khu Vực Chạy Chính:</b> {shipper.OperatingArea}</li>
+                                                        <li><b>Trạng Thái:</b> <span style='background: #DCFCE7; color: #15803D; padding: 2px 10px; border-radius: 12px; font-weight: 700; font-size: 13px;'>ĐÃ KÍCH HOẠT SẴN SÀNG NHẬN ĐƠN</span></li>
+                                                    </ul>
+                                                </div>
+
+                                                <p style='margin-bottom: 20px; text-align: center;'>
+                                                    Bạn có thể dùng Số điện thoại/Gmail đăng ký và Mật khẩu vừa tạo để đăng nhập ngay vào ứng dụng ZoneMart Driver.
+                                                </p>
+
+                                                <div style='text-align: center; margin: 24px 0;'>
+                                                    <a href='http://localhost:5173/login?role=shipper' style='background: #0284C7; color: #FFFFFF; font-size: 15px; font-weight: 800; text-decoration: none; padding: 14px 36px; border-radius: 30px; display: inline-block; box-shadow: 0 8px 20px rgba(2, 132, 199, 0.3);'>
+                                                        ĐĂNG NHẬP ZONEMART DRIVER NGAY ➔
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+
+                                        <tr>
+                                            <td align='center' style='padding-top: 24px; border-top: 1px solid #E0F2FE; color: #94A3B8; font-size: 12px;'>
+                                                Trân trọng,<br />
+                                                <b style='color: #0284C7; font-size: 13.5px;'>BAN ĐIỀU HÀNH ĐỘI TÀI XẾ ZONEMART</b><br />
+                                                Hotline Hỗ Trợ: 1900 6868 • Email: dobinh225599@gmail.com
+                                            </td>
+                                        </tr>
+                                    </table>
+                                </div>";
+
+                            Console.WriteLine($"📧 [Approve KYC] Đang gửi Gmail chúc mừng tới {cleanEmail} ({cleanName})...");
+                            bool sent = await SendEmailViaMailKitAsync(cleanEmail, subject, htmlBody, "ZoneMart Fleet");
+                            Console.WriteLine(sent ? $"✅ [Approve KYC] Gửi Gmail thành công tới {cleanEmail}!" : $"⚠️ [Approve KYC] Không thể gửi Gmail tới {cleanEmail}!");
+                        }
+                        catch (Exception mailEx)
+                        {
+                            Console.WriteLine($"⚠️ [Approve KYC Mail Error]: {mailEx.Message}");
+                        }
+                    });
+                }
             }
 
             // Lưu Nhật ký Audit Log
@@ -735,16 +938,23 @@ public class AdminController : ControllerBase
 
             if (req.Type.ToLower() == "seller")
             {
-                var store = await _mongoService.Stores.Find(s => s.Id == req.TargetId).FirstOrDefaultAsync();
+                var storeFilter = Builders<Store>.Filter.Or(
+                    Builders<Store>.Filter.Eq(s => s.Id, req.TargetId),
+                    Builders<Store>.Filter.Eq(s => s.StoreCode, req.TargetId),
+                    Builders<Store>.Filter.Eq(s => s.UserId, req.TargetId),
+                    Builders<Store>.Filter.Eq(s => s.PhoneEmail, req.TargetId)
+                );
+                var store = await _mongoService.Stores.Find(storeFilter).FirstOrDefaultAsync();
                 if (store != null)
                 {
                     var storeUpdate = Builders<Store>.Update
                         .Set(s => s.Status, "Rejected")
                         .Set(s => s.RejectReason, req.Reason);
-                    await _mongoService.Stores.UpdateOneAsync(s => s.Id == req.TargetId, storeUpdate);
+                    await _mongoService.Stores.UpdateOneAsync(s => s.Id == store.Id, storeUpdate);
                     store.Status = "Rejected";
                     store.RejectReason = req.Reason;
                     if (store.Id != null) AuthController.InMemoryStores[store.Id] = store;
+                    if (!string.IsNullOrEmpty(store.StoreCode)) AuthController.InMemoryStores[store.StoreCode] = store;
 
                     var filterList = new List<FilterDefinition<User>>();
                     if (!string.IsNullOrEmpty(store.UserId) && MongoDB.Bson.ObjectId.TryParse(store.UserId, out _))
@@ -767,6 +977,12 @@ public class AdminController : ControllerBase
                         filterList.Add(Builders<User>.Filter.Eq(u => u.Phone, store.PhoneEmail.Trim()));
                     }
                     var user = filterList.Count > 0 ? await _mongoService.Users.Find(Builders<User>.Filter.Or(filterList)).FirstOrDefaultAsync() : null;
+                    if (user != null)
+                    {
+                        var userUpdate = Builders<User>.Update.Set(u => u.AccountStatus, "rejected");
+                        await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, userUpdate);
+                        user.AccountStatus = "rejected";
+                    }
                     emailToSend = (!string.IsNullOrEmpty(user?.PhoneEmail) && user.PhoneEmail.Contains("@")) 
                         ? user.PhoneEmail 
                         : ((!string.IsNullOrEmpty(store.PhoneEmail) && store.PhoneEmail.Contains("@")) ? store.PhoneEmail : "");
@@ -838,16 +1054,23 @@ public class AdminController : ControllerBase
             }
             else if (req.Type.ToLower() == "shipper")
             {
-                var shipper = await _mongoService.Shippers.Find(s => s.Id == req.TargetId).FirstOrDefaultAsync();
+                var shipperFilter = Builders<Shipper>.Filter.Or(
+                    Builders<Shipper>.Filter.Eq(s => s.Id, req.TargetId),
+                    Builders<Shipper>.Filter.Eq(s => s.ShipperCode, req.TargetId),
+                    Builders<Shipper>.Filter.Eq(s => s.UserId, req.TargetId),
+                    Builders<Shipper>.Filter.Eq(s => s.PhoneNumber, req.TargetId)
+                );
+                var shipper = await _mongoService.Shippers.Find(shipperFilter).FirstOrDefaultAsync();
                 if (shipper != null)
                 {
                     var shipperUpdate = Builders<Shipper>.Update
                         .Set(s => s.Status, "Rejected")
                         .Set(s => s.RejectReason, req.Reason);
-                    await _mongoService.Shippers.UpdateOneAsync(s => s.Id == req.TargetId, shipperUpdate);
+                    await _mongoService.Shippers.UpdateOneAsync(s => s.Id == shipper.Id, shipperUpdate);
                     shipper.Status = "Rejected";
                     shipper.RejectReason = req.Reason;
                     if (shipper.Id != null) AuthController.InMemoryShippers[shipper.Id] = shipper;
+                    if (!string.IsNullOrEmpty(shipper.ShipperCode)) AuthController.InMemoryShippers[shipper.ShipperCode] = shipper;
 
                     var filterList = new List<FilterDefinition<User>>();
                     if (!string.IsNullOrEmpty(shipper.UserId) && MongoDB.Bson.ObjectId.TryParse(shipper.UserId, out _))
@@ -870,6 +1093,12 @@ public class AdminController : ControllerBase
                         filterList.Add(Builders<User>.Filter.Eq(u => u.Phone, shipper.PhoneNumber.Trim()));
                     }
                     var user = filterList.Count > 0 ? await _mongoService.Users.Find(Builders<User>.Filter.Or(filterList)).FirstOrDefaultAsync() : null;
+                    if (user != null)
+                    {
+                        var userUpdate = Builders<User>.Update.Set(u => u.AccountStatus, "rejected");
+                        await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, userUpdate);
+                        user.AccountStatus = "rejected";
+                    }
                     emailToSend = (!string.IsNullOrEmpty(user?.PhoneEmail) && user.PhoneEmail.Contains("@")) 
                         ? user.PhoneEmail 
                         : (shipper.PhoneNumber.Contains("@") ? shipper.PhoneNumber : "");
@@ -2009,6 +2238,8 @@ public class AdminUserViewDto
     public DateTime? lockUntil { get; set; }
     public int violationCount { get; set; }
     public string createdAt { get; set; } = string.Empty;
+    public string cccdNumber { get; set; } = string.Empty;
+    public string nguyenQuan { get; set; } = string.Empty;
     public object? storeDetails { get; set; }
     public object? shipperDetails { get; set; }
 }

@@ -159,11 +159,17 @@ public class ProductsController : ControllerBase
                 existing.Category = !string.IsNullOrWhiteSpace(dto.Category) ? dto.Category : existing.Category;
                 existing.StockQuantity = dto.Stock > 0 ? dto.Stock : existing.StockQuantity;
                 if (!string.IsNullOrWhiteSpace(dto.Image)) existing.ImageUrl = dto.Image;
-                existing.AiStatus = dto.Status == "active" ? "approved" : (dto.Status ?? "pending");
+                existing.AiStatus = dto.Status == "active" ? "approved" : (dto.Status == "rejected_need_edit" ? "rejected" : (dto.Status ?? "pending"));
                 existing.StoreName = resolvedStoreName;
                 existing.SellerEmail = resolvedSellerEmail;
                 await _mongoService.Products.ReplaceOneAsync(p => p.Id == existing.Id, existing);
                 return Ok(new { success = true, message = "Đã cập nhật sản phẩm trong MongoDB", product = existing });
+            }
+
+            // Nếu sản phẩm đã bị từ chối hoặc yêu cầu sửa/gỡ bỏ, không tự ý chèn mới vào MongoDB
+            if (dto.Status == "rejected_need_edit" || dto.Status == "rejected")
+            {
+                return Ok(new { success = true, message = "Sản phẩm đã bị gỡ bỏ, không thêm mới vào MongoDB" });
             }
 
             var newProd = new Product
@@ -193,7 +199,7 @@ public class ProductsController : ControllerBase
     }
 
     /// <summary>
-    /// API Xóa sản phẩm khỏi MongoDB
+    /// API Xóa sản phẩm khỏi MongoDB (Xóa triệt để mọi bản ghi trùng lặp)
     /// </summary>
     [HttpDelete("{id}")]
     public async Task<IActionResult> DeleteProduct(string id, [FromQuery] string? name = null)
@@ -203,32 +209,15 @@ public class ProductsController : ControllerBase
             var decodedId = System.Uri.UnescapeDataString(id).Trim();
             var targetName = !string.IsNullOrWhiteSpace(name) ? System.Uri.UnescapeDataString(name).Trim() : decodedId;
 
-            FilterDefinition<Product> filter;
-            if (ObjectId.TryParse(decodedId, out _))
-            {
-                filter = Builders<Product>.Filter.Eq(p => p.Id, decodedId);
-            }
-            else
-            {
-                filter = Builders<Product>.Filter.Or(
-                    Builders<Product>.Filter.Eq(p => p.ProductName, decodedId),
-                    Builders<Product>.Filter.Eq(p => p.ProductName, targetName),
-                    Builders<Product>.Filter.Regex(p => p.ProductName, new BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(targetName)}$", "i"))
-                );
-            }
+            var filter = Builders<Product>.Filter.Or(
+                Builders<Product>.Filter.Eq(p => p.Id, decodedId),
+                Builders<Product>.Filter.Eq(p => p.ProductName, decodedId),
+                Builders<Product>.Filter.Eq(p => p.ProductName, targetName),
+                Builders<Product>.Filter.Regex(p => p.ProductName, new BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(targetName)}$", "i")),
+                Builders<Product>.Filter.Regex(p => p.ProductName, new BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(decodedId)}$", "i"))
+            );
 
-            var result = await _mongoService.Products.DeleteOneAsync(filter);
-            
-            // Nếu id là mã tạm client (p-xxxx) và chưa xóa được, dùng fallback tìm theo targetName
-            if (result.DeletedCount == 0 && !string.IsNullOrWhiteSpace(targetName) && targetName != decodedId)
-            {
-                var nameFilter = Builders<Product>.Filter.Or(
-                    Builders<Product>.Filter.Eq(p => p.ProductName, targetName),
-                    Builders<Product>.Filter.Regex(p => p.ProductName, new BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(targetName)}$", "i"))
-                );
-                result = await _mongoService.Products.DeleteOneAsync(nameFilter);
-            }
-
+            var result = await _mongoService.Products.DeleteManyAsync(filter);
             return Ok(new { success = true, deletedCount = result.DeletedCount, message = "Đã xóa sản phẩm thành công" });
         }
         catch (Exception ex)
@@ -436,6 +425,62 @@ public class ProductsController : ControllerBase
             {
                 await _mongoService.Products.InsertOneAsync(p);
             }
+        }
+    }
+
+    public class ReduceStockRequest
+    {
+        public List<ReduceStockItem> Items { get; set; } = new();
+    }
+
+    public class ReduceStockItem
+    {
+        public string? ProductId { get; set; }
+        public string? ProductName { get; set; }
+        public int Quantity { get; set; } = 1;
+    }
+
+    /// <summary>
+    /// API Giảm tồn kho sản phẩm khi khách mua hàng thành công
+    /// </summary>
+    [HttpPost("reduce-stock")]
+    public async Task<IActionResult> ReduceStock([FromBody] ReduceStockRequest req)
+    {
+        try
+        {
+            if (req?.Items == null || req.Items.Count == 0) return Ok(new { success = true });
+
+            foreach (var it in req.Items)
+            {
+                var filterBuilder = Builders<Product>.Filter;
+                var filters = new List<FilterDefinition<Product>>();
+
+                if (!string.IsNullOrWhiteSpace(it.ProductId))
+                {
+                    filters.Add(filterBuilder.Eq(p => p.Id, it.ProductId));
+                }
+
+                if (!string.IsNullOrWhiteSpace(it.ProductName))
+                {
+                    string cleanName = it.ProductName.Trim();
+                    filters.Add(filterBuilder.Regex(p => p.ProductName, new BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(cleanName)}$", "i")));
+                    filters.Add(filterBuilder.Regex(p => p.ProductName, new BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(cleanName), "i")));
+                }
+
+                if (filters.Count > 0)
+                {
+                    var filter = filterBuilder.Or(filters);
+                    int qty = it.Quantity > 0 ? it.Quantity : 1;
+                    var update = Builders<Product>.Update.Inc(p => p.StockQuantity, -qty);
+                    await _mongoService.Products.UpdateOneAsync(filter, update);
+                }
+            }
+
+            return Ok(new { success = true, message = "Đã cập nhật giảm tồn kho sản phẩm thành công" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
 }

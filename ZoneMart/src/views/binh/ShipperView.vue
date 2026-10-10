@@ -12,6 +12,7 @@
 import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
+import { useToast } from "../../composables/useToast";
 import { orderRealtimeService, type RealtimeOrder } from "../../services/orderRealtimeService";
 import FaceScanModal from "../../components/auth/FaceScanModal.vue";
 import { apiFetch } from "../../utils/apiConfig";
@@ -20,6 +21,7 @@ import "leaflet/dist/leaflet.css";
 
 const router = useRouter();
 const auth = useAuth();
+const toast = useToast();
 
 // Quản lý nổ đơn hàng mới trong bán kính 3km
 const incomingOrder = ref<RealtimeOrder | null>(null);
@@ -841,7 +843,7 @@ const handleConfirmDelivered = () => {
 const handleReportIssue = () => {
   const reason = prompt("Nhập lý do báo cáo sự cố (Khách không nhận / Shop đóng cửa):");
   if (reason) {
-    alert(`Đã ghi nhận báo cáo: "${reason}". Tổng đài CSKH 1900 6868 sẽ hỗ trợ bạn ngay.`);
+    toast.info(`Đã ghi nhận báo cáo: "${reason}". Tổng đài CSKH 1900 6868 sẽ hỗ trợ bạn ngay.`, "Báo Cáo Sự Cố");
     currentStep.value = "idle";
     renderOrderOnMap();
   }
@@ -866,7 +868,7 @@ onMounted(() => {
       .then((res) => {
         if (res.status === 404 || res.status === 401) {
           auth.logout();
-          alert("Tài khoản của bạn đã bị xóa khỏi hệ thống! Vui lòng liên hệ Ban Quản Trị.");
+          toast.error("Tài khoản của bạn đã bị xóa khỏi hệ thống! Vui lòng liên hệ Ban Quản Trị.", "Tài Khoản Không Hợp Lệ");
           router.replace("/login");
         }
       })

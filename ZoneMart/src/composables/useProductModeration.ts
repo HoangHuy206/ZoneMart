@@ -222,6 +222,27 @@ const INITIAL_PRODUCTS: ModeratedProduct[] = [
 
 const STORAGE_KEY_PRODUCTS = "zonemart_moderated_products";
 const STORAGE_KEY_PENALTIES = "zonemart_seller_penalties";
+const STORAGE_KEY_DELETED = "zonemart_deleted_products";
+
+function getDeletedProductKeys(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DELETED);
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+}
+
+function recordDeletedProduct(id: string, name?: string) {
+  try {
+    const keys = getDeletedProductKeys();
+    if (id) keys.add(id);
+    if (name) {
+      keys.add(name.toLowerCase().trim());
+      keys.add(stripAccents(name).trim());
+    }
+    localStorage.setItem(STORAGE_KEY_DELETED, JSON.stringify(Array.from(keys)));
+  } catch {}
+}
 
 function stripAccents(str: string): string {
   return (str || "")
@@ -235,57 +256,67 @@ function stripAccents(str: string): string {
 function loadProducts(): ModeratedProduct[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_PRODUCTS);
+    const deletedKeys = getDeletedProductKeys();
+
+    let items: ModeratedProduct[] = [];
     if (raw) {
-      let items: ModeratedProduct[] = JSON.parse(raw);
-      let changed = false;
-
-      // 1. Loại bỏ hoàn toàn các bài đăng chứa hàng cấm / vũ khí / bom / súng đạn (Hàng vi phạm Luồng 2 phải bị xóa)
-      const filtered = items.filter(item => {
-        const normName = stripAccents(item.name).trim();
-        const flagText = (item.aiScore?.flag || "").toLowerCase();
-
-        // Kiểm tra xem tên bài có phải hàng cấm không (bom, súng, đạn, vũ khí...)
-        const isWeaponOrBomb = normName === "bom" || 
-                               normName.includes("sung") || 
-                               normName.includes("gun") || 
-                               normName.includes("pistol") || 
-                               normName.includes("dan ") ||
-                               normName.startsWith("dan") ||
-                               normName.includes("vu khi");
-
-        // Kiểm tra xem bài đăng tên "rau" có ảnh là súng đạn (Card 1 trong ảnh người dùng)
-        const isGunImageMismatch = (normName === "rau" && item.price === 25000 && flagText.includes("thịt đỏ"));
-
-        if (isWeaponOrBomb || isGunImageMismatch) {
-          changed = true;
-          return false; // Xóa khỏi danh sách theo đúng quy định Luồng 2 (Hệ thống Xóa bài)
-        }
-        return true;
-      });
-      items = filtered;
-
-      for (const item of items) {
-        const normName = stripAccents(item.name).trim();
-        // 3. Chuẩn hóa bài đăng sss nếu còn mang tên gian hàng mặc định từ cache cũ
-        if (normName === "sss") {
-          if (item.storeName === "Vườn Rau Ba Vì - Nông Sản Sạch" || !item.storeName) {
-            item.storeName = "lọ lên đầu đạt";
-            changed = true;
-          }
-          if (item.sellerEmail === "seller@zonemart.vn" || !item.sellerEmail) {
-            item.sellerEmail = "dovanbinh487@gmail.com";
-            changed = true;
-          }
-        }
-      }
-
-      if (changed) {
-        try {
-          localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(items));
-        } catch { /* ignore */ }
-      }
-      return items;
+      items = JSON.parse(raw);
+    } else {
+      items = [...INITIAL_PRODUCTS];
     }
+    let changed = false;
+
+    // 1. Lọc bỏ hoàn toàn các sản phẩm đã bị Từ Chối / Gỡ bài / Xóa bỏ
+    items = items.filter(item => {
+      const normName = stripAccents(item.name).trim();
+      const lowerName = item.name.toLowerCase().trim();
+      if (deletedKeys.has(item.id) || deletedKeys.has(normName) || deletedKeys.has(lowerName)) {
+        changed = true;
+        return false;
+      }
+
+      const flagText = (item.aiScore?.flag || "").toLowerCase();
+
+      // Kiểm tra xem tên bài có phải hàng cấm không (bom, súng, đạn, vũ khí...)
+      const isWeaponOrBomb = normName === "bom" || 
+                             normName.includes("sung") || 
+                             normName.includes("gun") || 
+                             normName.includes("pistol") || 
+                             normName.includes("dan ") ||
+                             normName.startsWith("dan") ||
+                             normName.includes("vu khi");
+
+      // Kiểm tra xem bài đăng tên "rau" có ảnh là súng đạn (Card 1 trong ảnh người dùng)
+      const isGunImageMismatch = (normName === "rau" && item.price === 25000 && flagText.includes("thịt đỏ"));
+
+      if (isWeaponOrBomb || isGunImageMismatch) {
+        changed = true;
+        return false; // Xóa khỏi danh sách theo đúng quy định Luồng 2 (Hệ thống Xóa bài)
+      }
+      return true;
+    });
+
+    for (const item of items) {
+      const normName = stripAccents(item.name).trim();
+      // 3. Chuẩn hóa bài đăng sss nếu còn mang tên gian hàng mặc định từ cache cũ
+      if (normName === "sss") {
+        if (item.storeName === "Vườn Rau Ba Vì - Nông Sản Sạch" || !item.storeName) {
+          item.storeName = "lọ lên đầu đạt";
+          changed = true;
+        }
+        if (item.sellerEmail === "seller@zonemart.vn" || !item.sellerEmail) {
+          item.sellerEmail = "dovanbinh487@gmail.com";
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      try {
+        localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(items));
+      } catch { /* ignore */ }
+    }
+    return items;
   } catch (e) {
     console.error("Lỗi đọc sản phẩm kiểm duyệt:", e);
   }
@@ -522,6 +553,18 @@ function refreshProducts(): ModeratedProduct[] {
           data.data.forEach((bp: any) => {
             const pName = (bp.productName || bp.name || "").trim();
             if (!pName) return;
+            const normPName = stripAccents(pName).trim();
+            const lowerPName = pName.toLowerCase();
+            const deletedKeys = getDeletedProductKeys();
+            if (deletedKeys.has(bp.id) || deletedKeys.has(lowerPName) || deletedKeys.has(normPName)) {
+              const beforeLen = allProducts.value.length;
+              allProducts.value = allProducts.value.filter(ep => ep.id !== bp.id && ep.name.toLowerCase() !== lowerPName && stripAccents(ep.name).trim() !== normPName);
+              if (allProducts.value.length !== beforeLen) {
+                updated = true;
+              }
+              return;
+            }
+
             const realStoreName = bp.storeName || (bp.store && bp.store.name) || "";
             const realSellerEmail = bp.sellerEmail || "";
             const realImage = bp.imageUrl || bp.image || getCategoryFallbackImage(bp.category);
@@ -559,6 +602,9 @@ function refreshProducts(): ModeratedProduct[] {
               updated = true;
             } else {
               const existing = allProducts.value[existingIndex];
+              if (existing.status === "rejected_need_edit") {
+                return;
+              }
               let itemUpdated = false;
 
               if (bp.id && existing.id !== bp.id) {
@@ -570,8 +616,8 @@ function refreshProducts(): ModeratedProduct[] {
                 existing.isAvailable = true;
                 existing.managerNote = undefined;
                 itemUpdated = true;
-              } else if (isRejected && existing.status !== "rejected_need_edit") {
-                existing.status = "rejected_need_edit";
+              } else if (isRejected && (existing.status as any) !== "rejected_need_edit") {
+                (existing.status as any) = "rejected_need_edit";
                 existing.isAvailable = false;
                 itemUpdated = true;
               }
@@ -1138,23 +1184,90 @@ export function useProductModeration() {
     return true;
   };
 
-  const rejectProductByManager = (productId: string, reason: string) => {
-    const prod = allProducts.value.find(p => p.id === productId);
-    if (!prod) return false;
-    prod.status = "rejected_need_edit";
-    prod.isAvailable = false;
-    prod.managerNote = reason || "Ảnh chụp không khớp mô tả hoặc vi phạm quy định sàn.";
+  const rejectProductByManager = async (productId: string, reason: string) => {
+    // 1. Tìm sản phẩm mục tiêu (theo id hoặc tên)
+    const targetProd = allProducts.value.find(p => p.id === productId || p.name.toLowerCase() === productId.toLowerCase());
+    const targetName = targetProd?.name || productId;
+    const normTargetName = stripAccents(targetName).trim();
+    const lowerTargetName = targetName.toLowerCase().trim();
+    const sellerEmail = targetProd?.sellerEmail || "";
+
+    // 2. Ghi nhật ký thông báo vi phạm / gỡ bài cho seller
+    if (sellerEmail) {
+      const penalty = getSellerPenalty(sellerEmail);
+      penalty.notificationLogs.unshift({
+        id: `notif_${Date.now()}`,
+        type: "manager_reject",
+        title: `[Gỡ bỏ bài đăng] Sản phẩm: ${targetName}`,
+        message: `Quản lý đã từ chối duyệt và gỡ bỏ bài đăng sản phẩm "${targetName}". Lý do: ${reason || "Không khớp thông tin hoặc vi phạm quy định sàn."}.`,
+        date: new Date().toLocaleString("vi-VN")
+      });
+      savePenalties();
+    }
+
+    // 3. Ghi vào danh sách đen lưu vĩnh viễn trong localStorage để chống tải lại
+    recordDeletedProduct(productId, targetName);
+    if (targetProd?.id) recordDeletedProduct(targetProd.id, targetName);
+
+    // 4. Lọc bỏ TRIỆT ĐỂ toàn bộ các bản ghi trùng lặp khỏi allProducts.value (Xóa sạch cả 2 bên: duyệt admin & hồ sơ gian hàng)
+    allProducts.value = allProducts.value.filter(p => {
+      if (p.id === productId) return false;
+      if (targetProd && p.id === targetProd.id) return false;
+      if (p.name.trim().toLowerCase() === lowerTargetName) return false;
+      if (stripAccents(p.name).trim() === normTargetName) return false;
+      return true;
+    });
     saveProducts();
 
-    const penalty = getSellerPenalty(prod.sellerEmail);
-    penalty.notificationLogs.unshift({
-      id: `notif_${Date.now()}`,
-      type: "manager_reject",
-      title: `[Yêu cầu sửa lại] Sản phẩm: ${prod.name}`,
-      message: `Quản lý đã từ chối duyệt sản phẩm "${prod.name}". Lý do: ${prod.managerNote}. Vui lòng bấm 'Sửa bài' để AI quét lại.`,
-      date: new Date().toLocaleString("vi-VN")
+    // 5. Gọi API DELETE backend để xóa vĩnh viễn khỏi MongoDB (DeleteManyAsync trên server sẽ quét sạch mọi bản ghi)
+    try {
+      const encId = encodeURIComponent(productId);
+      const encName = encodeURIComponent(targetName);
+      await fetch(`/api/products/${encId}?name=${encName}`, { method: "DELETE" });
+      await fetch(`http://localhost:5000/api/products/${encId}?name=${encName}`, { method: "DELETE" }).catch(() => {});
+    } catch (err) {
+      console.warn("⚠️ Error removing rejected product from backend:", err);
+    }
+
+    // 6. Phát tín hiệu đồng bộ giữa các tab và views
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("zonemart_product_bus_event", JSON.stringify({ action: "delete", id: productId, time: Date.now() }));
+        window.dispatchEvent(new CustomEvent("zonemart:products-changed"));
+      } catch {}
+    }
+
+    return true;
+  };
+
+  const deleteProductPermanently = async (productId: string, productName?: string) => {
+    const targetName = productName || productId;
+    const normTargetName = stripAccents(targetName).trim();
+    const lowerTargetName = targetName.toLowerCase().trim();
+
+    recordDeletedProduct(productId, targetName);
+
+    allProducts.value = allProducts.value.filter(p => {
+      if (p.id === productId) return false;
+      if (p.name.trim().toLowerCase() === lowerTargetName) return false;
+      if (stripAccents(p.name).trim() === normTargetName) return false;
+      return true;
     });
-    savePenalties();
+    saveProducts();
+
+    try {
+      const encId = encodeURIComponent(productId);
+      const encName = encodeURIComponent(targetName);
+      await fetch(`/api/products/${encId}?name=${encName}`, { method: "DELETE" });
+      await fetch(`http://localhost:5000/api/products/${encId}?name=${encName}`, { method: "DELETE" }).catch(() => {});
+    } catch {}
+
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("zonemart_product_bus_event", JSON.stringify({ action: "delete", id: productId, time: Date.now() }));
+        window.dispatchEvent(new CustomEvent("zonemart:products-changed"));
+      } catch {}
+    }
     return true;
   };
 
@@ -1182,6 +1295,50 @@ export function useProductModeration() {
     allProducts.value.filter(p => p.status === "rejected_need_edit")
   );
 
+  const reduceStockForPurchasedItems = (items: Array<{ id?: string; productId?: string; name?: string; quantity?: number; qty?: number }>) => {
+    if (!items || !items.length) return;
+    let hasChanges = false;
+
+    items.forEach((item) => {
+      const qty = (item.quantity && item.quantity > 0) ? item.quantity : ((item.qty && item.qty > 0) ? item.qty : 1);
+      const targetId = item.id || item.productId;
+      const targetName = (item.name || "").toLowerCase().trim();
+
+      // Tìm sản phẩm khớp theo ID hoặc Tên sản phẩm
+      const prod = allProducts.value.find((p) => {
+        if (targetId && (p.id === targetId || (p as any).productId === targetId)) return true;
+        const pName = (p.name || "").toLowerCase().trim();
+        return pName === targetName || (targetName && (pName.includes(targetName) || targetName.includes(pName)));
+      });
+
+      if (prod) {
+        const curStock = typeof prod.stock === "number" ? prod.stock : 30;
+        prod.stock = Math.max(0, curStock - qty);
+        hasChanges = true;
+      }
+    });
+
+    if (hasChanges) {
+      allProducts.value = [...allProducts.value];
+      saveProducts();
+
+      // Đồng bộ giảm tồn kho vào CSDL MongoDB Backend
+      try {
+        fetch("/api/products/reduce-stock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: items.map(i => ({
+              productId: i.id || i.productId || "",
+              productName: i.name || "",
+              quantity: (i.quantity && i.quantity > 0) ? i.quantity : ((i.qty && i.qty > 0) ? i.qty : 1)
+            }))
+          })
+        }).catch(() => {});
+      } catch {}
+    }
+  };
+
   return {
     allProducts,
     activeProducts,
@@ -1194,10 +1351,12 @@ export function useProductModeration() {
     updateAndRescanProduct,
     approveProductByManager,
     rejectProductByManager,
+    deleteProductPermanently,
     resetSellerPenalties,
     handleSellerViolation,
     sendViolationEmail,
     syncProductToBackend,
+    reduceStockForPurchasedItems,
     saveProducts,
     refreshProducts,
     compressImage

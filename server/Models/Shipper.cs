@@ -31,6 +31,9 @@ public class Shipper
     [BsonElement("cccd_number")]
     public string CccdNumber { get; set; } = string.Empty;   // Số CCCD
 
+    [BsonElement("nguyen_quan")]
+    public string NguyenQuan { get; set; } = string.Empty;   // Nguyên quán (lấy từ CCCD)
+
     [BsonElement("cccd_front_image")]
     public string CccdFrontImage { get; set; } = string.Empty;
 

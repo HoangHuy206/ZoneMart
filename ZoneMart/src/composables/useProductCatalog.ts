@@ -71,6 +71,8 @@ export interface CatalogProduct {
     id: string;
     name: string;
     address: string;
+    lat?: number;
+    lng?: number;
     distanceKm: number;
     deliveryTime: string;
     rating: number;
@@ -1922,10 +1924,12 @@ export function useProductCatalog() {
       else if (p.category === "Món ăn nóng") cat = "fastfood";
       else cat = "household";
 
-      const cleanEmail = (p.sellerEmail || "").toLowerCase().trim();
+      let cleanEmail = (p.sellerEmail || "").toLowerCase().trim();
       let storeAddr = "36 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy, Hà Nội";
       let storeHours = "06:00 - 20:30";
       let storeAvatar = "https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80";
+      let storeLat = 21.0345;
+      let storeLng = 105.7960;
 
       if (cleanEmail && typeof localStorage !== "undefined") {
         try {
@@ -1934,6 +1938,8 @@ export function useProductCatalog() {
             const parsed = JSON.parse(rawStore);
             if (parsed.address) storeAddr = parsed.address;
             if (parsed.openHours) storeHours = parsed.openHours;
+            if (parsed.lat) storeLat = parsed.lat;
+            if (parsed.lng) storeLng = parsed.lng;
           }
         } catch {}
       }
@@ -1944,6 +1950,13 @@ export function useProductCatalog() {
       if (dbStore) {
         if (dbStore.address) storeAddr = dbStore.address;
         if (dbStore.openHours) storeHours = dbStore.openHours;
+        if (dbStore.location?.coordinates && dbStore.location.coordinates.length >= 2) {
+          storeLng = dbStore.location.coordinates[0];
+          storeLat = dbStore.location.coordinates[1];
+        } else if (dbStore.lat && dbStore.lng) {
+          storeLat = dbStore.lat;
+          storeLng = dbStore.lng;
+        }
       }
 
       const resolvedStoreName = p.storeName || dbStore?.storeName || "Gian Hàng ZoneMart";
@@ -1962,6 +1975,8 @@ export function useProductCatalog() {
           id: dbStore?.id || ("store_" + (resolvedStoreName).toLowerCase().replace(/[^a-z0-9]/g, "_")),
           name: resolvedStoreName,
           address: storeAddr,
+          lat: storeLat,
+          lng: storeLng,
           distanceKm: 0.8,
           deliveryTime: "12 - 18 phút",
           rating: 5.0,

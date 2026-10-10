@@ -123,6 +123,20 @@ function resolveSepayApiKey(): string {
   return ''
 }
 
+
+function resolvePaymentSecret(): string {
+  if (process.env.ZONEMART_PAYMENT_SECRET) return process.env.ZONEMART_PAYMENT_SECRET.trim()
+  try {
+    const envFile = path.resolve(__dirname, '.env')
+    if (fs.existsSync(envFile)) {
+      const content = fs.readFileSync(envFile, 'utf8')
+      const match = content.match(/ZONEMART_PAYMENT_SECRET\s*=\s*([^\r\n]+)/i)
+      if (match) return match[1].trim().replace(/^[\"\']|[\"\']$/g, '')
+    }
+  } catch (e) {}
+  return 'ZM_SEC_99887766554433221100_BANKING_PRO'
+}
+
 function resolveCassoApiKey(): string {
   if (process.env.CASSO_API_KEY) return process.env.CASSO_API_KEY.trim()
   try {
@@ -1106,6 +1120,34 @@ function vietQrPaymentPlugin(): Plugin {
 
               console.log(`>>> [INCOMING POST ${pathname}]:`, JSON.stringify(body))
 
+              // ========================================================
+              // BẢO MẬT WEBHOOK: KIỂM TRA TOKEN / API KEY / SECRET
+              // ========================================================
+              const expectedSecret = resolvePaymentSecret()
+              const authHeader = (req.headers['authorization'] || '').toString().trim()
+              const apiKeyHeader = (req.headers['x-api-key'] || req.headers['x-secret-key'] || '').toString().trim()
+              const tokenParam = (url.searchParams.get('token') || url.searchParams.get('apiKey') || '').trim()
+
+              // Cho phép nếu có Bearer token hợp lệ, hoặc X-Api-Key hợp lệ, hoặc query token hợp lệ
+              const providedKey = authHeader.replace(/^Bearer\s+/i, '').trim() || apiKeyHeader || tokenParam
+
+              // Trong môi trường Local, nếu là webhook tiền vào, yêu cầu xác thực secret
+              const isWebhook = pathname.includes('/webhook') || pathname.includes('/callback') || pathname.includes('/transaction-sync')
+              if (isWebhook && expectedSecret) {
+                if (!providedKey || (providedKey !== expectedSecret && providedKey !== resolveSepayApiKey())) {
+                  console.warn(`>>> [❌ BẢO MẬT CHẶN TRUY CẬP TRÁI PHÉP] Webhook từ chối IP/Client thiếu Secret Key hợp lệ!`)
+                  res.setHeader('Content-Type', 'application/json')
+                  res.statusCode = 401
+                  res.end(JSON.stringify({
+                    error: true,
+                    status: 401,
+                    errorReason: 'UNAUTHORIZED_ACCESS',
+                    toastMessage: 'Bạn đã bị từ chối'
+                  }))
+                  return
+                }
+              }
+
               // KIỂM TRA XEM ĐÂY CÓ PHẢI LÀ GIAO DỊCH TIỀN VÀO (TRANSACTION WEBHOOK) KHÔNG
               const hasTransactionData =
                 body.amount != null ||
@@ -1177,6 +1219,20 @@ function vietQrPaymentPlugin(): Plugin {
                 )
 
                 if (matchedCode) {
+                  // CHỐNG REPLAY ATTACK: Nếu đơn này đã thanh toán rồi, báo đã xử lý để tránh spam/duplicate
+                  if (paidOrdersCache.has(matchedCode)) {
+                    console.log(`>>> [ĐƠN ĐÃ ĐƯỢC XỬ LÝ TRƯỚC ĐÓ - CHỐNG DUPLICATE]: ${matchedCode}`)
+                    res.setHeader('Content-Type', 'application/json')
+                    res.statusCode = 200
+                    res.end(JSON.stringify({
+                      error: false,
+                      isDuplicate: true,
+                      toastMessage: 'Đơn hàng đã được ghi nhận thanh toán trước đó',
+                      orderCode: matchedCode
+                    }))
+                    return
+                  }
+
                   const txInfo: PaidTransaction = {
                     code: matchedCode,
                     amount,

@@ -28,6 +28,18 @@ public class Store
     [BsonElement("address")]
     public string Address { get; set; } = string.Empty; // Địa chỉ cửa hàng
 
+    [BsonElement("seller_type")]
+    public string SellerType { get; set; } = "traditional_market"; // traditional_market, home_business, store_facility, other_local_seller
+
+    [BsonElement("ward")]
+    public string Ward { get; set; } = string.Empty; // Xã / Phường (Không gian thương mại số cấp xã/phường)
+
+    [BsonElement("district")]
+    public string District { get; set; } = string.Empty; // Quận / Huyện
+
+    [BsonElement("market_name")]
+    public string MarketName { get; set; } = string.Empty; // Tên Chợ truyền thống hoặc Cụm chợ số địa phương
+
     [BsonElement("open_hours")]
     public string OpenHours { get; set; } = "07:00 - 22:00"; // Khung giờ mở cửa (vd: 7h đến 22h)
 
@@ -43,6 +55,9 @@ public class Store
     [BsonElement("cccd_number")]
     public string CccdNumber { get; set; } = string.Empty; // Số CCCD
 
+    [BsonElement("nguyen_quan")]
+    public string NguyenQuan { get; set; } = string.Empty; // Nguyên quán (lấy từ CCCD)
+
     [BsonElement("cccd_front_image")]
     public string CccdFrontImage { get; set; } = string.Empty; // Link / data ảnh CCCD mặt trước
 
@@ -57,6 +72,15 @@ public class Store
 
     [BsonElement("bank_account_number")]
     public string BankAccountNumber { get; set; } = string.Empty; // Số tài khoản nhận tiền
+
+    [BsonElement("registration_fee")]
+    public decimal RegistrationFee { get; set; } = 0; // Phí đăng ký gian hàng (VNĐ)
+
+    [BsonElement("fee_payment_status")]
+    public string FeePaymentStatus { get; set; } = "waived"; // waived (Miễn phí chuyển đổi số), paid, unpaid
+
+    [BsonElement("fee_payment_note")]
+    public string FeePaymentNote { get; set; } = "Được miễn phí theo Chương trình Chuyển đổi số Chợ địa phương";
 
     [BsonElement("status")]
     public string Status { get; set; } = "Pending"; // Pending, Active, Rejected

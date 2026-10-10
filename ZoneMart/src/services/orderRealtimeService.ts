@@ -171,7 +171,7 @@ class OrderRealtimeService {
   /**
    * Xử lý gói tin nhận được từ các tab/cửa sổ khác hoặc Server SSE
    */
-  private handleIncomingMessage(data: any, fromServer = false) {
+  private handleIncomingMessage(data: any, _fromServer = false) {
     if (!data || !data.type) return;
 
     if (data.type === "ORDERS_CLEARED") {
@@ -414,6 +414,31 @@ class OrderRealtimeService {
 
     order.status = "confirmed";
     order.statusText = "Đã xác nhận • Đang tìm tài xế";
+
+    // Tự động đồng bộ vị trí & tọa độ thực tế của Gian Hàng nếu có
+    try {
+      if (typeof localStorage !== "undefined") {
+        const currentUserStr = localStorage.getItem("currentUser");
+        if (currentUserStr) {
+          const u = JSON.parse(currentUserStr);
+          const emailKey = (u.phoneEmail || u.email || "").toLowerCase().trim();
+          if (emailKey) {
+            const storeStr = localStorage.getItem(`zonemart_seller_store_${emailKey}`);
+            if (storeStr) {
+              const s = JSON.parse(storeStr);
+              if (s.lat && s.lng) {
+                order.store.lat = s.lat;
+                order.store.lng = s.lng;
+                if (s.name) order.store.name = s.name;
+                if (s.address) order.store.address = s.address;
+                if (s.phone) order.store.phone = s.phone;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
     this.cachedOrdersMap.set(orderId, order);
     this.saveActiveOrder(order);
     this.updateUserOrdersHistory(order);

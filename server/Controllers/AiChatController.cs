@@ -6113,7 +6113,7 @@ Bạn muốn mình hỗ trợ việc gì ngay bây giờ ạ? 😊";
             {
                 return @"🛵 **CHÍNH SÁCH VẬN CHUYỂN HỎA TỐC ZONEMART:**
 
-- 📍 **Bán kính phục vụ:** Tối đa **10km** tính từ cửa hàng đối tác đến vị trí của bạn để đảm bảo đồ ăn luôn nóng hổi và thực phẩm tươi ngon.
+- 📍 **Bán kính phục vụ:** Tối đa **3km** tính từ cửa hàng đối tác đến vị trí của bạn để đảm bảo đồ ăn luôn nóng hổi và thực phẩm tươi ngon.
 - ⚡ **Thời gian giao:** Siêu tốc chỉ từ **15 - 30 phút** bởi đội ngũ tài xế Zone Shipper.
 - 💰 **Cước phí:** Đồng giá ưu đãi từ **15.000đ - 22.500đ** cho các đơn hàng trong bán kính 3-5km.
 

@@ -57,6 +57,9 @@ public class User
     [BsonElement("account_status")]
     public string AccountStatus { get; set; } = "active"; // active, locked_10_days, banned
 
+    [BsonElement("cccd_number")]
+    public string? CccdNumber { get; set; }
+
     [BsonElement("lock_until")]
     public DateTime? LockUntil { get; set; }
 

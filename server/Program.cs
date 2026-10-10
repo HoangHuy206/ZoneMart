@@ -22,6 +22,9 @@ builder.Services.Configure<GeminiSettings>(
 builder.Services.Configure<KiraSettings>(
     builder.Configuration.GetSection("KiraSettings")
 );
+builder.Services.Configure<FptAiSettings>(
+    builder.Configuration.GetSection("FptAiSettings")
+);
 
 // 3. Đăng ký Services & HttpClient
 builder.Services.AddHttpClient();
@@ -33,6 +36,10 @@ builder.Services.AddHttpClient("KiraClient", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
 });
+builder.Services.AddHttpClient("FptAiClient", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(35);
+});
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ITelegramService, TelegramService>();
 builder.Services.AddScoped<IProductModerationService, ProductModerationService>();
@@ -43,7 +50,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowVueClient", policy =>
     {
-        policy.SetIsOriginAllowed(origin => true)
+        policy.WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();

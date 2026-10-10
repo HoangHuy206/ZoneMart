@@ -10,6 +10,7 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
 import { useAuth } from '../../composables/useAuth';
+import { useToast } from '../../composables/useToast';
 import {
   cartService,
   type SuggestedProductItem,
@@ -17,6 +18,7 @@ import {
 
 const router = useRouter();
 const cart = useCart();
+const toast = useToast();
 const auth = useAuth();
 
 // Danh sách sản phẩm gợi ý mua kèm (Cross-sell) nạp trực tiếp từ Database MongoDB
@@ -96,7 +98,7 @@ const handleAddSuggested = (prod: any) => {
 // Chuyển sang trang thanh toán
 const handleProceedToCheckout = () => {
   if (cart.selectedItemsCount.value === 0) {
-    alert('Vui lòng chọn ít nhất 1 sản phẩm để tiến hành thanh toán!');
+    toast.warning('Vui lòng chọn ít nhất 1 sản phẩm để tiến hành thanh toán!', 'Chưa Chọn Món');
     return;
   }
   router.push('/checkout');

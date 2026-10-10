@@ -26,6 +26,9 @@ public class Product
     [BsonElement("category")]
     public string Category { get; set; } = "Thực phẩm & Tiêu dùng";
 
+    [BsonElement("item_type")]
+    public string ItemType { get; set; } = "product"; // product (Sản phẩm), service (Dịch vụ)
+
     [BsonElement("description")]
     public string Description { get; set; } = string.Empty;
 
@@ -49,6 +52,18 @@ public class Product
 
     [BsonElement("stock_status")]
     public string StockStatus { get; set; } = "in_stock"; // in_stock, out_of_stock
+
+    [BsonElement("batch_number")]
+    public string BatchNumber { get; set; } = "LOT-HN-" + DateTime.UtcNow.ToString("yyyyMM") + "-01"; // Mã số Lô hàng
+
+    [BsonElement("supplier_name")]
+    public string SupplierName { get; set; } = "Hợp tác xã Nông nghiệp Sạch địa phương"; // Tên Nguồn cung cấp / Cơ sở cung ứng
+
+    [BsonElement("production_date")]
+    public DateTime? ProductionDate { get; set; } = DateTime.UtcNow.AddDays(-2); // Ngày sản xuất / thu hoạch
+
+    [BsonElement("expiry_date")]
+    public DateTime? ExpiryDate { get; set; } = DateTime.UtcNow.AddDays(10); // Hạn sử dụng
 
     [BsonElement("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

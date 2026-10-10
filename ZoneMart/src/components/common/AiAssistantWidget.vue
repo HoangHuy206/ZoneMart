@@ -3,11 +3,13 @@ import { ref, reactive, computed, nextTick, watch, onMounted, onUnmounted } from
 import { useRouter } from 'vue-router';
 import { useAuth } from '../../composables/useAuth';
 import { useCart } from '../../composables/useCart';
+import { useToast } from '../../composables/useToast';
 import { orderRealtimeService } from '../../services/orderRealtimeService';
 
 const router = useRouter();
 const auth = useAuth();
 const cart = useCart();
+const toast = useToast();
 
 const isOpen = ref(false);
 const userMessage = ref('');
@@ -47,7 +49,7 @@ function toggleVoiceRecording() {
 function startVoiceRecording() {
   const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
   if (!SpeechRecognition) {
-    alert("Trình duyệt hiện tại chưa hỗ trợ nhận diện giọng nói Web Speech. Bạn vui lòng sử dụng Google Chrome, Microsoft Edge hoặc Cốc Cốc để thu âm nhé!");
+    toast.warning("Trình duyệt hiện tại chưa hỗ trợ nhận diện giọng nói Web Speech. Bạn vui lòng sử dụng Google Chrome, Microsoft Edge hoặc Cốc Cốc để thu âm nhé!", "Trình Duyệt Không Hỗ Trợ");
     return;
   }
 

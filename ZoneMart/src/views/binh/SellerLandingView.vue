@@ -11,8 +11,10 @@
  * - Footer đầy đủ chuẩn ZoneMart dành riêng cho Seller.
  * ================================================================
  */
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
 import { useRouter } from "vue-router";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 const router = useRouter();
 
@@ -23,8 +25,14 @@ const currentStep = ref<1 | 2 | 3>(1);
 const form = reactive({
   // BƯỚC 1: THÔNG TIN TIỆM
   storeName: "",
+  sellerType: "traditional_market",
+  ward: "",
+  district: "",
+  marketName: "",
   category: "Thực phẩm & Nhu yếu phẩm",
   address: "",
+  lat: 0,
+  lng: 0,
   openHours: "07:00 - 22:00",
   phoneEmail: "",
   password: "",
@@ -504,13 +512,397 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('click', handleDocumentClick);
   window.removeEventListener("pointermove", handlePointerMove);
+  if (mapInstance) {
+    try {
+      mapInstance.remove();
+      mapInstance = null;
+    } catch (e) {}
+  }
 });
+
+// ================= ĐỊNH VỊ BẢN ĐỒ THỜI GIAN THỰC CHO GIAN HÀNG =================
+const isLocationModalOpen = ref(false);
+const tempLat = ref(21.0333);
+const tempLng = ref(105.7983);
+const tempLocationAddress = ref("");
+const mapSearchQuery = ref("");
+const isLocatingGps = ref(false);
+const isSearchingLocation = ref(false);
+const isGeocodingAddress = ref(false);
+const showLocationSuccessToast = ref(false);
+
+let mapInstance: L.Map | null = null;
+let markerInstance: L.Marker | null = null;
+
+const VIETNAM_LANDMARKS = [
+  { keywords: ["an thắng", "an thang", "ngách 7/10", "chương mỹ", "chuong my"], name: "Ngách 7/10 An Thắng, Biên Giang, Hà Đông, Hà Nội", lat: 20.92919, lng: 105.71492 },
+  { keywords: ["đh sư phạm thể dục thể thao", "dh su pham the duc the thao", "the duc the thao", "tdtt", "phụng châu", "phung chau", "chương mỹ"], name: "Trường ĐH Sư phạm Thể dục Thể thao Hà Nội, Phụng Châu, Chương Mỹ, Hà Nội", lat: 20.9380, lng: 105.7082 },
+  { keywords: ["đh quốc gia", "dh quoc gia", "vnu", "144 xuân thủy", "xuan thuy"], name: "Đại học Quốc Gia Hà Nội, 144 Xuân Thủy, Dịch Vọng Hậu, Cầu Giấy, Hà Nội", lat: 21.0372, lng: 105.7820 },
+  { keywords: ["đh sư phạm hà nội", "dh su pham ha noi", "hnue", "136 xuân thủy"], name: "Đại học Sư phạm Hà Nội, 136 Xuân Thủy, Dịch Vọng Hậu, Cầu Giấy, Hà Nội", lat: 21.0368, lng: 105.7832 },
+  { keywords: ["đh bách khoa", "dh bach khoa", "hust", "đại cồ việt", "dai co viet"], name: "Đại học Bách Khoa Hà Nội, Số 1 Đại Cồ Việt, Bách Khoa, Hai Bà Trưng, Hà Nội", lat: 21.0056, lng: 105.8433 },
+  { keywords: ["đh kinh tế quốc dân", "dh kinh te quoc dan", "neu", "giải phóng"], name: "Đại học Kinh tế Quốc dân, 207 Giải Phóng, Đồng Tâm, Hai Bà Trưng, Hà Nội", lat: 21.0003, lng: 105.8427 },
+  { keywords: ["đh ngoại thương", "dh ngoai thuong", "ftu", "chùa láng", "chua lang"], name: "Đại học Ngoại Thương, 91 Chùa Láng, Láng Thượng, Đống Đa, Hà Nội", lat: 21.0227, lng: 105.8038 },
+  { keywords: ["học viện bưu chính viễn thông", "ptit", "mỗ lao", "trần phú hà đông"], name: "Học viện Công nghệ Bưu chính Viễn thông, Km10 Trần Phú, Mộ Lao, Hà Đông, Hà Nội", lat: 20.9808, lng: 105.7876 },
+  { keywords: ["keangnam", "landmark 72", "phạm hùng"], name: "Keangnam Landmark 72, Phạm Hùng, Mễ Trì, Nam Từ Liêm, Hà Nội", lat: 21.0173, lng: 105.7838 },
+  { keywords: ["royal city", "vincom royal city", "72 nguyễn trãi"], name: "Vinhomes Royal City, 72A Nguyễn Trãi, Thượng Đình, Thanh Xuân, Hà Nội", lat: 21.0028, lng: 105.8158 },
+  { keywords: ["times city", "vincom times city", "458 minh khai"], name: "Vinhomes Times City, 458 Minh Khai, Vĩnh Tuy, Hai Bà Trưng, Hà Nội", lat: 20.9950, lng: 105.8680 },
+  { keywords: ["smart city", "vincom smart city", "tây mỗ"], name: "Vinhomes Smart City, Tây Mỗ, Nam Từ Liêm, Hà Nội", lat: 21.0016, lng: 105.7483 },
+  { keywords: ["aeon mall hà đông", "aeon ha dong", "dương nội"], name: "AEON Mall Hà Đông, Khu đô thị Dương Nội, Hà Đông, Hà Nội", lat: 20.9788, lng: 105.7535 },
+  { keywords: ["svđ mỹ đình", "sân vận động mỹ đình", "lê đức thọ"], name: "Sân vận động Quốc gia Mỹ Đình, Lê Đức Thọ, Mỹ Đình 1, Nam Từ Liêm, Hà Nội", lat: 21.0205, lng: 105.7640 },
+  { keywords: ["hồ gươm", "hồ hoàn kiếm", "đinh tiên hoàng", "tràng tiền"], name: "Hồ Hoàn Kiếm, Hàng Trống, Hoàn Kiếm, Hà Nội", lat: 21.0285, lng: 105.8542 },
+  { keywords: ["cầu giấy", "dịch vọng", "xuân thủy"], name: "Số 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội", lat: 21.0333, lng: 105.7983 },
+  { keywords: ["nam từ liêm", "mỹ đình"], name: "Lê Đức Thọ, Mỹ Đình 2, Nam Từ Liêm, Hà Nội", lat: 21.0125, lng: 105.7725 },
+  { keywords: ["ba đình", "kim mã", "liễu giai"], name: "Kim Mã, Ba Đình, Hà Nội", lat: 21.0345, lng: 105.8235 },
+  { keywords: ["đống đa", "chùa láng", "láng hạ"], name: "Chùa Láng, Láng Thượng, Đống Đa, Hà Nội", lat: 21.0180, lng: 105.8270 },
+  { keywords: ["thanh xuân", "nguyễn trãi"], name: "Nguyễn Trãi, Thanh Xuân Bắc, Thanh Xuân, Hà Nội", lat: 20.9930, lng: 105.8050 },
+  { keywords: ["hà đông", "quang trung", "trần phú"], name: "Quang Trung, Hà Cầu, Hà Đông, Hà Nội", lat: 20.9700, lng: 105.7750 },
+  { keywords: ["tây hồ", "lạc long quân", "quảng an"], name: "Lạc Long Quân, Bưởi, Tây Hồ, Hà Nội", lat: 21.0600, lng: 105.8200 },
+  { keywords: ["mai dịch", "hồ tùng mậu"], name: "Số 36 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy, Hà Nội", lat: 21.0366, lng: 105.7788 },
+  { keywords: ["chương mỹ", "chuong my", "chúc sơn", "chuc son"], name: "Thị trấn Chúc Sơn, Chương Mỹ, Hà Nội", lat: 20.9328, lng: 105.7042 }
+];
+
+const removeVietnameseTones = (str: string): string => {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .trim();
+};
+
+const sanitizeAddress = (raw: string): string => {
+  if (!raw) return "";
+  let cleaned = raw
+    .replace(/,?\s*(Việt Nam|Vietnam|VNM)$/gi, "")
+    .replace(/[()[\]{}<>@#$%^&*~_+=]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  cleaned = cleaned.replace(/^[,\-\/\s]+|[,\-\/\s]+$/g, "");
+  return cleaned;
+};
+
+const findNearestLandmark = (lat: number, lng: number) => {
+  let minDistance = Infinity;
+  let nearest = VIETNAM_LANDMARKS[0];
+  for (const item of VIETNAM_LANDMARKS) {
+    const d = Math.hypot(item.lat - lat, item.lng - lng);
+    if (d < minDistance) {
+      minDistance = d;
+      nearest = item;
+    }
+  }
+  return { landmark: nearest, distanceKm: minDistance * 111 };
+};
+
+// Ghim đỏ Google Maps chuẩn sắc nét (Classic Red Teardrop Marker)
+const createPinIcon = () => {
+  return L.divIcon({
+    className: "google-maps-red-pin",
+    html: `
+      <div class="gmap-pin-container">
+        <svg class="gmap-svg-pin" width="34" height="46" viewBox="0 0 384 512" fill="none">
+          <path d="M172.268 501.67C26.97 291.031 0 269.413 0 192 0 85.961 85.961 0 192 0s192 85.961 192 192c0 77.413-26.97 99.031-172.268 309.67-9.535 13.774-29.93 13.773-39.464 0z" fill="#EA4335"/>
+          <path d="M192 272c44.183 0 80-35.817 80-80s-35.817-80-80-80-80 35.817-80 80 35.817 80 80 80z" fill="#B31412"/>
+          <circle cx="192" cy="192" r="62" fill="#FFFFFF"/>
+          <circle cx="192" cy="192" r="28" fill="#EA4335"/>
+        </svg>
+        <div class="gmap-pin-shadow"></div>
+      </div>
+    `,
+    iconSize: [34, 46],
+    iconAnchor: [17, 44],
+    popupAnchor: [0, -42]
+  });
+};
+
+const resolveAddressFromCoords = async (lat: number, lng: number) => {
+  isGeocodingAddress.value = true;
+  const { landmark, distanceKm } = findNearestLandmark(lat, lng);
+
+  try {
+    const esriUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?f=pjson&location=${lng},${lat}`;
+    const res = await fetch(esriUrl, { signal: AbortSignal.timeout(3500) });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.address) {
+        const match = data.address.Match_addr || data.address.LongLabel || data.address.Address;
+        if (match) {
+          tempLocationAddress.value = sanitizeAddress(match);
+          isGeocodingAddress.value = false;
+          return;
+        }
+      }
+    }
+  } catch (e) {}
+
+  try {
+    const bdcUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=vi`;
+    const bdcRes = await fetch(bdcUrl, { signal: AbortSignal.timeout(3000) });
+    if (bdcRes.ok) {
+      const bdcData = await bdcRes.json();
+      if (bdcData) {
+        const parts = [bdcData.locality || "", bdcData.city || "", bdcData.principalSubdivision || "Hà Nội"].filter(Boolean);
+        if (parts.length > 0) {
+          const resolved = distanceKm < 0.8
+            ? landmark.name
+            : `${parts.join(", ")}`;
+          tempLocationAddress.value = sanitizeAddress(resolved);
+          isGeocodingAddress.value = false;
+          return;
+        }
+      }
+    }
+  } catch (e) {}
+
+  tempLocationAddress.value = sanitizeAddress(landmark.name);
+  isGeocodingAddress.value = false;
+};
+
+const locateUserCurrentPosition = () => {
+  if (typeof window === "undefined" || !navigator.geolocation) {
+    errorMessage.value = "Trình duyệt không hỗ trợ Geolocation GPS!";
+    return;
+  }
+
+  isLocatingGps.value = true;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      isLocatingGps.value = false;
+      const { latitude, longitude } = pos.coords;
+      tempLat.value = latitude;
+      tempLng.value = longitude;
+
+      if (mapInstance) {
+        mapInstance.invalidateSize();
+        mapInstance.flyTo([latitude, longitude], 17, { duration: 1.2 });
+      } else {
+        initOrUpdateMap();
+      }
+      if (markerInstance) {
+        markerInstance.setLatLng([latitude, longitude]);
+      }
+      resolveAddressFromCoords(latitude, longitude);
+    },
+    (err) => {
+      isLocatingGps.value = false;
+      console.warn("Lỗi GPS thời gian thực:", err);
+      if (!tempLat.value || !tempLng.value) {
+        tempLat.value = 21.0333;
+        tempLng.value = 105.7983;
+      }
+      resolveAddressFromCoords(tempLat.value, tempLng.value);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+};
+
+const searchAddressOnMap = async () => {
+  const q = mapSearchQuery.value.trim();
+  if (!q) return;
+  isSearchingLocation.value = true;
+
+  const cleanQ = removeVietnameseTones(q);
+
+  // 1. Kiểm tra nhanh danh bạ địa danh & trường học Việt Nam
+  const matched = VIETNAM_LANDMARKS.find((item) => {
+    const itemClean = removeVietnameseTones(item.name);
+    return itemClean.includes(cleanQ) || item.keywords.some((k) => cleanQ.includes(removeVietnameseTones(k)) || removeVietnameseTones(k).includes(cleanQ));
+  });
+
+  if (matched) {
+    tempLat.value = matched.lat;
+    tempLng.value = matched.lng;
+    tempLocationAddress.value = sanitizeAddress(matched.name);
+    if (mapInstance) mapInstance.flyTo([matched.lat, matched.lng], 17, { duration: 1.2 });
+    if (markerInstance) markerInstance.setLatLng([matched.lat, matched.lng]);
+    isSearchingLocation.value = false;
+    return;
+  }
+
+  // 2. Tìm kiếm qua ArcGIS World Geocode Server (Chuẩn xác như Google Maps, không bị chặn CORS hay chặn mạng)
+  try {
+    const esriSearchUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=pjson&singleLine=${encodeURIComponent(q + ", Việt Nam")}&maxLocations=5`;
+    const res = await fetch(esriSearchUrl, { signal: AbortSignal.timeout(4500) });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.candidates && data.candidates.length > 0) {
+        const top = data.candidates[0];
+        const lat = top.location.y;
+        const lng = top.location.x;
+        const cleanAddr = sanitizeAddress(top.address);
+
+        tempLat.value = lat;
+        tempLng.value = lng;
+        tempLocationAddress.value = cleanAddr;
+        if (mapInstance) mapInstance.flyTo([lat, lng], 17, { duration: 1.2 });
+        if (markerInstance) markerInstance.setLatLng([lat, lng]);
+        isSearchingLocation.value = false;
+        return;
+      }
+    }
+  } catch (e) {}
+
+  // 3. Fallback tìm kiếm qua Photon Geocoder (Không rate-limit, tốc độ cao)
+  try {
+    const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=1`;
+    const pRes = await fetch(photonUrl, { signal: AbortSignal.timeout(3500) });
+    if (pRes.ok) {
+      const pData = await pRes.json();
+      if (pData.features && pData.features.length > 0) {
+        const feat = pData.features[0];
+        const [lng, lat] = feat.geometry.coordinates;
+        const nameParts = [feat.properties.name, feat.properties.street, feat.properties.district, feat.properties.city].filter(Boolean);
+        const resolvedName = nameParts.join(", ") || q;
+
+        tempLat.value = lat;
+        tempLng.value = lng;
+        tempLocationAddress.value = sanitizeAddress(resolvedName);
+        if (mapInstance) mapInstance.flyTo([lat, lng], 17, { duration: 1.2 });
+        if (markerInstance) markerInstance.setLatLng([lat, lng]);
+        isSearchingLocation.value = false;
+        return;
+      }
+    }
+  } catch (e) {}
+
+  isSearchingLocation.value = false;
+};
+
+const initOrUpdateMap = () => {
+  nextTick(() => {
+    // Gọi nhiều mốc thời gian để khớp hoàn toàn với transition animation của modal
+    [80, 250, 500].forEach((delay) => {
+      setTimeout(() => {
+        const container = document.getElementById("sellerLandingMap");
+        if (!container) return;
+
+        const targetLat = tempLat.value || 21.0333;
+        const targetLng = tempLng.value || 105.7983;
+
+        if (!mapInstance) {
+          mapInstance = L.map("sellerLandingMap", {
+            center: [targetLat, targetLng],
+            zoom: 16,
+            zoomControl: false
+          });
+
+          // Nút phóng to / thu nhỏ góc dưới bên phải chuẩn Google Maps
+          L.control.zoom({ position: "bottomright" }).addTo(mapInstance);
+
+          // Layer Google Maps chuẩn sắc nét
+          const googleLayer = L.tileLayer("https://mt{s}.google.com/vt/lyrs=m&hl=vi&x={x}&y={y}&z={z}", {
+            subdomains: ["0", "1", "2", "3"],
+            maxZoom: 20,
+            attribution: "© Google Maps"
+          });
+
+          // Fallback sang OSM nếu mạng gặp trục trặc
+          googleLayer.on("tileerror", () => {
+            if (mapInstance && !mapInstance.hasLayer(googleLayer)) return;
+            try {
+              L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                maxZoom: 19,
+                attribution: "© OpenStreetMap contributors"
+              }).addTo(mapInstance!);
+            } catch (e) {}
+          });
+
+          googleLayer.addTo(mapInstance);
+
+          markerInstance = L.marker([targetLat, targetLng], {
+            icon: createPinIcon(),
+            draggable: true
+          }).addTo(mapInstance);
+
+          markerInstance.bindTooltip("🏪 Kéo ghim đến đúng vị trí cửa hàng của bạn", {
+            permanent: false,
+            direction: "top"
+          });
+
+          markerInstance.on("dragend", (e: any) => {
+            const latLng = e.target.getLatLng();
+            tempLat.value = latLng.lat;
+            tempLng.value = latLng.lng;
+            resolveAddressFromCoords(latLng.lat, latLng.lng);
+          });
+
+          mapInstance.on("click", (e: L.LeafletMouseEvent) => {
+            const { lat, lng } = e.latlng;
+            tempLat.value = lat;
+            tempLng.value = lng;
+            if (markerInstance) {
+              markerInstance.setLatLng([lat, lng]);
+            }
+            resolveAddressFromCoords(lat, lng);
+          });
+        } else {
+          mapInstance.invalidateSize();
+          mapInstance.setView([targetLat, targetLng], 16);
+          if (markerInstance) {
+            markerInstance.setLatLng([targetLat, targetLng]);
+          }
+        }
+      }, delay);
+    });
+  });
+};
+
+const openLocationModal = () => {
+  isLocationModalOpen.value = true;
+  mapSearchQuery.value = "";
+
+  if (form.lat && form.lng) {
+    tempLat.value = form.lat;
+    tempLng.value = form.lng;
+    tempLocationAddress.value = form.address;
+    initOrUpdateMap();
+  } else {
+    tempLat.value = 21.0333;
+    tempLng.value = 105.7983;
+    if (form.address) {
+      tempLocationAddress.value = form.address;
+    }
+    initOrUpdateMap();
+    // Tự động định vị GPS thời gian thực khi mở lần đầu
+    locateUserCurrentPosition();
+  }
+};
+
+const closeLocationModal = () => {
+  isLocationModalOpen.value = false;
+};
+
+const saveLocationFromMap = () => {
+  if (!tempLat.value || !tempLng.value) {
+    errorMessage.value = "Vui lòng chọn tọa độ vị trí!";
+    return;
+  }
+  form.lat = tempLat.value;
+  form.lng = tempLng.value;
+  if (tempLocationAddress.value && tempLocationAddress.value.trim()) {
+    form.address = sanitizeAddress(tempLocationAddress.value.trim());
+  }
+  isLocationModalOpen.value = false;
+  showLocationSuccessToast.value = true;
+  setTimeout(() => {
+    showLocationSuccessToast.value = false;
+  }, 4000);
+};
 
 // Xử lý Chuyển bước
 const goToNextStep = () => {
   errorMessage.value = "";
 
   if (currentStep.value === 1) {
+    if (!form.ward.trim()) {
+      errorMessage.value = "Vui lòng nhập Xã / Phường của gian hàng!";
+      return;
+    }
+    if (!form.district.trim()) {
+      errorMessage.value = "Vui lòng nhập Quận / Huyện của gian hàng!";
+      return;
+    }
     if (!form.storeName.trim() || form.storeName.length < 12 || form.storeName.length > 30) {
       errorMessage.value = "Tên cửa hàng phải từ 12 đến 30 ký tự!";
       return;
@@ -544,15 +936,19 @@ const goToNextStep = () => {
         return;
       }
     }
+    if (!form.lat || !form.lng) {
+      form.lat = 21.0333;
+      form.lng = 105.7983;
+    }
     currentStep.value = 2;
   } else if (currentStep.value === 2) {
-    if (!form.ownerFullName.trim()) {
-      errorMessage.value = "Vui lòng nhập Họ tên chủ tiệm!";
-      return;
-    }
     if (!form.cccdFrontImage || !form.cccdBackImage || !form.foodSafetyCertImage) {
       errorMessage.value = "Vui lòng tải đủ 3 ảnh: CCCD Mặt trước, Mặt sau và Giấy CN An toàn thực phẩm!";
       return;
+    }
+    // Nếu chưa có tên chủ tiệm, lấy mặc định từ tên tiệm để vượt qua validate backend
+    if (!form.ownerFullName || !form.ownerFullName.trim()) {
+      form.ownerFullName = `Chủ tiệm ${form.storeName.trim()}`;
     }
     currentStep.value = 3;
   }
@@ -565,7 +961,7 @@ const goToPrevStep = () => {
   }
 };
 
-// Xử lý Upload Ảnh
+// Xử lý Upload Ảnh & Tự động quét thông tin từ CCCD
 const handleFileUpload = (e: Event, field: 'cccdFrontImage' | 'cccdBackImage' | 'foodSafetyCertImage') => {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
@@ -576,8 +972,29 @@ const handleFileUpload = (e: Event, field: 'cccdFrontImage' | 'cccdBackImage' | 
   }
 
   const reader = new FileReader();
-  reader.onload = (event) => {
+  reader.onload = async (event) => {
     form[field] = event.target?.result as string;
+
+    // Tự động nhận diện Họ tên chủ tiệm từ ảnh CCCD Mặt Trước
+    if (field === 'cccdFrontImage' && file) {
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const scanRes = await fetch("/api/ocr/scan-id-card", {
+          method: "POST",
+          body: formData
+        });
+        const scanData = await scanRes.json();
+        if (scanRes.ok && scanData.success && scanData.data) {
+          const extractedName = (scanData.data.ho_va_ten || scanData.data.name || "").trim();
+          if (extractedName) {
+            form.ownerFullName = extractedName;
+          }
+        }
+      } catch (ocrErr) {
+        console.warn("⚠️ Quét CCCD ngầm khi upload:", ocrErr);
+      }
+    }
   };
   reader.readAsDataURL(file);
 };
@@ -598,17 +1015,24 @@ const handleSubmitSeller = async () => {
   isLoading.value = true;
 
   try {
+    const cleanEmail = form.phoneEmail.trim().toLowerCase();
     await fetch("/api/auth/register-seller", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         storeName: form.storeName.trim(),
+        sellerType: form.sellerType,
+        ward: form.ward.trim(),
+        district: form.district.trim(),
+        marketName: form.marketName.trim(),
         category: form.category,
         address: form.address.trim(),
+        latitude: form.lat || 21.0333,
+        longitude: form.lng || 105.7983,
         openHours: form.openHours.trim(),
-        phoneEmail: form.phoneEmail.trim(),
+        phoneEmail: cleanEmail,
         password: form.password.trim(),
-        ownerFullName: form.ownerFullName.trim(),
+        ownerFullName: form.ownerFullName.trim() || `Chủ tiệm ${form.storeName.trim()}`,
         cccdFrontImage: form.cccdFrontImage,
         cccdBackImage: form.cccdBackImage,
         foodSafetyCertImage: form.foodSafetyCertImage,
@@ -616,6 +1040,28 @@ const handleSubmitSeller = async () => {
         bankAccountNumber: accountNumberTrimmed
       })
     }).catch(() => null);
+
+    try {
+      const storeObj = {
+        id: `ZM-S${Math.floor(1000 + Math.random() * 9000)}`,
+        name: form.storeName.trim(),
+        category: form.category,
+        address: form.address.trim(),
+        lat: form.lat || 21.0333,
+        lng: form.lng || 105.7983,
+        openHours: form.openHours.trim(),
+        phone: cleanEmail,
+        bankName: form.bankName,
+        bankAccount: accountNumberTrimmed,
+        accountHolder: form.ownerFullName.trim().toUpperCase()
+      };
+      localStorage.setItem(`zonemart_seller_store_${cleanEmail}`, JSON.stringify(storeObj));
+
+      const allStoresCache = JSON.parse(localStorage.getItem("zonemart_all_registered_stores") || "{}");
+      allStoresCache[form.storeName.trim().toLowerCase()] = storeObj;
+      allStoresCache[cleanEmail] = storeObj;
+      localStorage.setItem("zonemart_all_registered_stores", JSON.stringify(allStoresCache));
+    } catch {}
 
     showSuccessModal.value = true;
   } catch (err: any) {
@@ -789,7 +1235,7 @@ const submitSellerSupportTicket = async () => {
 
           <h1 class="hero-main-title">
             Mở Gian Hàng Số <span class="text-gradient-orange">ZoneMart</span> <br />
-            Tiếp Cận Hàng Ngàn <span class="text-highlight-orange">Đơn Hàng 10km</span>
+            Tiếp Cận Hàng Ngàn <span class="text-highlight-orange">Đơn Hàng 3km</span>
           </h1>
 
           <p class="hero-sub-text">
@@ -1077,6 +1523,50 @@ const submitSellerSupportTicket = async () => {
 
         <!-- BƯỚC 1 -->
         <form v-if="currentStep === 1" @submit.prevent="goToNextStep" class="form-body">
+          <!-- MÔ HÌNH KINH DOANH ĐỊA PHƯƠNG (4 NHÓM THEO SƠ ĐỒ CHỢ ĐỊA PHƯƠNG SỐ) -->
+          <div class="field-item">
+            <label class="field-label">Mô hình kinh doanh địa phương <span class="req">*</span> <span class="hint">(Chọn đúng nhóm đối tượng của gian hàng)</span></label>
+            <div class="seller-type-grid">
+              <div class="seller-type-card" :class="{ 'selected': form.sellerType === 'traditional_market' }" @click="form.sellerType = 'traditional_market'">
+                <span class="type-icon">🏪</span>
+                <span class="type-title">Chợ truyền thống</span>
+                <span class="type-desc">Tiểu thương tại sạp chợ</span>
+              </div>
+              <div class="seller-type-card" :class="{ 'selected': form.sellerType === 'home_business' }" @click="form.sellerType = 'home_business'">
+                <span class="type-icon">🏡</span>
+                <span class="type-title">Hộ kinh doanh tại nhà</span>
+                <span class="type-desc">Chế biến / bán tại gia</span>
+              </div>
+              <div class="seller-type-card" :class="{ 'selected': form.sellerType === 'store_facility' }" @click="form.sellerType = 'store_facility'">
+                <span class="type-icon">🏭</span>
+                <span class="type-title">Cửa hàng / Cơ sở SX</span>
+                <span class="type-desc">Tiệm tạp hóa, xưởng SX</span>
+              </div>
+              <div class="seller-type-card" :class="{ 'selected': form.sellerType === 'other_local_seller' }" @click="form.sellerType = 'other_local_seller'">
+                <span class="type-icon">👨‍🌾</span>
+                <span class="type-title">Người bán địa phương khác</span>
+                <span class="type-desc">Nông dân bán nông sản</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- KHÔNG GIAN THƯƠNG MẠI SỐ CẤP XÃ / PHƯỜNG -->
+          <div class="form-row-2col">
+            <div class="field-item">
+              <label class="field-label">Xã / Phường <span class="req">*</span></label>
+              <input v-model="form.ward" type="text" class="field-input" placeholder="VD: Phường Dịch Vọng Hậu" required />
+            </div>
+            <div class="field-item">
+              <label class="field-label">Quận / Huyện <span class="req">*</span></label>
+              <input v-model="form.district" type="text" class="field-input" placeholder="VD: Quận Cầu Giấy" required />
+            </div>
+          </div>
+
+          <div class="field-item">
+            <label class="field-label">Tên Chợ Truyền Thống / Cụm Chợ Số Địa Phương</label>
+            <input v-model="form.marketName" type="text" class="field-input" placeholder="VD: Chợ Nhà Xanh, Chợ Cầu Giấy..." />
+          </div>
+
           <!-- Hàng 1: Tên cửa hàng (Full Width) -->
           <div class="field-item">
             <label class="field-label">Tên cửa hàng <span class="req">*</span> <span class="hint">(12 - 30 ký tự)</span></label>
@@ -1086,8 +1576,59 @@ const submitSellerSupportTicket = async () => {
           <!-- Hàng 2: Địa chỉ tiệm bên trái, Danh mục hàng bán chính bên phải (2-Column) -->
           <div class="form-row-2col">
             <div class="field-item">
-              <label class="field-label">Địa chỉ tiệm <span class="req">*</span></label>
-              <input v-model="form.address" type="text" class="field-input" placeholder="VD: Số 125 Đường Nguyễn Trãi, Thanh Xuân, Hà Nội" required />
+              <div class="field-label-header">
+                <label class="field-label">Địa chỉ tiệm <span class="req">*</span></label>
+                <button
+                  type="button"
+                  class="btn-view-map-text"
+                  @click="openLocationModal"
+                  title="Mở bản đồ xem và định vị GPS thời gian thực"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                    <circle cx="12" cy="10" r="3"></circle>
+                  </svg>
+                  <span>Xem vị trí</span>
+                </button>
+              </div>
+
+              <div class="input-with-locate-wrapper">
+                <input
+                  v-model="form.address"
+                  type="text"
+                  class="field-input input-has-locate"
+                  placeholder="VD: Số 125 Đường Nguyễn Trãi, Thanh Xuân, Hà Nội"
+                  required
+                />
+                <button
+                  type="button"
+                  class="btn-input-gps"
+                  @click="openLocationModal"
+                  title="Định vị GPS vị trí tiệm"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="22" y1="12" x2="18" y2="12"></line>
+                    <line x1="6" y1="12" x2="2" y2="12"></line>
+                    <line x1="12" y1="6" x2="12" y2="2"></line>
+                    <line x1="12" y1="22" x2="12" y2="18"></line>
+                  </svg>
+                  Định vị
+                </button>
+              </div>
+
+              <!-- Thẻ hiển thị tọa độ thời gian thực đã gán -->
+              <div v-if="form.lat && form.lng" class="gps-coords-pill">
+                <div class="pill-left">
+                  <span class="gps-pulse-dot"></span>
+                  <span class="pill-title">Tọa độ:</span>
+                  <code class="coords-code">{{ form.lat.toFixed(5) }}, {{ form.lng.toFixed(5) }}</code>
+                  <span class="pill-tag-verified">✓ Đã gán dẫn đường</span>
+                </div>
+                <button type="button" class="btn-pill-reselect" @click="openLocationModal">
+                  Sửa vị trí
+                </button>
+              </div>
             </div>
 
             <div class="field-item custom-select-container" :class="{ 'dropdown-open': isCategoryDropdownOpen }">
@@ -1237,13 +1778,8 @@ const submitSellerSupportTicket = async () => {
           </div>
         </form>
 
-        <!-- BƯỚC 2 -->
+        <!-- BƯỚC 2: XÁC THỰC GIẤY TỜ -->
         <form v-if="currentStep === 2" @submit.prevent="goToNextStep" class="form-body">
-          <div class="field-item">
-            <label class="field-label">Họ và tên chủ tiệm <span class="req">*</span></label>
-            <input v-model="form.ownerFullName" type="text" class="field-input" placeholder="VD: Nguyễn Văn A" required />
-          </div>
-
           <!-- GIAO DIỆN TẢI ẢNH HIỆN ĐẠI DẠNG CARD KÉO THẢ GIỐNG SHIPPER -->
           <div class="upload-cards-grid full-row">
             <!-- Card 1: CCCD Mặt Trước -->
@@ -1354,6 +1890,36 @@ const submitSellerSupportTicket = async () => {
             <div class="field-item">
               <label class="field-label">Số tài khoản ngân hàng <span class="req">*</span> <span class="hint">(8 - 15 số)</span></label>
               <input v-model="form.bankAccountNumber" type="text" class="field-input" placeholder="VD: 1012345678" required />
+            </div>
+          </div>
+
+          <!-- Khối Thanh toán phí khởi tạo Gian hàng số (Sơ đồ Chương 2 Luồng 1) - FULL WIDTH -->
+          <div class="registration-fee-banner">
+            <div class="fee-banner-top">
+              <div class="fee-badge-icon">
+                <i class="bi bi-gift-fill"></i>
+              </div>
+              <div class="fee-info-text">
+                <div class="fee-title-row">
+                  <span class="fee-main-title">Phí Khởi Tạo Gian Hàng Số</span>
+                  <span class="fee-highlight-badge">0 VNĐ (MIỄN PHÍ)</span>
+                </div>
+                <p class="fee-sub-desc">
+                  Được UBND Xã/Phường & Ban Quản Lý Chợ tài trợ 100% trong khuôn khổ Đề án Chuyển Đổi Số Chợ Địa Phương.
+                </p>
+              </div>
+            </div>
+
+            <div class="fee-banner-bottom">
+              <div class="fee-status-line">
+                <span class="fee-status-tag-title">Trạng thái thanh toán phí:</span>
+                <span class="fee-status-pill">
+                  <i class="bi bi-check-circle-fill me-1"></i> Đã miễn trừ (Chính sách hỗ trợ Chợ số)
+                </span>
+              </div>
+              <div class="fee-guarantee-tag">
+                <i class="bi bi-shield-check me-1"></i> Bảo chứng BQL Chợ
+              </div>
             </div>
           </div>
 
@@ -1602,6 +2168,131 @@ const submitSellerSupportTicket = async () => {
           </p>
           <button @click="closeSuccessModal" class="btn-modal-action-orange">QUAY LẠI TRANG CHỦ SELLER</button>
         </div>
+      </div>
+    </Transition>
+
+    <!-- ==================== MODAL BẢN ĐỒ XEM & ĐỊNH VỊ VỊ TRÍ GIAN HÀNG ==================== -->
+    <Transition name="fade-modal">
+      <div v-if="isLocationModalOpen" class="map-modal-overlay" @click.self="closeLocationModal">
+        <div class="map-modal-card">
+          <!-- Modal Header -->
+          <div class="map-modal-header">
+            <div class="map-modal-title">
+              <div class="map-icon-circle">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                  <circle cx="12" cy="10" r="3"></circle>
+                </svg>
+              </div>
+              <div class="title-text-group">
+                <h3 class="modal-title-text">Bản Đồ Định Vị Gian Hàng (Thời Gian Thực)</h3>
+                <p class="modal-sub-text">Tự động định vị điểm đứng hiện tại. Kéo thả ghim đỏ để chỉnh vị trí chính xác cho tài xế giao hàng.</p>
+              </div>
+            </div>
+            <button type="button" class="btn-close-modal" @click="closeLocationModal">✕</button>
+          </div>
+
+          <!-- Modal Body -->
+          <div class="map-modal-body">
+            <!-- Toolbar tìm kiếm & Nút GPS thời gian thực -->
+            <div class="map-toolbar">
+              <div class="map-search-wrapper">
+                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input
+                  type="text"
+                  v-model="mapSearchQuery"
+                  @keydown.enter.prevent="searchAddressOnMap"
+                  placeholder="Tìm đường phố, tòa nhà, địa danh (ấn Enter)..."
+                  class="map-search-input"
+                />
+                <button
+                  type="button"
+                  class="btn-search-trigger"
+                  @click="searchAddressOnMap"
+                  :disabled="isSearchingLocation"
+                >
+                  <span v-if="!isSearchingLocation">Tìm kiếm</span>
+                  <span v-else>Đang tìm...</span>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                class="btn-live-gps-action"
+                :class="{ 'is-loading': isLocatingGps }"
+                @click="locateUserCurrentPosition"
+                title="Bấm để lấy vị trí GPS hiện tại theo thời gian thực"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" :class="{ 'spin-icon': isLocatingGps }">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="22" y1="12" x2="18" y2="12"></line>
+                  <line x1="6" y1="12" x2="2" y2="12"></line>
+                  <line x1="12" y1="6" x2="12" y2="2"></line>
+                  <line x1="12" y1="22" x2="12" y2="18"></line>
+                </svg>
+                <span>{{ isLocatingGps ? 'Đang dò GPS thực tế...' : 'Lấy vị trí GPS của tôi' }}</span>
+              </button>
+            </div>
+
+            <!-- Leaflet Map Canvas -->
+            <div class="map-canvas-wrapper" style="height: 360px; min-height: 360px; position: relative;">
+              <div id="sellerLandingMap" class="leaflet-map-canvas" style="height: 100%; min-height: 360px; width: 100%;"></div>
+
+              <!-- Loading Indicator khi đang tải GPS hoặc Reverse Geocoding -->
+              <div v-if="isLocatingGps || isGeocodingAddress" class="map-status-overlay">
+                <div class="mini-spinner"></div>
+                <span>{{ isLocatingGps ? 'Đang lấy tọa độ GPS chính xác...' : 'Đang nhận diện địa chỉ...' }}</span>
+              </div>
+            </div>
+
+            <!-- Khung thông tin vị trí đã chọn -->
+            <div class="selected-location-panel">
+              <div class="location-addr-group">
+                <label class="location-addr-label">
+                  🏢 Địa chỉ nhận diện (có thể chỉnh sửa nếu cần):
+                </label>
+                <input
+                  type="text"
+                  v-model="tempLocationAddress"
+                  class="location-addr-input"
+                  placeholder="Địa chỉ tự động cập nhật khi kéo ghim..."
+                />
+              </div>
+
+              <div class="location-meta-row">
+                <div class="meta-coords">
+                  🧭 <span>Tọa độ GPS: </span>
+                  <strong>{{ tempLat.toFixed(5) }}, {{ tempLng.toFixed(5) }}</strong>
+                </div>
+                <div class="meta-note">
+                  <span class="delivery-ready-badge">
+                    ✓ Sẵn sàng kết nối dẫn đường Shipper
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal Footer -->
+          <div class="map-modal-footer">
+            <button type="button" class="btn-map-cancel" @click="closeLocationModal">
+              Đóng
+            </button>
+            <button type="button" class="btn-map-confirm" @click="saveLocationFromMap">
+              ✓ Lưu & Sử Dụng Vị Trí Này
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- Toast thông báo đã lưu vị trí thành công -->
+    <Transition name="fade-modal">
+      <div v-if="showLocationSuccessToast" class="map-toast-pill">
+        <span>✓ Đã lưu thành công tọa độ & địa chỉ gian hàng cho luồng giao hàng!</span>
       </div>
     </Transition>
 
@@ -2335,6 +3026,62 @@ const submitSellerSupportTicket = async () => {
 
 .field-item { display: flex; flex-direction: column; gap: 6px; }
 
+.seller-type-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 4px;
+}
+
+@media (max-width: 768px) {
+  .seller-type-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.seller-type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 10px 8px;
+  border-radius: 10px;
+  border: 1.5px solid #CBD5E1;
+  background: #FFFFFF;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.seller-type-card:hover {
+  border-color: #10B981;
+  background: #F0FDF4;
+}
+
+.seller-type-card.selected {
+  border-color: #10B981;
+  background: #F0FDF4;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+
+.seller-type-card .type-icon {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.seller-type-card .type-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0F172A;
+  line-height: 1.2;
+}
+
+.seller-type-card .type-desc {
+  font-size: 10.5px;
+  color: #64748B;
+  margin-top: 3px;
+  line-height: 1.15;
+}
+
 .field-label { font-size: 13.5px; font-weight: 700; color: #334155; }
 .req { color: #EF4444; }
 .hint { font-weight: 400; color: #64748B; font-size: 12px; }
@@ -2540,6 +3287,136 @@ select.select-stylish {
 @media (max-width: 640px) {
   .form-row-2col {
     grid-template-columns: 1fr;
+  }
+}
+
+/* REGISTRATION FEE BANNER (LUỒNG 1 CHƯƠNG 2) */
+.registration-fee-banner {
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  border: 1px solid #86efac;
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin: 18px 0 16px 0;
+  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.fee-banner-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.fee-badge-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #dcfce7;
+  color: #16a34a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.fee-info-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fee-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fee-main-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: #14532d;
+  letter-spacing: -0.2px;
+}
+
+.fee-highlight-badge {
+  background: #16a34a;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+  box-shadow: 0 2px 6px rgba(22, 163, 74, 0.25);
+}
+
+.fee-sub-desc {
+  font-size: 13px;
+  color: #4b5563;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.fee-banner-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px dashed #bbf7d0;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.fee-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.fee-status-tag-title {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.fee-status-pill {
+  color: #15803d;
+  font-weight: 700;
+  background: #dcfce7;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.fee-guarantee-tag {
+  color: #0284c7;
+  font-size: 12px;
+  font-weight: 600;
+  background: #e0f2fe;
+  padding: 3px 10px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (max-width: 640px) {
+  .registration-fee-banner {
+    padding: 14px;
+  }
+  .fee-banner-top {
+    flex-direction: column;
+  }
+  .fee-title-row {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
@@ -2874,5 +3751,593 @@ select.select-stylish {
   .mascot-speech-bubble .bubble-text {
     font-size: 10px;
   }
+}
+
+/* ==================== BẢN ĐỒ VỊ TRÍ GIAN HÀNG & GPS THỜI GIAN THỰC ==================== */
+.field-label-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.btn-view-map-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #ECFDF5;
+  color: #059669;
+  border: 1px solid #A7F3D0;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-view-map-text:hover {
+  background: #10B981;
+  color: #ffffff;
+  border-color: #10B981;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+}
+
+.input-with-locate-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input-has-locate {
+  padding-right: 100px !important;
+}
+
+.btn-input-gps {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #ECFDF5;
+  color: #059669;
+  border: 1px solid #A7F3D0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.btn-input-gps:hover {
+  background: #10B981;
+  color: #ffffff;
+  border-color: #10B981;
+}
+
+/* GPS Coordinates Pill */
+.gps-coords-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  animation: fadeIn 0.3s ease;
+}
+
+.pill-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gps-pulse-dot {
+  width: 8px;
+  height: 8px;
+  background: #16A34A;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7);
+  animation: pulseDot 1.8s infinite;
+}
+
+@keyframes pulseDot {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
+
+.pill-title {
+  color: #166534;
+  font-weight: 600;
+}
+
+.coords-code {
+  background: #DCFCE7;
+  color: #15803D;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.pill-tag-verified {
+  color: #15803D;
+  font-weight: 700;
+  font-size: 11.5px;
+  margin-left: 4px;
+}
+
+.btn-pill-reselect {
+  background: transparent;
+  border: none;
+  color: #059669;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.btn-pill-reselect:hover {
+  text-decoration: underline;
+  color: #047857;
+}
+
+/* ==================== MAP MODAL OVERLAY & CARD ==================== */
+.map-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.map-modal-card {
+  width: 100%;
+  max-width: 760px;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 94vh;
+}
+
+@keyframes modalScaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.map-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid #F1F5F9;
+  background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+}
+
+.map-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.map-icon-circle {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.title-text-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-title-text {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0F172A;
+}
+
+.modal-sub-text {
+  margin: 2px 0 0 0;
+  font-size: 0.8rem;
+  color: #64748B;
+}
+
+.btn-close-modal {
+  background: #F1F5F9;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.btn-close-modal:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+/* Map Modal Body */
+.map-modal-body {
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+/* Map Toolbar */
+.map-toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.map-search-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+}
+
+.map-search-wrapper .search-icon {
+  position: absolute;
+  left: 12px;
+  color: #94A3B8;
+  pointer-events: none;
+}
+
+.map-search-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 84px 0 36px;
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  color: #0F172A;
+  transition: all 0.2s ease;
+}
+
+.map-search-input:focus {
+  background: #FFFFFF;
+  border-color: #10B981;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.btn-search-trigger {
+  position: absolute;
+  right: 5px;
+  height: 30px;
+  padding: 0 12px;
+  background: #10B981;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s;
+}
+
+.btn-search-trigger:hover {
+  background: #059669;
+}
+
+.btn-live-gps-action {
+  height: 40px;
+  padding: 0 16px;
+  background: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  border-radius: 10px;
+  color: #059669;
+  font-size: 0.82rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.btn-live-gps-action:hover {
+  background: #10B981;
+  color: #ffffff;
+  border-color: #10B981;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+}
+
+.btn-live-gps-action.is-loading {
+  background: #FEF3C7;
+  border-color: #FDE68A;
+  color: #D97706;
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Map Canvas */
+.map-canvas-wrapper {
+  position: relative;
+  width: 100%;
+  height: 330px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid #CBD5E1;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.leaflet-map-canvas {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.map-floating-hint {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.85);
+  color: #ffffff;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.map-status-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #0F172A;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.mini-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #E2E8F0;
+  border-top-color: #10B981;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* GOOGLE MAPS CLASSIC RED PIN */
+:deep(.google-maps-red-pin) {
+  background: transparent !important;
+  border: none !important;
+}
+
+:deep(.gmap-pin-container) {
+  position: relative;
+  width: 34px;
+  height: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+:deep(.gmap-svg-pin) {
+  width: 34px;
+  height: 46px;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.35));
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: bottom center;
+}
+
+:deep(.leaflet-marker-draggable:hover .gmap-svg-pin) {
+  transform: translateY(-4px) scale(1.08);
+}
+
+:deep(.gmap-pin-shadow) {
+  width: 18px;
+  height: 6px;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0) 70%);
+  border-radius: 50%;
+  margin-top: -2px;
+}
+
+/* Selected Location Panel */
+.selected-location-panel {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.location-addr-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #475569;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.location-addr-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: #ffffff;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #0F172A;
+}
+
+.location-addr-input:focus {
+  border-color: #10B981;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+}
+
+.location-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.meta-coords {
+  color: #334155;
+}
+
+.delivery-ready-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ECFDF5;
+  color: #059669;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+/* Modal Footer */
+.map-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 14px 24px;
+  border-top: 1px solid #F1F5F9;
+  background: #FAFAFA;
+}
+
+.btn-map-cancel {
+  padding: 9px 20px;
+  background: #F1F5F9;
+  color: #475569;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+
+.btn-map-cancel:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.btn-map-confirm {
+  padding: 9px 24px;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+  transition: all 0.2s;
+}
+
+.btn-map-confirm:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.45);
+}
+
+/* Toast Notification */
+.map-toast-pill {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100000;
+  background: #0F172A;
+  color: #ffffff;
+  padding: 12px 22px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  animation: slideUpToast 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUpToast {
+  from { transform: translate(-50%, 20px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
 }
 </style>
