@@ -236,7 +236,7 @@ const portalCards = [
     id: 'shipper',
     badge: 'ĐỐI TÁC GIAO HÀNG',
     title: 'ĐĂNG KÝ SHIPPER',
-    tagline: 'Giao siêu tốc bán kính 10km',
+    tagline: 'Giao siêu tốc bán kính 5km',
     description:
       'Linh hoạt thời gian, nhận đơn khu vực gần nhà, thu nhập minh bạch nhận liền tay.',
     btnText: 'CỔNG TÀI XẾ',
@@ -289,7 +289,10 @@ const featuredCategories = [
 // 3. Sản phẩm tươi mới nổi bật trong bán kính 10km (Hot Products)
 const featuredProducts = computed(() => {
   if (catalog.allProducts.value && catalog.allProducts.value.length > 0) {
-    return catalog.allProducts.value.slice(0, 8).map((p, idx) => ({
+    const freshFoods = catalog.allProducts.value.filter(
+      (p) => p.category !== 'household' && !p.name.toLowerCase().includes('rác')
+    );
+    return freshFoods.slice(0, 8).map((p, idx) => ({
       id: p.id,
       name: p.name,
       farm: p.store?.name || 'Gian hàng ZoneMart',
@@ -312,7 +315,7 @@ const howItWorks = [
   {
     step: '01',
     title: 'Định Vị Tự Động',
-    desc: 'Hệ thống tự động quét và gợi ý các nhà vườn, cửa hàng uy tín trong bán kính 10km quanh bạn.',
+    desc: 'Hệ thống tự động quét và gợi ý các nhà vườn, cửa hàng uy tín trong bán kính 5km quanh bạn.',
     icon: 'bi-geo-alt-fill',
   },
   {
@@ -691,7 +694,7 @@ const handleAddToCartHome = (item: any) => {
     <section class="section-container">
       <div class="section-header scroll-reveal">
         <div class="header-left">
-          <div class="badge-tag-hot"><i class="bi bi-fire me-1" aria-hidden="true"></i> GIAO HỎA TỐC 10KM</div>
+          <div class="badge-tag-hot"><i class="bi bi-fire me-1" aria-hidden="true"></i> GIAO HỎA TỐC 5KM</div>
           <h2 class="section-title">Nông Sản Tươi Mới Hôm Nay</h2>
           <p class="section-subtitle">
             Thu hoạch trực tiếp từ các nhà vườn lân cận, giao tận nhà trong
@@ -762,7 +765,7 @@ const handleAddToCartHome = (item: any) => {
           ZoneMart Hoạt Động Như Thế Nào?
         </h2>
         <p class="section-subtitle text-center">
-          Giao hàng siêu tốc trong bán kính 10km nhờ công nghệ kết nối tự động
+          Giao hàng siêu tốc trong bán kính 5km nhờ công nghệ kết nối tự động
           giữa Người Mua, Nhà Vườn và Tài Xế
         </p>
       </div>
@@ -885,7 +888,7 @@ const handleAddToCartHome = (item: any) => {
           </h2>
           <p class="cta-desc">
             ZoneMart miễn phí 100% phí mở gian hàng cho tiểu thương và cung cấp
-            luồng đơn hàng liên tục trong bán kính 10km cho tài xế.
+            luồng đơn hàng liên tục trong bán kính 5km cho tài xế.
           </p>
           <div class="cta-btn-group">
             <button

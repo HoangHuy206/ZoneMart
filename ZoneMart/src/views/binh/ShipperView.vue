@@ -88,7 +88,7 @@ const driverProfile = reactive({
   licensePlate: "Chưa cập nhật",
   vehicleType: "Xe máy xăng",
   vehicleModel: "Xe máy",
-  operatingArea: "Quận Cầu Giấy, Hà Nội (Bán kính 3km)",
+  operatingArea: "Quận Cầu Giấy, Hà Nội (Bán kính 5km)",
   avatarUrl: "",
   shipperCode: "00001",
   status: "Pending"
@@ -368,7 +368,7 @@ const initMap = () => {
 
   // Vòng bán kính quét đơn Google Style
   radiusCircle = L.circle([driverLocation.value.lat, driverLocation.value.lng], {
-    radius: 3000,
+    radius: 5000,
     color: isOnline.value ? "#1a73e8" : "#94a3b8",
     fillColor: isOnline.value ? "#4285f4" : "#94a3b8",
     fillOpacity: 0.08,
@@ -690,16 +690,16 @@ const triggerIncomingOrderCheck = (order: RealtimeOrder) => {
 
   incomingDistance.value = dist;
 
-  // QUY TẮC: Trong vòng bán kính 3km thì LẬP TỨC NỔ ĐƠN, ngược lại nếu > 3km thì KHÔNG NỔ ĐƠN
-  if (dist <= 3.0) {
-    console.log(`[ShipperView] Đơn #${order.id} nằm trong bán kính 3km (${dist} km) -> NỔ ĐƠN!`);
+  // QUY TẮC: Trong vòng bán kính 5km thì LẬP TỨC NỔ ĐƠN, ngược lại nếu > 5km thì KHÔNG NỔ ĐƠN
+  if (dist <= 5.0) {
+    console.log(`[ShipperView] Đơn #${order.id} nằm trong bán kính 5km (${dist} km) -> NỔ ĐƠN!`);
     incomingOrder.value = order;
     showIncomingModal.value = true;
     incomingCountdown.value = 30;
 
     // Phát chuông báo nổ đơn
     orderRealtimeService.playOrderAlertSound();
-    triggerToast(`🚨 NỔ ĐƠN HỎA TỐC! Quán cách bạn ${dist} km (Bán kính <= 3km)`);
+    triggerToast(`🚨 NỔ ĐƠN HỎA TỐC! Quán cách bạn ${dist} km (Bán kính <= 5km)`);
 
     if (incomingTimer) clearInterval(incomingTimer);
     incomingTimer = setInterval(() => {
@@ -711,8 +711,8 @@ const triggerIncomingOrderCheck = (order: RealtimeOrder) => {
       }
     }, 1000);
   } else {
-    console.log(`[ShipperView] Đơn nằm ngoài bán kính 3km (${dist} km) -> Bỏ qua, không nổ đơn.`);
-    triggerToast(`ℹ️ Có đơn mới ngoài bán kính 3km (${dist} km) - Không nổ đơn.`);
+    console.log(`[ShipperView] Đơn nằm ngoài bán kính 5km (${dist} km) -> Bỏ qua, không nổ đơn.`);
+    triggerToast(`ℹ️ Có đơn mới ngoài bán kính 5km (${dist} km) - Không nổ đơn.`);
   }
 };
 
@@ -931,8 +931,8 @@ onUnmounted(() => {
               <i class="bi bi-bell-fill"></i>
             </div>
             <div class="incoming-title-box">
-              <h3>🚨 NỔ ĐƠN HỎA TỐC BÁN KÍNH 3KM!</h3>
-              <p>Quán cách bạn <strong>{{ incomingDistance }} km</strong> (Trong vòng bán kính 3km)</p>
+              <h3>🚨 NỔ ĐƠN HỎA TỐC BÁN KÍNH 5KM!</h3>
+              <p>Quán cách bạn <strong>{{ incomingDistance }} km</strong> (Trong vòng bán kính 5km)</p>
             </div>
             <div class="countdown-badge">
               <i class="bi bi-stopwatch"></i> {{ incomingCountdown }}s
@@ -1010,7 +1010,7 @@ onUnmounted(() => {
             <i class="bi bi-power"></i>
           </div>
           <h3>Bạn Đang Tạm Nghỉ</h3>
-          <p>Nhấn nút <strong>"BẬT HOẠT ĐỘNG"</strong> ở phía dưới để kích hoạt định vị GPS và nhận đơn hỏa tốc 3km.</p>
+          <p>Nhấn nút <strong>"BẬT HOẠT ĐỘNG"</strong> ở phía dưới để kích hoạt định vị GPS và nhận đơn hỏa tốc 5km.</p>
           <button class="btn btn-primary btn-turn-online" @click="toggleOnline">
             <i class="bi bi-lightning-charge-fill"></i> Bật Hoạt Động Ngay
           </button>
@@ -1033,7 +1033,7 @@ onUnmounted(() => {
             <span class="pill-rating"><i class="bi bi-star-fill text-warning"></i> 5.0</span>
           </div>
           <span class="pill-status-text">
-            {{ isOnline ? "Trực tuyến • Bán kính 3km" : "Ngoại tuyến • Tạm nghỉ" }}
+            {{ isOnline ? "Trực tuyến • Bán kính 5km" : "Ngoại tuyến • Tạm nghỉ" }}
           </span>
         </div>
       </div>
@@ -1091,7 +1091,7 @@ onUnmounted(() => {
       <div v-if="isOnline && currentStep !== 'idle' && currentStep !== 'delivered' && activeOrder" class="floating-order-card">
         <div class="f-order-header">
           <span class="f-order-badge">
-            <i class="bi bi-lightning-charge-fill"></i> HỎA TỐC 3KM
+            <i class="bi bi-lightning-charge-fill"></i> HỎA TỐC 5KM
           </span>
           <span class="f-order-fee">Thù lao: <strong>{{ activeOrder.shippingFee.toLocaleString('vi-VN') }} ₫</strong></span>
         </div>
@@ -1175,7 +1175,7 @@ onUnmounted(() => {
       <div v-else-if="isOnline && currentStep === 'idle'" class="floating-radar-chip">
         <span class="radar-dot-pulse"></span>
         <div class="radar-info">
-          <strong>Đang quét đơn hàng trong bán kính 3km...</strong>
+          <strong>Đang quét đơn hàng trong bán kính 5km...</strong>
           <small>Hệ thống tự động điều phối khi có khách đặt hỏa tốc</small>
         </div>
       </div>
@@ -1353,7 +1353,7 @@ onUnmounted(() => {
               </div>
               <div class="detail-item">
                 <span class="dt-label">Khu vực hoạt động:</span>
-                <strong>{{ driverProfile.operatingArea || "Quận Cầu Giấy, Hà Nội (Bán kính 3km)" }}</strong>
+                <strong>{{ driverProfile.operatingArea || "Quận Cầu Giấy, Hà Nội (Bán kính 5km)" }}</strong>
               </div>
               <div class="detail-item">
                 <span class="dt-label">Trạng thái tài xế:</span>

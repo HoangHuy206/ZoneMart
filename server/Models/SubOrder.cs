@@ -1,4 +1,4 @@
-﻿using MongoDB.Bson;
+using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace ZoneMart.Server.Models;
@@ -25,7 +25,7 @@ public class SubOrder
     public string DeliveryType { get; set; } = "standard"; // standard, express
 
     [BsonElement("shipping_fee")]
-    public decimal ShippingFee { get; set; } = 15000;
+    public decimal ShippingFee { get; set; } = 5000;
 
     [BsonElement("distance_km")]
     public double DistanceKm { get; set; } = 0;

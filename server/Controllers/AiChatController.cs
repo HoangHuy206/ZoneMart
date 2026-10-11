@@ -49,8 +49,8 @@ namespace ZoneMart.Server.Controllers
             public List<OrderItemDto> CartItems { get; set; } = new List<OrderItemDto>();
             public OrderItemDto? PendingItem { get; set; }
             public string Address { get; set; } = string.Empty;
-            public string ShippingMethod { get; set; } = "Giao Hàng Hỏa Tốc (15-25 phút)";
-            public decimal ShippingFee { get; set; } = 22500;
+            public string ShippingMethod { get; set; } = "Giao Hàng Hỏa Tốc Đi Chợ (15-25 phút)";
+            public decimal ShippingFee { get; set; } = 8000;
             public string PaymentMethod { get; set; } = string.Empty;
             public bool IsPaid { get; set; } = false;
             public string CreatedOrderId { get; set; } = string.Empty;
@@ -1846,15 +1846,15 @@ namespace ZoneMart.Server.Controllers
                 // ----- BƯỚC 8: ASK_SHIPPING_METHOD (Chọn phương thức vận chuyển) -----
                 if (state.Step == "ASK_SHIPPING_METHOD")
                 {
-                    if (cleanMsgNoTone.Contains("hoa toc") || cleanMsgNoTone.Contains("22.500") || cleanMsgNoTone.Contains("22500") || cleanMsgNoTone.Contains("15-25"))
+                    if (cleanMsgNoTone.Contains("hoa toc") || cleanMsgNoTone.Contains("8.000") || cleanMsgNoTone.Contains("8000") || cleanMsgNoTone.Contains("15-25"))
                     {
-                        state.ShippingMethod = "Giao Hàng Hỏa Tốc (15-25 phút)";
-                        state.ShippingFee = 22500;
+                        state.ShippingMethod = "Giao Hàng Hỏa Tốc Đi Chợ (15-25 phút)";
+                        state.ShippingFee = 8000;
                     }
                     else
                     {
-                        state.ShippingMethod = "Giao Hàng Tiêu Chuẩn (30-45 phút)";
-                        state.ShippingFee = 15000;
+                        state.ShippingMethod = "Giao Hàng Tiêu Chuẩn Tiết Kiệm (30-45 phút)";
+                        state.ShippingFee = 5000;
                     }
 
                     state.Step = "ASK_PAYMENT_METHOD";

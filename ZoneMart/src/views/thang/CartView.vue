@@ -146,11 +146,11 @@ const handleProceedToCheckout = () => {
                   }}
                   ₫</strong
                 >
-                để nhận ưu đãi <strong>MIỄN PHÍ GIAO HÀNG HỎA TỐC 10KM</strong>!
+                để nhận ưu đãi <strong>MIỄN PHÍ VẬN CHUYỂN ĐI CHỢ 5KM</strong>!
               </span>
               <span v-else class="banner-text text-success-bold">
                 🎉 Đơn hàng của bạn đã đạt điều kiện
-                <strong>MIỄN PHÍ VẬN CHUYỂN HỎA TỐC 10KM</strong>!
+                <strong>MIỄN PHÍ VẬN CHUYỂN ĐI CHỢ 5KM</strong>!
               </span>
             </div>
             <div class="progress-bar-bg">
@@ -483,14 +483,21 @@ const handleProceedToCheckout = () => {
 
             <div class="cost-row">
               <span class="cost-label">
-                Phí giao hỏa tốc ({{ cart.activeStoresCount.value }} quán):
+                Phí giao đi chợ ({{ cart.activeStoresCount.value }} quán • bán kính ≤ 5km):
+                <small v-if="cart.selectedTotalWeightKg.value > 0" class="text-muted d-block" style="font-size: 11px;">
+                  Khoảng cách thực tế & khối lượng (~{{ cart.selectedTotalWeightKg.value }}kg)
+                </small>
               </span>
-              <strong class="cost-value"
-                >{{
-                  cart.estimatedShipping.value.toLocaleString('vi-VN')
-                }}
-                ₫</strong
+              <strong
+                class="cost-value"
+                :class="{ 'text-success': cart.estimatedShipping.value === 0 }"
               >
+                {{
+                  cart.estimatedShipping.value === 0
+                    ? 'Miễn phí'
+                    : `${cart.estimatedShipping.value.toLocaleString('vi-VN')} ₫`
+                }}
+              </strong>
             </div>
 
             <div class="cost-divider"></div>
@@ -529,7 +536,7 @@ const handleProceedToCheckout = () => {
             <ul class="trust-list">
               <li>
                 <i class="bi bi-lightning-charge-fill text-terracotta"></i>
-                <span>Giao hàng hỏa tốc trong 10km (15 - 30 phút).</span>
+                <span>Giao hàng hỏa tốc trong 5km (15 - 25 phút).</span>
               </li>
               <li>
                 <i class="bi bi-shield-fill-check text-green"></i>

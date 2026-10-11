@@ -60,7 +60,7 @@ const successMessage = ref('');
 const showNotFoundModal = ref(false);
 const modalErrorMessage = ref('');
 const modalErrorType = ref<
-  'ACCOUNT_NOT_FOUND' | 'INCORRECT_PASSWORD' | 'ACCOUNT_PENDING_APPROVAL'
+  'ACCOUNT_NOT_FOUND' | 'INCORRECT_PASSWORD' | 'ACCOUNT_PENDING_APPROVAL' | 'IP_BANNED'
 >('ACCOUNT_NOT_FOUND');
 
 // Trạng thái cho Modal Chúc mừng Hoạt Họa siêu xịn
@@ -254,7 +254,9 @@ const handleLogin = async () => {
       } else {
         modalErrorMessage.value = data.message || 'Không tìm thấy tài khoản';
         toast.error(modalErrorMessage.value, 'Đăng Nhập Thất Bại');
-        if (data.errorType === 'ACCOUNT_PENDING_APPROVAL') {
+        if (data.errorType === 'IP_BANNED' || res.status === 429) {
+          modalErrorType.value = 'IP_BANNED';
+        } else if (data.errorType === 'ACCOUNT_PENDING_APPROVAL') {
           modalErrorType.value = 'ACCOUNT_PENDING_APPROVAL';
         } else if (
           data.errorType === 'INCORRECT_PASSWORD' ||
@@ -520,9 +522,29 @@ const handleLogin = async () => {
         @click.self="showNotFoundModal = false"
       >
         <div class="modal-pop-card">
+          <!-- TH 0: ĐỊA CHỈ IP BỊ TẠM KHÓA 5 PHÚT DO ĐĂNG NHẬP SAI QUÁ 5 LẦN -->
+          <div
+            v-if="modalErrorType === 'IP_BANNED'"
+            class="modal-icon-badge ban-badge"
+          >
+            <svg
+              width="36"
+              height="36"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#DC2626"
+              stroke-width="2.3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <line x1="4.5" y1="4.5" x2="19.5" y2="19.5"></line>
+            </svg>
+          </div>
+
           <!-- TH 1: HỒ SƠ ĐANG CHỜ PHÊ DUYỆT (ICON ĐỒNG HỒ CÁT XOAY ĐANG CHẠY) -->
           <div
-            v-if="modalErrorType === 'ACCOUNT_PENDING_APPROVAL'"
+            v-else-if="modalErrorType === 'ACCOUNT_PENDING_APPROVAL'"
             class="modal-icon-badge pending-badge"
           >
             <svg
@@ -582,9 +604,14 @@ const handleLogin = async () => {
             </svg>
           </div>
 
-          <h3 class="modal-heading-title">
+          <h3
+            class="modal-heading-title"
+            :class="{ 'title-danger': modalErrorType === 'IP_BANNED' }"
+          >
             {{
-              modalErrorType === 'ACCOUNT_PENDING_APPROVAL'
+              modalErrorType === 'IP_BANNED'
+                ? '🚫 Tạm Khóa IP 5 Phút (Bảo Vệ Tài Xế)'
+                : modalErrorType === 'ACCOUNT_PENDING_APPROVAL'
                 ? 'Hồ Sơ Đang Chờ Phê Duyệt'
                 : modalErrorType === 'INCORRECT_PASSWORD'
                 ? 'Mật khẩu không đúng'
@@ -600,10 +627,19 @@ const handleLogin = async () => {
             <button
               type="button"
               class="btn-modal-close"
-              :class="{ 'btn-modal-pending': modalErrorType === 'ACCOUNT_PENDING_APPROVAL' }"
+              :class="{
+                'btn-modal-pending': modalErrorType === 'ACCOUNT_PENDING_APPROVAL',
+                'btn-modal-banned': modalErrorType === 'IP_BANNED'
+              }"
               @click="showNotFoundModal = false"
             >
-              {{ modalErrorType === 'ACCOUNT_PENDING_APPROVAL' ? 'Đã hiểu, tôi sẽ chờ duyệt' : 'Đóng thông báo' }}
+              {{
+                modalErrorType === 'IP_BANNED'
+                  ? 'Đã hiểu, tôi sẽ chờ 5 phút'
+                  : modalErrorType === 'ACCOUNT_PENDING_APPROVAL'
+                  ? 'Đã hiểu, tôi sẽ chờ duyệt'
+                  : 'Đóng thông báo'
+              }}
             </button>
           </div>
         </div>
@@ -1340,6 +1376,37 @@ label {
   background: #fffbeb;
   border: 2px solid #fde68a;
   box-shadow: 0 4px 14px rgba(217, 119, 6, 0.2);
+}
+
+.modal-icon-badge.ban-badge {
+  background: #fef2f2;
+  border: 2px solid #fca5a5;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.25);
+  animation: pulseBan 1.8s infinite;
+}
+
+@keyframes pulseBan {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+.modal-heading-title.title-danger {
+  color: #dc2626 !important;
+}
+
+.btn-modal-close.btn-modal-banned {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%) !important;
+  color: #ffffff !important;
+  border-color: #dc2626 !important;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.35) !important;
+}
+
+.btn-modal-close.btn-modal-banned:hover {
+  background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%) !important;
 }
 
 @keyframes hourglassFlip {

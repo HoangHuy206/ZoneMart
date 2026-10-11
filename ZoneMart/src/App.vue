@@ -175,7 +175,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             <span class="brand-name"
               >Zone<span class="highlight">Mart</span></span
             >
-            <span class="brand-tagline">Giao hàng hỏa tốc 3km</span>
+            <span class="brand-tagline">Giao hàng hỏa tốc 5km</span>
           </div>
         </router-link>
 
@@ -444,7 +444,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                 active-class="active"
               >
                 <i class="bi bi-bicycle menu-mini-icon"></i>
-                <span>Nhận Đơn 3km</span>
+                <span>Nhận Đơn 5km</span>
               </router-link>
               <router-link
                 to="/profile"
@@ -1133,12 +1133,12 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             <img :src="logoImg" alt="ZoneMart" class="footer-logo-img" />
             <div class="footer-brand-title">
               <h4>ZoneMart</h4>
-              <span>Giao Hàng Hỏa Tốc 3km</span>
+              <span>Giao Hàng Hỏa Tốc 5km</span>
             </div>
           </div>
           <p class="footer-tagline">
             Sàn thương mại điện tử kết nối trực tiếp Nhà Vườn, Tiểu Thương với
-            Khách Hàng lân cận trong bán kính 3km.
+            Khách Hàng lân cận trong bán kính 5km.
           </p>
           <ul class="footer-contact-list">
             <li>

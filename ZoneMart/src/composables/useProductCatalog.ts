@@ -1760,8 +1760,8 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
     oldPrice: 60000,
     discountBadge: "-20%",
     unit: "Chai 800ml",
-    image: "https://images.unsplash.com/photo-1585421514738-01798e348b17?auto=format&fit=crop&w=800&q=80",
-    gallery: ["https://images.unsplash.com/photo-1585421514738-01798e348b17?auto=format&fit=crop&w=800&q=80"],
+    image: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=800&q=80"],
     badge: "Bảo vệ da tay",
     store: {
       id: "store_tong_kho_my_dinh",
@@ -1857,28 +1857,28 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
   },
   {
     id: "p32",
-    name: "Túi Rác Tự Hủy Sinh Học Thân Thiện Môi Trường",
+    name: "Hộp Thủy Tinh Chịu Nhiệt Bảo Quản Thực Phẩm 1000ml",
     category: "household",
-    categoryName: "Đồ dùng gia đình",
-    price: 35000,
-    oldPrice: 45000,
-    discountBadge: "-22%",
-    unit: "Cuộn 3 túi",
-    image: "https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80",
-    gallery: ["https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80"],
-    badge: "Bảo vệ môi trường",
+    categoryName: "Đồ gia dụng",
+    price: 68000,
+    oldPrice: 85000,
+    discountBadge: "-20%",
+    unit: "Hộp 1000ml",
+    image: "https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&w=800&q=80"],
+    badge: "Thủy tinh cao cấp",
     store: {
       id: "store_tong_kho_my_dinh",
       name: "Tổng Kho Đồ Gia Dụng & Tiêu Dùng Mỹ Đình",
       address: "102 Hàm Nghi, Mỹ Đình 1, Nam Từ Liêm, Hà Nội",
       distanceKm: 5.2,
       deliveryTime: "35 - 45 phút",
-      rating: 4.75,
+      rating: 4.85,
       reviewsCount: 215,
       openHours: "08:00 - 22:30",
       totalProducts: 50,
       isVerified: true,
-      categoryName: "Đồ gia dụng & Hóa phẩm hữu cơ",
+      categoryName: "Đồ gia dụng & Tiêu dùng nhà bếp",
       avatar: "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=200&q=80",
       coverImage: "https://images.unsplash.com/photo-1584992236310-6edddc08acff?auto=format&fit=crop&w=800&q=80"
     },
@@ -1886,15 +1886,15 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
     reviewsCount: 145,
     sold: 610,
     stock: 120,
-    description: "Bộ 3 cuộn túi rác tự hủy sinh học làm từ tinh bột ngô thiên nhiên. Dẻo dai dai bền, đáy xếp hình sao chống rò rỉ nước rác và tự phân hủy sau 180 ngày chôn lấp.",
-    highlights: ["Chất liệu dẻo dai khó rách thủng", "Đường cắt xé tiện lợi, đáy kín nước", "Thân thiện 100% với môi trường sống"],
+    description: "Hộp thủy tinh chịu nhiệt Borosilicate cao cấp, nắp đậy gioăng silicon 4 khóa kín hơi tuyệt đối. Dùng an toàn trong lò vi sóng, tủ đông và máy rửa bát.",
+    highlights: ["Chịu nhiệt từ -20°C đến 400°C", "Gioăng silicon chống tràn nước 100%", "Bảo quản thực phẩm luôn tươi ngon vệ sinh"],
     specs: {
       origin: "Việt Nam",
-      brand: "EcoZone Organic",
-      weight: "Lốc 3 cuộn (1kg - cỡ 55x65cm)",
-      shelfLife: "3 năm",
+      brand: "EcoZone Kitchen",
+      weight: "Hộp 1000ml (650g)",
+      shelfLife: "Bảo hành 12 tháng",
       storage: "Nơi khô ráo",
-      packingStandard: "Lốc bọc màng co"
+      packingStandard: "Hộp giấy carton chống sốc"
     },
     nutrition: {
       servingSize: "Không áp dụng",
@@ -1902,9 +1902,9 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
       protein: "0",
       fat: "0",
       carbs: "0",
-      minerals: "Chứng nhận TUV Austria OK Biobased"
+      minerals: "Chứng nhận an toàn thực phẩm LFGB & FDA"
     },
-    cookingTips: ["Dùng lót thùng rác phòng khách, bếp hoặc văn phòng làm việc."],
+    cookingTips: ["Mở van thoát hơi silicon trước khi hâm nóng trong lò vi sóng."],
     reviews: []
   }
 ];
@@ -1970,7 +1970,7 @@ export function useProductCatalog() {
         unit: p.unit || "Phần",
         image: p.image,
         gallery: [p.image],
-        badge: "Đã AI Kiểm Duyệt",
+        badge: "Đã Kiểm Duyệt",
         store: {
           id: dbStore?.id || ("store_" + (resolvedStoreName).toLowerCase().replace(/[^a-z0-9]/g, "_")),
           name: resolvedStoreName,

@@ -27,6 +27,132 @@ public class AuthController : ControllerBase
     public static readonly ConcurrentDictionary<string, Shipper> InMemoryShippers = new();
     public static readonly ConcurrentDictionary<string, (string Otp, DateTime ExpiresAt)> ZaloOtps = new();
 
+    // =========================================================================================
+    // CƠ CHẾ BẢO MẬT: CHỐNG BRUTE-FORCE - KHÓA ĐỊA CHỈ IP 5 PHÚT NẾU ĐĂNG NHẬP SAI QUÁ 5 LẦN
+    // =========================================================================================
+    public class IpLoginSecurityRecord
+    {
+        public int FailedAttempts { get; set; } = 0;
+        public DateTime? BannedUntil { get; set; } = null;
+        public DateTime LastAttemptUtc { get; set; } = DateTime.UtcNow;
+    }
+
+    public static readonly ConcurrentDictionary<string, IpLoginSecurityRecord> IpLoginSecurityRecords = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Trích xuất địa chỉ IP chính xác của client gửi request (chuẩn hóa IPv6 loopback và đọc Proxy headers)
+    /// </summary>
+    public static string GetClientIpAddress(HttpContext? context)
+    {
+        if (context == null) return "127.0.0.1";
+
+        if (context.Request.Headers.TryGetValue("CF-Connecting-IP", out var cfIp) && !string.IsNullOrWhiteSpace(cfIp))
+            return cfIp.ToString().Split(',')[0].Trim();
+
+        if (context.Request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor) && !string.IsNullOrWhiteSpace(forwardedFor))
+            return forwardedFor.ToString().Split(',')[0].Trim();
+
+        if (context.Request.Headers.TryGetValue("X-Real-IP", out var realIp) && !string.IsNullOrWhiteSpace(realIp))
+            return realIp.ToString().Split(',')[0].Trim();
+
+        var remoteIp = context.Connection.RemoteIpAddress;
+        if (remoteIp != null)
+        {
+            if (remoteIp.IsIPv4MappedToIPv6)
+                return remoteIp.MapToIPv4().ToString();
+
+            string ipStr = remoteIp.ToString();
+            if (ipStr == "::1") return "127.0.0.1";
+            return ipStr;
+        }
+
+        return "127.0.0.1";
+    }
+
+    /// <summary>
+    /// Kiểm tra xem địa chỉ IP này có đang trong thời gian bị khóa 5 phút hay không
+    /// </summary>
+    public static bool IsIpBanned(string ip, out int remainingSeconds, out DateTime? bannedUntil)
+    {
+        remainingSeconds = 0;
+        bannedUntil = null;
+        if (string.IsNullOrWhiteSpace(ip)) return false;
+
+        if (IpLoginSecurityRecords.TryGetValue(ip, out var record))
+        {
+            lock (record)
+            {
+                if (record.BannedUntil.HasValue)
+                {
+                    var now = DateTime.UtcNow;
+                    if (record.BannedUntil.Value > now)
+                    {
+                        bannedUntil = record.BannedUntil.Value;
+                        remainingSeconds = (int)Math.Ceiling((record.BannedUntil.Value - now).TotalSeconds);
+                        return true;
+                    }
+                    else
+                    {
+                        // Hết thời hạn 5 phút ban -> Tự động giải phóng lệnh cấm và đặt lại số lần thử
+                        record.BannedUntil = null;
+                        record.FailedAttempts = 0;
+                        return false;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Ghi nhận 1 lần đăng nhập thất bại từ IP. Nếu đạt đủ 5 lần thì khóa IP trong vòng 5 phút (300 giây).
+    /// </summary>
+    public static (int currentAttempts, int remainingAttempts, bool isNowBanned, int banSeconds) RecordFailedLoginAttempt(string ip)
+    {
+        if (string.IsNullOrWhiteSpace(ip)) ip = "127.0.0.1";
+        var now = DateTime.UtcNow;
+        var record = IpLoginSecurityRecords.GetOrAdd(ip, _ => new IpLoginSecurityRecord());
+
+        lock (record)
+        {
+            // Nếu đã từng bị ban nhưng đã hết hạn thì reset lại từ đầu
+            if (record.BannedUntil.HasValue && record.BannedUntil.Value <= now)
+            {
+                record.FailedAttempts = 0;
+                record.BannedUntil = null;
+            }
+
+            record.FailedAttempts++;
+            record.LastAttemptUtc = now;
+
+            if (record.FailedAttempts >= 5)
+            {
+                record.BannedUntil = now.AddMinutes(5);
+                int banSeconds = (int)Math.Ceiling((record.BannedUntil.Value - now).TotalSeconds);
+                return (record.FailedAttempts, 0, true, banSeconds);
+            }
+
+            int remaining = Math.Max(0, 5 - record.FailedAttempts);
+            return (record.FailedAttempts, remaining, false, 0);
+        }
+    }
+
+    /// <summary>
+    /// Xóa lịch sử nhập sai của IP khi người dùng đăng nhập thành công
+    /// </summary>
+    public static void ResetIpAttempts(string ip)
+    {
+        if (string.IsNullOrWhiteSpace(ip)) return;
+        if (IpLoginSecurityRecords.TryGetValue(ip, out var record))
+        {
+            lock (record)
+            {
+                record.FailedAttempts = 0;
+                record.BannedUntil = null;
+            }
+        }
+    }
+
     /// <summary>
     /// Kiểm tra xem địa chỉ Gmail đã được đăng ký trên toàn bộ hệ thống ZoneMart chưa (Users, Stores, Shippers).
     /// Truy xuất trực tiếp Database MongoDB làm nguồn chân lý thời gian thực.
@@ -289,6 +415,24 @@ public class AuthController : ControllerBase
     [HttpPost("/api/seller/login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
+        string clientIp = GetClientIpAddress(HttpContext);
+
+        // 0. KIỂM TRA BẢO MẬT: NẾU IP ĐANG BỊ TẠM KHÓA DO ĐĂNG NHẬP SAI QUÁ 5 LẦN TRONG 5 PHÚT
+        if (IsIpBanned(clientIp, out int remainingSeconds, out var bannedUntilTime))
+        {
+            int remainingMinutes = (int)Math.Ceiling(remainingSeconds / 60.0);
+            Response.Headers["Retry-After"] = remainingSeconds.ToString();
+            return StatusCode(StatusCodes.Status429TooManyRequests, new
+            {
+                success = false,
+                message = $"🚫 ĐỊA CHỈ IP ({clientIp}) ĐÃ BỊ TẠM KHÓA!\nBạn đã nhập sai thông tin đăng nhập quá 5 lần liên tiếp. Hệ thống tự động khóa IP trong 5 phút để bảo vệ an toàn tài khoản.\nVui lòng thử lại sau {remainingMinutes} phút ({remainingSeconds} giây)!",
+                errorType = "IP_BANNED",
+                clientIp,
+                remainingSeconds,
+                bannedUntil = bannedUntilTime
+            });
+        }
+
         if (string.IsNullOrWhiteSpace(request.Account) || string.IsNullOrWhiteSpace(request.Password))
         {
             return BadRequest(new { success = false, message = "Vui lòng nhập đầy đủ tài khoản và mật khẩu!" });
@@ -624,20 +768,52 @@ public class AuthController : ControllerBase
         // 4. TH 2: KHÔNG TÌM THẤY TÀI KHOẢN TRONG CSDL KHỞI TẠO NÀO
         if (existingUser == null && shipperInfo == null)
         {
+            var (currentAttempts, remainingAttempts, isNowBanned, banDurationSeconds) = RecordFailedLoginAttempt(clientIp);
+            if (isNowBanned)
+            {
+                Response.Headers["Retry-After"] = banDurationSeconds.ToString();
+                return StatusCode(StatusCodes.Status429TooManyRequests, new 
+                { 
+                    success = false, 
+                    message = $"🚫 ĐỊA CHỈ IP ({clientIp}) ĐÃ BỊ TẠM KHÓA TRONG VÒNG 5 PHÚT!\nBạn đã nhập sai thông tin đăng nhập 5 lần liên tiếp. Hệ thống tự động khóa IP trong 5 phút để bảo vệ tài khoản.",
+                    errorType = "IP_BANNED",
+                    clientIp,
+                    remainingSeconds = banDurationSeconds
+                });
+            }
+
             return Unauthorized(new { 
                 success = false, 
-                message = "Không tìm thấy tài khoản", 
-                errorType = "ACCOUNT_NOT_FOUND" 
+                message = $"Không tìm thấy tài khoản! Cảnh báo: Bạn còn {remainingAttempts} lần thử ", 
+                errorType = "ACCOUNT_NOT_FOUND",
+                failedAttempts = currentAttempts,
+                remainingAttempts
             });
         }
 
         // 5. TH 1: TÀI KHOẢN TỒN TẠI NHƯNG MẬT KHẨU KHÔNG TRÙNG KHỚP
         if (!passwordMatches)
         {
+            var (currentAttempts, remainingAttempts, isNowBanned, banDurationSeconds) = RecordFailedLoginAttempt(clientIp);
+            if (isNowBanned)
+            {
+                Response.Headers["Retry-After"] = banDurationSeconds.ToString();
+                return StatusCode(StatusCodes.Status429TooManyRequests, new 
+                { 
+                    success = false, 
+                    message = $"🚫 ĐỊA CHỈ IP ({clientIp}) ĐÃ BỊ TẠM KHÓA !\nBạn đã nhập sai mật khẩu 5 lần liên tiếp. Hệ thống tự động khóa IP trong 5 phút để bảo vệ tài khoản.",
+                    errorType = "IP_BANNED",
+                    clientIp,
+                    remainingSeconds = banDurationSeconds
+                });
+            }
+
             return Unauthorized(new { 
                 success = false, 
-                message = "Mật khẩu không đúng", 
-                errorType = "INCORRECT_PASSWORD" 
+                message = $"Mật khẩu không đúng! Cảnh báo: Bạn còn {remainingAttempts} lần thử ", 
+                errorType = "INCORRECT_PASSWORD",
+                failedAttempts = currentAttempts,
+                remainingAttempts
             });
         }
 
@@ -944,6 +1120,9 @@ public class AuthController : ControllerBase
         {
             loginMessage = $"Đăng nhập thành công! Hồ sơ gian hàng '{storeName}' của bạn đã bị từ chối: {rejectReason ?? "Không đạt tiêu chuẩn"}.";
         }
+
+        // Đăng nhập thành công -> Xóa lịch sử nhập sai của IP
+        ResetIpAttempts(clientIp);
 
         return Ok(new
         {
@@ -2691,6 +2870,24 @@ public class AuthController : ControllerBase
     [HttpPost("face/login")]
     public async Task<IActionResult> FaceLogin([FromBody] FaceLoginRequest request)
     {
+        string clientIp = GetClientIpAddress(HttpContext);
+
+        // KIỂM TRA BẢO MẬT: NẾU IP ĐANG BỊ TẠM KHÓA DO ĐĂNG NHẬP SAI QUÁ 5 LẦN TRONG 5 PHÚT
+        if (IsIpBanned(clientIp, out int remainingSeconds, out var bannedUntilTime))
+        {
+            int remainingMinutes = (int)Math.Ceiling(remainingSeconds / 60.0);
+            Response.Headers["Retry-After"] = remainingSeconds.ToString();
+            return StatusCode(StatusCodes.Status429TooManyRequests, new
+            {
+                success = false,
+                message = $"🚫 ĐỊA CHỈ IP ({clientIp}) ĐÃ BỊ TẠM KHÓA!\nBạn đã xác thực thất bại quá 5 lần liên tiếp. Hệ thống tự động khóa IP trong 5 phút để bảo vệ an toàn tài khoản.\nVui lòng thử lại sau {remainingMinutes} phút ({remainingSeconds} giây)!",
+                errorType = "IP_BANNED",
+                clientIp,
+                remainingSeconds,
+                bannedUntil = bannedUntilTime
+            });
+        }
+
         try
         {
             if (string.IsNullOrWhiteSpace(request.Image))
@@ -2787,10 +2984,26 @@ public class AuthController : ControllerBase
             Console.WriteLine($"[FACE_LOGIN] Best match: '{matchedUser?.FullName}', similarity = {bestSimilarity:F4}, threshold = {SAFE_THRESHOLD}");
             if (bestSimilarity < SAFE_THRESHOLD || matchedUser == null)
             {
+                var (currentAttempts, remainingAttempts, isNowBanned, banDurationSeconds) = RecordFailedLoginAttempt(clientIp);
+                if (isNowBanned)
+                {
+                    Response.Headers["Retry-After"] = banDurationSeconds.ToString();
+                    return StatusCode(StatusCodes.Status429TooManyRequests, new 
+                    { 
+                        success = false, 
+                        message = $"🚫 ĐỊA CHỈ IP ({clientIp}) ĐÃ BỊ TẠM KHÓA TRONG VÒNG 5 PHÚT do xác thực sai 5 lần liên tiếp!",
+                        errorType = "IP_BANNED",
+                        clientIp,
+                        remainingSeconds = banDurationSeconds
+                    });
+                }
+
                 return Unauthorized(new
                 {
                     success = false,
-                    message = $"Khuôn mặt không khớp với bất kỳ tài khoản nào đã đăng ký (Độ tương đồng cao nhất: {(bestSimilarity > 0 ? (bestSimilarity * 100).ToString("F1") : "0.0")}%, yêu cầu tối thiểu {(SAFE_THRESHOLD * 100):F0}%)."
+                    message = $"Khuôn mặt không khớp với bất kỳ tài khoản nào đã đăng ký (Độ tương đồng cao nhất: {(bestSimilarity > 0 ? (bestSimilarity * 100).ToString("F1") : "0.0")}%, yêu cầu tối thiểu {(SAFE_THRESHOLD * 100):F0}%). Bạn còn {remainingAttempts} lần thử trước khi IP bị khóa 5 phút!",
+                    failedAttempts = currentAttempts,
+                    remainingAttempts
                 });
             }
 
@@ -2815,6 +3028,9 @@ public class AuthController : ControllerBase
             string sellerStatus = userStore?.Status ?? "";
             string storeName = userStore?.StoreName ?? "";
             string rejectReason = userStore?.RejectReason ?? "";
+
+            // Xác thực thành công -> Xóa lịch sử nhập sai của IP
+            ResetIpAttempts(clientIp);
 
             return Ok(new
             {
@@ -2971,6 +3187,47 @@ public class AuthController : ControllerBase
         {
             return StatusCode(500, new { success = false, message = "Lỗi khi nhận diện CCCD: " + ex.Message });
         }
+    }
+
+    /// <summary>
+    /// Kiểm tra trạng thái cấm của địa chỉ IP hiện tại hoặc IP chỉ định (dùng cho bộ đếm Frontend & kiểm thử)
+    /// </summary>
+    [HttpGet("ip-ban-status")]
+    public IActionResult GetIpBanStatus([FromQuery] string? ip = null)
+    {
+        string clientIp = string.IsNullOrWhiteSpace(ip) ? GetClientIpAddress(HttpContext) : ip.Trim();
+        bool isBanned = IsIpBanned(clientIp, out int remainingSeconds, out var bannedUntil);
+        int failedAttempts = 0;
+        if (IpLoginSecurityRecords.TryGetValue(clientIp, out var r))
+        {
+            failedAttempts = r.FailedAttempts;
+        }
+
+        return Ok(new
+        {
+            clientIp,
+            isBanned,
+            failedAttempts,
+            remainingAttempts = Math.Max(0, 5 - failedAttempts),
+            remainingSeconds,
+            bannedUntil
+        });
+    }
+
+    /// <summary>
+    /// Mở khóa thủ công cho địa chỉ IP (hỗ trợ Admin hoặc Reset sau khi kiểm thử)
+    /// </summary>
+    [HttpPost("reset-ip-ban")]
+    public IActionResult ResetIpBan([FromQuery] string? ip = null)
+    {
+        string targetIp = string.IsNullOrWhiteSpace(ip) ? GetClientIpAddress(HttpContext) : ip.Trim();
+        ResetIpAttempts(targetIp);
+        return Ok(new
+        {
+            success = true,
+            message = $"Đã mở khóa lệnh cấm IP thành công cho địa chỉ: {targetIp}",
+            clientIp = targetIp
+        });
     }
 }
 

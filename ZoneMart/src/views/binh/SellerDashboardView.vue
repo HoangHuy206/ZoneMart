@@ -1611,7 +1611,7 @@ const handleExecuteDelete = async () => {
   productToDelete.value = null;
 };
 
-// Xử lý đơn hàng: Người bán bấm Xác nhận đơn -> Báo người mua & Nổ đơn cho Shipper trong 3km
+// Xử lý đơn hàng: Người bán bấm Xác nhận đơn -> Báo người mua & Nổ đơn cho Shipper trong 5km
 const handleConfirmOrder = (order: SellerOrder) => {
   order.status = "Đã xác nhận đang chờ tài xế";
   orderRealtimeService.sellerConfirmOrder(order.id);
@@ -1620,7 +1620,7 @@ const handleConfirmOrder = (order: SellerOrder) => {
     localStorage.setItem(`zonemart_seller_orders_${cleanEmail}`, JSON.stringify(orders.value));
   }
   recalculateKPIs();
-  triggerToast(`✅ Đã xác nhận đơn hàng ${order.orderCode}! Đang điều phối tài xế trong bán kính 3km...`);
+  triggerToast(`✅ Đã xác nhận đơn hàng ${order.orderCode}! Đang điều phối tài xế trong bán kính 5km...`);
 };
 
 // Người bán hủy đơn / từ chối

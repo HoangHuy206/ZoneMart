@@ -1598,17 +1598,17 @@ const KNOWN_STORE_PROFILES: Record<string, SellerStoreProfile> = {
       {
         id: "ord-gd-02",
         orderCode: "#5567GD",
-        productSummary: "Bộ nồi inox 5 đáy (x1) & Túi rác sinh học (x2)",
+        productSummary: "Bộ nồi inox 5 đáy (x1) & Hộp thủy tinh chịu nhiệt (x2)",
         customerName: "Anh Việt Hùng",
         customerPhone: "0915 667 788",
         customerAddress: "Số 88 Hàm Nghi, Cầu Diễn, Nam Từ Liêm",
         orderDate: "Hôm qua, 15:20",
-        priceFormatted: "650.000 đ",
+        priceFormatted: "716.000 đ",
         paymentMethod: "Thẻ ngân hàng",
         status: "Hoàn thành",
         items: [
           { name: "Bộ nồi inox 5 đáy cao cấp", qty: 1, price: 580000 },
-          { name: "Túi đựng rác sinh học (1kg)", qty: 2, price: 35000 }
+          { name: "Hộp thủy tinh chịu nhiệt (1000ml)", qty: 2, price: 68000 }
         ]
       }
     ],
@@ -1662,12 +1662,12 @@ const KNOWN_STORE_PROFILES: Record<string, SellerStoreProfile> = {
       },
       {
         id: "p32",
-        name: "Túi đựng rác sinh học tự phân hủy cuộn 1kg",
-        category: "Tiêu dùng tiện ích",
-        price: 35000,
-        unit: "Cuộn 1kg",
-        stock: 150,
-        image: "https://images.unsplash.com/photo-1610557892470-55d9e80c0bce?auto=format&fit=crop&w=400&q=80",
+        name: "Hộp thủy tinh chịu nhiệt bảo quản thực phẩm 1000ml",
+        category: "Gia dụng nhà bếp",
+        price: 68000,
+        unit: "Chiếc 1000ml",
+        stock: 120,
+        image: "https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&w=400&q=80",
         aiSafetyScore: 99,
         aiMatchScore: 98
       }

@@ -143,7 +143,7 @@ public class OrdersController : ControllerBase
                     StoreId = safeStoreId,
                     ShipperId = ObjectId.GenerateNewId().ToString(),
                     DeliveryType = request.DeliveryType,
-                    ShippingFee = 15000,
+                    ShippingFee = request.ShippingFee > 0 ? (request.ShippingFee / Math.Max(1, request.Stores.Count)) : (request.DeliveryType == "express" ? 8000 : 5000),
                     DistanceKm = storeGroup.DistanceKm,
                     Status = "delivering", // Khởi tạo ở trạng thái đang giao để người mua theo dõi
                     CreatedAt = DateTime.UtcNow

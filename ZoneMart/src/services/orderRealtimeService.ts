@@ -3,7 +3,7 @@
  * ORDER REALTIME & ROUTING SERVICE (ZoneMart)
  * ================================================================
  * Quản lý luồng đặt hàng, phát tán sự kiện thời gian thực (Real-time),
- * kiểm tra bán kính nổ đơn 3km (Haversine) và định vị tuyến đường
+ * kiểm tra bán kính nổ đơn 5km (Haversine) và định vị tuyến đường
  * ngắn nhất (OSRM Driving API) cho Leaflet Map.
  */
 
@@ -392,7 +392,7 @@ class OrderRealtimeService {
   }
 
   /**
-   * 2. NGƯỜI BÁN: Xác nhận đơn hàng -> Chuyển sang tìm tài xế trong 3km
+   * 2. NGƯỜI BÁN: Xác nhận đơn hàng -> Chuyển sang tìm tài xế trong bán kính 5km
    */
   public sellerConfirmOrder(orderId: string): RealtimeOrder | null {
     let order = this.cachedOrdersMap.get(orderId) || this.getActiveOrder();
@@ -401,7 +401,7 @@ class OrderRealtimeService {
         id: orderId,
         orderCode: orderId,
         total: 40000,
-        shippingFee: 15000,
+        shippingFee: 5000,
         paymentMethod: "Tiền mặt COD",
         createdAt: "Vừa xong",
         status: "confirmed",
@@ -466,7 +466,7 @@ class OrderRealtimeService {
       }
     });
 
-    // Phát tín hiệu nổ đơn cho các tài xế trong 3km
+    // Phát tín hiệu nổ đơn cho các tài xế trong bán kính 5km
     this.broadcast({
       type: "ORDER_DISPATCH_READY",
       order
@@ -522,7 +522,7 @@ class OrderRealtimeService {
         id: orderId,
         orderCode: orderId,
         total: 40000,
-        shippingFee: 15000,
+        shippingFee: 5000,
         paymentMethod: "Tiền mặt COD",
         createdAt: "Vừa xong",
         status: "picking",

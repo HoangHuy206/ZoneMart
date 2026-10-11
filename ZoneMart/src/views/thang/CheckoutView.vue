@@ -565,7 +565,7 @@ const onPaymentConfirmed = (paidAmount?: number) => {
       id: orderId,
       orderCode: orderId,
       total: 0, // Khách quét mã QR thanh toán thành công -> Nổ đơn bên gian hàng là 0đ
-      shippingFee: shippingFee.value || 15000,
+      shippingFee: shippingFee.value || 5000,
       paymentMethod: "Chuyển khoản QR",
       createdAt: dateStr,
       status: "pending",
@@ -892,17 +892,35 @@ const saveAddress = () => {
   triggerToast("Đã lưu địa chỉ định vị riêng cho tài khoản của bạn!");
 };
 
-// Phí giao hàng & tổng tiền
+// Phí giao hàng & tổng tiền (Mô hình chợ dân sinh / đi chợ gần nhà - Bán kính <= 5km)
 const shopCount = computed(() => cart.activeStoresCount.value || 1);
 const isExpressSelected = ref(true);
 const paymentMethod = ref<"COD" | "ONLINE_QR">("ONLINE_QR");
 
+// Đạt mốc Freeship đi chợ từ 99.000 ₫
+const isFreeship = computed(() => (cart.subTotal.value || 0) >= 99000);
+
+const standardFee = computed(() => {
+  return cart.cartStores.value
+    .filter((store) => store.items.some((i) => i.selected))
+    .reduce((sum, store) => {
+      const feeInfo = cart.calculateStoreShippingFee(store, false);
+      return sum + feeInfo.totalFee;
+    }, 0) || 5000;
+});
+
+const expressFee = computed(() => {
+  return cart.cartStores.value
+    .filter((store) => store.items.some((i) => i.selected))
+    .reduce((sum, store) => {
+      const feeInfo = cart.calculateStoreShippingFee(store, true);
+      return sum + feeInfo.totalFee;
+    }, 0) || 8000;
+});
+
 const shippingFee = computed(() => {
-  if (isExpressSelected.value) {
-    return Math.round((15000 * shopCount.value) * 1.5);
-  } else {
-    return 15000 * shopCount.value;
-  }
+  if (isFreeship.value) return 0;
+  return isExpressSelected.value ? expressFee.value : standardFee.value;
 });
 
 const itemsTotal = computed(() => cart.subTotal.value || 0);
@@ -993,7 +1011,7 @@ const handlePlaceOrder = () => {
       id: orderId,
       orderCode: orderId,
       total: finalTotal.value,
-      shippingFee: shippingFee.value || 15000,
+      shippingFee: shippingFee.value || 5000,
       paymentMethod: "Tiền mặt COD",
       createdAt: dateStr,
       status: "pending",
@@ -1096,9 +1114,12 @@ const handlePlaceOrder = () => {
               <div class="opt-head">
                 <strong>
                   <i class="bi bi-lightning-charge-fill text-warning me-1" aria-hidden="true"></i>
-                  Giao Hỏa Tốc Siêu Tốc
+                  Giao Hỏa Tốc Đi Chợ (15-25 phút)
                 </strong>
-                <span class="price">{{ (Math.round((15000 * shopCount) * 1.5)).toLocaleString('vi-VN') }} ₫</span>
+                <span class="price">
+                  <span v-if="isFreeship" class="text-success">0 ₫ (Freeship)</span>
+                  <span v-else>{{ expressFee.toLocaleString('vi-VN') }} ₫</span>
+                </span>
               </div>
               <p class="sub">Nhận hàng trong 15-25 phút. <em>(Ưu tiên phục vụ, quét mã chuyển khoản tự động)</em></p>
             </div>
@@ -1111,9 +1132,12 @@ const handlePlaceOrder = () => {
               <div class="opt-head">
                 <strong>
                   <i class="bi bi-bicycle text-success me-1" aria-hidden="true"></i>
-                  Giao Hàng Tiêu Chuẩn
+                  Giao Tiêu Chuẩn Tiết Kiệm (30-45 phút)
                 </strong>
-                <span class="price">{{ (15000 * shopCount).toLocaleString('vi-VN') }} ₫</span>
+                <span class="price">
+                  <span v-if="isFreeship" class="text-success">0 ₫ (Freeship)</span>
+                  <span v-else>{{ standardFee.toLocaleString('vi-VN') }} ₫</span>
+                </span>
               </div>
               <p class="sub">Nhận hàng trong 30-45 phút. Hỗ trợ Tiền mặt COD và Chuyển khoản QR.</p>
             </div>

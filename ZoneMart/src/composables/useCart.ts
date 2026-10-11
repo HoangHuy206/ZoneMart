@@ -34,27 +34,27 @@ export interface Voucher {
 export const AVAILABLE_VOUCHERS: Voucher[] = [
   {
     code: 'FREESHIP10K',
-    title: 'Miễn Phí Ship Hỏa Tốc',
+    title: 'Miễn Phí Ship Đi Chợ',
     discountType: 'shipping',
-    discountValue: 15000,
-    minOrder: 150000,
-    description: 'Giảm 15.000 ₫ phí vận chuyển cho đơn từ 150.000 ₫',
+    discountValue: 10000,
+    minOrder: 50000,
+    description: 'Miễn phí vận chuyển cho đơn đi chợ từ 50.000 ₫',
   },
   {
     code: 'LOCALFRESH',
     title: 'Giảm 10% Nông Sản Tươi',
     discountType: 'percent',
     discountValue: 10,
-    minOrder: 200000,
-    description: 'Giảm 10% tối đa 30.000 ₫ cho đơn nông sản từ 200.000 ₫',
+    minOrder: 80000,
+    description: 'Giảm 10% tối đa 20.000 ₫ cho đơn nông sản từ 80.000 ₫',
   },
   {
     code: 'CHAOBANMOI',
     title: 'Quà Chào Bạn Mới',
     discountType: 'fixed',
-    discountValue: 20000,
-    minOrder: 100000,
-    description: 'Giảm trực tiếp 20.000 ₫ cho đơn hàng từ 100.000 ₫',
+    discountValue: 10000,
+    minOrder: 50000,
+    description: 'Giảm trực tiếp 10.000 ₫ cho đơn hàng đi chợ từ 50.000 ₫',
   },
 ];
 
@@ -259,6 +259,99 @@ watch(
   { immediate: true },
 );
 
+/**
+ * Ước tính trọng lượng món hàng (kg) dựa vào đơn vị quy cách và số lượng
+ */
+export function estimateItemWeightKg(item: CartItem): number {
+  const u = `${item.unit || ''} ${item.name || ''}`.toLowerCase();
+  let unitKg = 0.5; // Mặc định 0.5kg cho 1 món thực phẩm thông thường
+
+  if (u.includes('10kg')) unitKg = 10.0;
+  else if (u.includes('5kg')) unitKg = 5.0;
+  else if (u.includes('3kg')) unitKg = 3.0;
+  else if (u.includes('2kg') || u.includes('2l') || u.includes('2 lít')) unitKg = 2.0;
+  else if (u.includes('1kg') || u.includes('1l') || u.includes('1 lít') || u.includes('1000ml')) unitKg = 1.0;
+  else if (u.includes('800ml') || u.includes('850g')) unitKg = 0.85;
+  else if (u.includes('500g') || u.includes('500ml')) unitKg = 0.5;
+  else if (u.includes('300g') || u.includes('380g')) unitKg = 0.38;
+  else if (u.includes('200g')) unitKg = 0.2;
+  else if (u.includes('100g')) unitKg = 0.1;
+
+  return Math.max(0.1, unitKg * (item.quantity || 1));
+}
+
+export interface StoreShippingFeeResult {
+  distanceFee: number;
+  weightFee: number;
+  expressFee: number;
+  totalFee: number;
+  distanceKm: number;
+  totalWeightKg: number;
+  isOutOfRange: boolean;
+}
+
+/**
+ * Tính phí vận chuyển theo cự ly (bán kính tối đa 5km) và khối lượng món hàng:
+ * - 0 - 1.5 km: 5.000 ₫
+ * - 1.5 - 3.0 km: 8.000 ₫
+ * - 3.0 - 5.0 km: 12.000 ₫
+ * - > 5.0 km: Vượt quá bán kính phục vụ
+ * - Phụ phí khối lượng: 3kg - 5kg (+3.000 ₫), >= 5kg (+5.000 ₫)
+ * - Phụ phí hỏa tốc 15-20p: +3.000 ₫
+ */
+export function calculateStoreShippingFee(store: CartStoreGroup, isExpress = false): StoreShippingFeeResult {
+  const selectedItems = (store.items || []).filter((i) => i.selected);
+  if (selectedItems.length === 0) {
+    return {
+      distanceFee: 0,
+      weightFee: 0,
+      expressFee: 0,
+      totalFee: 0,
+      distanceKm: 0,
+      totalWeightKg: 0,
+      isOutOfRange: false
+    };
+  }
+
+  const rawDist = Number(store.distanceKm) || 0.8;
+  const dist = Math.round(rawDist * 10) / 10;
+  const isOutOfRange = dist > 5.0;
+
+  // 1. Phí theo khoảng cách (Km)
+  let distanceFee = 5000; // Mặc định bán kính gần 0 - 1.5km: 5.000 ₫
+  if (dist > 1.5 && dist <= 3.0) {
+    distanceFee = 8000;
+  } else if (dist > 3.0) {
+    distanceFee = 12000;
+  }
+
+  // 2. Phụ phí khối lượng món hàng
+  const totalWeightKg = Math.round(
+    selectedItems.reduce((acc, it) => acc + estimateItemWeightKg(it), 0) * 10
+  ) / 10;
+  let weightFee = 0;
+  if (totalWeightKg >= 5.0) {
+    weightFee = 5000;
+  } else if (totalWeightKg >= 3.0) {
+    weightFee = 3000;
+  }
+
+  // 3. Phụ phí hỏa tốc
+  const expressFee = isExpress ? 3000 : 0;
+
+  const totalFee = distanceFee + weightFee + expressFee;
+
+  return {
+    distanceFee,
+    weightFee,
+    expressFee,
+    totalFee,
+    distanceKm: dist,
+    totalWeightKg,
+    isOutOfRange
+  };
+}
+
 export function useCart() {
   // Tổng số lượng tất cả món trong giỏ (dùng cho Badge Header - nếu chưa đăng nhập luôn trả về 0)
   const totalCount = computed(() => {
@@ -301,9 +394,44 @@ export function useCart() {
     ).length;
   });
 
-  // Phí ship cơ bản: 15.000 ₫/quán
+
+  // Mốc Freeship đi chợ: 99.000 ₫ (phù hợp với quy mô đơn hàng đi chợ hàng ngày)
+  const freeshipThreshold = 99000;
+  const isFreeshipEligible = computed(() => subTotal.value >= freeshipThreshold);
+
+  // Phí ship động theo Km cự ly thực tế (bán kính <= 5km) + Khối lượng món hàng:
+  // Đơn hàng từ 99.000 ₫ trở lên tự động MIỄN PHÍ VẬN CHUYỂN (0 ₫).
   const baseShippingFee = computed(() => {
-    return activeStoresCount.value * 15000;
+    if (activeStoresCount.value === 0) return 0;
+    if (isFreeshipEligible.value) return 0;
+
+    return cartStores.value
+      .filter((store) => store.items.some((i) => i.selected))
+      .reduce((sum, store) => {
+        const feeInfo = calculateStoreShippingFee(store, false);
+        return sum + feeInfo.totalFee;
+      }, 0);
+  });
+
+  // Tổng trọng lượng các món đã chọn (kg)
+  const selectedTotalWeightKg = computed(() => {
+    return Math.round(
+      cartStores.value.reduce((total, store) => {
+        return (
+          total +
+          store.items
+            .filter((i) => i.selected)
+            .reduce((sum, item) => sum + estimateItemWeightKg(item), 0)
+        );
+      }, 0) * 10
+    ) / 10;
+  });
+
+  // Kiểm tra có cửa hàng nào vượt quá bán kính 5km không
+  const hasOutOfRangeStore = computed(() => {
+    return cartStores.value.some((store) =>
+      store.items.some((i) => i.selected) && (store.distanceKm || 0) > 5.0
+    );
   });
 
   // Voucher đang áp dụng
@@ -370,8 +498,6 @@ export function useCart() {
     },
   });
 
-  // Mốc Freeship hỏa tốc: 300.000 ₫
-  const freeshipThreshold = 300000;
   const freeshipRemaining = computed(() =>
     Math.max(0, freeshipThreshold - subTotal.value),
   );
@@ -590,5 +716,9 @@ export function useCart() {
     loadCartFromDatabase,
     refreshCartForUser,
     AVAILABLE_VOUCHERS,
+    selectedTotalWeightKg,
+    hasOutOfRangeStore,
+    calculateStoreShippingFee,
+    estimateItemWeightKg,
   };
 }
