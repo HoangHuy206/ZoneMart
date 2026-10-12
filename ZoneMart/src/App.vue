@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import logoImg from './assets/logo.png';
 import { useAuth, type UserRole } from './composables/useAuth';
@@ -8,12 +8,23 @@ import { useProductCatalog } from './composables/useProductCatalog';
 import ZoneToast from './components/common/ZoneToast.vue';
 import TopProgressBar from './components/common/TopProgressBar.vue';
 import AiAssistantWidget from './components/common/AiAssistantWidget.vue';
+import AppIntroSplash from './components/common/AppIntroSplash.vue';
 
 const router = useRouter();
 const route = useRoute();
 const auth = useAuth();
 const cart = useCart();
 const catalog = useProductCatalog();
+const introComplete = ref(false);
+const replayIntro = () => { introComplete.value = false; };
+onMounted(() => {
+  window.addEventListener('zonemart:replay-intro', replayIntro);
+  // Dự phòng an toàn: sau tối đa 4.6s luôn đảm bảo giao diện web hiển thị
+  setTimeout(() => {
+    introComplete.value = true;
+  }, 4600);
+});
+onUnmounted(() => window.removeEventListener('zonemart:replay-intro', replayIntro));
 
 onMounted(() => {
   catalog.refreshCatalog();
@@ -158,7 +169,9 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 </script>
 
 <template>
-  <div class="app-wrapper" @click="closeDropdowns">
+  <div class="app-wrapper" :class="{ 'app-wrapper--revealed': introComplete }" @click="closeDropdowns">
+    <!-- Hiệu ứng hoạt họa mở đầu trang web kèm Logo ZoneMart -->
+    <AppIntroSplash @complete="introComplete = true" />
     <!-- Thanh tải tiến trình đỉnh trang & Toast thông báo hoạt họa toàn cục -->
     <TopProgressBar />
     <ZoneToast />
@@ -1315,6 +1328,14 @@ body {
   max-width: 100%;
   overflow-x: hidden;
   overflow-x: clip;
+}
+
+.app-wrapper--revealed {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-wrapper { transition-duration: 1ms; transform: none; }
 }
 
 .main-content {

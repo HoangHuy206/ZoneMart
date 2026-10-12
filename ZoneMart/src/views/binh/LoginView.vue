@@ -291,9 +291,9 @@ const handleLogin = async () => {
     <AntigravityCanvas
       theme="market"
       :full-screen="true"
-      :particle-count="45"
-      :speed="0.75"
-      :opacity="0.82"
+      :particle-count="12"
+      :speed="0.28"
+      :opacity="0.24"
       :z-index="1"
     />
 

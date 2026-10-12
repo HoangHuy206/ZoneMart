@@ -1656,7 +1656,8 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
 </script>
 
 <template>
-  <div class="ai-widget-wrapper">
+  <Teleport to="body">
+    <div class="ai-widget-wrapper">
     <!-- Bong Bóng Lời Thoại Gợi Ý (Thi thoảng mới hiện phía trên avatar) -->
     <transition name="bubble-pop">
       <div
@@ -2320,6 +2321,7 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
       </div>
     </transition>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>
