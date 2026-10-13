@@ -49,6 +49,8 @@ namespace ZoneMart.Server.Controllers
             public List<OrderItemDto> CartItems { get; set; } = new List<OrderItemDto>();
             public OrderItemDto? PendingItem { get; set; }
             public string Address { get; set; } = string.Empty;
+            public string OriginalAddress { get; set; } = string.Empty;
+            public int AddressRetryCount { get; set; } = 0;
             public string ShippingMethod { get; set; } = "Giao Hàng Hỏa Tốc Đi Chợ (15-25 phút)";
             public decimal ShippingFee { get; set; } = 8000;
             public string PaymentMethod { get; set; } = string.Empty;
@@ -57,18 +59,42 @@ namespace ZoneMart.Server.Controllers
             public string CreatedOrderCode { get; set; } = string.Empty;
         }
 
+        public class SafeLocationRequest
+        {
+            public double Lat { get; set; }
+            public double Lon { get; set; }
+        }
+
         public class ChatRequest
         {
             public string Message { get; set; } = string.Empty;
             public string? UserRole { get; set; }
             public string? UserEmail { get; set; }
+            public string? UserId { get; set; }
             public string? UserLocation { get; set; }
+            public double? Lat { get; set; }
+            public double? Lon { get; set; }
             public List<ChatMessageItem>? History { get; set; }
             public string? RegistrationState { get; set; }
             public OrderStateDto? OrderState { get; set; }
             public DirectRegDraft? RegDraft { get; set; }
             public string? SupportState { get; set; }
             public SupportDraft? SupportDraft { get; set; }
+            public List<CartStoreDto>? CartStores { get; set; }
+            public List<ExistingCartItemCandidateDto>? SelectedCartItems { get; set; }
+        }
+
+        public class ExistingCartItemCandidateDto
+        {
+            public string Id { get; set; } = string.Empty;
+            public string Name { get; set; } = string.Empty;
+            public decimal Price { get; set; }
+            public int Quantity { get; set; } = 1;
+            public int MaxStock { get; set; } = 99;
+            public string Image { get; set; } = string.Empty;
+            public string StoreId { get; set; } = string.Empty;
+            public string StoreName { get; set; } = string.Empty;
+            public bool Selected { get; set; } = true;
         }
 
         public class SupportDraft
@@ -91,6 +117,10 @@ namespace ZoneMart.Server.Controllers
             public string ConfirmPassword { get; set; } = "";
 
             // Seller
+            public string SellerType { get; set; } = "";
+            public string Ward { get; set; } = "";
+            public string District { get; set; } = "";
+            public string MarketName { get; set; } = "";
             public string StoreName { get; set; } = "";
             public string Address { get; set; } = "";
             public string Category { get; set; } = "";
@@ -101,6 +131,7 @@ namespace ZoneMart.Server.Controllers
             public string FoodSafetyImage { get; set; } = "";
             public string BankName { get; set; } = "";
             public string BankAccountNumber { get; set; } = "";
+            public string CurrentEditField { get; set; } = "";
 
             // Shipper
             public string CccdNumber { get; set; } = "";
@@ -145,6 +176,10 @@ namespace ZoneMart.Server.Controllers
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _paidOrdersCache = new System.Collections.Concurrent.ConcurrentDictionary<string, bool>();
         private static (string ip, string city, double temp, string description, string prompt, DateTime expireAt)? _cachedWeatherInfo;
         private static readonly object _weatherLock = new object();
+        private static (List<Product> products, DateTime expireAt)? _cachedProducts;
+        private static readonly object _productsLock = new object();
+        private static (List<Store> stores, DateTime expireAt)? _cachedStores;
+        private static readonly object _storesLock = new object();
 
         private static void RecordPaidOrderToFileAndCache(string code, double amount = 40000, string bankAccount = "28122068866", string rawSource = "System Auto Confirm")
         {
@@ -278,85 +313,85 @@ namespace ZoneMart.Server.Controllers
                         $"https://api.telegram.org/bot{teleToken}/getUpdates?offset=-50&limit=50"
                     };
 
-                foreach (var tUrl in teleUrls)
-                {
-                    try
+                    foreach (var tUrl in teleUrls)
                     {
-                        using var ctsTele = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                        var teleRes = await _httpClient.GetAsync(tUrl, ctsTele.Token);
-                        if (teleRes.IsSuccessStatusCode)
+                        try
                         {
-                            string teleJson = await teleRes.Content.ReadAsStringAsync(ctsTele.Token);
-                            using var doc = JsonDocument.Parse(teleJson);
-                            if (doc.RootElement.TryGetProperty("result", out var results) && results.ValueKind == JsonValueKind.Array)
+                            using var ctsTele = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                            var teleRes = await _httpClient.GetAsync(tUrl, ctsTele.Token);
+                            if (teleRes.IsSuccessStatusCode)
                             {
-                                foreach (var item in results.EnumerateArray())
+                                string teleJson = await teleRes.Content.ReadAsStringAsync(ctsTele.Token);
+                                using var doc = JsonDocument.Parse(teleJson);
+                                if (doc.RootElement.TryGetProperty("result", out var results) && results.ValueKind == JsonValueKind.Array)
                                 {
-                                    string text = "";
-                                    if (item.TryGetProperty("message", out var msg))
+                                    foreach (var item in results.EnumerateArray())
                                     {
-                                        text = (msg.TryGetProperty("text", out var t) ? t.GetString() : "") ??
-                                               (msg.TryGetProperty("caption", out var c) ? c.GetString() : "") ?? "";
-                                    }
-                                    else if (item.TryGetProperty("channel_post", out var cp))
-                                    {
-                                        text = (cp.TryGetProperty("text", out var t) ? t.GetString() : "") ??
-                                               (cp.TryGetProperty("caption", out var c) ? c.GetString() : "") ?? "";
-                                    }
-                                    else if (item.TryGetProperty("edited_message", out var em))
-                                    {
-                                        text = (em.TryGetProperty("text", out var t) ? t.GetString() : "") ??
-                                               (em.TryGetProperty("caption", out var c) ? c.GetString() : "") ?? "";
-                                    }
-                                    else if (item.TryGetProperty("edited_channel_post", out var ecp))
-                                    {
-                                        text = (ecp.TryGetProperty("text", out var t) ? t.GetString() : "") ??
-                                               (ecp.TryGetProperty("caption", out var c) ? c.GetString() : "") ?? "";
-                                    }
-
-                                    if (!string.IsNullOrWhiteSpace(text))
-                                    {
-                                        string cleanText = text.Replace(" ", "").Replace("-", "").ToUpperInvariant();
-                                        string noTone = RemoveVietnameseTones(text).ToUpperInvariant();
-
-                                        bool isMatch = false;
-
-                                        // Khớp mã đơn ZM hoặc 6 chữ số
-                                        if (cleanText.Contains(cleanOrderCode) ||
-                                            (!string.IsNullOrEmpty(orderDigits) && orderDigits.Length >= 6 && cleanText.Contains(orderDigits)))
+                                        string text = "";
+                                        if (item.TryGetProperty("message", out var msg))
                                         {
-                                            isMatch = true;
+                                            text = (msg.TryGetProperty("text", out var t) ? t.GetString() : "") ??
+                                                   (msg.TryGetProperty("caption", out var c) ? c.GetString() : "") ?? "";
                                         }
-                                        // Khớp thông báo biến động số dư TPBank
-                                        else if (cleanText.Contains("28122068866") &&
-                                                 (cleanText.Contains("40000") || cleanText.Contains("40.000") || noTone.Contains("BIEN DONG SO DU") || noTone.Contains("CHUYEN TIEN THANH CONG")))
+                                        else if (item.TryGetProperty("channel_post", out var cp))
                                         {
-                                            isMatch = true;
+                                            text = (cp.TryGetProperty("text", out var t) ? t.GetString() : "") ??
+                                                   (cp.TryGetProperty("caption", out var c) ? c.GetString() : "") ?? "";
+                                        }
+                                        else if (item.TryGetProperty("edited_message", out var em))
+                                        {
+                                            text = (em.TryGetProperty("text", out var t) ? t.GetString() : "") ??
+                                                   (em.TryGetProperty("caption", out var c) ? c.GetString() : "") ?? "";
+                                        }
+                                        else if (item.TryGetProperty("edited_channel_post", out var ecp))
+                                        {
+                                            text = (ecp.TryGetProperty("text", out var t) ? t.GetString() : "") ??
+                                                   (ecp.TryGetProperty("caption", out var c) ? c.GetString() : "") ?? "";
                                         }
 
-                                        if (isMatch)
+                                        if (!string.IsNullOrWhiteSpace(text))
                                         {
-                                            RecordPaidOrderToFileAndCache(cleanOrderCode, 40000, "28122068866", text);
-                                            try
+                                            string cleanText = text.Replace(" ", "").Replace("-", "").ToUpperInvariant();
+                                            string noTone = RemoveVietnameseTones(text).ToUpperInvariant();
+
+                                            bool isMatch = false;
+
+                                            // Khớp mã đơn ZM hoặc 6 chữ số
+                                            if (cleanText.Contains(cleanOrderCode) ||
+                                                (!string.IsNullOrEmpty(orderDigits) && orderDigits.Length >= 6 && cleanText.Contains(orderDigits)))
                                             {
-                                                var filterM = Builders<BsonDocument>.Filter.Regex("orderCode", new BsonRegularExpression(cleanOrderCode, "i"));
-                                                var update = Builders<BsonDocument>.Update
-                                                    .Set("isPaid", true)
-                                                    .Set("paymentStatus", "Paid")
-                                                    .Set("paidAt", DateTime.UtcNow);
-                                                await _mongoService.Database.GetCollection<BsonDocument>("Orders").UpdateOneAsync(filterM, update);
+                                                isMatch = true;
                                             }
-                                            catch { }
+                                            // Khớp thông báo biến động số dư TPBank
+                                            else if (cleanText.Contains("28122068866") &&
+                                                     (cleanText.Contains("40000") || cleanText.Contains("40.000") || noTone.Contains("BIEN DONG SO DU") || noTone.Contains("CHUYEN TIEN THANH CONG")))
+                                            {
+                                                isMatch = true;
+                                            }
 
-                                            return Ok(new { isPaid = true, orderCode = cleanOrderCode, source = "TELEGRAM_BOT" });
+                                            if (isMatch)
+                                            {
+                                                RecordPaidOrderToFileAndCache(cleanOrderCode, 40000, "28122068866", text);
+                                                try
+                                                {
+                                                    var filterM = Builders<BsonDocument>.Filter.Regex("orderCode", new BsonRegularExpression(cleanOrderCode, "i"));
+                                                    var update = Builders<BsonDocument>.Update
+                                                        .Set("isPaid", true)
+                                                        .Set("paymentStatus", "Paid")
+                                                        .Set("paidAt", DateTime.UtcNow);
+                                                    await _mongoService.Database.GetCollection<BsonDocument>("Orders").UpdateOneAsync(filterM, update);
+                                                }
+                                                catch { }
+
+                                                return Ok(new { isPaid = true, orderCode = cleanOrderCode, source = "TELEGRAM_BOT" });
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                        catch { }
                     }
-                    catch { }
-                }
                 }
             }
             catch { }
@@ -511,12 +546,11 @@ namespace ZoneMart.Server.Controllers
                 clientIp = "14.232.208.1"; // IP Hà Nội
             }
 
-            // Kiểm tra cache 5 phút theo IP để tối ưu hiệu năng
+            // Kiểm tra cache thời tiết theo IP để tối ưu hiệu năng (trả về tức thì 0ms)
             lock (_weatherLock)
             {
                 if (_cachedWeatherInfo != null &&
-                    _cachedWeatherInfo.Value.ip == clientIp &&
-                    DateTime.UtcNow < _cachedWeatherInfo.Value.expireAt)
+                    (_cachedWeatherInfo.Value.ip == clientIp || DateTime.UtcNow < _cachedWeatherInfo.Value.expireAt))
                 {
                     return (_cachedWeatherInfo.Value.city, _cachedWeatherInfo.Value.temp, _cachedWeatherInfo.Value.description, _cachedWeatherInfo.Value.prompt);
                 }
@@ -528,8 +562,8 @@ namespace ZoneMart.Server.Controllers
 
             try
             {
-                // BƯỚC 2: Dùng HttpClient gọi API http://ip-api.com/json/{IP_của_khách}. Trích xuất giá trị city từ file JSON trả về.
-                using var ctsIp = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                // BƯỚC 2: Dùng HttpClient gọi API http://ip-api.com/json/{IP_của_khách}.
+                using var ctsIp = new CancellationTokenSource(TimeSpan.FromMilliseconds(1200));
                 var ipRes = await _httpClient.GetAsync($"http://ip-api.com/json/{clientIp}", ctsIp.Token);
                 if (ipRes.IsSuccessStatusCode)
                 {
@@ -550,7 +584,7 @@ namespace ZoneMart.Server.Controllers
             {
                 // BƯỚC 3: Dùng biến city vừa lấy được, truyền vào URL của OpenWeatherMap
                 string weatherUrl = $"https://api.openweathermap.org/data/2.5/weather?q={Uri.EscapeDataString(city)}&units=metric&lang=vi&appid=8cf6d64868efe0e4023e58c6fcd4d676";
-                using var ctsW = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+                using var ctsW = new CancellationTokenSource(TimeSpan.FromMilliseconds(1200));
                 var weatherRes = await _httpClient.GetAsync(weatherUrl, ctsW.Token);
                 if (weatherRes.IsSuccessStatusCode)
                 {
@@ -582,15 +616,965 @@ namespace ZoneMart.Server.Controllers
 
             lock (_weatherLock)
             {
-                _cachedWeatherInfo = (clientIp, city, temp, description, weatherPrompt, DateTime.UtcNow.AddMinutes(5));
+                _cachedWeatherInfo = (clientIp, city, temp, description, weatherPrompt, DateTime.UtcNow.AddMinutes(30));
             }
 
             return (city, temp, description, weatherPrompt);
         }
 
+        private async Task<List<Store>> GetCachedActiveStoresAsync()
+        {
+            lock (_storesLock)
+            {
+                if (_cachedStores != null && DateTime.UtcNow < _cachedStores.Value.expireAt)
+                {
+                    return _cachedStores.Value.stores;
+                }
+            }
+
+            try
+            {
+                var stores = await _mongoService.Stores
+                    .Find(s => s.Status != "Rejected" && s.Status != "deleted")
+                    .ToListAsync();
+
+                lock (_storesLock)
+                {
+                    _cachedStores = (stores ?? new List<Store>(), DateTime.UtcNow.AddSeconds(60));
+                }
+                return stores ?? new List<Store>();
+            }
+            catch
+            {
+                return new List<Store>();
+            }
+        }
+
+        private async Task<List<Product>> GetCachedActiveProductsAsync()
+        {
+            lock (_productsLock)
+            {
+                if (_cachedProducts != null && DateTime.UtcNow < _cachedProducts.Value.expireAt)
+                {
+                    return _cachedProducts.Value.products;
+                }
+            }
+
+            try
+            {
+                var prods = await _mongoService.Products
+                    .Find(p => p.StockStatus != "out_of_stock" && p.AiStatus != "rejected")
+                    .SortByDescending(p => p.CreatedAt)
+                    .ToListAsync();
+
+                try
+                {
+                    var stores = await GetCachedActiveStoresAsync();
+                    if (stores != null && stores.Count > 0)
+                    {
+                        var storeMap = stores.ToDictionary(s => s.Id ?? "", s => s.StoreName ?? "ZoneMart Store");
+                        foreach (var p in prods)
+                        {
+                            if (!string.IsNullOrWhiteSpace(p.StoreId) && storeMap.TryGetValue(p.StoreId, out var sName) && !string.IsNullOrWhiteSpace(sName))
+                            {
+                                p.StoreName = sName;
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                lock (_productsLock)
+                {
+                    _cachedProducts = (prods ?? new List<Product>(), DateTime.UtcNow.AddSeconds(60));
+                }
+                return prods ?? new List<Product>();
+            }
+            catch
+            {
+                return new List<Product>();
+            }
+        }
+
+        [HttpPost("safe-location")]
+        public async Task<IActionResult> GetSafeLocation([FromBody] SafeLocationRequest request)
+        {
+            if (request == null || (request.Lat == 0 && request.Lon == 0))
+            {
+                return BadRequest(new { success = false, message = "Tọa độ GPS không hợp lệ." });
+            }
+
+            // Tọa độ GPS thật sự CHỈ hiện ở Backend Console, TUYỆT ĐỐI không trả tọa độ số về Frontend
+            Console.WriteLine($"[GPS Backend]: Nhận tọa độ GPS thực tế từ Client: Lat={request.Lat}, Lon={request.Lon}");
+
+            var (safeLocationName, amenity, hamlet, suburb, district, city) = await ResolveSafeLocationFromGpsAsync(request.Lat, request.Lon);
+
+            Console.WriteLine($"[GPS Backend]: Đã dịch thành địa danh an toàn cho AI Tư Vấn: {safeLocationName}");
+
+            return Ok(new
+            {
+                success = true,
+                safeLocationName,
+                amenity,
+                hamlet,
+                suburb,
+                district,
+                city
+            });
+        }
+
+        private static string SanitizeStreetOrAlley(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "";
+            string cleaned = name.Trim();
+
+            // Loại bỏ tiền tố số nhà cụ thể: "Số 12 ", "Số 12A/3 ", "12 ", "15/3B ", "Số 25, "...
+            cleaned = Regex.Replace(cleaned, @"^(số\s*)?\d+[a-zA-Z]?(\s*[-/]\s*\d+[a-zA-Z]?)*\s*(,\s*|\s+)", "", RegexOptions.IgnoreCase).Trim();
+
+            // Nếu chuỗi chỉ toàn là số nhà đơn thuần thì loại bỏ hoàn toàn
+            if (Regex.IsMatch(cleaned, @"^(số\s*)?\d+[a-zA-Z]?(\s*[-/]\s*\d+[a-zA-Z]?)*$", RegexOptions.IgnoreCase))
+            {
+                return "";
+            }
+            return cleaned;
+        }
+
+        private static readonly string[] VietnamProvinces = new[]
+        {
+            "An Giang", "Bà Rịa - Vũng Tàu", "Bắc Giang", "Bắc Kạn", "Bạc Liêu", "Bắc Ninh",
+            "Bến Tre", "Bình Định", "Bình Dương", "Bình Phước", "Bình Thuận", "Cà Mau",
+            "Cao Bằng", "Đắk Lắk", "Đắk Nông", "Điện Biên", "Đồng Nai", "Đồng Tháp",
+            "Gia Lai", "Hà Giang", "Hà Nam", "Hà Tĩnh", "Hải Dương", "Hậu Giang",
+            "Hòa Bình", "Hưng Yên", "Khánh Hòa", "Kiên Giang", "Kon Tum", "Lai Châu",
+            "Lâm Đồng", "Lạng Sơn", "Lào Cai", "Long An", "Nam Định", "Nghệ An",
+            "Ninh Bình", "Ninh Thuận", "Phú Thọ", "Phú Yên", "Quảng Bình", "Quảng Nam",
+            "Quảng Ngãi", "Quảng Ninh", "Quảng Trị", "Sóc Trăng", "Sơn La", "Tây Ninh",
+            "Thái Bình", "Thái Nguyên", "Thanh Hóa", "Thừa Thiên Huế", "Tiền Giang", "Trà Vinh",
+            "Tuyên Quang", "Vĩnh Long", "Vĩnh Phúc", "Yên Bái"
+        };
+
+        private static string SanitizeSafeLocation(string? loc)
+        {
+            if (string.IsNullOrWhiteSpace(loc)) return "";
+            string cleaned = loc.Trim();
+
+            // Tuyệt đối chặn và lọc bỏ mọi chuỗi chứa chữ 'Tọa độ', 'GPS', hoặc số thập phân vĩ độ/kinh độ
+            if (Regex.IsMatch(cleaned, @"(toa\s*do|gps|lat|lon|\d+\.\d{2,})", RegexOptions.IgnoreCase))
+            {
+                return "Trường Cao Đẳng Công Nghệ Cao Hà Nội, Phường Tây Mỗ, Quận Nam Từ Liêm, Hà Nội";
+            }
+            return cleaned;
+        }
+
+        private static (string NormalizedSuburb, string NormalizedDistrict, string NormalizedCity) NormalizeVietnameseAdminAddress(string rawSuburb, string rawDistrict, string rawCity)
+        {
+            string s = (rawSuburb ?? "").Trim();
+            string d = (rawDistrict ?? "").Trim();
+            string c = (rawCity ?? "").Trim();
+
+            // 1. Phường / Xã / Thị trấn: Sửa tiền tố không dấu từ bản đồ quốc tế (Xa -> Xã, Phuong -> Phường, Thi tran -> Thị trấn)
+            if (!string.IsNullOrWhiteSpace(s))
+            {
+                s = Regex.Replace(s, @"^Xa\s+", "Xã ", RegexOptions.IgnoreCase);
+                s = Regex.Replace(s, @"^Phuong\s+", "Phường ", RegexOptions.IgnoreCase);
+                s = Regex.Replace(s, @"^Thi\s*tran\s+", "Thị trấn ", RegexOptions.IgnoreCase);
+
+                // Chuẩn hóa dấu tiếng Việt
+                s = s.Replace("Song Phuong", "Song Phương")
+                     .Replace("Son Dong", "Sơn Đồng")
+                     .Replace("Tay Mo", "Tây Mỗ")
+                     .Replace("Dai Mo", "Đại Mỗ")
+                     .Replace("Xuan Phuong", "Xuân Phương")
+                     .Replace("Hoa Cuong", "Hòa Cường")
+                     .Replace("Thanh Vinh", "Thanh Vinh")
+                     .Replace("Dich Vong", "Dịch Vọng");
+            }
+
+            // 2. Quận / Huyện / Thị xã / Thành phố trực thuộc tỉnh:
+            if (!string.IsNullOrWhiteSpace(d))
+            {
+                d = Regex.Replace(d, @"^Quan\s+", "Quận ", RegexOptions.IgnoreCase);
+                d = Regex.Replace(d, @"^Huyen\s+", "Huyện ", RegexOptions.IgnoreCase);
+                d = Regex.Replace(d, @"^Thi\s*xa\s+", "Thị xã ", RegexOptions.IgnoreCase);
+                d = Regex.Replace(d, @"^Thanh\s*pho\s+", "Thành phố ", RegexOptions.IgnoreCase);
+
+                if (Regex.IsMatch(d, @"^\d+$"))
+                {
+                    d = $"Quận {d}";
+                }
+                else if (!Regex.IsMatch(d, @"^(Quận|Huyện|Thị xã|Thành phố)\s+", RegexOptions.IgnoreCase))
+                {
+                    string dLower = RemoveVietnameseTones(d).ToLowerInvariant();
+                    if (dLower.Contains("hoai duc") || dLower.Contains("dan phuong") || dLower.Contains("dong anh") ||
+                        dLower.Contains("gia lam") || dLower.Contains("thanh tri") || dLower.Contains("soc son") ||
+                        dLower.Contains("me linh") || dLower.Contains("quoc oai") || dLower.Contains("thach that") ||
+                        dLower.Contains("phong dien") || dLower.Contains("ba vi") || dLower.Contains("phuc tho"))
+                    {
+                        d = $"Huyện {d}";
+                    }
+                    else if (dLower.Contains("vinh") || dLower.Contains("da lat") || dLower.Contains("nha trang") ||
+                             dLower.Contains("hue") || dLower.Contains("quy nhon") || dLower.Contains("pleiku") ||
+                             dLower.Contains("buon ma thuot") || dLower.Contains("phan thiet") || dLower.Contains("vung tau") ||
+                             dLower.Contains("bien hoa") || dLower.Contains("thu dau mot") || dLower.Contains("ha long"))
+                    {
+                        d = $"Thành phố {d}";
+                    }
+                    else
+                    {
+                        d = $"Quận {d}";
+                    }
+                }
+            }
+
+            // 3. Tỉnh / Thành phố: Toàn bộ 63 tỉnh thành Việt Nam
+            if (!string.IsNullOrWhiteSpace(c))
+            {
+                c = Regex.Replace(c, @"^Tinh\s+", "Tỉnh ", RegexOptions.IgnoreCase);
+                c = Regex.Replace(c, @"^Thanh\s*pho\s+", "Thành phố ", RegexOptions.IgnoreCase);
+
+                string cLower = RemoveVietnameseTones(c).ToLowerInvariant();
+                if (cLower.Contains("ha noi") || cLower.Contains("hanoi")) c = "Hà Nội";
+                else if (cLower.Contains("ho chi minh") || cLower.Contains("sai gon") || cLower.Contains("hcm")) c = "Thành phố Hồ Chí Minh";
+                else if (cLower.Contains("da nang")) c = "Đà Nẵng";
+                else if (cLower.Contains("hai phong")) c = "Hải Phòng";
+                else if (cLower.Contains("can tho")) c = "Cần Thơ";
+                else
+                {
+                    string cNoTone = RemoveVietnameseTones(c);
+                    var matchedProv = VietnamProvinces.FirstOrDefault(p =>
+                        RemoveVietnameseTones(p).Equals(cNoTone, StringComparison.OrdinalIgnoreCase) ||
+                        cNoTone.Contains(RemoveVietnameseTones(p)));
+
+                    if (matchedProv != null)
+                    {
+                        c = matchedProv.StartsWith("Thành phố") ? matchedProv : $"Tỉnh {matchedProv}";
+                    }
+                    else if (!c.StartsWith("Tỉnh ", StringComparison.OrdinalIgnoreCase) && !c.StartsWith("Thành phố ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        c = $"Tỉnh {c}";
+                    }
+                }
+            }
+
+            return (s, d, c);
+        }
+
+        private static bool IsGenericItemTerm(string term)
+        {
+            if (string.IsNullOrWhiteSpace(term)) return true;
+            string t = RemoveVietnameseTones(term.ToLower().Trim());
+            string[] genericTerms = new[]
+            {
+                "do", "hang", "mon", "cai", "thu", "do an", "do uong", "thuc pham",
+                "mon an", "gi do", "san pham", "do dung", "cho toi", "cho minh", "giup toi",
+                "di", "nhe", "nha", "ho", "dum", "toi", "minh", "em", "anh", "chi", "ban"
+            };
+            return genericTerms.Contains(t) || t.Length < 2;
+        }
+
+        private static bool IsGeneralOrderingPrompt(string cleanMsgNoTone)
+        {
+            string msg = (cleanMsgNoTone ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(msg)) return false;
+
+            // 1. Nếu có kèm số lượng cụ thể và tên món riêng (VD: "cho 2 gà thả vườn", "đặt hộ tôi 2 bát phở bò")
+            // -> Đây là lệnh đặt món cụ thể, KHÔNG PHẢI prompt chung chung!
+            bool hasSpecificDishAndQty = Regex.IsMatch(msg, @"\b(cho|lay|dat|mua|them|bot|giam|bo)\s+\d+\s+[a-z]+") ||
+                                         Regex.IsMatch(msg, @"\b\d+\s+(bat|to|suat|phan|hop|ly|cai|kg|g|con|khay|dia|lon|chai)\b") ||
+                                         Regex.IsMatch(msg, @"\b(cho|lay|dat|mua|them)\s+(mot|môt|một|hai|ba|bon|bốn|nam|năm|sau|sáu|bay|bảy|tam|tám|chin|chín|muoi|mười)\s+[a-z]+");
+            if (hasSpecificDishAndQty)
+            {
+                return false;
+            }
+
+            // 2. Nhận diện các mẫu câu khởi động luồng nhờ AI chọn & đặt đồ hộ chung chung
+            bool isGeneralPhrase =
+                msg.Contains("tu dong chon") ||
+                msg.Contains("chon va dat") ||
+                msg.Contains("nho ai dat") ||
+                msg.Contains("nho ai chon") ||
+                msg.Contains("nho ai tu dong") ||
+                msg.Contains("tu dong dat") ||
+                msg.Contains("dat do ho") ||
+                msg.Contains("dat hang ho") ||
+                msg.Contains("dat do giup") ||
+                msg.Contains("dat giup") ||
+                msg.Contains("dat ho") ||
+                msg.Contains("dat dum") ||
+                msg.Contains("mua do ho") ||
+                msg.Contains("mua giup") ||
+                msg.Contains("mua ho") ||
+                msg.Contains("mua dum") ||
+                msg.Contains("nho dat") ||
+                msg.Contains("nho ban dat") ||
+                msg.Contains("ban dat do") ||
+                msg.Contains("toi muon nho ai") ||
+                msg.Contains("toi muon ban dat") ||
+                msg.Contains("nho ai") ||
+                msg.Contains("dat do cho") ||
+                msg.Contains("dat hang cho") ||
+                msg.Contains("dat mon cho") ||
+                msg.Contains("mua do cho") ||
+                msg.Contains("mua hang cho") ||
+                msg.Contains("cho toi dat") ||
+                msg.Contains("cho minh dat") ||
+                msg.Contains("cho em dat") ||
+                msg.Contains("giup toi dat") ||
+                msg.Contains("giup minh dat") ||
+                msg.Contains("ho toi dat") ||
+                msg.Contains("toi muon dat") ||
+                msg.Contains("toi muon mua") ||
+                msg.Contains("muon dat do") ||
+                msg.Contains("muon dat hang") ||
+                msg.Contains("muon dat mon") ||
+                msg.Contains("muon mua do") ||
+                msg.Contains("muon mua hang") ||
+                msg == "dat do" ||
+                msg == "dat hang" ||
+                msg == "dat do an" ||
+                msg == "dat mon" ||
+                msg == "mua do" ||
+                msg == "mua hang" ||
+                msg == "mua mon" ||
+                msg.StartsWith("dat do") ||
+                msg.StartsWith("dat hang") ||
+                msg.StartsWith("dat mon") ||
+                msg.StartsWith("mua do") ||
+                msg.StartsWith("mua hang") ||
+                Regex.IsMatch(msg, @"^(?:toi\s+)?(?:muon\s+)?(?:dat|mua)\s+(?:do|hang|mon|do\s+an)(?:\s+(?:cho\s+toi|cho\s+minh|giup\s+toi|ho\s+toi|dum\s+toi|di|nhe|nha))?$");
+
+            if (isGeneralPhrase)
+            {
+                // Kiểm tra xem câu có chứa từ khóa món ăn cụ thể nào không (VD: phở, bún, cơm, gà, bò, bánh mì...)
+                string[] foodKeywords = new[]
+                {
+                    "pho", "bun", "com", "banh mi", "banh", "xoi", "nem", "lau", "chao", "thit ga", "thit bo", "thit heo", "thit lon",
+                    "sua tuoi", "qua nho", "trai nho", "tra tac", "tra sua", "hoa qua", "trai cay", "sinh to", "ca phe", "pate", "xuc xich"
+                };
+
+                bool hasSpecificFood = foodKeywords.Any(fk => Regex.IsMatch(msg, $@"\b{fk}\b", RegexOptions.IgnoreCase));
+                if (!hasSpecificFood)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsGenericFoodInquiryWithoutQty(string cleanMsgNoTone)
+        {
+            if (string.IsNullOrWhiteSpace(cleanMsgNoTone)) return false;
+
+            // Nếu có số lượng cụ thể kèm hành động hoặc đơn vị tính -> ĐÂY LÀ ĐẶT MÓN CỤ THỂ
+            bool hasQuantity = Regex.IsMatch(cleanMsgNoTone, @"\b(cho|lay|dat|mua|them|bot|giam|bo)\s+\d+\b") ||
+                               Regex.IsMatch(cleanMsgNoTone, @"\b\d+\s*(bat|to|suat|phan|hop|ly|cai|kg|g|con|khay|dia|lon|chai)\b") ||
+                               Regex.IsMatch(cleanMsgNoTone, @"\b(cho|lay|dat|mua|them|bot|giam|bo)\s+(mot|môt|một|hai|ba|bon|bốn|nam|năm|sau|sáu|bay|bảy|tam|tám|chin|chín|muoi|mười)\b") ||
+                               Regex.IsMatch(cleanMsgNoTone, @"\b\d+\b");
+            if (hasQuantity) return false;
+
+            string[] foodCategories = new[]
+            {
+                "com", "pho", "bun", "banh mi", "banh", "xoi", "chao", "nem", "lau", "thit", "rau", "ca",
+                "tom", "muc", "hai san", "che", "tra", "sua", "nuoc", "cafe", "ca phe", "tra sua",
+                "hoa qua", "trai cay", "sinh to", "do an", "mon an", "thuc pham", "do uong"
+            };
+
+            // Trích xuất từ khóa sau động từ đặt/mua/ăn/xem/tìm
+            string kw = ExtractSearchKeyword(cleanMsgNoTone);
+            string kwStripped = Regex.Replace(kw, @"^(?:mon|cac mon|nhung mon|do|cac loai|loai)\s+", "").Trim();
+
+            if (foodCategories.Contains(kw) || foodCategories.Contains(kwStripped))
+            {
+                return true;
+            }
+
+            // Hoặc toàn bộ câu chỉ là danh mục hoặc "tôi muốn đặt cơm", "muốn ăn phở", "đặt bánh mì"...
+            bool matchesPattern = Regex.IsMatch(cleanMsgNoTone, @"^(?:toi\s+)?(?:muon\s+)?(?:dat|mua|an|uong|goi|tim|xem|chon)(?:\s+(?:cho\s+toi|cho\s+minh|giup\s+toi|ho\s+toi|dum\s+toi))?\s+([a-z0-9\s]+)$") ||
+                                  Regex.IsMatch(cleanMsgNoTone, @"^(?:cho\s+(?:toi|minh|em)\s+)?(?:dat|mua|an)\s+([a-z0-9\s]+)$") ||
+                                  cleanMsgNoTone.StartsWith("dat ") || cleanMsgNoTone.StartsWith("mua ") || cleanMsgNoTone.StartsWith("an ");
+
+            if (matchesPattern)
+            {
+                var match = Regex.Match(cleanMsgNoTone, @"\b(dat|mua|an|uong|goi|tim|xem|chon)\s+(?:cho\s+(?:toi|minh)\s+)?([a-z0-9\s]+)$");
+                if (match.Success)
+                {
+                    string target = match.Groups[2].Value.Trim();
+                    string targetStripped = Regex.Replace(target, @"^(?:mon|cac mon|nhung mon|do|cac loai|loai)\s+", "").Trim();
+                    if (foodCategories.Contains(target) || foodCategories.Contains(targetStripped))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsGenericFoodCategoryTerm(string term)
+        {
+            if (string.IsNullOrWhiteSpace(term)) return true;
+            string clean = RemoveVietnameseTones(term.ToLower().Trim());
+            string[] genericCategories = new[]
+            {
+                "com", "pho", "bun", "banh mi", "banh", "xoi", "chao", "nem", "lau",
+                "thit", "rau", "ca", "tom", "muc", "hai san", "che", "tra", "sua",
+                "nuoc", "cafe", "ca phe", "tra sua", "hoa qua", "trai cay", "sinh to",
+                "do an", "mon an", "thuc pham", "do uong"
+            };
+            string stripped = Regex.Replace(clean, @"^(?:mon|cac mon|nhung mon|do|cac loai|loai)\s+", "").Trim();
+            return genericCategories.Contains(clean) || genericCategories.Contains(stripped);
+        }
+
+        private bool HasDirectSpecificFoodCommand(string cleanMsgNoTone, List<OrderItemDto>? cartItems)
+        {
+            if (string.IsNullOrWhiteSpace(cleanMsgNoTone)) return false;
+            if (IsGeneralOrderingPrompt(cleanMsgNoTone)) return false;
+            if (IsGenericFoodInquiryWithoutQty(cleanMsgNoTone)) return false;
+
+            // 1. Có số lượng cụ thể kèm hành động: "cho 2", "lấy 1", "đặt 3", "thêm 2", "bớt 1", "2 con", "1 bát"
+            bool hasQuantityAction = Regex.IsMatch(cleanMsgNoTone, @"\b(cho|lay|dat|mua|them|bot|giam|bo)\s+\d+") ||
+                                     Regex.IsMatch(cleanMsgNoTone, @"\b\d+\s+(bat|to|suat|phan|hop|ly|cai|kg|g|con|khay|dia|lon|chai)\b") ||
+                                     Regex.IsMatch(cleanMsgNoTone, @"\b(cho|lay|dat|mua|them|bot|giam|bo)\s+(mot|môt|một|hai|ba|bon|bốn|nam|năm|sau|sáu|bay|bảy|tam|tám|chin|chín|muoi|mười)\b");
+            if (hasQuantityAction)
+            {
+                return true;
+            }
+
+            // 2. Nếu đang có sẵn giỏ hàng và có thao tác sửa giỏ hàng (bớt, giảm, xóa, thêm món...)
+            if (cartItems != null && cartItems.Count > 0 && IsSmartCartOperation(cleanMsgNoTone, cartItems))
+            {
+                return true;
+            }
+
+            // 3. Nếu bắt đầu bằng động từ đặt món: "cho ", "lay ", "dat ", "mua ", "them "
+            // BẮT BUỘC phải kèm tên món ăn thực tế (không phải từ chung chung như 'do', 'hang', 'mon')
+            if (cleanMsgNoTone.StartsWith("cho ") || cleanMsgNoTone.StartsWith("lay ") ||
+                cleanMsgNoTone.StartsWith("dat ") || cleanMsgNoTone.StartsWith("mua ") ||
+                cleanMsgNoTone.StartsWith("them "))
+            {
+                if (IsGenericFoodInquiryWithoutQty(cleanMsgNoTone)) return false;
+
+                string[] knownFoodKeywords = new[]
+                {
+                    "pho", "bun", "com", "banh", "xoi", "nem", "lau", "chao", "thit", "rau", "che",
+                    "tra", "sua", "hoa qua", "trai cay", "sinh to", "ca phe", "pate", "xuc xich",
+                    "ga", "bo", "heo", "lon", "dau tay", "nuoc ep", "trung"
+                };
+                return knownFoodKeywords.Any(fk => Regex.IsMatch(cleanMsgNoTone, $@"\b{fk}\b", RegexOptions.IgnoreCase));
+            }
+
+            return false;
+        }
+
+        private static bool IsValidDeliveryAddress(string address, out string errorMsg)
+        {
+            errorMsg = "";
+            if (string.IsNullOrWhiteSpace(address))
+            {
+                errorMsg = "Địa chỉ nhận hàng không được để trống ạ!";
+                return false;
+            }
+
+            string trimmed = address.Trim();
+
+            // 1. Chặn các ký tự đặc biệt như %^&*...
+            if (Regex.IsMatch(trimmed, @"[%^&*@#$!~<>{}\[\]|+=_\\?;""`^]"))
+            {
+                errorMsg = "Địa chỉ không được chứa các ký tự đặc biệt như %, ^, &, *, @, #, $, !, ~, <, >, {, }, [, ], |, +, =, _ ạ!";
+                return false;
+            }
+
+            // 2. Chặn nếu chỉ toàn là số (như 112, 12345, v.v.)
+            if (Regex.IsMatch(trimmed, @"^\d+$"))
+            {
+                errorMsg = "Địa chỉ không thể chỉ là con số cụt ạ! Vui lòng nhập đầy đủ số nhà/ngõ, tên đường và thành phố.";
+                return false;
+            }
+
+            // 3. Chặn nếu địa chỉ quá ngắn (< 6 ký tự hoặc ít hơn 2 từ)
+            if (trimmed.Length < 6)
+            {
+                errorMsg = "Địa chỉ nhận hàng quá ngắn ạ! Vui lòng cung cấp chi tiết số nhà/ngõ, tên đường và thành phố.";
+                return false;
+            }
+
+            var words = trimmed.Split(new[] { ' ', ',', '-', '/', '.' }, StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length < 2)
+            {
+                errorMsg = "Địa chỉ cần có ít nhất số nhà/ngõ và tên đường cụ thể ạ!";
+                return false;
+            }
+
+            string noTone = RemoveVietnameseTones(trimmed.ToLower());
+
+            // 4. Bắt buộc có thông tin số nhà / ngõ / ngách / đường / phố / khu / thành phố
+            bool hasStreetOrAlley = noTone.Contains("ngo") || noTone.Contains("ngach") || noTone.Contains("hem") ||
+                                    noTone.Contains("duong") || noTone.Contains("pho") || noTone.Contains("so ") ||
+                                    noTone.Contains("so nha") || Regex.IsMatch(noTone, @"\b\d+[\w/-]*\s+[a-z]") ||
+                                    noTone.Contains("chung cu") || noTone.Contains("toa") || noTone.Contains("kdt") ||
+                                    noTone.Contains("thon") || noTone.Contains("xom");
+
+            if (!hasStreetOrAlley)
+            {
+                errorMsg = "Địa chỉ cần có số nhà, ngõ/ngách hoặc tên đường cụ thể ạ! (Ví dụ: Số 112 Cầu Giấy, Ngõ 165 Cầu Giấy, Hà Nội...).";
+                return false;
+            }
+
+            return true;
+        }
+
+        private async Task<List<ExistingCartItemCandidateDto>> GetUserActiveCartItemsAsync(ChatRequest request)
+        {
+            var result = new List<ExistingCartItemCandidateDto>();
+
+            // 1. Kiểm tra giỏ hàng từ Frontend (nếu client gửi danh sách stores hiện tại)
+            if (request?.CartStores != null && request.CartStores.Count > 0)
+            {
+                foreach (var s in request.CartStores)
+                {
+                    if (s.Items == null) continue;
+                    foreach (var it in s.Items)
+                    {
+                        if (string.IsNullOrWhiteSpace(it.Id)) continue;
+                        if (result.Any(r => r.Id == it.Id)) continue;
+
+                        result.Add(new ExistingCartItemCandidateDto
+                        {
+                            Id = it.Id,
+                            Name = !string.IsNullOrWhiteSpace(it.Name) ? it.Name : "Sản phẩm",
+                            Price = it.Price,
+                            Quantity = it.Quantity > 0 ? it.Quantity : 1,
+                            Image = !string.IsNullOrWhiteSpace(it.Image) ? it.Image : "/images/anhxoanen.png",
+                            StoreId = !string.IsNullOrWhiteSpace(s.StoreId) ? s.StoreId : "store_default",
+                            StoreName = !string.IsNullOrWhiteSpace(s.StoreName) ? s.StoreName : "ZoneMart Store",
+                            Selected = true
+                        });
+                    }
+                }
+            }
+
+            // 2. Kiểm tra bổ sung từ Database MongoDB Atlas UserCarts
+            if (result.Count == 0 && request != null && (!string.IsNullOrWhiteSpace(request.UserId) || !string.IsNullOrWhiteSpace(request.UserEmail)))
+            {
+                UserCart? userCart = null;
+                if (!string.IsNullOrWhiteSpace(request.UserId))
+                {
+                    userCart = await _mongoService.UserCarts.Find(c => c.UserId == request.UserId).FirstOrDefaultAsync();
+                }
+
+                if (userCart == null && !string.IsNullOrWhiteSpace(request.UserEmail))
+                {
+                    userCart = await _mongoService.UserCarts.Find(c => c.UserId == request.UserEmail).FirstOrDefaultAsync();
+                    if (userCart == null)
+                    {
+                        var userDoc = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == request.UserEmail.ToLower()).FirstOrDefaultAsync();
+                        if (userDoc != null && !string.IsNullOrWhiteSpace(userDoc.Id))
+                        {
+                            userCart = await _mongoService.UserCarts.Find(c => c.UserId == userDoc.Id).FirstOrDefaultAsync();
+                        }
+                    }
+                }
+
+                if (userCart != null && userCart.Stores != null && userCart.Stores.Count > 0)
+                {
+                    foreach (var s in userCart.Stores)
+                    {
+                        // Bỏ qua các đơn hàng mock seed cũ
+                        if (s.Note == "Chọn khay thịt tươi mới về sáng nay giúp em nhé!" || s.Note == "Lấy dâu tây quả to mọng nhé tiệm.")
+                            continue;
+
+                        if (s.Items == null) continue;
+                        foreach (var it in s.Items)
+                        {
+                            if (string.IsNullOrWhiteSpace(it.Id)) continue;
+                            if (result.Any(r => r.Id == it.Id)) continue;
+
+                            result.Add(new ExistingCartItemCandidateDto
+                            {
+                                Id = it.Id,
+                                Name = !string.IsNullOrWhiteSpace(it.Name) ? it.Name : "Sản phẩm",
+                                Price = it.Price,
+                                Quantity = it.Quantity > 0 ? it.Quantity : 1,
+                                Image = !string.IsNullOrWhiteSpace(it.Image) ? it.Image : "/images/anhxoanen.png",
+                                StoreId = !string.IsNullOrWhiteSpace(s.StoreId) ? s.StoreId : "store_default",
+                                StoreName = !string.IsNullOrWhiteSpace(s.StoreName) ? s.StoreName : "ZoneMart Store",
+                                Selected = true
+                            });
+                        }
+                    }
+                }
+            }
+
+            // 3. Tra cứu tồn kho thực tế từ collection Products để thiết lập MaxStock và Image chuẩn
+            if (result.Count > 0)
+            {
+                var productIds = result.Select(r => r.Id).Distinct().ToList();
+                var validObjectIds = productIds.Where(id => ObjectId.TryParse(id, out _)).ToList();
+                var productsInDb = validObjectIds.Count > 0
+                    ? await _mongoService.Products.Find(p => validObjectIds.Contains(p.Id)).ToListAsync()
+                    : new List<Product>();
+                var prodDict = productsInDb.ToDictionary(p => p.Id ?? "", p => p);
+
+                foreach (var item in result)
+                {
+                    if (prodDict.TryGetValue(item.Id, out var pDoc))
+                    {
+                        int stock = pDoc.StockQuantity > 0 ? pDoc.StockQuantity : Math.Max(item.Quantity, 1);
+                        item.MaxStock = stock;
+                        if (item.Quantity > stock)
+                        {
+                            item.Quantity = stock;
+                        }
+                        if ((string.IsNullOrWhiteSpace(item.Image) || item.Image == "/images/anhxoanen.png") && !string.IsNullOrWhiteSpace(pDoc.ImageUrl))
+                        {
+                            item.Image = pDoc.ImageUrl;
+                        }
+                        if ((string.IsNullOrWhiteSpace(item.StoreName) || item.StoreName == "ZoneMart Store") && !string.IsNullOrWhiteSpace(pDoc.StoreName))
+                        {
+                            item.StoreName = pDoc.StoreName;
+                        }
+                    }
+                    else
+                    {
+                        item.MaxStock = Math.Max(item.Quantity, 99);
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        private static bool IsCapabilitiesQuery(string cleanMsgNoTone)
+        {
+            string msg = (cleanMsgNoTone ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(msg)) return false;
+
+            // BẢO VỆ CHẮC CHẮN: Nếu là yêu cầu Đăng ký tài khoản (Seller / Shipper / Khách hàng / Hỗ trợ) -> TUYỆT ĐỐI KHÔNG kích hoạt SHOW_CAPABILITIES!
+            if (msg.Contains("dang ky") || msg.Contains("mo shop") || msg.Contains("gian hang seller") ||
+                msg.Contains("tai xe shipper") || msg.Contains("seller") || msg.Contains("shipper") ||
+                msg.Contains("khach hang") || msg.Contains("tao tai khoan") || msg.Contains("mo gian hang") ||
+                msg.Contains("ho so") || msg.Contains("nho ai dang ky") || msg.Contains("ai dang ky ho") ||
+                msg.Contains("cach 2") || msg.Contains("cach 1") || msg.Contains("gui yeu cau ho tro"))
+            {
+                return false;
+            }
+
+            // BẢO VỆ CHẮC CHẮN: Nếu là câu lệnh đặt món cụ thể (có số lượng hoặc tên món) -> TUYỆT ĐỐI KHÔNG kích hoạt SHOW_CAPABILITIES!
+            if (Regex.IsMatch(msg, @"\b(cho|lay|dat|mua|them|bot|giam|bo)\s+\d+") ||
+                Regex.IsMatch(msg, @"\b\d+\s+(bat|to|suat|phan|hop|ly|cai|kg|g|con|khay|dia|lon|chai)\b"))
+            {
+                return false;
+            }
+
+            // Loại bỏ dấu câu ở cuối (ví dụ ?, ., !, ,, ;, :)
+            msg = Regex.Replace(msg, @"[\?\.\!\,\;\:]+$", "").Trim();
+
+            // Chuẩn hóa teencode ("j", "z", "chi" -> "gi"; "dc" -> "duoc"; "k", "ko" -> "khong")
+            string norm = msg;
+            norm = Regex.Replace(norm, @"\b(?:j|z|chi)\b", "gi");
+            norm = Regex.Replace(norm, @"\bdc\b", "duoc");
+            norm = Regex.Replace(norm, @"\b(?:k|ko|hok)\b", "khong");
+
+            // 1. Khớp chính xác các cụm từ ngắn
+            if (msg == "lam j" || msg == "lam gi" || msg == "ban lam j" || msg == "ban lam gi" ||
+                msg == "ai lam j" || msg == "ai lam gi" || msg == "tu van" || msg == "tu van di" ||
+                msg == "tu van cho toi" || msg == "tu van giup" || msg == "tu van giup toi" ||
+                msg == "tu van toi" || msg == "tu van dum" || msg == "tu van dum toi" ||
+                msg == "tu van ho toi" || msg == "ban tu van cho toi" || msg == "ban tu van di" ||
+                msg == "giup toi" || msg == "ho tro toi" || msg == "ho tro di" ||
+                msg == "tinh nang" || msg == "chuc nang" || msg == "form tinh nang" ||
+                msg == "menu" || msg == "cac tinh nang" || msg == "xem tinh nang")
+            {
+                return true;
+            }
+
+            // 2. Kiểm tra nếu có chứa các từ khóa hỏi khả năng / tính năng / tư vấn (Có ranh giới từ để không dính 'gian hàng', 'giá cả'...)
+            if (Regex.IsMatch(norm, @"\b(?:lam|lam\s*duoc|lam\s*dc)\s+(?:gi|j)\b") ||
+                Regex.IsMatch(norm, @"\btu\s*van\s+(?:gi|duoc\s+gi|dc\s+gi|nhung\s+gi)\b") ||
+                Regex.IsMatch(norm, @"\bgiup\s+(?:gi|duoc\s+gi|duoc\s+nhung\s+gi|gi\s+cho\s+toi)\b") ||
+                Regex.IsMatch(norm, @"\btu\s*van\s+(?:cho\s+toi|giup\s+toi|ho\s+toi|dum|toi)\b") ||
+                Regex.IsMatch(norm, @"\b(ban|ai)\s+(?:lam\s+duoc|co\s+the\s+lam|co\s+the\s+tu\s+van|biet\s+lam\s+gi|lam\s+gi)\b") ||
+                norm.Contains("tinh nang") || norm.Contains("chuc nang") ||
+                norm.Contains("ho tro gi") || norm.Contains("tu van duoc") || norm.Contains("tu van nhung gi") ||
+                norm.Contains("co the giup") || norm.Contains("kha nang") || norm.Contains("tro giup gi") ||
+                norm.Contains("ban la ai") || norm.Contains("ban ten gi") || norm.Contains("tro ly la ai") ||
+                Regex.IsMatch(norm, @"\b(ban\s+)?(lam|tu\s*van|giup|ho\s*tro)\s+(duoc\s+)?(gi|j)\b") ||
+                Regex.IsMatch(norm, @"\b(tu\s*van|ho\s*tro|giup)\s+(cho\s+)?(toi|minh|em|anh|chi)\b") ||
+                Regex.IsMatch(norm, @"^(ban\s+)?(tu\s*van|ho\s*tro)(\s+di)?$"))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static async Task<(string SafeLocationName, string Amenity, string Hamlet, string Suburb, string District, string City)> ResolveSafeLocationFromGpsAsync(double lat, double lon)
+        {
+            string amenity = "";
+            string alleyOrRoad = "";
+            string hamlet = "";
+            string suburb = "";
+            string district = "";
+            string city = "";
+
+            // 0. Nhận diện địa danh cụ thể nếu ở khu vực Trường Cao Đẳng Công Nghệ Cao Hà Nội (21.020528, 105.750028 bán kính ~300m)
+            double dHht = Math.Sqrt(Math.Pow(lat - 21.020528, 2) + Math.Pow(lon - 105.750028, 2));
+            if (dHht < 0.003)
+            {
+                amenity = "Trường Cao Đẳng Công Nghệ Cao Hà Nội";
+                suburb = "Phường Tây Mỗ";
+                district = "Quận Nam Từ Liêm";
+                city = "Hà Nội";
+                return ("Trường Cao Đẳng Công Nghệ Cao Hà Nội, Phường Tây Mỗ, Quận Nam Từ Liêm, Hà Nội", amenity, "", suburb, district, city);
+            }
+
+            // 1. Photon Komoot API: Trích xuất vi mô (Ngõ, Hẻm, Đường, Thôn, Xóm, Ấp) - TUYỆT ĐỐI KHÔNG LẤY SỐ NHÀ
+            try
+            {
+                string pUrl = $"https://photon.komoot.io/reverse?lat={lat}&lon={lon}&limit=5";
+                using var pReq = new HttpRequestMessage(HttpMethod.Get, pUrl);
+                pReq.Headers.Add("User-Agent", "ZoneMartApp/1.0");
+
+                using var pCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                var pRes = await _httpClient.SendAsync(pReq, pCts.Token);
+                if (pRes.IsSuccessStatusCode)
+                {
+                    string pJson = await pRes.Content.ReadAsStringAsync(pCts.Token);
+                    using var pDoc = JsonDocument.Parse(pJson);
+                    if (pDoc.RootElement.TryGetProperty("features", out var feats) && feats.ValueKind == JsonValueKind.Array)
+                    {
+                        var featureList = feats.EnumerateArray().ToList();
+
+                        // Ưu tiên 1: Tìm Ngõ / Hẻm / Kiệt / Ngách
+                        foreach (var f in featureList)
+                        {
+                            if (f.TryGetProperty("properties", out var prop) && prop.TryGetProperty("name", out var nameProp))
+                            {
+                                string pName = SanitizeStreetOrAlley(nameProp.GetString() ?? "");
+                                if (!string.IsNullOrWhiteSpace(pName) && Regex.IsMatch(pName, @"^(ngõ|ngách|hẻm|kiệt)\s+", RegexOptions.IgnoreCase))
+                                {
+                                    alleyOrRoad = pName;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Ưu tiên 2: Tìm Đường / Tuyến phố nếu chưa có Ngõ
+                        if (string.IsNullOrWhiteSpace(alleyOrRoad))
+                        {
+                            foreach (var f in featureList)
+                            {
+                                if (f.TryGetProperty("properties", out var prop))
+                                {
+                                    string pName = prop.TryGetProperty("name", out var nameProp) ? SanitizeStreetOrAlley(nameProp.GetString() ?? "") : "";
+                                    string pType = prop.TryGetProperty("type", out var typeProp) ? typeProp.GetString() ?? "" : "";
+
+                                    if (!string.IsNullOrWhiteSpace(pName) && Regex.IsMatch(pName, @"^(đường|phố)\s+", RegexOptions.IgnoreCase))
+                                    {
+                                        alleyOrRoad = pName;
+                                        break;
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(pName) && pType.Equals("street", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        alleyOrRoad = (pName.StartsWith("Đường ", StringComparison.OrdinalIgnoreCase) || pName.StartsWith("Phố ", StringComparison.OrdinalIgnoreCase))
+                                            ? pName
+                                            : $"Đường {pName}";
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Ưu tiên 3: Tìm từ properties.street nếu vẫn chưa có
+                        if (string.IsNullOrWhiteSpace(alleyOrRoad))
+                        {
+                            foreach (var f in featureList)
+                            {
+                                if (f.TryGetProperty("properties", out var prop) && prop.TryGetProperty("street", out var stProp))
+                                {
+                                    string pStreet = SanitizeStreetOrAlley(stProp.GetString() ?? "");
+                                    if (!string.IsNullOrWhiteSpace(pStreet))
+                                    {
+                                        alleyOrRoad = (pStreet.StartsWith("Đường ", StringComparison.OrdinalIgnoreCase) || pStreet.StartsWith("Phố ", StringComparison.OrdinalIgnoreCase) || pStreet.StartsWith("Ngõ ", StringComparison.OrdinalIgnoreCase))
+                                            ? pStreet
+                                            : $"Đường {pStreet}";
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Tìm Thôn / Xóm / Ấp / Bản từ properties
+                        foreach (var f in featureList)
+                        {
+                            if (f.TryGetProperty("properties", out var prop))
+                            {
+                                string pName = prop.TryGetProperty("name", out var nProp) ? (nProp.GetString() ?? "").Trim() : "";
+                                string pDist = prop.TryGetProperty("district", out var dProp) ? (dProp.GetString() ?? "").Trim() : "";
+
+                                if (Regex.IsMatch(pName, @"^(thôn|xóm|ấp|bản|làng)\s+", RegexOptions.IgnoreCase))
+                                {
+                                    hamlet = pName;
+                                    break;
+                                }
+                                if (Regex.IsMatch(pDist, @"^(thôn|xóm|ấp|bản|làng)\s+", RegexOptions.IgnoreCase))
+                                {
+                                    hamlet = pDist;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (featureList.Count > 0 && featureList[0].TryGetProperty("properties", out var firstProp))
+                        {
+                            if (firstProp.TryGetProperty("city", out var cityProp)) city = cityProp.GetString() ?? "";
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Tiếp tục sang BigDataCloud
+            }
+
+            // 2. BigDataCloud Reverse Geocoding API: Phân cấp hành chính toàn diện khắp 63 tỉnh thành Việt Nam
+            try
+            {
+                string bdcUrl = $"https://api.bigdatacloud.net/data/reverse-geocode-client?latitude={lat}&longitude={lon}&localityLanguage=vi";
+                using var bdcReq = new HttpRequestMessage(HttpMethod.Get, bdcUrl);
+                using var bdcCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                var bdcRes = await _httpClient.SendAsync(bdcReq, bdcCts.Token);
+                if (bdcRes.IsSuccessStatusCode)
+                {
+                    string bdcJson = await bdcRes.Content.ReadAsStringAsync(bdcCts.Token);
+                    using var bdcDoc = JsonDocument.Parse(bdcJson);
+
+                    if (bdcDoc.RootElement.TryGetProperty("principalSubdivision", out var psProp))
+                    {
+                        string ps = psProp.GetString() ?? "";
+                        if (!string.IsNullOrWhiteSpace(ps) && !ps.Contains("đồng bằng") && !ps.Contains("miền"))
+                        {
+                            city = ps;
+                        }
+                    }
+
+                    if (bdcDoc.RootElement.TryGetProperty("localityInfo", out var locInfo))
+                    {
+                        if (locInfo.TryGetProperty("administrative", out var adminArr) &&
+                            adminArr.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var item in adminArr.EnumerateArray())
+                            {
+                                if (item.TryGetProperty("name", out var nProp))
+                                {
+                                    string n = nProp.GetString() ?? "";
+                                    int order = item.TryGetProperty("order", out var oProp) ? oProp.GetInt32() : 0;
+                                    int adminLevel = item.TryGetProperty("adminLevel", out var alProp) ? alProp.GetInt32() : 0;
+
+                                    if (adminLevel == 4 || order == 8 || order == 7)
+                                    {
+                                        if (string.IsNullOrWhiteSpace(city) && !n.Contains("đồng bằng") && !n.Contains("miền") && !n.Contains("Bắc Trung Bộ") && !n.Contains("Tây Nguyên") && !n.Contains("Đông Nam Bộ"))
+                                        {
+                                            city = n;
+                                        }
+                                    }
+                                    else if (adminLevel == 6 || (order >= 10 && order < 12))
+                                    {
+                                        if (string.IsNullOrWhiteSpace(district)) district = n;
+                                    }
+                                    else if (adminLevel == 8 || order >= 12 || Regex.IsMatch(n, @"^(Phường|Xã|Phuong|Xa|Thị trấn)\s+", RegexOptions.IgnoreCase))
+                                    {
+                                        if (string.IsNullOrWhiteSpace(suburb)) suburb = n;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Tìm Quận / Huyện chính xác từ informative nếu administrative chưa có
+                        if (locInfo.TryGetProperty("informative", out var infoArr) &&
+                            infoArr.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var item in infoArr.EnumerateArray())
+                            {
+                                if (item.TryGetProperty("name", out var inNameProp))
+                                {
+                                    string iName = inNameProp.GetString() ?? "";
+                                    string iDesc = item.TryGetProperty("description", out var dProp) ? (dProp.GetString() ?? "") : "";
+                                    int order = item.TryGetProperty("order", out var oProp) ? oProp.GetInt32() : 0;
+
+                                    if (Regex.IsMatch(iDesc, @"\b(huyện|quận|thị xã|thành phố)\b", RegexOptions.IgnoreCase))
+                                    {
+                                        district = iName;
+                                        break;
+                                    }
+                                    else if (order >= 10 && order <= 11 && Regex.IsMatch(iName, @"^(Quận|Huyện|Thị xã|TP|Thành phố)\s+", RegexOptions.IgnoreCase))
+                                    {
+                                        district = iName;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(suburb) && bdcDoc.RootElement.TryGetProperty("locality", out var locProp))
+                    {
+                        suburb = locProp.GetString() ?? "";
+                    }
+                }
+            }
+            catch
+            {
+                // Fallback
+            }
+
+            // 3. Chuẩn hóa cấp hành chính theo 63 tỉnh thành Việt Nam
+            (suburb, district, city) = NormalizeVietnameseAdminAddress(suburb, district, city);
+
+            // 4. Bổ sung Thôn / Xóm chi tiết cho Xã Song Phương, Huyện Hoài Đức nếu tọa độ rơi vào khu vực này
+            string suburbClean = RemoveVietnameseTones(suburb).ToLowerInvariant();
+            if (suburbClean.Contains("song phuong") || (lat >= 21.005 && lat <= 21.035 && lon >= 105.685 && lon <= 105.715))
+            {
+                suburb = "Xã Song Phương";
+                district = "Huyện Hoài Đức";
+                city = "Hà Nội";
+                if (string.IsNullOrWhiteSpace(hamlet))
+                {
+                    hamlet = (lat >= 21.011) ? "Thôn Phương Bảng" : "Thôn Tiền Lệ";
+                }
+            }
+
+            // 5. Chuẩn hóa Phường cho Cầu Giấy nếu đường phố là Dịch Vọng
+            if (string.IsNullOrWhiteSpace(suburb) && !string.IsNullOrWhiteSpace(alleyOrRoad) && alleyOrRoad.Contains("Dịch Vọng"))
+            {
+                suburb = "Phường Dịch Vọng";
+            }
+
+            // 6. Ghép chuỗi tên địa danh an toàn: Chi tiết đến Ngõ, Thôn, Xã/Phường, Quận/Huyện, Tỉnh/Thành
+            // TUYỆT ĐỐI KHÔNG CÓ SỐ NHÀ, TUYỆT ĐỐI KHÔNG CÓ TỌA ĐỘ SỐ
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(amenity)) parts.Add(amenity);
+            if (!string.IsNullOrWhiteSpace(alleyOrRoad)) parts.Add(alleyOrRoad);
+            if (!string.IsNullOrWhiteSpace(hamlet) && !parts.Contains(hamlet)) parts.Add(hamlet);
+            if (!string.IsNullOrWhiteSpace(suburb) && !parts.Contains(suburb)) parts.Add(suburb);
+            if (!string.IsNullOrWhiteSpace(district) && !parts.Contains(district)) parts.Add(district);
+            if (!string.IsNullOrWhiteSpace(city) && !parts.Contains(city)) parts.Add(city);
+
+            string safeLocationName = string.Join(", ", parts.Distinct());
+            if (string.IsNullOrWhiteSpace(safeLocationName))
+            {
+                safeLocationName = !string.IsNullOrWhiteSpace(city) ? city : "Khu vực đang kết nối";
+            }
+
+            safeLocationName = SanitizeSafeLocation(safeLocationName);
+            return (safeLocationName, amenity, hamlet, suburb, district, city);
+        }
+
         [HttpPost("chat")]
         public async Task<IActionResult> Chat([FromBody] ChatRequest request)
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             string userMsg = request?.Message?.Trim() ?? "";
             if (string.IsNullOrWhiteSpace(userMsg))
             {
@@ -598,6 +1582,168 @@ namespace ZoneMart.Server.Controllers
             }
 
             string cleanMsgNoTone = RemoveVietnameseTones(userMsg.ToLower());
+
+            // 0.16. BỘ LỌC TOÀN CỤC: HỦY YÊU CẦU / HỦY LUỒNG TRỢ LÝ AI (ÁP DỤNG CHO TẤT CẢ CÁC LUỒNG: ĐẶT ĐỒ HỘ, ĐĂNG KÝ, HỖ TRỢ...)
+            // Người dùng có thể nhắn: "hủy", "huy", "hủy yêu cầu", "huy yeu cau", "hủy bỏ", "thôi không làm nữa", "dừng lại", "cancel", "stop"...
+            bool isHuyThayDoiGlobal = (cleanMsgNoTone.Contains("huy thay doi") ||
+                                       cleanMsgNoTone.Contains("khong sua") ||
+                                       cleanMsgNoTone.Contains("huy sua") ||
+                                       cleanMsgNoTone.Contains("giu nguyen gio hang") ||
+                                       (cleanMsgNoTone.Contains("giu nguyen") && !cleanMsgNoTone.Contains("dia chi"))) &&
+                                      (string.Equals(request?.OrderState?.Step, "EDITING_CART", StringComparison.OrdinalIgnoreCase) ||
+                                       string.Equals(request?.OrderState?.Step, "ASK_EDIT_CART", StringComparison.OrdinalIgnoreCase) ||
+                                       string.Equals(request?.OrderState?.Step, "CONFIRMING_CART", StringComparison.OrdinalIgnoreCase));
+
+            bool isCancelAnyFlow = !isHuyThayDoiGlobal && (
+                cleanMsgNoTone == "huy" ||
+                cleanMsgNoTone == "huy yeu cau" ||
+                cleanMsgNoTone == "huy bo" ||
+                cleanMsgNoTone == "huy luong" ||
+                cleanMsgNoTone == "huy don" ||
+                cleanMsgNoTone == "huy dat hang" ||
+                cleanMsgNoTone == "huy dang ky" ||
+                cleanMsgNoTone == "huy ho tro" ||
+                cleanMsgNoTone == "thoi" ||
+                cleanMsgNoTone == "thoi ko lam nua" ||
+                cleanMsgNoTone == "thoi khong lam nua" ||
+                cleanMsgNoTone == "dung lai" ||
+                cleanMsgNoTone == "stop" ||
+                cleanMsgNoTone == "cancel" ||
+                cleanMsgNoTone.StartsWith("huy yeu cau") ||
+                cleanMsgNoTone.StartsWith("huy bo") ||
+                cleanMsgNoTone.StartsWith("huy luong") ||
+                cleanMsgNoTone.StartsWith("huy dang ky") ||
+                cleanMsgNoTone.StartsWith("huy ho tro") ||
+                cleanMsgNoTone.StartsWith("huy don") ||
+                cleanMsgNoTone.StartsWith("huy dat") ||
+                Regex.IsMatch(cleanMsgNoTone, @"^(?:toi\s+)?(?:muon\s+)?(?:huy|huy\s+yeu\s+cau|dung\s+lai|stop|cancel)$")
+            );
+
+            if (isCancelAnyFlow)
+            {
+                return Ok(new
+                {
+                    success = true,
+                    reply = "Dạ mình đã hủy theo yêu cầu của bạn rồi nhé! 😊 Giỏ hàng và các thông tin đã được làm mới. Bây giờ bạn có thể trò chuyện hoặc hỏi mình các thông tin khác bất cứ lúc nào ạ!",
+                    provider = "ZoneMart AI Assistant",
+                    actionIntent = (string?)null,
+                    orderState = new OrderStateDto { Step = "IDLE", CartItems = new List<OrderItemDto>() },
+                    registrationState = "NONE",
+                    supportState = "NONE",
+                    regDraft = (object?)null,
+                    supportDraft = (object?)null,
+                    products = new List<object>(),
+                    stores = new List<object>()
+                });
+            }
+
+            // 0.18. KHÓA LUỒNG XÁC NHẬN GIỎ HÀNG CÓ SẴN (CONFIRM_EXISTING_CART STRICT INPUT LOCK)
+            if (string.Equals(request?.OrderState?.Step, "CONFIRM_EXISTING_CART", StringComparison.OrdinalIgnoreCase))
+            {
+                var state = request.OrderState;
+                state.CartItems ??= new List<OrderItemDto>();
+
+                // Nếu người dùng nhắn cụ thể món muốn đặt (VD: 'cho 2 thịt gà thả vườn đi', 'lấy 2 bánh mì chảo')
+                bool hasDirectFoodInExistingCart = HasDirectSpecificFoodCommand(cleanMsgNoTone, state.CartItems);
+
+                if (hasDirectFoodInExistingCart)
+                {
+                    var smartRes = await TryProcessSmartCartOperationsAsync(state, cleanMsgNoTone, userMsg);
+                    if (smartRes != null) return smartRes;
+                }
+
+                // Kiểm tra nếu người dùng chọn nút "Đặt đồ mới"
+                bool isOrderNew = cleanMsgNoTone == "dat do moi" || cleanMsgNoTone.Contains("dat do moi") ||
+                                  cleanMsgNoTone.Contains("mon moi") || cleanMsgNoTone == "dat moi" ||
+                                  cleanMsgNoTone.Contains("chon do moi");
+
+                if (isOrderNew)
+                {
+                    state.Step = "AWAITING_ITEM_NAME";
+                    state.CartItems = new List<OrderItemDto>();
+                    state.PendingItem = null;
+                    return Ok(new
+                    {
+                        success = true,
+                        reply = "Dạ vâng! Trợ lý AI của ZoneMart sẵn sàng hỗ trợ bạn chọn & đặt đồ mới hỏa tốc! 🛍️✨\n\n**Bạn muốn tìm hoặc đặt món ăn / thực phẩm gì ạ?** (Ví dụ: Cơm gà, Bánh mì chảo, Thịt bò Mỹ, Sữa tươi, Trái cây...)",
+                        provider = "ZoneMart AI Assistant",
+                        orderState = state
+                    });
+                }
+
+                // Kiểm tra nếu người dùng chọn nút "Đặt đồ" (xác nhận đặt các món đã tích chọn)
+                bool isConfirmCartOrder = cleanMsgNoTone == "dat do" || cleanMsgNoTone.Contains("dat do") ||
+                                          cleanMsgNoTone.Contains("xac nhan dat") || cleanMsgNoTone.Contains("dat cac mon nay");
+
+                if (isConfirmCartOrder)
+                {
+                    if (request.SelectedCartItems == null || request.SelectedCartItems.Count == 0)
+                    {
+                        var cartList = await GetUserActiveCartItemsAsync(request);
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = "⚠️ Bạn vui lòng tích chọn vào ô ít nhất 1 món đồ trong giỏ hàng để tiếp tục đặt đồ nhé! 🛒\n\n*(Hoặc bạn có thể bấm nút **'Đặt đồ mới'** bên dưới nếu muốn tìm món mới hoàn toàn ạ).*",
+                            provider = "ZoneMart AI Assistant",
+                            actionIntent = "CONFIRM_EXISTING_CART",
+                            existingCartItems = cartList,
+                            orderState = state
+                        });
+                    }
+
+                    // Người dùng đã tích chọn >= 1 món: Nạp các món đã chọn với số lượng đã chỉnh vào state.CartItems
+                    state.CartItems = new List<OrderItemDto>();
+                    foreach (var sel in request.SelectedCartItems)
+                    {
+                        int qty = Math.Max(1, sel.Quantity);
+                        if (sel.MaxStock > 0 && qty > sel.MaxStock) qty = sel.MaxStock;
+
+                        state.CartItems.Add(new OrderItemDto
+                        {
+                            ProductId = sel.Id,
+                            ProductName = sel.Name,
+                            Price = sel.Price,
+                            Quantity = qty,
+                            StoreId = !string.IsNullOrWhiteSpace(sel.StoreId) ? sel.StoreId : "store_default",
+                            StoreName = !string.IsNullOrWhiteSpace(sel.StoreName) ? sel.StoreName : "ZoneMart Store",
+                            ImageUrl = !string.IsNullOrWhiteSpace(sel.Image) ? sel.Image : "/images/anhxoanen.png"
+                        });
+                    }
+
+                    state.Step = "ASK_ADDRESS";
+                    decimal total = state.CartItems.Sum(it => it.Price * it.Quantity);
+                    string itemsSummary = string.Join("\n", state.CartItems.Select((it, idx) => $"  {idx + 1}️⃣ {it.Quantity}x **{it.ProductName}** ({it.Price:N0}đ/SP) = {it.Price * it.Quantity:N0}đ"));
+                    string userAddr = !string.IsNullOrWhiteSpace(state.Address) && state.Address != "Chưa xác định cụ thể"
+                        ? state.Address
+                        : (!string.IsNullOrWhiteSpace(request?.UserLocation) && request.UserLocation != "Chưa xác định cụ thể"
+                            ? request.UserLocation
+                            : "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội");
+                    state.Address = userAddr;
+                    state.OriginalAddress = userAddr;
+                    state.AddressRetryCount = 0;
+
+                    return Ok(new
+                    {
+                        success = true,
+                        reply = $"Dạ tuyệt vời! Mình đã ghi nhận các món bạn chọn từ giỏ hàng để đặt hàng hỏa tốc: 🛒✨\n{itemsSummary}\n\n👉 **Tổng cộng ({state.CartItems.Count} món): {total:N0} ₫**\n\nTiếp theo là địa chỉ nhận hàng 📍\nĐịa chỉ hiện tại của bạn là: **{state.Address}**\n\n**Bạn có muốn thay đổi địa chỉ nhận hàng không ạ?**",
+                        provider = "ZoneMart AI Assistant",
+                        actionIntent = "SHOW_ADDRESS_CHOICE_BUTTONS",
+                        orderState = state
+                    });
+                }
+
+                // Người dùng nhập bất kỳ từ nào khác (ngoài 2 nút và ngoài hủy): AI nhắc lại và hiện lại bảng giỏ hàng
+                var existingCartList = await GetUserActiveCartItemsAsync(request);
+                return Ok(new
+                {
+                    success = true,
+                    reply = "Dạ hiện tại bạn đang ở bước lựa chọn món từ giỏ hàng sẵn có ạ! 🛒\n\nVui lòng tích chọn các món bạn muốn đặt rồi bấm nút **'Đặt đồ'**, hoặc bấm nút **'Đặt đồ mới'** ở khung bên dưới nhé. (Nếu bạn muốn dừng luồng đặt hàng, bạn hãy nhắn **'hủy'** ạ).",
+                    provider = "ZoneMart AI Assistant",
+                    actionIntent = "CONFIRM_EXISTING_CART",
+                    existingCartItems = existingCartList,
+                    orderState = state
+                });
+            }
 
             // 0.00. BỘ LỌC CHÀO HỎI TỰ NHIÊN (GREETING & SALUTATION GUARDRAIL)
             string cleanTrimmed = cleanMsgNoTone.Trim();
@@ -646,6 +1792,58 @@ namespace ZoneMart.Server.Controllers
                 });
             }
 
+            // 0.01. NẾU ĐANG TRONG TIẾN TRÌNH ĐĂNG KÝ HỘ HOẶC CÓ Ý ĐỊNH ĐĂNG KÝ HỘ (SELLER / SHIPPER / BUYER) -> ƯU TIÊN XỬ LÝ TRƯỚC
+            bool isRegActive = !string.IsNullOrWhiteSpace(request?.RegistrationState) &&
+                               !string.Equals(request.RegistrationState, "NONE", StringComparison.OrdinalIgnoreCase);
+
+            bool isRegIntent = cleanMsgNoTone.Contains("ai dang ky") ||
+                               cleanMsgNoTone.Contains("dang ky ho") ||
+                               cleanMsgNoTone.Contains("dang ky giup") ||
+                               cleanMsgNoTone.Contains("dang ky bang ai") ||
+                               cleanMsgNoTone.Contains("dang ky truc tiep") ||
+                               cleanMsgNoTone.Contains("nhap thong tin") ||
+                               cleanMsgNoTone.Contains("nho ai dang ky") ||
+                               cleanMsgNoTone.Contains("nho ai lam") ||
+                               cleanMsgNoTone.Contains("toi muon ai dang ky") ||
+                               cleanMsgNoTone.Contains("cach 2") ||
+                               ((cleanMsgNoTone.Contains("shipper") || cleanMsgNoTone.Contains("tai xe") || cleanMsgNoTone.Contains("chay xe")) &&
+                                (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("lam") || cleanMsgNoTone.Contains("chay") || cleanMsgNoTone.Contains("muon"))) ||
+                               ((cleanMsgNoTone.Contains("seller") || cleanMsgNoTone.Contains("ban hang") || cleanMsgNoTone.Contains("gian hang") || cleanMsgNoTone.Contains("mo shop") || cleanMsgNoTone.Contains("shop")) &&
+                                (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("mo") || cleanMsgNoTone.Contains("muon") || cleanMsgNoTone.Contains("ban"))) ||
+                               ((cleanMsgNoTone.Contains("khach hang") || cleanMsgNoTone.Contains("nguoi mua") || cleanMsgNoTone.Contains("tai khoan")) &&
+                                (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("tao") || cleanMsgNoTone.Contains("lap") || cleanMsgNoTone.Contains("muon")));
+
+            if (isRegActive || isRegIntent)
+            {
+                var regResult = await TryProcessAiDirectRegistrationAsync(userMsg, cleanMsgNoTone, request?.RegistrationState, request?.History, request?.RegDraft);
+                if (regResult != null)
+                {
+                    return Ok(regResult);
+                }
+            }
+
+            // 0.02. BỘ LỌC CÂU HỎI VỀ TÍNH NĂNG / KHẢ NĂNG CỦA AI (AI CAPABILITIES & FORM TÍNH NĂNG)
+            // Hỗ trợ triệt để: "bạn làm j", "làm j", "tư vấn cho tôi", "tư vấn", "tư vấn đi", "tính năng", v.v.
+            if (IsCapabilitiesQuery(cleanMsgNoTone))
+            {
+                return Ok(new
+                {
+                    success = true,
+                    reply = "Dạ xin chào bạn! 🖐️ Mình là Trợ lý AI Thông Minh ZoneMart 24/7. Mình có thể hỗ trợ bạn các tính năng nổi bật sau:\n\n" +
+                            "1️⃣ **🛍️ Tự động chọn & đặt đồ hộ hỏa tốc**: Bạn chỉ cần nói món ăn muốn ăn (hoặc nhắn 'đặt đồ hộ'), AI sẽ tìm kiếm món, thêm vào giỏ hàng và đặt thay bạn.\n" +
+                            "2️⃣ **🌦️ Gợi ý món ăn theo thời tiết**: Tư vấn món giải nhiệt khi trời nắng nóng, món ấm nóng khi trời se lạnh mưa gió.\n" +
+                            "3️⃣ **📍 Tìm kiếm quán ngon gần bạn**: Tự động nhận diện GPS an toàn (phủ sóng toàn quốc 63 tỉnh thành) và tìm kiếm gian hàng gần nhất.\n" +
+                            "4️⃣ **⚡ Đăng ký tài khoản siêu tốc (1 phút)**: Hỗ trợ Khách hàng, Chủ gian hàng (Seller) và Tài xế (Shipper) tạo tài khoản ngay trong khung chat mà không cần mò mẫm tự điền form.\n" +
+                            "5️⃣ **💬 Hỗ trợ & giải đáp dịch vụ 24/7**: Tra cứu danh sách món ăn, hỗ trợ khách hàng nhanh chóng.\n\n" +
+                            "👉 Bạn có thể bấm vào các nút chức năng bên dưới để trải nghiệm ngay nhé! 😊",
+                    provider = "ZoneMart AI Assistant",
+                    actionIntent = "SHOW_CAPABILITIES",
+                    orderState = new OrderStateDto { Step = "IDLE" },
+                    products = new List<object>(),
+                    stores = new List<object>()
+                });
+            }
+
             // 0.05. BỘ LỌC CÂU HỎI ĐĂNG KÝ NỀN TẢNG BÊN THỨ 3 (ZALO, FACEBOOK, TIKTOK, MOMO...) - TRÁNH HIỂN THỊ NHẦM FORM ZONEMART
             bool isThirdPartyQuery = IsThirdPartyPlatformRequest(cleanMsgNoTone);
             if (isThirdPartyQuery && (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("tai khoan") || cleanMsgNoTone.Contains("tao tk") || cleanMsgNoTone.Contains("mo tk") || cleanMsgNoTone.Contains("lap tk") || cleanMsgNoTone.Contains("dang nhap")))
@@ -662,49 +1860,199 @@ namespace ZoneMart.Server.Controllers
             }
 
             // 0.15. BỘ LỌC CÂU HỎI VỀ THỜI TIẾT VÀ GỢI Ý MÓN ĂN PHÙ HỢP THEO THỜI TIẾT THỰC TẾ
-            bool isDirectWeatherQuery = cleanMsgNoTone.Contains("thoi tiet") ||
+            bool userAskingCold = IsColdWeatherIntent(cleanMsgNoTone, userMsg);
+            bool userAskingHot = IsHotWeatherIntent(cleanMsgNoTone, userMsg);
+            bool isDirectWeatherQuery = userAskingCold ||
+                                        userAskingHot ||
+                                        cleanMsgNoTone.Contains("thoi tiet") ||
                                         cleanMsgNoTone.Contains("bao nhieu do") ||
                                         cleanMsgNoTone.Contains("nhiet do") ||
-                                        cleanMsgNoTone.Contains("nang nong") ||
-                                        cleanMsgNoTone.Contains("se lanh") ||
-                                        cleanMsgNoTone.Contains("troi nong") ||
-                                        cleanMsgNoTone.Contains("troi lanh") ||
-                                        cleanMsgNoTone.Contains("do nong") ||
-                                        cleanMsgNoTone.Contains("an gi bot nong") ||
-                                        cleanMsgNoTone.Contains("an gi do nong") ||
-                                        cleanMsgNoTone.Contains("an gi am nong");
+                                        cleanMsgNoTone.Contains("mua dong") ||
+                                        cleanMsgNoTone.Contains("mua he");
 
             if (isDirectWeatherQuery)
             {
                 var (wCity, wTemp, wDesc, _) = await GetClientWeatherInfoAsync();
-                string weatherAdvisory = wTemp >= 27.0
-                    ? $"Dạ hiện tại ở **{wCity}**, thời tiết đang khá nắng nóng, nhiệt độ khoảng **{wTemp:0.#}°C** ({wDesc}) ☀️🌡️. Với thời tiết oi nóng này, mình gợi ý bạn chọn các món thanh mát, mọng nước giải nhiệt tức thì như Dâu tây tươi Đà Lạt, Cà chua bi, Sữa tươi ướp lạnh hay Trà trái cây mát lạnh nhé! 🍓🥛"
-                    : $"Dạ hiện tại ở **{wCity}**, thời tiết đang se lạnh mát mẻ, nhiệt độ khoảng **{wTemp:0.#}°C** ({wDesc}) ⛅🌡️. Với thời tiết se lạnh này, mình gợi ý bạn thưởng thức các món ăn nóng hổi, xì xụp ấm bụng như Phở bò tái nạm, Bánh mì chảo xèo xèo hay Cơm gà nóng thơm lừng nhé! 🍲🥖";
+                bool isCurrentlyHot = wTemp >= 25.0; // Đánh giá nhiệt độ thực tế tại khu vực người dùng
+                string cityDisplay = !string.IsNullOrWhiteSpace(wCity) && wCity != "Khu vực Cầu Giấy / Hà Nội" ? wCity : "Hà Nội";
 
-                List<Product> matchedProds = new();
+                // Xác định người dùng muốn tư vấn món ấm nóng (mùa đông / se lạnh) hay món giải nhiệt (mùa hè / nắng nóng)
+                bool recommendWarmFood;
+                if (userAskingCold)
+                {
+                    recommendWarmFood = true;
+                }
+                else if (userAskingHot)
+                {
+                    recommendWarmFood = false;
+                }
+                else
+                {
+                    // Người dùng chỉ hỏi nhiệt độ/thời tiết chung chung -> tư vấn theo thời tiết thực tế
+                    recommendWarmFood = !isCurrentlyHot;
+                }
+
+                // Truy xuất toàn bộ sản phẩm trong Database
+                List<Product> allProds = new();
                 try
                 {
-                    var allProds = await _mongoService.Products
-                        .Find(p => p.StockStatus == "in_stock" || p.AiStatus == "approved")
+                    allProds = await _mongoService.Products
+                        .Find(p => p.StockStatus != "deleted" && p.AiStatus != "rejected")
                         .ToListAsync();
-
-                    if (wTemp >= 27.0)
-                    {
-                        matchedProds = allProds.Where(IsProductCooling).Take(4).ToList();
-                    }
-                    else
-                    {
-                        matchedProds = allProds.Where(IsProductWarming).Take(4).ToList();
-                    }
-
-                    if (matchedProds.Count == 0)
-                    {
-                        matchedProds = allProds.Take(4).ToList();
-                    }
                 }
                 catch { }
 
-                var prodCards = matchedProds.Select(p => new
+                if (allProds == null || allProds.Count == 0)
+                {
+                    try
+                    {
+                        allProds = await _mongoService.Products.Find(_ => true).ToListAsync();
+                    }
+                    catch { }
+                }
+
+                if (allProds == null || allProds.Count == 0)
+                {
+                    allProds = CatalogSeedData.GetCatalogProducts();
+                }
+                else
+                {
+                    // Đảm bảo có đầy đủ dữ liệu món ăn mẫu nếu DB chưa seed đủ
+                    var sampleProds = CatalogSeedData.GetCatalogProducts();
+                    foreach (var sp in sampleProds)
+                    {
+                        if (!allProds.Any(p => string.Equals(p.ProductName, sp.ProductName, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            allProds.Add(sp);
+                        }
+                    }
+                }
+
+                // Hàm gom nhóm để đảm bảo 5 món gợi ý là 5 món hoàn toàn khác nhau (không trùng thịt bò 2 lần, dâu tây 2 lần...)
+                Func<Product, string> getDishGroupKey = p =>
+                {
+                    string n = RemoveVietnameseTones(p.ProductName ?? "").ToLower();
+                    if (n.Contains("banh mi chao")) return "banh_mi_chao";
+                    if (n.Contains("com ga")) return "com_ga";
+                    if (n.Contains("com tam")) return "com_tam";
+                    if (n.Contains("banh bao")) return "banh_bao";
+                    if (n.Contains("banh mi kep") || n.Contains("banh mi thit")) return "banh_mi_kep";
+                    if (n.Contains("khoai lang")) return "khoai_lang";
+                    if (n.Contains("bo my") || n.Contains("thit bo")) return "thit_bo";
+                    if (n.Contains("trau gac bep") || n.Contains("thit trau")) return "thit_trau";
+                    if (n.Contains("canh cua")) return "canh_cua";
+                    if (n.Contains("pho")) return "pho";
+
+                    if (n.Contains("tra tac")) return "tra_tac";
+                    if (n.Contains("dua xiem")) return "dua_xiem";
+                    if (n.Contains("ca phe")) return "ca_phe";
+                    if (n.Contains("dau tay")) return "dau_tay";
+                    if (n.Contains("cam sanh") || n.Contains("cam ")) return "cam";
+                    if (n.Contains("xoai")) return "xoai";
+                    if (n.Contains("buoi")) return "buoi";
+                    if (n.Contains("ca chua")) return "ca_chua";
+                    if (n.Contains("sua tuoi")) return "sua_tuoi";
+                    if (n.Contains("bo sap")) return "bo_sap";
+                    return n;
+                };
+
+                // Lọc sản phẩm phù hợp thời tiết & lấy top 5 món có lượt đánh giá / lượt mua cao nhất
+                List<Product> top5Prods = new();
+                if (recommendWarmFood)
+                {
+                    top5Prods = allProds
+                        .Where(IsProductWarming)
+                        .OrderByDescending(p =>
+                        {
+                            var s = GetProductPopularityStats(p);
+                            return s.Sold + (s.Rating * 100);
+                        })
+                        .GroupBy(getDishGroupKey)
+                        .Select(g => g.First())
+                        .Take(5)
+                        .ToList();
+                }
+                else
+                {
+                    top5Prods = allProds
+                        .Where(IsProductCooling)
+                        .OrderByDescending(p =>
+                        {
+                            var s = GetProductPopularityStats(p);
+                            return s.Sold + (s.Rating * 100);
+                        })
+                        .GroupBy(getDishGroupKey)
+                        .Select(g => g.First())
+                        .Take(5)
+                        .ToList();
+                }
+
+                // Xây dựng câu trả lời thông minh, tinh tế theo đúng thực tế và mong muốn của khách
+                var sbReply = new StringBuilder();
+
+                if (userAskingCold && isCurrentlyHot)
+                {
+                    // Thực tế đang nóng nhưng khách hỏi về thời tiết se lạnh / đồ ấm nóng
+                    sbReply.AppendLine($"Dạ hiện tại ở khu vực của bạn (**{cityDisplay}**), thời tiết thực tế đang khá nắng nóng với nhiệt độ khoảng **{wTemp:0.#}°C** ({wDesc}) ☀️🌡️.");
+                    sbReply.AppendLine();
+                    sbReply.AppendLine("Hmm... nhưng bạn đang hỏi về thời tiết se lạnh nên mình sẽ gợi ý cho bạn những món như sau ạ: 🍲🔥");
+                }
+                else if (userAskingHot && !isCurrentlyHot)
+                {
+                    // Thực tế đang se lạnh nhưng khách hỏi về thời tiết nắng nóng / đồ giải nhiệt
+                    sbReply.AppendLine($"Dạ hiện tại ở khu vực của bạn (**{cityDisplay}**), thời tiết thực tế đang khá se lạnh với nhiệt độ khoảng **{wTemp:0.#}°C** ({wDesc}) ⛅🌡️.");
+                    sbReply.AppendLine();
+                    sbReply.AppendLine("Hmm... nhưng bạn đang hỏi về thời tiết nắng nóng nên mình sẽ gợi ý cho bạn những món như sau ạ: 🍓🧊");
+                }
+                else if (userAskingCold && !isCurrentlyHot)
+                {
+                    // Khách hỏi se lạnh và thời tiết thực tế đúng là se lạnh
+                    sbReply.AppendLine($"Dạ chuẩn luôn bạn ơi! Hiện tại ở khu vực của bạn (**{cityDisplay}**), thời tiết đang se lạnh với nhiệt độ khoảng **{wTemp:0.#}°C** ({wDesc}) ⛅🌡️.");
+                    sbReply.AppendLine();
+                    sbReply.AppendLine("Với tiết trời se lạnh thế này, thưởng thức các món ăn nóng hổi bốc khói hay xì xụp nước dùng đậm đà là ấm bụng tuyệt vời nhất luôn ạ! Dưới đây là top 5 món ấm nóng mùa đông được yêu thích nhất trên ZoneMart: 🍲🔥");
+                }
+                else if (userAskingHot && isCurrentlyHot)
+                {
+                    // Khách hỏi nắng nóng và thời tiết thực tế đúng là nắng nóng
+                    sbReply.AppendLine($"Dạ chuẩn luôn bạn ơi! Hiện tại ở khu vực của bạn (**{cityDisplay}**), thời tiết đang khá nắng nóng với nhiệt độ khoảng **{wTemp:0.#}°C** ({wDesc}) ☀️🌡️.");
+                    sbReply.AppendLine();
+                    sbReply.AppendLine("Với thời tiết oi bức thế này, nạp ngay các món tươi mát, mọng nước giải nhiệt tức thì là sảng khoái nhất luôn ạ! Dưới đây là top 5 món thanh mát giải nhiệt được yêu thích nhất trên ZoneMart: 🍓🧊");
+                }
+                else
+                {
+                    // Câu hỏi chung chung về thời tiết / nhiệt độ
+                    sbReply.AppendLine($"Dạ hiện tại ở khu vực của bạn (**{cityDisplay}**), nhiệt độ đang là khoảng **{wTemp:0.#}°C** ({wDesc}) 🌤️🌡️.");
+                    sbReply.AppendLine();
+                    if (isCurrentlyHot)
+                    {
+                        sbReply.AppendLine("Trời khá nắng nóng oi bức, mình gợi ý bạn thưởng thức các món tươi mát thanh nhiệt giải khát cực ngon sau đây nhé: 🍓🥛");
+                    }
+                    else
+                    {
+                        sbReply.AppendLine("Trời đang se lạnh mát mẻ, mình gợi ý bạn thưởng thức các món ăn nóng hổi ấm bụng xì xụp sau đây nhé: 🍲🥖");
+                    }
+                }
+
+                sbReply.AppendLine();
+
+                // Liệt kê chi tiết 5 món ăn phù hợp với thời tiết
+                for (int i = 0; i < top5Prods.Count; i++)
+                {
+                    var p = top5Prods[i];
+                    var (sold, rating) = GetProductPopularityStats(p);
+                    string dishReason = recommendWarmFood
+                        ? GetWarmDishHighlight(p.ProductName)
+                        : GetCoolDishHighlight(p.ProductName);
+
+                    sbReply.AppendLine($"{i + 1}️⃣ **{p.ProductName}** ({p.Price:N0}đ) - ⭐ {rating:0.0} (Đã bán: {sold}) - Gian hàng: *{p.StoreName ?? "ZoneMart Store"}*");
+                    sbReply.AppendLine($"   👉 *{dishReason}*");
+                    if (i < top5Prods.Count - 1) sbReply.AppendLine();
+                }
+
+                sbReply.AppendLine();
+                sbReply.AppendLine("Bạn có thể bấm trực tiếp vào thẻ món bên dưới để xem thông tin hoặc nhắn tên món để mình hỗ trợ bạn đặt hàng hỏa tốc 15-30 phút tận nơi nhé! 🛵✨");
+
+                var prodCards = top5Prods.Select(p => new
                 {
                     id = p.Id,
                     name = p.ProductName,
@@ -712,23 +2060,25 @@ namespace ZoneMart.Server.Controllers
                     image = !string.IsNullOrEmpty(p.ImageUrl) ? p.ImageUrl : "/images/anhxoanen.png",
                     storeName = p.StoreName ?? "ZoneMart Store",
                     category = p.Category
-                }).Take(4).ToList();
+                }).ToList();
 
                 return Ok(new
                 {
                     success = true,
-                    reply = weatherAdvisory,
+                    reply = sbReply.ToString(),
                     provider = "ZoneMart Weather AI",
                     products = prodCards,
                     stores = new List<object>()
                 });
             }
 
+
+
             // 0.2. LUỒNG ĐĂNG KÝ TRỰC TIẾP QUA AI (BUYER / SELLER / SHIPPER - HỎI TỪNG CÂU)
-            bool isRegActive = !string.IsNullOrWhiteSpace(request?.RegistrationState) &&
+            isRegActive = !string.IsNullOrWhiteSpace(request?.RegistrationState) &&
                                !string.Equals(request.RegistrationState, "NONE", StringComparison.OrdinalIgnoreCase);
 
-            bool isRegIntent = cleanMsgNoTone.Contains("ai dang ky") ||
+            isRegIntent = cleanMsgNoTone.Contains("ai dang ky") ||
                                cleanMsgNoTone.Contains("dang ky ho") ||
                                cleanMsgNoTone.Contains("dang ky giup") ||
                                cleanMsgNoTone.Contains("dang ky bang ai") ||
@@ -737,7 +2087,13 @@ namespace ZoneMart.Server.Controllers
                                cleanMsgNoTone.Contains("nho ai dang ky") ||
                                cleanMsgNoTone.Contains("nho ai lam") ||
                                cleanMsgNoTone.Contains("toi muon ai dang ky") ||
-                               (cleanMsgNoTone.Contains("dang ky") && (cleanMsgNoTone.Contains("cach 2") || cleanMsgNoTone.Contains("ho lam") || cleanMsgNoTone.Contains("giup lam")));
+                               cleanMsgNoTone.Contains("cach 2") ||
+                               ((cleanMsgNoTone.Contains("shipper") || cleanMsgNoTone.Contains("tai xe") || cleanMsgNoTone.Contains("chay xe")) &&
+                                (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("lam") || cleanMsgNoTone.Contains("chay") || cleanMsgNoTone.Contains("muon"))) ||
+                               ((cleanMsgNoTone.Contains("seller") || cleanMsgNoTone.Contains("ban hang") || cleanMsgNoTone.Contains("gian hang") || cleanMsgNoTone.Contains("mo shop") || cleanMsgNoTone.Contains("shop")) &&
+                                (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("mo") || cleanMsgNoTone.Contains("muon") || cleanMsgNoTone.Contains("ban"))) ||
+                               ((cleanMsgNoTone.Contains("khach hang") || cleanMsgNoTone.Contains("nguoi mua") || cleanMsgNoTone.Contains("tai khoan")) &&
+                                (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("tao") || cleanMsgNoTone.Contains("lap") || cleanMsgNoTone.Contains("muon")));
 
             if (isRegActive || isRegIntent)
             {
@@ -776,25 +2132,19 @@ namespace ZoneMart.Server.Controllers
                 }
             }
 
-            // 0.2. BỘ LỌC CÂU HỎI VỀ TÍNH NĂNG / KHẢ NĂNG CỦA AI (AI CAPABILITIES GUARDRAIL)
-            bool isCapabilitiesQuery = cleanMsgNoTone.Contains("giup duoc gi") || cleanMsgNoTone.Contains("giup duoc nhung gi") ||
-                                       cleanMsgNoTone.Contains("giup gi") || cleanMsgNoTone.Contains("lam duoc gi") ||
-                                       cleanMsgNoTone.Contains("co the giup") || cleanMsgNoTone.Contains("tinh nang") ||
-                                       cleanMsgNoTone.Contains("chuc nang") || cleanMsgNoTone.Contains("ho tro gi") ||
-                                       cleanMsgNoTone.Contains("tu van duoc") || cleanMsgNoTone.Contains("tu van nhung gi") ||
-                                       cleanMsgNoTone.Contains("tu van gi") || cleanMsgNoTone.Contains("ban lam duoc") ||
-                                       cleanMsgNoTone.Contains("ai lam duoc") || cleanMsgNoTone.Contains("co the lam") ||
-                                       cleanMsgNoTone.Contains("co the tu van") || cleanMsgNoTone.Contains("biet lam gi") ||
-                                       cleanMsgNoTone.Contains("kha nang") || cleanMsgNoTone.Contains("tro giup gi") ||
-                                       cleanMsgNoTone.Contains("lam duoc nhung gi") || cleanMsgNoTone.Contains("co nhung chuc nang") ||
-                                       cleanMsgNoTone.Contains("co nhung tinh nang");
-
-            if (isCapabilitiesQuery)
+            // 0.2. BỘ LỌC CÂU HỎI VỀ TÍNH NĂNG / KHẢ NĂNG CỦA AI (AI CAPABILITIES GUARDRAIL - Hỗ trợ "làm j", "làm được j", "tư vấn được j")
+            if (IsCapabilitiesQuery(cleanMsgNoTone))
             {
                 return Ok(new
                 {
                     success = true,
-                    reply = "Dạ xin chào bạn! 🖐️ Mình là Trợ lý AI của ZoneMart. Mình có thể hỗ trợ bạn các tính năng tư vấn mua sắm hỏa tốc, tự động chọn & đặt đồ hộ và đăng ký tài khoản bên dưới. Bạn hãy bấm vào các nút bên dưới để mình trợ giúp ngay nhé! 😊",
+                    reply = "Dạ xin chào bạn! 🖐️ Mình là Trợ lý AI Thông Minh ZoneMart 24/7. Mình có thể hỗ trợ bạn các tính năng nổi bật sau:\n\n" +
+                            "1️⃣ **🛍️ Tự động chọn & đặt đồ hộ hỏa tốc**: Bạn chỉ cần nói món ăn muốn ăn (hoặc nhắn 'đặt đồ hộ'), AI sẽ tìm kiếm món, thêm vào giỏ hàng và đặt thay bạn.\n" +
+                            "2️⃣ **🌦️ Gợi ý món ăn theo thời tiết**: Tư vấn món giải nhiệt khi trời nắng nóng, món ấm nóng khi trời se lạnh mưa gió.\n" +
+                            "3️⃣ **📍 Tìm kiếm quán ngon gần bạn**: Tự động nhận diện GPS an toàn (phủ sóng toàn quốc 63 tỉnh thành) và tìm kiếm gian hàng gần nhất.\n" +
+                            "4️⃣ **⚡ Đăng ký tài khoản siêu tốc (1 phút)**: Hỗ trợ Khách hàng, Chủ gian hàng (Seller) và Tài xế (Shipper) tạo tài khoản ngay trong khung chat mà không cần mò mẫm tự điền form.\n" +
+                            "5️⃣ **💬 Hỗ trợ & giải đáp dịch vụ 24/7**: Tra cứu danh sách món ăn, hỗ trợ khách hàng nhanh chóng.\n\n" +
+                            "👉 Bạn có thể bấm vào các nút chức năng bên dưới để trải nghiệm ngay nhé! 😊",
                     provider = "ZoneMart AI Assistant",
                     actionIntent = "SHOW_CAPABILITIES",
                     orderState = new OrderStateDto { Step = "IDLE" },
@@ -869,7 +2219,9 @@ namespace ZoneMart.Server.Controllers
             }
 
             // 0.85. KIỂM TRA HÀNH ĐỘNG AI TỰ ĐỘNG ĐẶT ĐỒ HỘ IN-CHAT (FULL CONVERSATIONAL CHECKOUT ENGINE)
-            bool isOrderingIntent = cleanMsgNoTone.Contains("toi muon dat hang") || cleanMsgNoTone.Contains("muon dat hang") ||
+            bool isOrderingIntent = IsGeneralOrderingPrompt(cleanMsgNoTone) ||
+                                     IsGenericFoodInquiryWithoutQty(cleanMsgNoTone) ||
+                                     cleanMsgNoTone.Contains("toi muon dat hang") || cleanMsgNoTone.Contains("muon dat hang") ||
                                      cleanMsgNoTone.Contains("dat hang") ||
                                      cleanMsgNoTone.Contains("toi muon dat do an") || cleanMsgNoTone.Contains("muon dat do an") ||
                                      cleanMsgNoTone.Contains("dat do an") || cleanMsgNoTone.Contains("dat do an cho toi") ||
@@ -917,92 +2269,235 @@ namespace ZoneMart.Server.Controllers
                 var state = request?.OrderState ?? new OrderStateDto { Step = "IDLE" };
                 state.CartItems ??= new List<OrderItemDto>();
 
-                // Nếu người dùng nhắn 'Hủy thay đổi' hoặc 'giữ nguyên' trong lúc chỉnh sửa giỏ hàng -> Không hủy toàn bộ luồng, mà chuyển sang hỏi địa chỉ tiếp tục đặt hàng
-                bool isHuyThayDoi = (cleanMsgNoTone.Contains("huy thay doi") || 
-                                     cleanMsgNoTone.Contains("khong sua") || 
-                                     cleanMsgNoTone.Contains("huy sua") ||
-                                     cleanMsgNoTone.Contains("giu nguyen gio hang") ||
-                                     (cleanMsgNoTone.Contains("giu nguyen") && !cleanMsgNoTone.Contains("dia chi"))) &&
-                                    (string.Equals(state.Step, "EDITING_CART", StringComparison.OrdinalIgnoreCase) ||
-                                     string.Equals(state.Step, "ASK_EDIT_CART", StringComparison.OrdinalIgnoreCase) ||
-                                     string.Equals(state.Step, "CONFIRMING_CART", StringComparison.OrdinalIgnoreCase));
-
-                if (isHuyThayDoi)
+                // =========================================================================
+                // BƯỚC: CONFIRM_EXISTING_CART (Xác nhận đặt các món đang có trong giỏ hàng)
+                // =========================================================================
+                if (string.Equals(state.Step, "CONFIRM_EXISTING_CART", StringComparison.OrdinalIgnoreCase))
                 {
-                    state.Step = "ASK_ADDRESS";
-                    string userAddr = !string.IsNullOrWhiteSpace(state.Address) && state.Address != "Chưa xác định cụ thể"
-                        ? state.Address
-                        : (!string.IsNullOrWhiteSpace(request?.UserLocation) && request.UserLocation != "Chưa xác định cụ thể"
-                            ? request.UserLocation
-                            : "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội");
-                    state.Address = userAddr;
+                    // 0. Nếu người dùng nhắn cụ thể món muốn đặt (VD: 'cho 2 thịt gà thả vườn đi', 'lấy 2 bánh mì chảo')
+                    bool hasDirectFoodInCartStep = HasDirectSpecificFoodCommand(cleanMsgNoTone, state.CartItems);
 
-                    return Ok(new
+                    if (hasDirectFoodInCartStep)
                     {
-                        success = true,
-                        reply = $"Dạ vâng, mình đã giữ nguyên danh sách món trong giỏ hàng! 🛒\n\nTiếp theo là địa chỉ nhận hàng 📍\nĐịa chỉ hiện tại của bạn là: **{state.Address}**\n\n**Bạn có muốn thay đổi địa chỉ nhận hàng không ạ?**",
-                        provider = "ZoneMart AI Assistant",
-                        actionIntent = "SHOW_ADDRESS_CHOICE_BUTTONS",
-                        orderState = state
-                    });
-                }
+                        var smartRes = await TryProcessSmartCartOperationsAsync(state, cleanMsgNoTone, userMsg);
+                        if (smartRes != null) return smartRes;
+                    }
 
-                // Nếu người dùng thực sự muốn hủy toàn bộ đơn hàng (ví dụ: 'hủy đơn', 'thôi không mua nữa', 'hủy đặt hàng', 'stop')
-                bool isCancelOrderEntirely = (Regex.IsMatch(cleanMsgNoTone, @"\b(cancel|stop|thoi)\b") || 
-                                              cleanMsgNoTone == "huy" || 
-                                              cleanMsgNoTone.StartsWith("huy don") || 
-                                              cleanMsgNoTone.Contains("khong mua") ||
-                                              cleanMsgNoTone.Contains("huy dat hang") ||
-                                              cleanMsgNoTone.Contains("khong dat nua")) &&
-                                             !isHuyThayDoi &&
-                                             !cleanMsgNoTone.Contains("sua") &&
-                                             !cleanMsgNoTone.Contains("quay lai");
+                    // 1. Kiểm tra nếu người dùng muốn hủy
+                    bool isCancelCartFlow = isCancelAnyFlow ||
+                                            cleanMsgNoTone == "huy" ||
+                                            cleanMsgNoTone == "huy yeu cau" ||
+                                            cleanMsgNoTone == "huy luong" ||
+                                            cleanMsgNoTone == "huy dat hang" ||
+                                            cleanMsgNoTone == "huy don" ||
+                                            cleanMsgNoTone.StartsWith("huy yeu cau") ||
+                                            cleanMsgNoTone.StartsWith("huy don") ||
+                                            cleanMsgNoTone.StartsWith("huy dat");
 
-                if (isCancelOrderEntirely)
-                {
-                    return Ok(new
+                    if (isCancelCartFlow)
                     {
-                        success = true,
-                        reply = "Dạ mình đã hủy luồng đặt đồ hộ rồi nhé! 😊 Bạn có thể hỏi mình các thắc mắc khác thoải mái ạ.",
-                        provider = "ZoneMart AI Assistant",
-                        orderState = new OrderStateDto { Step = "IDLE" }
-                    });
-                }
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = "Dạ mình đã hủy luồng hỗ trợ đặt đồ hộ rồi nhé! 😊 Bạn có thể hỏi mình các thắc mắc khác thoải mái ạ.",
+                            provider = "ZoneMart AI Assistant",
+                            orderState = new OrderStateDto { Step = "IDLE", CartItems = new List<OrderItemDto>() }
+                        });
+                    }
 
-                // Nếu đang ở ASK_ADD_MORE hoặc ASK_EDIT_CART mà người dùng trực tiếp nói thêm/bớt/đặt món
-                if (state.Step == "ASK_ADD_MORE" || state.Step == "ASK_EDIT_CART")
-                {
-                    bool hasDirectFoodAction = cleanMsgNoTone.Contains("nua") || cleanMsgNoTone.Contains("bot") ||
-                                               cleanMsgNoTone.Contains("giam") || cleanMsgNoTone.Contains("tru") ||
-                                               cleanMsgNoTone.StartsWith("cho ") || cleanMsgNoTone.StartsWith("lay ") ||
-                                               cleanMsgNoTone.Contains(" va ") || cleanMsgNoTone.Contains(",") ||
-                                               Regex.IsMatch(cleanMsgNoTone, @"\b(cho|lay|dat|mua|them|bot|giam|bo)\s+\d+");
+                    // 2. Kiểm tra nếu người dùng chọn nút "Đặt đồ mới"
+                    bool isOrderNew = cleanMsgNoTone == "dat do moi" || cleanMsgNoTone.Contains("dat do moi") ||
+                                      cleanMsgNoTone.Contains("mon moi") || cleanMsgNoTone == "dat moi" ||
+                                      cleanMsgNoTone.Contains("chon do moi");
 
-                    if (hasDirectFoodAction)
+                    if (isOrderNew)
                     {
                         state.Step = "AWAITING_ITEM_NAME";
+                        state.CartItems = new List<OrderItemDto>();
+                        state.PendingItem = null;
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = "Dạ vâng! Trợ lý AI của ZoneMart sẵn sàng hỗ trợ bạn chọn & đặt đồ mới hỏa tốc! 🛍️✨\n\n**Bạn muốn tìm hoặc đặt món ăn / thực phẩm gì ạ?** (Ví dụ: Cơm gà, Bánh mì chảo, Thịt bò Mỹ, Sữa tươi, Trái cây...)",
+                            provider = "ZoneMart AI Assistant",
+                            orderState = state
+                        });
+                    }
+
+                    // 3. Kiểm tra nếu người dùng chọn nút "Đặt đồ" (xác nhận đặt các món đã tích chọn)
+                    bool isConfirmCartOrder = cleanMsgNoTone == "dat do" || cleanMsgNoTone.Contains("dat do") ||
+                                              cleanMsgNoTone.Contains("xac nhan dat") || cleanMsgNoTone.Contains("dat cac mon nay");
+
+                    if (isConfirmCartOrder)
+                    {
+                        if (request?.SelectedCartItems == null || request.SelectedCartItems.Count == 0)
+                        {
+                            var cartList = await GetUserActiveCartItemsAsync(request);
+                            return Ok(new
+                            {
+                                success = true,
+                                reply = "⚠️ Bạn vui lòng tích chọn vào ô ít nhất 1 món đồ trong giỏ hàng để tiếp tục đặt đồ nhé! 🛒\n\n*(Hoặc bạn có thể bấm nút **'Đặt đồ mới'** bên dưới nếu muốn tìm món mới hoàn toàn ạ).*",
+                                provider = "ZoneMart AI Assistant",
+                                actionIntent = "CONFIRM_EXISTING_CART",
+                                existingCartItems = cartList,
+                                orderState = state
+                            });
+                        }
+
+                        // Người dùng đã tích chọn >= 1 món: Nạp các món đã chọn với số lượng đã chỉnh vào state.CartItems
+                        state.CartItems = new List<OrderItemDto>();
+                        foreach (var sel in request.SelectedCartItems)
+                        {
+                            int qty = Math.Max(1, sel.Quantity);
+                            if (sel.MaxStock > 0 && qty > sel.MaxStock) qty = sel.MaxStock;
+
+                            state.CartItems.Add(new OrderItemDto
+                            {
+                                ProductId = sel.Id,
+                                ProductName = sel.Name,
+                                Price = sel.Price,
+                                Quantity = qty,
+                                StoreId = !string.IsNullOrWhiteSpace(sel.StoreId) ? sel.StoreId : "store_default",
+                                StoreName = !string.IsNullOrWhiteSpace(sel.StoreName) ? sel.StoreName : "ZoneMart Store",
+                                ImageUrl = !string.IsNullOrWhiteSpace(sel.Image) ? sel.Image : "/images/anhxoanen.png"
+                            });
+                        }
+
+                        state.Step = "ASK_ADDRESS";
+                        decimal total = state.CartItems.Sum(it => it.Price * it.Quantity);
+                        string itemsSummary = string.Join("\n", state.CartItems.Select((it, idx) => $"  {idx + 1}️⃣ {it.Quantity}x **{it.ProductName}** ({it.Price:N0}đ/SP) = {it.Price * it.Quantity:N0}đ"));
+                        string userAddr = !string.IsNullOrWhiteSpace(state.Address) && state.Address != "Chưa xác định cụ thể"
+                            ? state.Address
+                            : (!string.IsNullOrWhiteSpace(request?.UserLocation) && request.UserLocation != "Chưa xác định cụ thể"
+                                ? request.UserLocation
+                                : "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội");
+                        state.Address = userAddr;
+                        state.OriginalAddress = userAddr;
+                        state.AddressRetryCount = 0;
+
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = $"Dạ tuyệt vời! Mình đã ghi nhận các món bạn chọn từ giỏ hàng để đặt hàng hỏa tốc: 🛒✨\n{itemsSummary}\n\n👉 **Tổng cộng ({state.CartItems.Count} món): {total:N0} ₫**\n\nTiếp theo là địa chỉ nhận hàng 📍\nĐịa chỉ hiện tại của bạn là: **{state.Address}**\n\n**Bạn có muốn thay đổi địa chỉ nhận hàng không ạ?**",
+                            provider = "ZoneMart AI Assistant",
+                            actionIntent = "SHOW_ADDRESS_CHOICE_BUTTONS",
+                            orderState = state
+                        });
+                    }
+
+                    // Nếu người dùng trực tiếp nói món mới hoặc hỏi danh mục món mới (VD: "tôi muốn đặt cơm", "cho 2 bánh mì")
+                    if (IsGenericFoodInquiryWithoutQty(cleanMsgNoTone) || HasDirectSpecificFoodCommand(cleanMsgNoTone, state.CartItems))
+                    {
+                        state.CartItems = new List<OrderItemDto>();
+                        state.PendingItem = null;
+                        state.Step = "AWAITING_ITEM_NAME";
+                    }
+                    else
+                    {
+                        // 4. Người dùng nhập bất kỳ từ nào khác (ngoài 2 nút và ngoài hủy): AI hỏi lại và hiện lại bảng giỏ hàng trong chat
+                        var existingCartList = await GetUserActiveCartItemsAsync(request);
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = "Dạ hiện tại bạn đang ở bước lựa chọn món từ giỏ hàng sẵn có ạ! 🛒\n\nVui lòng tích chọn các món bạn muốn đặt rồi bấm nút **'Đặt đồ'**, hoặc bấm nút **'Đặt đồ mới'** ở khung bên dưới nhé. (Nếu bạn muốn dừng luồng đặt hàng, bạn hãy nhắn **'hủy'** ạ).",
+                            provider = "ZoneMart AI Assistant",
+                            actionIntent = "CONFIRM_EXISTING_CART",
+                            existingCartItems = existingCartList,
+                            orderState = state
+                        });
                     }
                 }
 
-                // ----- BƯỚC 1: IDLE HOẶC AWAITING_ITEM_NAME (Chọn / thêm / sửa / bớt món) -----
-                if (state.Step == "IDLE" || state.Step == "AWAITING_ITEM_NAME")
-                {
-                    // 1.0. Kiểm tra nếu là câu lệnh đặt đồ chung chung (khách chưa chọn món cụ thể)
-                    bool isPureOrderingPrompt = (cleanMsgNoTone == "toi muon dat hang" || cleanMsgNoTone == "muon dat hang" ||
-                                                cleanMsgNoTone == "toi muon dat do an" || cleanMsgNoTone == "muon dat do an" ||
-                                                cleanMsgNoTone == "toi muon ban dat do an cho toi" || cleanMsgNoTone == "toi muon ban dat do an" ||
-                                                cleanMsgNoTone == "ban dat do an cho toi" || cleanMsgNoTone == "dat do an cho toi" ||
-                                                cleanMsgNoTone == "toi muon ban dat" || cleanMsgNoTone == "ban dat do an" ||
-                                                cleanMsgNoTone == "toi muon dat do" || cleanMsgNoTone == "muon dat do" ||
-                                                cleanMsgNoTone == "dat do" || cleanMsgNoTone == "dat hang" ||
-                                                cleanMsgNoTone == "dat do an" || cleanMsgNoTone == "dat do ho" ||
-                                                cleanMsgNoTone == "dat giup" || cleanMsgNoTone == "dat ho" ||
-                                                cleanMsgNoTone == "mua giup" || cleanMsgNoTone == "mua ho" ||
-                                                cleanMsgNoTone == "tu dong dat" || cleanMsgNoTone == "nho ai dat");
+                // 0.99. ƯU TIÊN XỬ LÝ LỆNH ĐẶT MÓN CỤ THỂ / THAO TÁC GIỎ HÀNG THÔNG MINH
+                // Ví dụ: 'cho 2 thịt gà thả vườn đi', 'cho 1 gà xối mỡ và 2 cơm tấm', 'lấy 2 bánh mì chảo'
+                bool hasDirectFoodAction = HasDirectSpecificFoodCommand(cleanMsgNoTone, state.CartItems);
 
-                    if (isPureOrderingPrompt && state.CartItems != null && state.CartItems.Count == 0)
+                if (hasDirectFoodAction)
+                {
+                    var smartDirectResult = await TryProcessSmartCartOperationsAsync(state, cleanMsgNoTone, userMsg);
+                    if (smartDirectResult != null)
                     {
+                        return smartDirectResult;
+                    }
+                }
+
+                // 1.0. Bắt đầu luồng đặt đồ chung chung (hoặc khi bắt đầu từ IDLE)
+                if (string.Equals(state.Step, "IDLE", StringComparison.OrdinalIgnoreCase) ||
+                    string.IsNullOrWhiteSpace(state.Step) ||
+                    IsGeneralOrderingPrompt(cleanMsgNoTone) ||
+                    IsGenericFoodInquiryWithoutQty(cleanMsgNoTone))
+                {
+                    // Nếu người dùng có từ khóa tìm kiếm món ăn / phân loại cụ thể (VD: "tôi muốn đặt cơm", "đặt phở", "mua bánh mì")
+                    // BẮT BUỘC bỏ qua bước hỏi giỏ hàng cũ, và đi thẳng vào việc tìm kiếm các món đó cho khách chọn!
+                    bool isSpecificCategoryOrFoodInquiry = IsGenericFoodInquiryWithoutQty(cleanMsgNoTone) ||
+                                                           (!IsGeneralOrderingPrompt(cleanMsgNoTone) && !string.IsNullOrWhiteSpace(ExtractSearchKeyword(cleanMsgNoTone)));
+
+                    if (isSpecificCategoryOrFoodInquiry)
+                    {
+                        string searchKw = ExtractSearchKeyword(cleanMsgNoTone);
+                        if (string.IsNullOrWhiteSpace(searchKw)) searchKw = cleanMsgNoTone;
+
+                        var matchedProds = await SearchProductsInDatabaseAsync(searchKw);
+                        if (matchedProds.Count > 0)
+                        {
+                            state.Step = "AWAITING_ITEM_NAME";
+                            state.CartItems = new List<OrderItemDto>();
+                            state.PendingItem = null;
+
+                            string topicName = ExtractTopicName(cleanMsgNoTone);
+                            var sbList = new StringBuilder();
+                            sbList.AppendLine($"Dạ hiện tại trên sàn ZoneMart đang có **{matchedProds.Count} món {topicName}** sẵn có sau ạ: 🍲\n");
+                            for (int i = 0; i < Math.Min(matchedProds.Count, 8); i++)
+                            {
+                                var prod = matchedProds[i];
+                                sbList.AppendLine($"{i + 1}️⃣ **{prod.ProductName}** ({prod.Price:N0}đ) - Gian hàng: *{prod.StoreName ?? "ZoneMart Store"}*");
+                            }
+                            sbList.AppendLine("\n**Bạn muốn chọn đặt món nào trong danh sách trên ạ?** (Nhắn tên món hoặc số thứ tự 1, 2, 3...)");
+
+                            return Ok(new
+                            {
+                                success = true,
+                                reply = sbList.ToString(),
+                                provider = "ZoneMart AI Assistant",
+                                orderState = state,
+                                products = matchedProds.Take(6).Select(p => new
+                                {
+                                    id = p.Id,
+                                    name = p.ProductName,
+                                    price = p.Price,
+                                    storeName = p.StoreName ?? "ZoneMart Store",
+                                    image = !string.IsNullOrWhiteSpace(p.ImageUrl) ? p.ImageUrl : "/images/anhxoanen.png"
+                                }).ToList()
+                            });
+                        }
+                    }
+
+                    // Kiểm tra giỏ hàng của tài khoản hiện tại khi người dùng chỉ nhắn câu lệnh chung chung (VD: "đặt đồ", "tôi muốn đặt hàng")
+                    var existingCart = await GetUserActiveCartItemsAsync(request);
+                    if (existingCart != null && existingCart.Count > 0)
+                    {
+                        // Giỏ hàng đang có đồ: Hỏi xem có muốn đặt luôn những đồ có trong giỏ không
+                        state.Step = "CONFIRM_EXISTING_CART";
+                        state.CartItems = new List<OrderItemDto>();
+                        state.PendingItem = null;
+
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = "Dạ chào bạn! Hiện giỏ hàng của bạn đang có sẵn đồ ý ạ, bạn có muốn mình đặt luôn những đồ có trong giỏ hàng không ạ? 🛒✨\n\nBạn hãy tích chọn các món muốn đặt và điều chỉnh số lượng (nếu cần), sau đó bấm **'Đặt đồ'** hoặc bấm **'Đặt đồ mới'** bên dưới nhé!",
+                            provider = "ZoneMart AI Assistant",
+                            actionIntent = "CONFIRM_EXISTING_CART",
+                            existingCartItems = existingCart,
+                            orderState = state
+                        });
+                    }
+                    else
+                    {
+                        // Giỏ hàng trống: Vào luôn bước người dùng chọn đồ như bình thường
                         state.Step = "AWAITING_ITEM_NAME";
+                        state.CartItems = new List<OrderItemDto>();
+                        state.PendingItem = null;
+
                         return Ok(new
                         {
                             success = true,
@@ -1011,15 +2506,39 @@ namespace ZoneMart.Server.Controllers
                             orderState = state
                         });
                     }
+                }
 
-                    // Nếu người dùng bấm 'Quay lại' khi đang ở bước hỏi thêm món (hoặc lỡ bấm nhầm nút Có)
-                    if (state.Step == "AWAITING_ITEM_NAME" && state.CartItems != null && state.CartItems.Count > 0)
+                // Nếu đang ở ASK_ADD_MORE hoặc ASK_EDIT_CART mà người dùng trực tiếp nói thêm/bớt/đặt món
+                if (state.Step == "ASK_ADD_MORE" || state.Step == "ASK_EDIT_CART")
+                {
+                    bool isNegativeOrProceed = cleanMsgNoTone == "khong" || cleanMsgNoTone.Contains("khong") || cleanMsgNoTone.Contains("thoi") ||
+                                              cleanMsgNoTone.Contains("xong") || cleanMsgNoTone.Contains("no") || cleanMsgNoTone.Contains("du roi") ||
+                                              cleanMsgNoTone.Contains("chot don") || cleanMsgNoTone.Contains("tiep tuc");
+
+                    bool hasCartModifyAction = !isNegativeOrProceed && !IsGeneralOrderingPrompt(cleanMsgNoTone) && (cleanMsgNoTone.Contains("nua") || cleanMsgNoTone.Contains("bot") ||
+                                               cleanMsgNoTone.Contains("giam") || cleanMsgNoTone.Contains("tru") ||
+                                               cleanMsgNoTone.StartsWith("cho ") || cleanMsgNoTone.StartsWith("lay ") ||
+                                               (cleanMsgNoTone.Contains(" va ") && Regex.IsMatch(cleanMsgNoTone, @"\b\d+\b")) ||
+                                               Regex.IsMatch(cleanMsgNoTone, @"\b(cho|lay|dat|mua|them|bot|giam|bo)\s+\d+"));
+
+                    if (hasCartModifyAction)
+                    {
+                        state.Step = "AWAITING_ITEM_NAME";
+                    }
+                }
+
+                // ----- BƯỚC 1: AWAITING_ITEM_NAME (Chọn / thêm / sửa / bớt món) -----
+                if (string.Equals(state.Step, "AWAITING_ITEM_NAME", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (state.CartItems != null && state.CartItems.Count > 0)
                     {
                         bool isGoBackToSummary = cleanMsgNoTone.Contains("quay lai") ||
                                                  cleanMsgNoTone.Contains("khong dat them") ||
                                                  cleanMsgNoTone.Contains("khong them") ||
                                                  cleanMsgNoTone.Contains("tiep tuc") ||
                                                  cleanMsgNoTone.Contains("du roi") ||
+                                                 cleanMsgNoTone.Contains("chot don") ||
+                                                 cleanMsgNoTone.StartsWith("khong") ||
                                                  cleanMsgNoTone == "khong" ||
                                                  cleanMsgNoTone == "thoi";
 
@@ -1040,96 +2559,20 @@ namespace ZoneMart.Server.Controllers
                         }
                     }
 
-                    // 1.1. KIỂM TRA LỆNH BỚT / GIẢM / XÓA MÓN (Ví dụ: 'bớt 1 bánh mì chảo', 'giảm 1 bánh mì chảo', 'bỏ bánh mì chảo')
-                    bool isReductionCommand = (cleanMsgNoTone.Contains("bot") || cleanMsgNoTone.Contains("giam") || cleanMsgNoTone.Contains("tru") ||
-                                              (cleanMsgNoTone.Contains("bo") && !cleanMsgNoTone.Contains("bot")) || cleanMsgNoTone.Contains("xoa")) &&
-                                              state.CartItems != null && state.CartItems.Count > 0;
-
-                    if (isReductionCommand)
+                    // 1.1. XỬ LÝ THÔNG MINH: BỎ/BỚT/TRỪ, THÊM/CỘNG/CHO, XÓA, CÂU GHÉP VỚI 'VÀ', 'HOẶC', ',', ';'
+                    if (IsSmartCartOperation(cleanMsgNoTone, state.CartItems))
                     {
-                        string normalizedCmd = cleanMsgNoTone;
-                        string[] splitDelims = new[] { " va ", ", ", ",", ";", " + ", " voi " };
-                        foreach (var d in splitDelims) normalizedCmd = normalizedCmd.Replace(d, "|");
-                        var segs = normalizedCmd.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-                        var changes = new List<string>();
-                        foreach (var rawSeg in segs)
-                        {
-                            string seg = rawSeg.Trim();
-                            bool segIsDelete = seg.Contains("xoa") || (seg.Contains("bo") && !seg.Contains("bot") && !Regex.IsMatch(seg, @"\b\d+\b"));
-                            bool segIsReduce = seg.Contains("bot") || seg.Contains("giam") || seg.Contains("tru") || seg.Contains("bo");
-
-                            var qMatch = Regex.Match(seg, @"\b(\d+)\b");
-                            int q = qMatch.Success && int.TryParse(qMatch.Value, out int pq) && pq > 0 ? pq : 1;
-
-                            string segTerm = Regex.Replace(seg, @"\b(bot|giam|tru|bo|xoa|mon|phan|suat|hop|cai|lon|chai|cho|lay|dum|giup|di|nhe|nha|\d+)\b", " ").Trim();
-                            segTerm = Regex.Replace(segTerm, @"\s+", " ").Trim();
-
-                            OrderItemDto? targetItem = null;
-                            if (!string.IsNullOrWhiteSpace(segTerm))
-                            {
-                                foreach (var it in state.CartItems)
-                                {
-                                    string itClean = RemoveVietnameseTones(it.ProductName.ToLower());
-                                    if (itClean.Contains(segTerm) || segTerm.Split(' ').Any(w => w.Length >= 3 && itClean.Contains(w)))
-                                    {
-                                        targetItem = it;
-                                        break;
-                                    }
-                                }
-                            }
-                            else if (state.CartItems.Count == 1)
-                            {
-                                targetItem = state.CartItems[0];
-                            }
-
-                            if (targetItem != null)
-                            {
-                                if (segIsDelete)
-                                {
-                                    state.CartItems.Remove(targetItem);
-                                    changes.Add($"🗑️ Đã xóa món **{targetItem.ProductName}** khỏi giỏ hàng");
-                                }
-                                else if (segIsReduce)
-                                {
-                                    targetItem.Quantity -= q;
-                                    if (targetItem.Quantity <= 0)
-                                    {
-                                        state.CartItems.Remove(targetItem);
-                                        changes.Add($"🗑️ Đã bớt hết món **{targetItem.ProductName}** khỏi giỏ hàng");
-                                    }
-                                    else
-                                    {
-                                        changes.Add($"➖ Giảm món **{targetItem.ProductName}** đi -{q} (còn lại: **{targetItem.Quantity}**)");
-                                    }
-                                }
-                            }
-                        }
-
-                        if (changes.Count > 0)
-                        {
-                            state.Step = "ASK_ADD_MORE";
-                            decimal total = state.CartItems.Sum(it => it.Price * it.Quantity);
-                            string itemsSummary = state.CartItems.Count > 0
-                                ? string.Join("\n", state.CartItems.Select((it, idx) => $"  {idx + 1}️⃣ {it.Quantity}x **{it.ProductName}** ({it.Price:N0}đ/SP) = {it.Price * it.Quantity:N0}đ"))
-                                : "  *(Giỏ hàng hiện đang trống)*";
-
-                            return Ok(new
-                            {
-                                success = true,
-                                reply = $"Dạ mình đã cập nhật giỏ hàng theo yêu cầu của bạn: 🛒✨\n{string.Join("\n", changes)}\n\n📋 **GIỎ HÀNG HIỆN TẠI ({state.CartItems.Count} món):**\n{itemsSummary}\n\n👉 **Tổng tiền: {total:N0} ₫**\n\n**Bạn có muốn đặt thêm đồ gì nữa không ạ?** (Bấm nút 'Có' hoặc 'Không' bên dưới nhé!)",
-                                provider = "ZoneMart AI Assistant",
-                                actionIntent = "SHOW_YES_NO_ADD_MORE_BUTTONS",
-                                orderState = state
-                            });
-                        }
+                        var smartResult = await TryProcessSmartCartOperationsAsync(state, cleanMsgNoTone, userMsg);
+                        if (smartResult != null) return smartResult;
                     }
 
-                    // 1.2. KIỂM TRA ĐẶT ĐA MÓN / THÊM MÓN / CỘNG SỐ LƯỢNG (Ví dụ: 'cho 1 dâu tây và 2 bánh mì chảo đi', 'cho 2 bánh mì chảo nữa')
-                    bool hasMultiItemsOrQuantity = cleanMsgNoTone.Contains(" va ") || cleanMsgNoTone.Contains(",") || cleanMsgNoTone.Contains(";") || cleanMsgNoTone.Contains(" + ") ||
+                    // 1.2. KIỂM TRA ĐẶT ĐA MÓN / THÊM MÓN / CỘNG SỐ LƯỢNG (Ví dụ: 'cho 1 dâu tây và 2 bánh mì chảo đi', 'cho 2 gà xối mỡ đi')
+                    bool hasMultiItemsOrQuantity = !IsGeneralOrderingPrompt(cleanMsgNoTone) &&
+                                                   !IsGenericFoodInquiryWithoutQty(cleanMsgNoTone) &&
+                                                   (cleanMsgNoTone.Contains(" va ") || cleanMsgNoTone.Contains(",") || cleanMsgNoTone.Contains(";") || cleanMsgNoTone.Contains(" + ") ||
                                                    cleanMsgNoTone.Contains("nua") || cleanMsgNoTone.Contains("them") ||
                                                    Regex.IsMatch(cleanMsgNoTone, @"\b(cho|lay|dat|mua|them)\s+\d+") ||
-                                                   Regex.IsMatch(cleanMsgNoTone, @"\b\d+\s+(banh|hop|cai|suat|phan|dau|com|nuoc|thit|bo|ga|sua)\b");
+                                                   Regex.IsMatch(cleanMsgNoTone, @"\b\d+\s+(banh|hop|cai|suat|phan|dau|com|nuoc|thit|bo|ga|sua)\b"));
 
                     if (hasMultiItemsOrQuantity)
                     {
@@ -1152,6 +2595,9 @@ namespace ZoneMart.Server.Controllers
 
                             if (string.IsNullOrWhiteSpace(segTerm) || segTerm.Length < 2) continue;
 
+                            // Nếu không có số lượng cụ thể và là danh mục chung chung -> Không tự ý nhặt món vào giỏ
+                            if (!qMatch.Success && IsGenericFoodCategoryTerm(segTerm)) continue;
+
                             // Kiểm tra xem món này đã có trong giỏ hàng trước đó chưa
                             OrderItemDto? inCartItem = null;
                             foreach (var it in state.CartItems)
@@ -1166,7 +2612,7 @@ namespace ZoneMart.Server.Controllers
 
                             if (inCartItem != null)
                             {
-                                // ĐÃ CÓ TRONG GIỎ HÀNG: CỘNG DỒN SỐ LƯỢNG (Ví dụ: đã có 1 bánh mì, khách bảo cho 2 bánh mì nữa -> cộng vào thành 3 bánh, không tạo 2 hàng)
+                                // ĐÃ CÓ TRONG GIỎ HÀNG: CỘNG DỒN SỐ LƯỢNG
                                 inCartItem.Quantity += q;
                                 recordedChanges.Add($"➕ Tăng món **{inCartItem.ProductName}** thêm +{q} (hiện có: **{inCartItem.Quantity}**)");
                             }
@@ -1218,6 +2664,18 @@ namespace ZoneMart.Server.Controllers
                         }
                     }
 
+                    if (IsGeneralOrderingPrompt(cleanMsgNoTone))
+                    {
+                        state.Step = "AWAITING_ITEM_NAME";
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = "Dạ vâng! Trợ lý AI của ZoneMart sẵn sàng hỗ trợ bạn chọn & đặt đồ mới hỏa tốc! 🛍️✨\n\n**Bạn muốn tìm hoặc đặt món ăn / thực phẩm gì ạ?** (Ví dụ: Cơm gà, Bánh mì chảo, Thịt bò Mỹ, Sữa tươi, Trái cây...)",
+                            provider = "ZoneMart AI Assistant",
+                            orderState = state
+                        });
+                    }
+
                     var matchedProducts = await SearchProductsInDatabaseAsync(cleanMsgNoTone);
 
                     // Xử lý khi người dùng chọn theo số thứ tự (ví dụ nhắn: "1", "2", "món 1", "món 2"...)
@@ -1252,7 +2710,7 @@ namespace ZoneMart.Server.Controllers
 
                     if (matchedProducts.Count > 0)
                     {
-                        bool isListQuery = matchedProducts.Count > 1 || cleanMsgNoTone.Contains("co nhung") || cleanMsgNoTone.Contains("loai gi") || cleanMsgNoTone.Contains("gi nhi") || cleanMsgNoTone.Contains("tim") || cleanMsgNoTone.Contains("quan nao");
+                        bool isListQuery = matchedProducts.Count > 1 || IsGenericFoodInquiryWithoutQty(cleanMsgNoTone) || cleanMsgNoTone.Contains("co nhung") || cleanMsgNoTone.Contains("loai gi") || cleanMsgNoTone.Contains("gi nhi") || cleanMsgNoTone.Contains("tim") || cleanMsgNoTone.Contains("quan nao");
 
                         if (isListQuery)
                         {
@@ -1457,11 +2915,19 @@ namespace ZoneMart.Server.Controllers
                 // ----- BƯỚC 3: ASK_ADD_MORE (Hỏi có thêm đồ nữa không) -----
                 if (state.Step == "ASK_ADD_MORE")
                 {
+                    bool isNo = cleanMsgNoTone == "khong" || cleanMsgNoTone.Contains("khong") || cleanMsgNoTone.Contains("thoi") ||
+                                cleanMsgNoTone.Contains("xong") || cleanMsgNoTone.Contains("no") || cleanMsgNoTone.Contains("du roi") ||
+                                cleanMsgNoTone.Contains("chot don") || cleanMsgNoTone.Contains("tiep tuc");
+
+                    // Nếu khách gửi lệnh bớt / thêm / xóa / đổi món ngay tại bước này mà chưa bấm nút 'Có' và không phải nói Không/Chốt đơn
+                    if (!isNo && IsSmartCartOperation(cleanMsgNoTone, state.CartItems))
+                    {
+                        var smartResult = await TryProcessSmartCartOperationsAsync(state, cleanMsgNoTone, userMsg);
+                        if (smartResult != null) return smartResult;
+                    }
+
                     bool isYes = cleanMsgNoTone == "co" || cleanMsgNoTone.Contains("co") || cleanMsgNoTone.Contains("muon") ||
                                  cleanMsgNoTone.Contains("them") || cleanMsgNoTone.Contains("dat them") || cleanMsgNoTone.Contains("yes") || cleanMsgNoTone.Contains("ok");
-
-                    bool isNo = cleanMsgNoTone == "khong" || cleanMsgNoTone.Contains("khong") || cleanMsgNoTone.Contains("thoi") ||
-                                cleanMsgNoTone.Contains("xong") || cleanMsgNoTone.Contains("no") || cleanMsgNoTone.Contains("du roi");
 
                     if (isYes && !isNo)
                     {
@@ -1495,8 +2961,14 @@ namespace ZoneMart.Server.Controllers
                 // ----- BƯỚC 4: ASK_EDIT_CART (Hỏi có muốn sửa/xóa giỏ hàng không) -----
                 if (state.Step == "ASK_EDIT_CART")
                 {
+                    if (IsSmartCartOperation(cleanMsgNoTone, state.CartItems))
+                    {
+                        var smartResult = await TryProcessSmartCartOperationsAsync(state, cleanMsgNoTone, userMsg);
+                        if (smartResult != null) return smartResult;
+                    }
+
                     bool isYes = cleanMsgNoTone == "co" || cleanMsgNoTone.Contains("co") || cleanMsgNoTone.Contains("sua") ||
-                                 cleanMsgNoTone.Contains("thay doi") || cleanMsgNoTone.Contains("xoa");
+                                 cleanMsgNoTone.Contains("thay doi") || Regex.IsMatch(cleanMsgNoTone, @"\b(xoa|xoa\s*bo)\b");
 
                     bool isNo = cleanMsgNoTone == "khong" || cleanMsgNoTone.Contains("khong") || cleanMsgNoTone.Contains("tiep tuc") ||
                                 cleanMsgNoTone.Contains("giu nguyen") || cleanMsgNoTone.Contains("ok");
@@ -1518,10 +2990,14 @@ namespace ZoneMart.Server.Controllers
                     else
                     {
                         state.Step = "ASK_ADDRESS";
-                        string userAddr = !string.IsNullOrWhiteSpace(request?.UserLocation) && request.UserLocation != "Chưa xác định cụ thể"
-                            ? request.UserLocation
-                            : "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội";
+                        string userAddr = !string.IsNullOrWhiteSpace(state.Address) && state.Address != "Chưa xác định cụ thể"
+                            ? state.Address
+                            : (!string.IsNullOrWhiteSpace(request?.UserLocation) && request.UserLocation != "Chưa xác định cụ thể"
+                                ? request.UserLocation
+                                : "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội");
                         state.Address = userAddr;
+                        state.OriginalAddress = userAddr;
+                        state.AddressRetryCount = 0;
 
                         return Ok(new
                         {
@@ -1542,7 +3018,7 @@ namespace ZoneMart.Server.Controllers
                                         cleanMsgNoTone.Contains("tiep tuc") || cleanMsgNoTone.Contains("xong") ||
                                         cleanMsgNoTone.Contains("du roi") || cleanMsgNoTone == "ok";
 
-                    if (isCancelEdit && !cleanMsgNoTone.Contains("sua") && !cleanMsgNoTone.Contains("xoa") && !cleanMsgNoTone.Contains("them"))
+                    if (isCancelEdit && !cleanMsgNoTone.Contains("sua") && !Regex.IsMatch(cleanMsgNoTone, @"\b(xoa|xoa\s*bo)\b") && !cleanMsgNoTone.Contains("them"))
                     {
                         state.Step = "ASK_ADDRESS";
                         string userAddr = !string.IsNullOrWhiteSpace(state.Address) && state.Address != "Chưa xác định cụ thể"
@@ -1562,151 +3038,10 @@ namespace ZoneMart.Server.Controllers
                         });
                     }
 
-                    // Tách câu lệnh thành các phân đoạn theo liên từ: ' và ', ',', ';', ' + ', ' với '
-                    string normalizedCmd = cleanMsgNoTone;
-                    string[] splitDelims = new[] { " va ", ", ", ",", ";", " + ", " voi " };
-                    foreach (var d in splitDelims)
+                    if (IsSmartCartOperation(cleanMsgNoTone, state.CartItems))
                     {
-                        normalizedCmd = normalizedCmd.Replace(d, "|");
-                    }
-                    var segments = normalizedCmd.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                        .Where(s => !string.IsNullOrWhiteSpace(s))
-                        .ToList();
-
-                    bool globalIsAdd = cleanMsgNoTone.StartsWith("them") || cleanMsgNoTone.Contains("cong") || 
-                                       cleanMsgNoTone.Contains("cho them") || cleanMsgNoTone.Contains("lay them");
-
-                    var changesSummary = new List<string>();
-
-                    foreach (var rawSeg in segments)
-                    {
-                        string seg = rawSeg.Trim();
-                        bool segIsDelete = seg.Contains("xoa") || (seg.Contains("bo") && !seg.Contains("bot") && !Regex.IsMatch(seg, @"\b\d+\b")) || seg.Contains("remove");
-
-                        if (segIsDelete)
-                        {
-                            // Tìm món cần xóa
-                            OrderItemDto? toRemove = null;
-                            foreach (var item in state.CartItems)
-                            {
-                                string itemClean = RemoveVietnameseTones(item.ProductName.ToLower());
-                                if (seg.Contains(itemClean) || itemClean.Split(' ').Any(w => w.Length >= 3 && seg.Contains(w)))
-                                {
-                                    toRemove = item;
-                                    break;
-                                }
-                            }
-
-                            if (toRemove != null)
-                            {
-                                state.CartItems.Remove(toRemove);
-                                changesSummary.Add($"🗑️ Đã xóa món **{toRemove.ProductName}** khỏi giỏ hàng");
-                            }
-                            continue;
-                        }
-
-                        // Không phải xóa -> Là sửa số lượng, bớt số lượng hoặc thêm món mới/thêm số lượng
-                        bool segIsReduce = seg.Contains("bot") || seg.Contains("giam") || seg.Contains("tru") || (seg.Contains("bo") && Regex.IsMatch(seg, @"\b\d+\b"));
-                        bool segIsAdd = seg.Contains("them") || seg.Contains("cong") || seg.Contains("nua") || globalIsAdd;
-                        if (seg.Contains("thanh") || seg.Contains("sua thanh") || seg.Contains("doi thanh"))
-                        {
-                            segIsAdd = false;
-                            segIsReduce = false;
-                        }
-
-                        // Lấy số lượng từ phân đoạn
-                        var qMatch = Regex.Match(seg, @"\b(\d+)\b");
-                        int q = 1;
-                        if (qMatch.Success && int.TryParse(qMatch.Value, out int parsedQ) && parsedQ > 0)
-                        {
-                            q = parsedQ;
-                        }
-
-                        // Trích xuất từ khóa tên món trong phân đoạn
-                        string segQuery = Regex.Replace(seg, @"\b(them|sua|thanh|doi|chinh|so|luong|mon|phan|suat|hop|cai|lon|chai|cho|lay|dum|giup|vao|gio|hang|bot|giam|tru|bo|nua|\d+)\b", " ").Trim();
-                        segQuery = Regex.Replace(segQuery, @"\s+", " ").Trim();
-
-                        // 1. Kiểm tra xem phân đoạn này có khớp món đã có trong giỏ hàng không
-                        OrderItemDto? existingItem = null;
-                        if (!string.IsNullOrWhiteSpace(segQuery))
-                        {
-                            foreach (var it in state.CartItems)
-                            {
-                                string itClean = RemoveVietnameseTones(it.ProductName.ToLower());
-                                if (itClean.Contains(segQuery) || segQuery.Split(' ').Any(w => w.Length >= 3 && itClean.Contains(w)))
-                                {
-                                    existingItem = it;
-                                    break;
-                                }
-                            }
-                        }
-                        else if (state.CartItems.Count == 1)
-                        {
-                            existingItem = state.CartItems[0];
-                        }
-
-                        if (existingItem != null)
-                        {
-                            if (segIsReduce)
-                            {
-                                existingItem.Quantity -= q;
-                                if (existingItem.Quantity <= 0)
-                                {
-                                    state.CartItems.Remove(existingItem);
-                                    changesSummary.Add($"🗑️ Đã bớt hết món **{existingItem.ProductName}** khỏi giỏ hàng");
-                                }
-                                else
-                                {
-                                    changesSummary.Add($"➖ Giảm món **{existingItem.ProductName}** đi -{q} (còn lại: **{existingItem.Quantity}**)");
-                                }
-                            }
-                            else if (segIsAdd)
-                            {
-                                existingItem.Quantity += q;
-                                changesSummary.Add($"➕ Tăng món **{existingItem.ProductName}** thêm +{q} (hiện có: **{existingItem.Quantity}**)");
-                            }
-                            else
-                            {
-                                existingItem.Quantity = q;
-                                changesSummary.Add($"✏️ Sửa món **{existingItem.ProductName}** thành số lượng: **{q}**");
-                            }
-                        }
-                        else
-                        {
-                            // 2. Chưa có trong giỏ hàng -> Tìm món mới trong Database để thêm vào giỏ hàng
-                            if (!string.IsNullOrWhiteSpace(segQuery))
-                            {
-                                var foundProds = await SearchProductsInDatabaseAsync(segQuery);
-                                if (foundProds != null && foundProds.Count > 0)
-                                {
-                                    var matchedProd = foundProds.First();
-                                    var inCartAlready = state.CartItems.FirstOrDefault(it => it.ProductId == matchedProd.Id);
-                                    if (inCartAlready != null)
-                                    {
-                                        inCartAlready.Quantity += q;
-                                        changesSummary.Add($"➕ Tăng món **{inCartAlready.ProductName}** thêm +{q} (hiện có: **{inCartAlready.Quantity}**)");
-                                    }
-                                    else
-                                    {
-                                        state.CartItems.Add(new OrderItemDto
-                                        {
-                                            ProductId = matchedProd.Id ?? "",
-                                            ProductName = matchedProd.ProductName ?? "",
-                                            Price = matchedProd.Price,
-                                            Quantity = q,
-                                            StoreId = matchedProd.StoreId ?? "store_default",
-                                            StoreName = matchedProd.StoreName ?? "ZoneMart Store",
-                                            ImageUrl = !string.IsNullOrWhiteSpace(matchedProd.ImageUrl) ? matchedProd.ImageUrl : "/images/anhxoanen.png"
-                                        });
-                                        changesSummary.Add($"🛒 Thêm mới **{q}x {matchedProd.ProductName}** ({matchedProd.Price:N0}đ/SP) vào giỏ hàng");
-                                    }
-                                }
-                                else
-                                {
-                                    changesSummary.Add($"⚠️ Không tìm thấy món '{segQuery}' trên sàn ZoneMart");
-                                }
-                            }
-                        }
+                        var smartResult = await TryProcessSmartCartOperationsAsync(state, cleanMsgNoTone, userMsg);
+                        if (smartResult != null) return smartResult;
                     }
 
                     if (state.CartItems.Count == 0)
@@ -1721,21 +3056,7 @@ namespace ZoneMart.Server.Controllers
                         });
                     }
 
-                    if (changesSummary.Count > 0)
-                    {
-                        decimal newTotal = state.CartItems.Sum(it => it.Price * it.Quantity);
-                        string updatedSummary = string.Join("\n", state.CartItems.Select((it, idx) => $"  {idx + 1}️⃣ {it.Quantity}x **{it.ProductName}** ({it.Price:N0}đ/SP) = {it.Price * it.Quantity:N0}đ"));
-                        string changesText = string.Join("\n", changesSummary);
 
-                        return Ok(new
-                        {
-                            success = true,
-                            reply = $"Dạ mình đã cập nhật giỏ hàng theo yêu cầu của bạn thành công! ✨\n{changesText}\n\n📋 **GIỎ HÀNG HIỆN TẠI:**\n{updatedSummary}\n\n👉 **Tổng tiền hàng ({state.CartItems.Count} món): {newTotal:N0} ₫**\n\n**Bạn có muốn thay đổi gì về danh sách món hoặc số lượng nữa không ạ?**",
-                            provider = "ZoneMart AI Assistant",
-                            actionIntent = "SHOW_YES_NO_EDIT_CART_BUTTONS",
-                            orderState = state
-                        });
-                    }
 
                     return Ok(new
                     {
@@ -1750,12 +3071,23 @@ namespace ZoneMart.Server.Controllers
                 // ----- BƯỚC 6: ASK_ADDRESS (Xác nhận địa chỉ giao hàng) -----
                 if (string.Equals(state.Step, "ASK_ADDRESS", StringComparison.OrdinalIgnoreCase))
                 {
-                    bool isChange = cleanMsgNoTone.Contains("thay doi") || cleanMsgNoTone.Contains("doi dia chi") || cleanMsgNoTone.Contains("sua dia chi") || cleanMsgNoTone == "co" || cleanMsgNoTone.StartsWith("co ");
-                    bool isKeep = cleanMsgNoTone.Contains("giu nguyen") || cleanMsgNoTone.Contains("khong") || cleanMsgNoTone.Contains("dung roi") || cleanMsgNoTone.Contains("ok") || cleanMsgNoTone.Contains("tiep tuc");
+                    bool isChange = cleanMsgNoTone == "thay doi" || cleanMsgNoTone.Contains("thay doi") ||
+                                    cleanMsgNoTone.Contains("doi dia chi") || cleanMsgNoTone.Contains("sua dia chi") ||
+                                    cleanMsgNoTone == "co" || cleanMsgNoTone == "1";
+
+                    bool isKeep = cleanMsgNoTone == "giu nguyen" || cleanMsgNoTone.Contains("giu nguyen") ||
+                                  cleanMsgNoTone.Contains("dia chi cu") || cleanMsgNoTone == "khong" ||
+                                  cleanMsgNoTone == "khong doi" || cleanMsgNoTone == "2";
 
                     if (isChange && !isKeep)
                     {
                         state.Step = "AWAITING_NEW_ADDRESS";
+                        if (string.IsNullOrWhiteSpace(state.OriginalAddress))
+                        {
+                            state.OriginalAddress = state.Address;
+                        }
+                        state.AddressRetryCount = 0;
+
                         return Ok(new
                         {
                             success = true,
@@ -1764,7 +3096,7 @@ namespace ZoneMart.Server.Controllers
                             orderState = state
                         });
                     }
-                    else
+                    else if (isKeep && !isChange)
                     {
                         state.Step = "ASK_SHIPPING_METHOD";
                         return Ok(new
@@ -1776,12 +3108,24 @@ namespace ZoneMart.Server.Controllers
                             orderState = state
                         });
                     }
+                    else
+                    {
+                        // Khóa nhập nghiêm ngặt: Nhập bất kỳ từ nào khác thì hỏi lại và hiện lại 2 nút
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = $"Dạ hiện tại bạn đang ở bước xác nhận địa chỉ giao hàng ạ! 📍\nĐịa chỉ hiện tại của bạn là: **{state.Address}**\n\nBạn vui lòng bấm chọn **[Thay Đổi Địa Chỉ Nhận Hàng]** hoặc **[Giữ Nguyên Địa Chỉ]** bên dưới giúp mình nhé!\n*(Nếu muốn dừng luồng đặt đồ, bạn hãy nhắn **'hủy'** ạ).*",
+                            provider = "ZoneMart AI Assistant",
+                            actionIntent = "SHOW_ADDRESS_CHOICE_BUTTONS",
+                            orderState = state
+                        });
+                    }
                 }
 
                 // ----- BƯỚC 7: AWAITING_NEW_ADDRESS (Nhập địa chỉ mới) -----
                 if (string.Equals(state.Step, "AWAITING_NEW_ADDRESS", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Kiểm tra xem khách có yêu cầu lấy địa chỉ hiện tại / định vị vị trí không
+                    // A. Kiểm tra nếu khách bấm/nhắn "Quay lại" hoặc yêu cầu lấy địa chỉ hiện tại / định vị GPS
                     bool isAskingCurrentLocation = cleanMsgNoTone.Contains("dia chi hien tai") ||
                                                    cleanMsgNoTone.Contains("vi tri hien tai") ||
                                                    cleanMsgNoTone.Contains("dinh vi") ||
@@ -1791,7 +3135,10 @@ namespace ZoneMart.Server.Controllers
                                                    cleanMsgNoTone.Contains("toi dang o dau") ||
                                                    cleanMsgNoTone.Contains("o dau");
 
-                    if (isAskingCurrentLocation)
+                    bool isBackToLocation = cleanMsgNoTone == "quay lai" || cleanMsgNoTone.Contains("quay lai") ||
+                                            cleanMsgNoTone == "back" || isAskingCurrentLocation;
+
+                    if (isBackToLocation)
                     {
                         string clientLoc = (request?.UserLocation ?? "").Trim();
                         bool hasRealLoc = !string.IsNullOrWhiteSpace(clientLoc) &&
@@ -1825,11 +3172,51 @@ namespace ZoneMart.Server.Controllers
                         }
                     }
 
+                    // B. Kiểm tra nếu khách chọn "Giữ nguyên địa chỉ"
+                    bool isKeepAddress = cleanMsgNoTone == "giu nguyen" || cleanMsgNoTone.Contains("giu nguyen") ||
+                                         cleanMsgNoTone.Contains("dia chi cu") || cleanMsgNoTone == "khong doi" ||
+                                         cleanMsgNoTone == "khong thay doi";
+
+                    if (isKeepAddress)
+                    {
+                        if (!string.IsNullOrWhiteSpace(state.OriginalAddress))
+                        {
+                            state.Address = state.OriginalAddress;
+                        }
+                        state.Step = "ASK_SHIPPING_METHOD";
+
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = $"Dạ vâng! Mình sẽ giữ nguyên địa chỉ nhận hàng của bạn là: **{state.Address}** nhé! 📍✨\n\n**Tiếp theo, bạn muốn lựa chọn phương thức vận chuyển nào ạ?**",
+                            provider = "ZoneMart AI Assistant",
+                            actionIntent = "SHOW_SHIPPING_METHOD_BUTTONS",
+                            orderState = state
+                        });
+                    }
+
+                    // C. Người dùng nhập địa chỉ dạng text: Thẩm định địa chỉ hợp lệ
                     string rawAddr = userMsg.Trim();
                     string cleanAddr = Regex.Replace(rawAddr, @"^(cho\s+tôi\s+tới|cho\s+toi\s+toi|giao\s+tới|giao\s+toi|giao\s+đến|giao\s+den|ở|o|địa\s+chỉ\s+là|dia\s+chi\s+la|tại|tai)\s+", "", RegexOptions.IgnoreCase).Trim();
                     cleanAddr = Regex.Replace(cleanAddr, @"\s*(nhé|nha|giúp\s+mình|giup\s+minh|ạ|a)$", "", RegexOptions.IgnoreCase).Trim();
                     if (string.IsNullOrWhiteSpace(cleanAddr)) cleanAddr = rawAddr;
 
+                    bool isValid = IsValidDeliveryAddress(cleanAddr, out string errorMsg);
+
+                    if (!isValid)
+                    {
+                        state.AddressRetryCount++;
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = $"⚠️ Địa chỉ bạn vừa nhập chưa hợp lệ ạ!\n*{errorMsg}*\n\nBạn vui lòng nhập lại địa chỉ đầy đủ (gồm số nhà/ngõ, tên đường, phường/quận hoặc thành phố) nhé! 📍\nHoặc bạn có thể bấm một trong 2 lựa chọn bên dưới để tiếp tục:",
+                            provider = "ZoneMart AI Assistant",
+                            actionIntent = "SHOW_ADDRESS_INVALID_CHOICE_BUTTONS",
+                            orderState = state
+                        });
+                    }
+
+                    // Địa chỉ hợp lệ
                     state.Address = cleanAddr;
                     state.Step = "ASK_SHIPPING_METHOD";
 
@@ -1846,26 +3233,58 @@ namespace ZoneMart.Server.Controllers
                 // ----- BƯỚC 8: ASK_SHIPPING_METHOD (Chọn phương thức vận chuyển) -----
                 if (state.Step == "ASK_SHIPPING_METHOD")
                 {
-                    if (cleanMsgNoTone.Contains("hoa toc") || cleanMsgNoTone.Contains("8.000") || cleanMsgNoTone.Contains("8000") || cleanMsgNoTone.Contains("15-25"))
+                    bool isExpress = cleanMsgNoTone == "giao hang hoa toc" || cleanMsgNoTone.Contains("hoa toc") ||
+                                     cleanMsgNoTone.Contains("8.000") || cleanMsgNoTone.Contains("8000") ||
+                                     cleanMsgNoTone.Contains("22.500") || cleanMsgNoTone.Contains("22500") ||
+                                     cleanMsgNoTone.Contains("15-25") || cleanMsgNoTone == "1";
+
+                    bool isStandard = cleanMsgNoTone == "giao hang tieu chuan" || cleanMsgNoTone.Contains("tieu chuan") ||
+                                      cleanMsgNoTone.Contains("5.000") || cleanMsgNoTone.Contains("5000") ||
+                                      cleanMsgNoTone.Contains("15.000") || cleanMsgNoTone.Contains("15000") ||
+                                      cleanMsgNoTone.Contains("30-45") || cleanMsgNoTone == "2";
+
+                    if (isExpress)
                     {
                         state.ShippingMethod = "Giao Hàng Hỏa Tốc Đi Chợ (15-25 phút)";
                         state.ShippingFee = 8000;
+                        state.Step = "ASK_PAYMENT_METHOD";
+
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = $"Dạ mình đã tiếp nhận phương thức vận chuyển **{state.ShippingMethod}** rồi ạ! 🛵\n\n**Bạn muốn dùng phương thức thanh toán nào ạ?**",
+                            provider = "ZoneMart AI Assistant",
+                            actionIntent = "SHOW_PAYMENT_METHOD_BUTTONS",
+                            orderState = state
+                        });
                     }
-                    else
+                    else if (isStandard)
                     {
                         state.ShippingMethod = "Giao Hàng Tiêu Chuẩn Tiết Kiệm (30-45 phút)";
                         state.ShippingFee = 5000;
-                    }
+                        state.Step = "ASK_PAYMENT_METHOD";
 
-                    state.Step = "ASK_PAYMENT_METHOD";
-                    return Ok(new
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = $"Dạ mình đã tiếp nhận phương thức vận chuyển **{state.ShippingMethod}** rồi ạ! 🛵\n\n**Bạn muốn dùng phương thức thanh toán nào ạ?**",
+                            provider = "ZoneMart AI Assistant",
+                            actionIntent = "SHOW_PAYMENT_METHOD_BUTTONS",
+                            orderState = state
+                        });
+                    }
+                    else
                     {
-                        success = true,
-                        reply = $"Dạ mình đã tiếp nhận phương thức vận chuyển **{state.ShippingMethod}** rồi ạ! 🛵\n\n**Bạn muốn dùng phương thức thanh toán nào ạ?**",
-                        provider = "ZoneMart AI Assistant",
-                        actionIntent = "SHOW_PAYMENT_METHOD_BUTTONS",
-                        orderState = state
-                    });
+                        // Khóa nghiêm ngặt: Nhập từ khác (như fffff, abc...) thì từ chối và hiện lại các nút lựa chọn
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = "Dạ bạn vui lòng bấm chọn một trong 2 phương thức vận chuyển có sẵn bên dưới giúp mình nhé! 🛵\n- **Giao Hàng Hỏa Tốc Đi Chợ (15-25 phút)** - 8.000đ\n- **Giao Hàng Tiêu Chuẩn Tiết Kiệm (30-45 phút)** - 5.000đ\n\n*(Nếu muốn dừng luồng đặt đồ, bạn hãy nhắn **'hủy'** ạ).*",
+                            provider = "ZoneMart AI Assistant",
+                            actionIntent = "SHOW_SHIPPING_METHOD_BUTTONS",
+                            orderState = state
+                        });
+                    }
                 }
 
                 // ----- BƯỚC 9: ASK_PAYMENT_METHOD (Chọn phương thức thanh toán) -----
@@ -1874,7 +3293,13 @@ namespace ZoneMart.Server.Controllers
                     decimal itemsTotal = state.CartItems.Sum(it => it.Price * it.Quantity);
                     decimal grandTotal = itemsTotal + state.ShippingFee;
 
-                    if (cleanMsgNoTone.Contains("chuyen khoan") || cleanMsgNoTone.Contains("qr") || cleanMsgNoTone.Contains("bank"))
+                    bool isQr = cleanMsgNoTone == "chuyen khoan" || cleanMsgNoTone.Contains("chuyen khoan") ||
+                                cleanMsgNoTone.Contains("qr") || cleanMsgNoTone.Contains("bank") || cleanMsgNoTone == "1";
+
+                    bool isCod = cleanMsgNoTone == "tien mat" || cleanMsgNoTone.Contains("tien mat") ||
+                                 cleanMsgNoTone.Contains("cod") || cleanMsgNoTone == "2";
+
+                    if (isQr)
                     {
                         state.PaymentMethod = "Chuyển Khoản QR Bank";
                         state.Step = "AWAITING_QR_PAYMENT";
@@ -1901,7 +3326,7 @@ namespace ZoneMart.Server.Controllers
                             orderState = state
                         });
                     }
-                    else
+                    else if (isCod)
                     {
                         state.PaymentMethod = "Tiền Mặt khi nhận hàng (COD)";
                         state.IsPaid = false;
@@ -1971,6 +3396,18 @@ namespace ZoneMart.Server.Controllers
                             actionIntent = "REDIRECT_TO_BUYER_ORDERS",
                             orderCode = orderCode,
                             createdOrder = createdOrderDto,
+                            orderState = state
+                        });
+                    }
+                    else
+                    {
+                        // Khóa nghiêm ngặt: Nhập từ khác (như fffff, abc...) thì từ chối và hiện lại các nút lựa chọn
+                        return Ok(new
+                        {
+                            success = true,
+                            reply = "Dạ bạn vui lòng bấm chọn một trong 2 phương thức thanh toán bên dưới giúp mình nhé! 💳\n- **Chuyển Khoản QR Bank Ngân Hàng**\n- **Tiền Mặt Khi Nhận Hàng (COD)**\n\n*(Nếu muốn dừng luồng đặt đồ, bạn hãy nhắn **'hủy'** ạ).*",
+                            provider = "ZoneMart AI Assistant",
+                            actionIntent = "SHOW_PAYMENT_METHOD_BUTTONS",
                             orderState = state
                         });
                     }
@@ -2473,43 +3910,51 @@ namespace ZoneMart.Server.Controllers
             }
 
             // 1.2. XỬ LÝ KHI HỎI VỀ VỊ TRÍ ("TÔI ĐANG Ở ĐÂU", "VỊ TRÍ", "ĐỊNH VỊ")
-            bool isLocationInquiry = cleanMsgNoTone.Contains("o dau") || cleanMsgNoTone.Contains("dang o dau") || 
-                                     cleanMsgNoTone.Contains("vi tri cua toi") || cleanMsgNoTone.Contains("toi dang o") || 
-                                     cleanMsgNoTone.Contains("cho toi dang") || cleanMsgNoTone.Contains("dinh vi") || 
-                                     cleanMsgNoTone == "vi tri" || cleanMsgNoTone.Contains("cho nao");
+            bool isLocationInquiry =
+                Regex.IsMatch(cleanMsgNoTone, @"\b(t|toi|minh|em|anh)?\s*(dang\s*o\s*dau|o\s*dau)\b") ||
+                Regex.IsMatch(cleanMsgNoTone, @"\bdinh\s*vi(\s*cho\s*(toi|t|minh|em|anh))?\b") ||
+                Regex.IsMatch(cleanMsgNoTone, @"\bvi\s*tri(\s*hien\s*tai)?(\s*cua\s*(toi|t|minh|em|anh))?\b") ||
+                Regex.IsMatch(cleanMsgNoTone, @"^(\s*vi\s*tri\s*|\s*hien\s*tai\s*|\s*dinh\s*vi\s*)$") ||
+                cleanMsgNoTone.Contains("vi tri hien tai") ||
+                cleanMsgNoTone.Contains("dinh vi cho") ||
+                cleanMsgNoTone.Contains("vi tri cua") ||
+                cleanMsgNoTone == "vi tri" ||
+                cleanMsgNoTone == "hien tai" ||
+                cleanMsgNoTone == "dinh vi" ||
+                cleanMsgNoTone.Contains("cho toi dang o") ||
+                cleanMsgNoTone.Contains("cho t dang o") ||
+                cleanMsgNoTone.Contains("o dau");
 
             if (isLocationInquiry && !isRegActive && !isOrderActive && !isSupportActive)
             {
-                string clientLoc = (request?.UserLocation ?? "").Trim();
-                if (userMsg.Contains("Tôi đang ở"))
+                // KIỂM TRA TỌA ĐỘ GPS THỰC TẾ ĐƯỢC GỬI LÊN TỪ CLIENT
+                if (request?.Lat.HasValue == true && request?.Lon.HasValue == true && request.Lat.Value != 0)
                 {
-                    var idx = userMsg.IndexOf("Tôi đang ở");
-                    clientLoc = userMsg.Substring(idx + "Tôi đang ở".Length).Trim();
-                }
+                    Console.WriteLine($"[GPS Backend]: Nhận tọa độ GPS thực tế từ Client: Lat={request.Lat.Value}, Lon={request.Lon.Value} (Lưu ngầm Backend, bảo mật tuyệt đối)");
+                    var locRes = await ResolveSafeLocationFromGpsAsync(request.Lat.Value, request.Lon.Value);
+                    string safeLocation = locRes.SafeLocationName;
+                    Console.WriteLine($"[GPS Backend]: Đã phân giải thành địa danh an toàn: {safeLocation}");
 
-                bool hasRealGpsLocation = !string.IsNullOrWhiteSpace(clientLoc) && 
-                                          !clientLoc.Equals("Khu vực Cầu Giấy / Hà Nội", StringComparison.OrdinalIgnoreCase) &&
-                                          !clientLoc.Equals("Chưa xác định cụ thể", StringComparison.OrdinalIgnoreCase);
-
-                if (!hasRealGpsLocation)
-                {
                     return Ok(new
                     {
                         success = true,
-                        reply = "📍 Để xem được vị trí chính xác hiện tại của bạn, mình đang kết nối định vị GPS trên trình duyệt...",
+                        reply = $"📍 Hệ thống định vị xác định hiện tại bạn đang ở: **{safeLocation}** bạn nhé! 🛵✨\n\nTừ vị trí này, mạng lưới đối tác giao hàng của ZoneMart sẵn sàng phục vụ bạn trên toàn quốc (phủ sóng khắp 63 tỉnh thành Việt Nam), mang nông sản sạch VietGAP và món ngon đến tận cửa cho bạn! Bạn có muốn mình gợi ý đặc sản vùng miền hay món ngon hấp dẫn gần khu vực của bạn không ạ? 😊",
                         provider = "ZoneMart Location Service",
-                        actionIntent = "ACTION_REQUEST_LOCATION",
+                        userLocation = safeLocation,
+                        actionIntent = (string?)null,
                         products = new List<object>(),
                         stores = new List<object>()
                     });
                 }
                 else
                 {
+                    // NẾU CHƯA CÓ TỌA ĐỘ GPS THỰC TẾ (Người dùng chưa cấp quyền hoặc từ chối): Trả lời thân thiện, tuyệt đối không có nút bấm
                     return Ok(new
                     {
                         success = true,
-                        reply = $"📍 Hệ thống định vị GPS xác định hiện tại bạn đang ở **{clientLoc}** bạn nhé! 🛵 Từ vị trí này, các shipper ZoneMart có thể giao món ngon, nông sản tươi sạch VietGAP hỏa tốc trong 15 - 30 phút (bán kính 10km) đấy ạ! 😊",
+                        reply = "Oh no bạn không cho phép truy cập vị trí thì mình bó tay ròi huhu! 🥺📍\n\nNếu muốn mình xem vị trí và gợi ý quán ngon gần nhất, bạn bấm vào biểu tượng ổ khóa/chữ (i) ở góc bên trái thanh địa chỉ trình duyệt để Bật lại quyền vị trí nhé! ✨",
                         provider = "ZoneMart Location Service",
+                        userLocation = (string?)null,
                         actionIntent = (string?)null,
                         products = new List<object>(),
                         stores = new List<object>()
@@ -2532,17 +3977,11 @@ namespace ZoneMart.Server.Controllers
 
             if (isNewItemsOrStoresQuery && !isRegActive && !isOrderActive && !isSupportActive)
             {
-                var newestProducts = await _mongoService.Products
-                    .Find(p => p.StockStatus != "out_of_stock" && p.AiStatus != "rejected")
-                    .SortByDescending(p => p.CreatedAt)
-                    .Limit(6)
-                    .ToListAsync();
+                var allProds = await GetCachedActiveProductsAsync();
+                var newestProducts = allProds.Take(6).ToList();
 
-                var newestStores = await _mongoService.Stores
-                    .Find(s => s.Status != "Rejected")
-                    .SortByDescending(s => s.CreatedAt)
-                    .Limit(4)
-                    .ToListAsync();
+                var allStores = await GetCachedActiveStoresAsync();
+                var newestStores = allStores.Take(4).ToList();
 
                 var sbNew = new StringBuilder();
                 sbNew.AppendLine("✨ **CẬP NHẬT CÁC GIAN HÀNG & MÓN NGON MỚI NHẤT TRÊN ZONEMART:**\n");
@@ -2640,7 +4079,7 @@ QUY TẮC CỐT LÕI BẮT BUỘC PHẢI TUÂN THỦ:
 
 SUY LUẬN THEO NGỮ CẢNH: Không bao giờ trả lời máy móc. Hãy phân tích tâm lý. Nếu khách chê thời tiết nóng (hoặc nhiệt độ >= 27°C), hãy chủ động gợi ý đồ uống mát lạnh, trái cây thanh nhiệt (dâu tây Đà Lạt, trà tắc, sữa tươi ướp lạnh). Nếu khách than trời lạnh hoặc mưa, hãy chủ động gợi ý món nóng hổi, xì xụp ấm bụng (phở bò, bánh mì chảo, lẩu).
 
-TRẢ LỜI VỀ VỊ TRÍ: Nếu khách hỏi 'Tôi đang ở đâu?' hoặc các câu hỏi về định vị, bạn ĐƯỢC PHÉP và PHẢI trả lời tự nhiên bằng thông tin Vị trí ở trên (ví dụ: 'Hệ thống định vị cho thấy bạn đang ở {userLocationInfo} bạn nhé! 🛵 Từ vị trí này, các shipper ZoneMart có thể giao món ngon hỏa tốc đến tận tay bạn trong vòng 15 - 30 phút (bán kính 10km) đấy ạ!'). Đồng thời nhắc nhở: 'Nếu bạn muốn định vị chính xác nhất đến từng ngõ ngách, hãy cấp quyền cho phép truy cập vị trí trên trình duyệt giúp mình nhé!'.
+TRẢ LỜI VỀ VỊ TRÍ: Nếu khách hỏi 'Tôi đang ở đâu?' hoặc các câu hỏi về định vị, bạn ĐƯỢC PHÉP và PHẢI trả lời tự nhiên bằng thông tin Vị trí ở trên (ví dụ: 'Hệ thống định vị cho thấy bạn đang ở {userLocationInfo} bạn nhé! 🛵 Từ vị trí này, các shipper ZoneMart có thể giao món ngon hỏa tốc đến tận tay bạn trong vòng 15 - 30 phút (phủ sóng khắp 63 tỉnh thành Việt Nam) đấy ạ!').
 
 TỪ CHỐI CÂU HỎI NGOÀI LUỒNG BẰNG CÁCH SUY LUẬN TỪNG CHỮ (QUAN TRỌNG):
 Phạm vi của bạn CHỈ là đồ ăn, thực phẩm và dịch vụ của ZoneMart. Khi khách hỏi câu hỏi ngoài luồng (như 'Tôi buồn ỉa quá', 'Tôi buồn ngủ quá', 'Tôi đang đi tắm', toán học, lập trình...):
@@ -2662,38 +4101,40 @@ DỮ LIỆU THỰC TẾ TRÊN DATABASE SÀN ZONEMART:
 
 HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA SÀN ZONEMART!";
 
-            // 4. XOAY VÒNG MODEL AI (MULTI-LLM FALLBACK ENGINE: Gemini -> Groq -> Astra)
+            // 4. XOAY VÒNG MODEL AI (MULTI-LLM FALLBACK ENGINE: Groq High-Speed -> Gemini -> Astra -> Local)
             string aiReply = string.Empty;
             string usedProvider = string.Empty;
 
-            // Thử Provider 1: Google Gemini API
+            Console.WriteLine($"[Timer] T_prep = {sw.ElapsedMilliseconds}ms, calling Groq...");
+            // Thử Provider 1: Groq API (Siêu tốc độ ~500ms trên phần cứng LPU, Qwen 3.8 27B suy luận tiếng Việt cực chuẩn)
             try
             {
-                aiReply = await CallGeminiApiAsync(systemPrompt, userMsg, request?.History);
+                aiReply = await CallGroqApiAsync(systemPrompt, userMsg, request?.History);
                 if (!string.IsNullOrWhiteSpace(aiReply))
                 {
-                    usedProvider = "Google Gemini 1.5 Flash";
+                    usedProvider = "Groq High-Speed AI Engine";
+                    Console.WriteLine($"[Timer] T_groq_done = {sw.ElapsedMilliseconds}ms");
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"⚠️ [Gemini API Warning] {ex.Message}. Đang tự động chuyển sang Groq Fallback...");
+                Console.WriteLine($"⚠️ [Groq API Warning] {ex.Message}. Đang tự động chuyển sang Gemini Fallback...");
             }
 
-            // Thử Provider 2: Groq API (nếu Gemini lỗi/hết lượt)
+            // Thử Provider 2: Google Gemini API (nếu Groq lỗi/gián đoạn)
             if (string.IsNullOrWhiteSpace(aiReply))
             {
                 try
                 {
-                    aiReply = await CallGroqApiAsync(systemPrompt, userMsg, request?.History);
+                    aiReply = await CallGeminiApiAsync(systemPrompt, userMsg, request?.History);
                     if (!string.IsNullOrWhiteSpace(aiReply))
                     {
-                        usedProvider = "Groq Llama-3-70B";
+                        usedProvider = "Google Gemini Flash";
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"⚠️ [Groq API Warning] {ex.Message}. Đang tự động chuyển sang Astra Fallback...");
+                    Console.WriteLine($"⚠️ [Gemini API Warning] {ex.Message}. Đang tự động chuyển sang Astra Fallback...");
                 }
             }
 
@@ -2766,11 +4207,13 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
                 }
             }
 
+            Console.WriteLine($"[Timer] T_final = {sw.ElapsedMilliseconds}ms (Provider: {usedProvider})");
             return Ok(new
             {
                 success = true,
                 reply = aiReply,
                 provider = usedProvider,
+                latencyMs = sw.ElapsedMilliseconds,
                 products = productCards,
                 stores = storeCards,
                 actionIntent = actionIntent
@@ -2781,8 +4224,12 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
 
         private async Task<string> CallGeminiApiAsync(string systemPrompt, string userMsg, List<ChatMessageItem>? history)
         {
-            // URL Gemini đọc trực tiếp từ cấu hình
             string geminiApiKey = _configuration["GeminiSettings:ApiKey"] ?? "";
+            if (string.IsNullOrWhiteSpace(geminiApiKey) || geminiApiKey.Contains("YOUR_GEMINI_API_KEY") || geminiApiKey.Length < 10)
+            {
+                return string.Empty;
+            }
+
             string geminiModel = _configuration["GeminiSettings:Model"] ?? "gemini-1.5-flash";
             string url = $"https://generativelanguage.googleapis.com/v1beta/models/{geminiModel}:generateContent?key={geminiApiKey}";
 
@@ -2830,14 +4277,15 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
             };
             string jsonBody = JsonSerializer.Serialize(payload);
 
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             using var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
-            var response = await _httpClient.PostAsync(url, content);
+            var response = await _httpClient.PostAsync(url, content, cts.Token);
             if (!response.IsSuccessStatusCode)
             {
                 throw new Exception($"Gemini HTTP Status: {response.StatusCode}");
             }
 
-            string resJson = await response.Content.ReadAsStringAsync();
+            string resJson = await response.Content.ReadAsStringAsync(cts.Token);
             using var doc = JsonDocument.Parse(resJson);
             var root = doc.RootElement;
             var text = root.GetProperty("candidates")[0].GetProperty("content").GetProperty("parts")[0].GetProperty("text").GetString();
@@ -2848,6 +4296,11 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
         private async Task<string> CallGroqApiAsync(string systemPrompt, string userMsg, List<ChatMessageItem>? history)
         {
             string groqApiKey = _configuration["GroqSettings:ApiKey"] ?? _configuration["GROQ_API_KEY"] ?? "";
+            if (string.IsNullOrWhiteSpace(groqApiKey) || groqApiKey.Contains("YOUR_GROQ_API_KEY") || groqApiKey.Length < 10)
+            {
+                return string.Empty;
+            }
+
             string url = "https://api.groq.com/openai/v1/chat/completions";
 
             var messages = new List<object>
@@ -2868,7 +4321,7 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
 
             messages.Add(new { role = "user", content = userMsg });
 
-            string[] candidateModels = new[] { "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b", "llama-3.3-70b-versatile" };
+            string[] candidateModels = new[] { "qwen/qwen3.8-27b" };
 
             string lastErr = "";
             foreach (var modelName in candidateModels)
@@ -2883,21 +4336,22 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
                         max_tokens = 250
                     };
 
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3.5));
                     using var req = new HttpRequestMessage(HttpMethod.Post, url);
                     req.Headers.Add("Authorization", $"Bearer {groqApiKey}");
                     req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
-                    var response = await _httpClient.SendAsync(req);
+                    var response = await _httpClient.SendAsync(req, cts.Token);
                     if (response.IsSuccessStatusCode)
                     {
-                        string resJson = await response.Content.ReadAsStringAsync();
+                        string resJson = await response.Content.ReadAsStringAsync(cts.Token);
                         using var doc = JsonDocument.Parse(resJson);
                         var text = doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
                         if (!string.IsNullOrWhiteSpace(text)) return text;
                     }
                     else
                     {
-                        lastErr = await response.Content.ReadAsStringAsync();
+                        lastErr = await response.Content.ReadAsStringAsync(cts.Token);
                     }
                 }
                 catch (Exception ex)
@@ -2963,51 +4417,201 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
 
         // ================= CÁC HÀM XỬ LÝ DỮ LIỆU MONGODB REALTIME & RAG =================
 
-        private string ExtractTopicName(string cleanMsgNoTone)
+        private static readonly Dictionary<string, (int Sold, double Rating)> CatalogPopularityStats = new(StringComparer.OrdinalIgnoreCase)
         {
-            string msg = (cleanMsgNoTone ?? "").Replace("banh my", "banh mi");
+            ["Combo Bánh Mì Chảo Nóng Hổi Kèm Pate & Xúc Xích"] = (890, 4.95),
+            ["Combo Bánh Mì Chảo Xèo Xèo Nóng Hổi"] = (890, 4.95),
+            ["Bánh Mì Chảo"] = (890, 4.95),
+            ["Cơm Gà Xối Mỡ Da Giòn Nóng Hổi Sốt Tỏi Ớt"] = (850, 4.92),
+            ["Cơm Gà Xối Mỡ Da Giòn Nóng Hổi"] = (850, 4.92),
+            ["Cơm Gà Xối Mỡ"] = (850, 4.92),
+            ["Cơm Tấm Sườn Bì Chả Đặc Biệt Kèm Canh Chua"] = (810, 4.89),
+            ["Cơm Tấm Sườn Bì Chả Đặc Biệt"] = (810, 4.89),
+            ["Cơm Tấm Sườn Bì Chả"] = (810, 4.89),
+            ["Cơm Tấm"] = (810, 4.89),
+            ["Bánh Bao Trứng Muối Xá Xíu Nóng Hổi Vừa Ra Lò"] = (780, 4.9),
+            ["Bánh Bao Trứng Muối"] = (780, 4.9),
+            ["Bánh Bao"] = (780, 4.9),
+            ["Bánh Mì Kẹp Thịt Nướng Ngũ Vị Giòn Rụm"] = (750, 4.86),
+            ["Bánh Mì Kẹp Thịt Nướng Sả Ngũ Vị"] = (750, 4.86),
+            ["Bánh Mì Thịt Nướng"] = (750, 4.86),
+            ["Khoai Lang Mật Đà Lạt Nướng Chảy Mật Thơm Lừng"] = (720, 4.88),
+            ["Khoai Lang Mật"] = (720, 4.88),
+            ["Khoai Lang"] = (720, 4.88),
+            ["Thịt Bò Mỹ Nhập Khẩu Thượng Hạng USDA Choice"] = (690, 4.9),
+            ["Thịt Bò Mỹ Nhập Khẩu Thượng Hạng (Khay 500g)"] = (690, 4.9),
+            ["Ba Chỉ Bò Mỹ Cuộn Nhúng Lẩu"] = (690, 4.9),
+            ["Ba Chỉ Bò Mỹ"] = (690, 4.9),
+            ["Thịt Bò Mỹ"] = (690, 4.9),
+            ["Thịt Trâu Gác Bếp Sơn La Chuẩn Vị Hạt Dổi Mắc Khén"] = (660, 4.85),
+            ["Thịt Trâu Gác Bếp"] = (660, 4.85),
+            ["Canh Cua Rau Đay Cà Pháo Nấu Nồi Đất Chuẩn Vị"] = (630, 4.8),
+            ["Canh Cua Rau Đay"] = (630, 4.8),
+            ["Phở Bò Tái Nạm Hà Nội Nước Dùng Thanh Ngọt"] = (610, 4.8),
+            ["Phở Bò"] = (610, 4.8),
 
-            var categoryTokens = new (string Token, string DisplayName)[]
-            {
-                ("banh mi", "bánh mì"),
-                ("trai cay", "trái cây"),
-                ("hai san", "hải sản"),
-                ("nuoc", "nước / đồ uống"),
-                ("sua", "sữa"),
-                ("ga", "gà"),
-                ("com", "cơm"),
-                ("bo", "bò"),
-                ("thit", "thịt"),
-                ("rau", "rau củ"),
-                ("kem", "kem"),
-                ("che", "chè"),
-                ("pho", "phở"),
-                ("bun", "bún"),
-                ("lau", "lẩu"),
-                ("ca", "cá"),
-                ("tom", "tôm"),
-                ("vit", "vịt")
-            };
+            ["Trà Tắc Mật Ong Khổng Lồ Mát Lạnh Giải Nhiệt"] = (880, 4.95),
+            ["Trà Tắc Mật Ong Khổng Lồ"] = (880, 4.95),
+            ["Trà Tắc"] = (880, 4.95),
+            ["Dừa Xiêm Xanh Bến Tre Ngọt Mát Đã Gọt Trọc"] = (840, 4.93),
+            ["Dừa Xiêm"] = (840, 4.93),
+            ["Cà Phê Sữa Đá Pha Phin Đậm Đà Chuẩn Gu"] = (810, 4.91),
+            ["Cà Phê Sữa Đá"] = (810, 4.91),
+            ["Hộp Dâu Tây Giống Hana Nhật Bản Hái Sáng Nay"] = (790, 4.92),
+            ["Hộp Dâu Tây Đà Lạt Tươi Ngọt Chuẩn VietGAP (500g)"] = (790, 4.92),
+            ["Dâu Tây Giống Nhật Mộc Châu Hái Sớm"] = (790, 4.92),
+            ["Dâu Tây"] = (790, 4.92),
+            ["Cam Sành Hàm Yên Mọng Nước Ngọt Tự Nhiên"] = (760, 4.88),
+            ["Cam Sành"] = (760, 4.88),
+            ["Xoài Cát Hòa Lộc Chín Cây Vàng Óng Thơm Lừng"] = (730, 4.89),
+            ["Xoài Cát"] = (730, 4.89),
+            ["Bưởi Da Xanh Bến Tre Loại 1 Trái Mọng Tép Đỏ"] = (710, 4.87),
+            ["Bưởi Da Xanh"] = (710, 4.87),
+            ["Bơ Sáp 034 Đặc Sản Lâm Đồng Dẻo Quánh"] = (680, 4.86),
+            ["Bơ Sáp 034"] = (680, 4.86),
+            ["Cà Chua Bi Socola Ngọt Đậm Vị Hữu Cơ"] = (650, 4.82),
+            ["Cà Chua Bi"] = (650, 4.82),
+            ["Sữa Tươi Thanh Trùng Ba Vì"] = (620, 4.8),
+            ["Sữa Tươi"] = (620, 4.8),
+            ["Rau Muống Hữu Cơ Ba Vì Non Xanh"] = (520, 4.8),
+            ["Rau Muống"] = (520, 4.8),
+            ["Rau Xà Lách Mỡ Thủy Canh VietGAP"] = (389, 4.85),
+            ["Xà Lách Mỡ"] = (389, 4.85),
+            ["Cá Hồi Nauy Tươi Filet Tự Nhiên"] = (510, 4.85),
+            ["Cá Hồi"] = (510, 4.85),
+            ["Thịt Ba Chỉ Heo Quế Quê Sạch"] = (390, 4.85),
+            ["Thịt Ba Chỉ Heo"] = (390, 4.85),
+            ["Tôm Sú Biển Quảng Ninh Tươi Sống"] = (290, 4.8),
+            ["Tôm Sú"] = (290, 4.8),
+            ["Gạo ST25 Ông Cua Thượng Hạng"] = (820, 4.9),
+            ["Gạo ST25"] = (820, 4.9)
+        };
 
-            foreach (var (token, displayName) in categoryTokens)
+        private (int Sold, double Rating) GetProductPopularityStats(Product p)
+        {
+            string name = p.ProductName ?? "";
+            foreach (var kvp in CatalogPopularityStats)
             {
-                if (Regex.IsMatch(msg, $@"\b{Regex.Escape(token)}\b", RegexOptions.IgnoreCase))
+                if (name.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase) || kvp.Key.Contains(name, StringComparison.OrdinalIgnoreCase))
                 {
-                    return displayName;
+                    return kvp.Value;
                 }
             }
+            int hash = Math.Abs(name.GetHashCode());
+            int sold = 180 + (hash % 450);
+            double rating = 4.7 + ((hash % 3) * 0.1);
+            return (sold, Math.Round(rating, 2));
+        }
 
-            string[] stopWords = new[]
+        private string ExtractSearchKeyword(string cleanMsgNoTone)
+        {
+            if (string.IsNullOrWhiteSpace(cleanMsgNoTone)) return "";
+            string norm = cleanMsgNoTone.Trim();
+
+            // 1. Lấy những từ sau từ khóa neo "về", "đồ", "tên", "loại" (không dấu: 've', 'do', 'ten', 'loai')
+            var anchorMatch = Regex.Match(norm, @"\b(?:ve|do|ten|loai)\s+([^?.!,;:]+)", RegexOptions.IgnoreCase);
+            string extracted = "";
+            if (anchorMatch.Success && !string.IsNullOrWhiteSpace(anchorMatch.Groups[1].Value))
             {
-                "neu", "ma", "thi", "co", "nhung", "gi", "nhi", "khong", "la", "mon", "do", "an", "toi", "muon", "tim", "dat", "nho",
-                "suat", "phan", "cai", "hop", "chai", "lon", "bat", "to", "dia", "khay", "tui", "goi", "ly", "coc", "chiet", "nhe", "nha", "dum", "giup", "cho", "lay",
-                "the", "nay", "web", "san", "trang", "site", "hien", "tai", "ben"
-            };
-            var words = msg.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                .Where(w => w.Length >= 2 && !stopWords.Contains(w))
-                .ToList();
+                extracted = anchorMatch.Groups[1].Value.Trim();
+            }
+            else
+            {
+                // 2. Nếu không có từ neo, loại bỏ tiền tố tìm kiếm / xem đồ / đặt đồ chung chung
+                extracted = Regex.Replace(norm, @"^(?:toi\s+)?(?:muon\s+)?(?:xem\s+|tim\s+|dat\s+|mua\s+|an\s+|uong\s+|goi\s+|chon\s+|cho\s+xem\s+|cho\s+toi\s+xem\s+|co\s+nhung\s+|co\s+cac\s+|co\s+|hien\s+co\s+|danh\s+sach\s+|menu\s+|thuc\s+don\s+)(?:nhung\s+|cac\s+)?", "", RegexOptions.IgnoreCase).Trim();
+            }
 
-            if (words.Count > 0) return words.First();
+            // 3. Loại bỏ các từ kết thúc câu hỏi hoặc từ đệm ở đuôi
+            string prev = "";
+            while (extracted != prev)
+            {
+                prev = extracted;
+                extracted = Regex.Replace(extracted, @"\s*\b(?:gi\s+nhi|gi\s+day|gi\s+khong|gi\s+ko|gi\s+the|co\s+gi|gi|nhi|khong|ko|nao|vay|the|ha|a|di|nha|nhe|oi|dum|giup|ho|xem|co)\b\s*$", "", RegexOptions.IgnoreCase).Trim();
+            }
+
+            // 4. Loại bỏ các từ đệm ở đầu còn sót lại nếu có
+            extracted = Regex.Replace(extracted, @"^(?:nhung\s+|cac\s+|mon\s+|san\s+pham\s+)+", "", RegexOptions.IgnoreCase).Trim();
+
+            return extracted;
+        }
+
+        private bool IsProductBrowseOrSearchIntent(string cleanMsgNoTone)
+        {
+            if (string.IsNullOrWhiteSpace(cleanMsgNoTone)) return false;
+
+            // Nếu câu có chứa lệnh giỏ hàng rõ ràng kèm số lượng (VD: 'thêm 1 xà lách', 'bớt 2 gà xối mỡ') -> Không phải duyệt sản phẩm
+            bool hasExplicitCartActionWithQty = Regex.IsMatch(cleanMsgNoTone, @"\b(them|bot|giam|tru|xoa|cho|lay|dat|mua)\s+\d+\b");
+            if (hasExplicitCartActionWithQty) return false;
+
+            if (IsGenericFoodInquiryWithoutQty(cleanMsgNoTone)) return true;
+
+            // Kiểm tra các từ khóa hỏi xem / duyệt món ăn / phân loại
+            if (cleanMsgNoTone.Contains("co nhung") || cleanMsgNoTone.Contains("co cac") ||
+                cleanMsgNoTone.Contains("muon xem") || cleanMsgNoTone.Contains("xem nhung") ||
+                cleanMsgNoTone.Contains("xem cac") || cleanMsgNoTone.Contains("xem loai") ||
+                cleanMsgNoTone.Contains("xem ve") || cleanMsgNoTone.Contains("xem do") ||
+                cleanMsgNoTone.Contains("cho xem") || cleanMsgNoTone.Contains("cho toi xem") ||
+                cleanMsgNoTone.Contains("co loai") || cleanMsgNoTone.Contains("danh sach") ||
+                cleanMsgNoTone.Contains("thuc don") || cleanMsgNoTone.Contains("menu") ||
+                cleanMsgNoTone.Contains("tim mon") || cleanMsgNoTone.Contains("tim kiem") ||
+                cleanMsgNoTone.Contains("tu van ve") || cleanMsgNoTone.Contains("co ban gi") ||
+                cleanMsgNoTone.Contains("tham khao") || cleanMsgNoTone.Contains("phan loai") ||
+                cleanMsgNoTone.Contains("gi nhi") || cleanMsgNoTone.Contains("gi day") ||
+                cleanMsgNoTone.Contains("gi ko") || cleanMsgNoTone.Contains("gi khong") ||
+                cleanMsgNoTone.Contains("loai com") || cleanMsgNoTone.Contains("cac com") ||
+                cleanMsgNoTone.Contains("nhung com") || cleanMsgNoTone.Contains("thuc pham tuoi") ||
+                cleanMsgNoTone.StartsWith("xem ") || cleanMsgNoTone.Contains(" xem ") ||
+                Regex.IsMatch(cleanMsgNoTone, @"\bco\s+[a-z0-9\s]+\s+gi\b") ||
+                Regex.IsMatch(cleanMsgNoTone, @"\b(?:ve|do|ten|loai)\s+[a-z0-9\s]+(\?|$)"))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private string ExtractTopicName(string cleanMsgNoTone)
+        {
+            string kw = ExtractSearchKeyword(cleanMsgNoTone);
+            if (!string.IsNullOrWhiteSpace(kw))
+            {
+                var categoryTokens = new (string Token, string DisplayName)[]
+                {
+                    ("banh mi", "bánh mì"),
+                    ("trai cay", "trái cây"),
+                    ("hai san", "hải sản"),
+                    ("nuoc", "nước / đồ uống"),
+                    ("sua", "sữa"),
+                    ("ga", "gà"),
+                    ("com", "cơm"),
+                    ("bo", "bò"),
+                    ("thit", "thịt"),
+                    ("rau cu", "rau củ"),
+                    ("rau", "rau củ"),
+                    ("thuc pham tuoi", "thực phẩm tươi"),
+                    ("tuoi", "thực phẩm tươi"),
+                    ("kem", "kem"),
+                    ("che", "chè"),
+                    ("pho", "phở"),
+                    ("bun", "bún"),
+                    ("lau", "lẩu"),
+                    ("ca", "cá"),
+                    ("tom", "tôm"),
+                    ("vit", "vịt"),
+                    ("do an vat", "đồ ăn vặt"),
+                    ("an vat", "đồ ăn vặt")
+                };
+
+                foreach (var (token, displayName) in categoryTokens)
+                {
+                    if (Regex.IsMatch(kw, $@"\b{Regex.Escape(token)}\b", RegexOptions.IgnoreCase) || kw.Contains(token))
+                    {
+                        return displayName;
+                    }
+                }
+                return kw;
+            }
+
             return "thực phẩm";
         }
 
@@ -3015,156 +4619,129 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
         {
             try
             {
-                var allProducts = await _mongoService.Products
-                    .Find(p => p.StockStatus != "out_of_stock" && p.AiStatus != "rejected")
-                    .SortByDescending(p => p.CreatedAt)
-                    .ToListAsync();
-
+                var allProducts = await GetCachedActiveProductsAsync();
                 if (allProducts == null || allProducts.Count == 0) return new List<Product>();
 
-                // Gán tên gian hàng StoreName chính xác từ collection stores cho từng sản phẩm
-                try
+                // Nếu là câu hỏi đặt đồ chung chung chưa có món -> Tuyệt đối không tự động chọn bừa sản phẩm trong DB
+                if (IsGeneralOrderingPrompt(cleanMsgNoTone))
                 {
-                    var allStores = await _mongoService.Stores
-                        .Find(s => s.Status != "Rejected" && s.Status != "deleted")
-                        .ToListAsync();
-                    if (allStores != null && allStores.Count > 0)
-                    {
-                        var storeMap = allStores.ToDictionary(s => s.Id ?? "", s => s.StoreName ?? "ZoneMart Store");
-                        foreach (var p in allProducts)
-                        {
-                            if (!string.IsNullOrWhiteSpace(p.StoreId) && storeMap.TryGetValue(p.StoreId, out var sName) && !string.IsNullOrWhiteSpace(sName))
-                            {
-                                p.StoreName = sName;
-                            }
-                        }
-                    }
+                    return new List<Product>();
                 }
-                catch { }
 
                 // Nếu là câu hỏi về thời tiết se lạnh / món ăn ấm nóng -> Ưu tiên trả về các món ăn nóng hổi
                 if (IsColdWeatherIntent(cleanMsgNoTone))
                 {
-                    var warmItems = allProducts.Where(IsProductWarming).ToList();
+                    var warmItems = allProducts.Where(IsProductWarming)
+                        .OrderByDescending(p => { var s = GetProductPopularityStats(p); return s.Sold + (s.Rating * 100); })
+                        .ToList();
                     if (warmItems.Count > 0) return warmItems;
                 }
 
                 // Nếu là câu hỏi về thời tiết nắng nóng / món giải nhiệt, mát lạnh -> Ưu tiên trả về các món mát giải nhiệt
                 if (IsHotWeatherIntent(cleanMsgNoTone))
                 {
-                    var coldItems = allProducts.Where(IsProductCooling).ToList();
+                    var coldItems = allProducts.Where(IsProductCooling)
+                        .OrderByDescending(p => { var s = GetProductPopularityStats(p); return s.Sold + (s.Rating * 100); })
+                        .ToList();
                     if (coldItems.Count > 0) return coldItems;
                 }
 
-                string msg = (cleanMsgNoTone ?? "").Replace("banh my", "banh mi");
+                // BÓC TÁCH TỪ KHÓA THEO TỪ NEO "về", "đồ", "tên", "loại" VÀ TIỀN TỐ XEM HÀNG
+                string extractedKw = ExtractSearchKeyword(cleanMsgNoTone);
+                string searchTarget = !string.IsNullOrWhiteSpace(extractedKw) ? extractedKw : cleanMsgNoTone;
+                searchTarget = searchTarget.Replace("banh my", "banh mi").Trim();
 
-                string[] stopWords = new[]
-                {
-                    "toi", "muon", "an", "tim", "co", "khong", "giao", "cho", "ban", "cho toi", "xem",
-                    "danh sach", "mon", "san pham", "quan", "shop", "hoi", "voi", "gium", "giup", "co phai", "lay", "cho xin",
-                    "nha", "sinh", "phai", "lam", "sao", "qua", "ma", "xung", "quanh", "buon", "ia", "ngu", "met", "thoi", "tiet",
-                    "neu", "thi", "nhung", "nhi", "a", "da", "loai", "nao", "gi", "den", "va", "la", "cac", "nay", "do", "ve",
-                    "duoc", "ra", "vao", "nhe", "oi", "ay", "nho", "ho", "dum", "tuong", "bao", "dang", "hien", "tai", "the",
-                    "suat", "phan", "cai", "hop", "chai", "lon", "bat", "to", "dia", "khay", "tui", "goi", "ly", "coc", "chiet", "o", "khach", "mua", "dat",
-                    "web", "san", "trang", "site", "ben",
-                    "nong", "lanh", "am", "se", "mat", "nhiet", "hom", "nay", "ngay", "nen", "bot", "ngon",
-                    "dau", "o dau", "cho nao", "dau roi", "vi tri", "dia chi", "toa do", "may gio", "bao gio"
-                };
-
-                var rawWords = msg.Split(new[] { ' ', '?', '.', ',', '!', ':', ';' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(w => w.Trim())
-                    .Where(w => w.Length >= 2 && !stopWords.Contains(w))
+                var kwWords = searchTarget.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Where(w => w.Length >= 2)
                     .ToList();
 
-                var words = new List<string>();
-                foreach (var w in rawWords)
+                var matchedMap = new Dictionary<string, Product>();
+
+                // 1. Khớp Category (phân loại): người dùng không cần nhập đủ tên phân loại
+                // Ví dụ: 'thuc pham tuoi', 'tuoi', 'rau cu', 'trai cay', 'do uong', 'mon an nong'...
+                foreach (var p in allProducts)
                 {
-                    if (w == "my" && !msg.Contains("bo") && !msg.Contains("thit"))
+                    string pCat = RemoveVietnameseTones(p.Category ?? "").ToLower();
+                    bool catMatch = false;
+                    if (!string.IsNullOrWhiteSpace(searchTarget) && searchTarget.Length >= 2)
                     {
-                        continue;
+                        if (searchTarget.Length <= 4)
+                        {
+                            catMatch = Regex.IsMatch(pCat, $@"\b{Regex.Escape(searchTarget)}\b");
+                        }
+                        else
+                        {
+                            catMatch = pCat.Contains(searchTarget) || searchTarget.Contains(pCat);
+                        }
                     }
-                    if (w == "dau" && !msg.Contains("dau tay") && !msg.Contains("trai dau") && !msg.Contains("qua dau") && !msg.Contains("hop dau") && !msg.Contains("an dau") && !msg.Contains("mua dau"))
+
+                    if (!catMatch && kwWords.Count > 0)
                     {
-                        continue;
+                        catMatch = kwWords.All(w => Regex.IsMatch(pCat, $@"\b{Regex.Escape(w)}\b") || pCat.Contains(w));
                     }
-                    words.Add(w);
+
+                    if (catMatch && !string.IsNullOrEmpty(p.Id))
+                    {
+                        matchedMap[p.Id] = p;
+                    }
                 }
 
-                if (words.Count == 0)
+                // 2. Khớp Tên món ăn (ProductName)
+                // Ví dụ: 'com' -> 'Cơm Gà Xối Mỡ...', 'Cơm Tấm Sườn Bì Chả...'
+                foreach (var p in allProducts)
                 {
-                    return new List<Product>();
+                    string pName = RemoveVietnameseTones(p.ProductName ?? "").ToLower();
+                    bool nameMatch = false;
+
+                    if (!string.IsNullOrWhiteSpace(searchTarget) && searchTarget.Length >= 2)
+                    {
+                        if (searchTarget.Length <= 4)
+                        {
+                            // Ranh giới từ cho các từ ngắn như 'com', 'bo', 'ga', 'ca', 'tom' để không khớp nhầm 'combo'
+                            nameMatch = Regex.IsMatch(pName, $@"\b{Regex.Escape(searchTarget)}\b");
+                        }
+                        else
+                        {
+                            nameMatch = pName.Contains(searchTarget);
+                        }
+                    }
+
+                    if (!nameMatch && kwWords.Count > 1)
+                    {
+                        nameMatch = kwWords.All(w => Regex.IsMatch(pName, $@"\b{Regex.Escape(w)}\b"));
+                    }
+
+                    if (nameMatch && !string.IsNullOrEmpty(p.Id))
+                    {
+                        matchedMap[p.Id] = p;
+                    }
                 }
 
-                string fullSearchPhrase = string.Join(" ", words).Trim();
-
-                // 1. Ưu tiên kiểm tra cụm từ đầy đủ (Ví dụ: "banh mi chao", "nuoc ngot", "banh mi", "com ga")
-                if (!string.IsNullOrWhiteSpace(fullSearchPhrase) && fullSearchPhrase.Length >= 3)
+                // 3. Fallback: Nếu chưa tìm thấy và kwWords có từ, thử so khớp từng từ
+                if (matchedMap.Count == 0 && kwWords.Count > 0)
                 {
-                    var phraseMatches = allProducts.Where(p =>
+                    foreach (var p in allProducts)
                     {
                         string pName = RemoveVietnameseTones(p.ProductName ?? "").ToLower();
                         string pCat = RemoveVietnameseTones(p.Category ?? "").ToLower();
-
-                        string phraseRegex = $@"\b{Regex.Escape(fullSearchPhrase)}\b";
-                        if (Regex.IsMatch(pName, phraseRegex) || Regex.IsMatch(pCat, phraseRegex))
-                            return true;
-                        return false;
-                    }).ToList();
-
-                    if (phraseMatches.Count > 0)
-                    {
-                        return phraseMatches;
-                    }
-
-                    if (fullSearchPhrase.Contains("banh mi"))
-                    {
-                        var banhMiMatches = allProducts.Where(p =>
+                        bool anyMatch = kwWords.Any(w => Regex.IsMatch(pName, $@"\b{Regex.Escape(w)}\b") || Regex.IsMatch(pCat, $@"\b{Regex.Escape(w)}\b"));
+                        if (anyMatch && !string.IsNullOrEmpty(p.Id))
                         {
-                            string pName = RemoveVietnameseTones(p.ProductName ?? "").ToLower();
-                            return pName.Contains("banh mi");
-                        }).ToList();
-
-                        if (banhMiMatches.Count > 0)
-                        {
-                            return banhMiMatches;
+                            matchedMap[p.Id] = p;
                         }
                     }
                 }
 
-                // 2. Kiểm tra khớp theo từng từ với Ranh Giới Từ (\bword\b)
-                var matchedProducts = allProducts.Where(p =>
-                {
-                    string pName = RemoveVietnameseTones(p.ProductName ?? "").ToLower();
-                    string pCat = RemoveVietnameseTones(p.Category ?? "").ToLower();
+                var resultList = matchedMap.Values.ToList();
 
-                    foreach (var w in words)
-                    {
-                        if (w.Length < 2) continue;
-                        string wordRegex = $@"\b{Regex.Escape(w)}\b";
-                        if (Regex.IsMatch(pName, wordRegex) || Regex.IsMatch(pCat, wordRegex))
-                        {
-                            return true;
-                        }
-                    }
-                    return false;
+                // SẮP XẾP: Theo số lượt người mua (Đã bán) và Hot / Đánh giá (Rating) từ cao xuống thấp
+                resultList = resultList.OrderByDescending(p =>
+                {
+                    var stats = GetProductPopularityStats(p);
+                    return stats.Sold + (stats.Rating * 100);
                 }).ToList();
 
-                if (matchedProducts.Count > 0)
-                {
-                    matchedProducts = matchedProducts.OrderByDescending(p =>
-                    {
-                        string pName = RemoveVietnameseTones(p.ProductName ?? "").ToLower();
-                        int score = 0;
-                        foreach (var w in words)
-                        {
-                            string wordRegex = $@"\b{Regex.Escape(w)}\b";
-                            if (Regex.IsMatch(pName, wordRegex)) score += 50;
-                        }
-                        return score;
-                    }).ToList();
-                }
-
-                return matchedProducts;
+                return resultList;
             }
             catch (Exception ex)
             {
@@ -3173,19 +4750,440 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
             }
         }
 
+        private bool IsSmartCartOperation(string cleanMsgNoTone, List<OrderItemDto>? cartItems)
+        {
+            if (string.IsNullOrWhiteSpace(cleanMsgNoTone)) return false;
+
+            // Nếu người dùng đang hỏi xem sản phẩm / duyệt thực đơn -> KHÔNG PHẢI THAO TÁC GIỎ HÀNG!
+            if (IsProductBrowseOrSearchIntent(cleanMsgNoTone)) return false;
+
+            // 1. Phải có từ khóa thao tác giỏ hàng: bỏ, bớt, trừ, giảm, xóa, loại bỏ, thêm, cộng, tăng, cho, lấy, đặt, mua
+            bool isBeef = cleanMsgNoTone.Contains("thit bo") || cleanMsgNoTone.Contains("bo my") || cleanMsgNoTone.Contains("bo uc") ||
+                          cleanMsgNoTone.Contains("bo xao") || cleanMsgNoTone.Contains("bo kho") || cleanMsgNoTone.Contains("bo nuong") ||
+                          cleanMsgNoTone.Contains("bo luc lac") || cleanMsgNoTone.Contains("bo bit tet") || cleanMsgNoTone.Contains("bo vien");
+
+            bool hasActionKw = cleanMsgNoTone.Contains("bot") || cleanMsgNoTone.Contains("giam") || cleanMsgNoTone.Contains("tru") ||
+                               Regex.IsMatch(cleanMsgNoTone, @"\b(xoa|xoa\s*bo|loai\s*bo)\b") ||
+                               cleanMsgNoTone.Contains("them") || cleanMsgNoTone.Contains("cong") || cleanMsgNoTone.Contains("tang") ||
+                               cleanMsgNoTone.Contains("nua") || cleanMsgNoTone.StartsWith("cho ") || cleanMsgNoTone.Contains(" cho ") ||
+                               cleanMsgNoTone.StartsWith("lay ") || cleanMsgNoTone.Contains(" lay ") ||
+                               cleanMsgNoTone.StartsWith("dat ") || cleanMsgNoTone.Contains(" dat ") ||
+                               cleanMsgNoTone.StartsWith("mua ") || cleanMsgNoTone.Contains(" mua ") ||
+                               (Regex.IsMatch(cleanMsgNoTone, @"\bbo\b") && !isBeef);
+
+            // 2. Hoặc câu ghép có liên từ nối và có số lượng
+            bool hasConjunctionWithQty = (cleanMsgNoTone.Contains(" va ") || cleanMsgNoTone.Contains(",") || cleanMsgNoTone.Contains(";") || cleanMsgNoTone.Contains(" hoac ") || cleanMsgNoTone.Contains(" + ") || cleanMsgNoTone.Contains(" voi ") || cleanMsgNoTone.Contains(" them ")) &&
+                                         Regex.IsMatch(cleanMsgNoTone, @"\b\d+\b");
+
+            return hasActionKw || hasConjunctionWithQty;
+        }
+
+        private async Task<OrderItemDto?> FindBestMatchingCartItemAsync(List<OrderItemDto> cartItems, string segTerm)
+        {
+            if (cartItems == null || cartItems.Count == 0) return null;
+
+            if (string.IsNullOrWhiteSpace(segTerm))
+            {
+                return cartItems.Count == 1 ? cartItems[0] : null;
+            }
+
+            string normSegTerm = RemoveVietnameseTones(segTerm.ToLower().Trim());
+
+            // 1. Đại từ thay thế: 'nó', 'món này', 'món đó', 'sản phẩm này'
+            var pronouns = new HashSet<string> { "no", "mon nay", "mon do", "san pham nay", "mon da chon", "mon tren" };
+            if (pronouns.Contains(normSegTerm))
+            {
+                return cartItems.Count == 1 ? cartItems[0] : null;
+            }
+
+            // 2. So khớp trực tiếp chuỗi hoặc chuỗi con (nếu độ dài đủ tin cậy >= 4 ký tự)
+            foreach (var it in cartItems)
+            {
+                string itNorm = RemoveVietnameseTones(it.ProductName.ToLower().Trim());
+                if (itNorm == normSegTerm || (normSegTerm.Length >= 5 && itNorm.Contains(normSegTerm)))
+                {
+                    return it;
+                }
+            }
+
+            // 3. So khớp từ khóa đặc trưng (Distinguishing Keywords)
+            // Danh sách từ loại chung chung không dùng đơn lẻ để gộp 2 món khác nhau:
+            var genericBaseWords = new HashSet<string>
+            {
+                "com", "banh", "rau", "thit", "nuoc", "sua", "tra", "ca", "do", "mon",
+                "an", "uong", "hop", "dia", "to", "bat", "khay", "tui", "kg", "g",
+                "tuoi", "sach", "nong", "hoi", "dac", "biet", "loai", "chuan"
+            };
+
+            var fillerWords = new HashSet<string>
+            {
+                "mon", "phan", "suat", "hop", "cai", "lon", "chai", "cho", "lay", "dum",
+                "giup", "ho", "di", "nhe", "nha", "nua", "vao", "gio", "hang", "them", "bot",
+                "giam", "tru", "bo", "xoa", "so", "luong", "thanh", "doi", "chinh", "toi",
+                "em", "anh", "chi", "con", "trai", "dia", "to", "bat"
+            };
+
+            var segWords = normSegTerm.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Where(w => w.Length >= 2 && !fillerWords.Contains(w))
+                .ToList();
+
+            var specificSegWords = segWords.Where(w => !genericBaseWords.Contains(w)).ToList();
+
+            OrderItemDto? bestItem = null;
+            double maxMatchScore = 0;
+
+            if (segWords.Count > 0)
+            {
+                foreach (var it in cartItems)
+                {
+                    string itNorm = RemoveVietnameseTones(it.ProductName.ToLower().Trim());
+                    var itWords = itNorm.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+
+                    // NẾU TỪ KHÓA CÓ TỪ ĐẶC TRƯNG (ví dụ: 'tam', 'suon' trong 'com tam suon')
+                    if (specificSegWords.Count > 0)
+                    {
+                        int specificMatches = specificSegWords.Count(w => itWords.Contains(w));
+                        // Nếu không có từ đặc trưng nào khớp (ví dụ: 'tam', 'suon' hoàn toàn không có trong 'com ga xoi mo') -> TUYỆT ĐỐI KHÔNG KHỚP!
+                        if (specificMatches == 0) continue;
+
+                        double specificRatio = (double)specificMatches / specificSegWords.Count;
+                        if (specificRatio >= 0.5)
+                        {
+                            int totalMatches = segWords.Count(w => itWords.Contains(w));
+                            double totalScore = (specificRatio * 100) + totalMatches;
+                            if (totalScore > maxMatchScore)
+                            {
+                                maxMatchScore = totalScore;
+                                bestItem = it;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Chỉ gồm từ loại chung (ví dụ: 'com') -> Chỉ khớp nếu trong giỏ hàng duy nhất có 1 món cơm
+                        int genericMatches = segWords.Count(w => itWords.Contains(w));
+                        if (genericMatches == segWords.Count && cartItems.Count == 1)
+                        {
+                            return it;
+                        }
+                    }
+                }
+            }
+
+            if (bestItem != null)
+            {
+                return bestItem;
+            }
+
+            // 4. Fallback truy vấn Database tương quan: Chỉ kiểm tra Món Khớp Số 1 (Top 1) trong DB có trong giỏ hàng không
+            try
+            {
+                var dbMatches = await SearchProductsInDatabaseAsync(normSegTerm);
+                if (dbMatches != null && dbMatches.Count > 0)
+                {
+                    var topMatch = dbMatches.First();
+                    var inCart = cartItems.FirstOrDefault(it => it.ProductId == topMatch.Id ||
+                        RemoveVietnameseTones(it.ProductName.ToLower()) == RemoveVietnameseTones((topMatch.ProductName ?? "").ToLower()));
+                    if (inCart != null)
+                    {
+                        return inCart;
+                    }
+                }
+            }
+            catch { }
+
+            // TUYỆT ĐỐI KHÔNG tự động trả về cartItems[0] nếu người dùng đã chỉ định tên món cụ thể mà không khớp!
+            return null;
+        }
+
+        private async Task<IActionResult?> TryProcessSmartCartOperationsAsync(OrderStateDto state, string cleanMsgNoTone, string userMsg)
+        {
+            state.CartItems ??= new List<OrderItemDto>();
+
+            // Chuẩn hóa và bóc tách các phân đoạn theo liên từ: 'thêm', 'và', 'cho', dấu phẩy (,), chấm phẩy (;), '+', 'hoặc', 'với'
+            string normalizedCmd = cleanMsgNoTone;
+            // 1. Tách các dấu phân cách: phẩy, chấm phẩy, cộng, xuống dòng
+            normalizedCmd = Regex.Replace(normalizedCmd, @"\s*[,;+\n]\s*", "|");
+            // 2. Tách theo các liên từ: 'va', 'hoac', 'voi'
+            normalizedCmd = Regex.Replace(normalizedCmd, @"\s+(?:va|hoac|voi)\s+", "|", RegexOptions.IgnoreCase);
+            // 3. Tách theo 'them' hoặc 'cho' khi đứng giữa 2 món (phía trước có chữ/số, phía sau có số lượng hoặc tên món mới)
+            normalizedCmd = Regex.Replace(normalizedCmd, @"(?<=[a-z0-9])\s+(?:cho\s+them|them|cho)\s+(?=\d+|[a-z])", "|", RegexOptions.IgnoreCase);
+
+            var rawSegments = normalizedCmd.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList();
+
+            if (rawSegments.Count == 0) return null;
+
+            // Tách các phân đoạn từ câu gốc (có dấu) để nhận diện chính xác các từ có dấu như 'bỏ' vs 'bò'
+            string normOriginal = userMsg;
+            normOriginal = Regex.Replace(normOriginal, @"\s*[,;+\n]\s*", "|");
+            normOriginal = Regex.Replace(normOriginal, @"\s+(?:và|va|hoặc|hoac|với|voi)\s+", "|", RegexOptions.IgnoreCase);
+            normOriginal = Regex.Replace(normOriginal, @"(?<=[a-zA-Z0-9àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ])\s+(?:cho\s+thêm|cho\s+them|thêm|them|cho)\s+(?=\d+|[a-zA-ZàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ])", "|", RegexOptions.IgnoreCase);
+
+            var origSegments = normOriginal.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList();
+
+            string lastAction = "ADD";
+            var changes = new List<string>();
+
+            for (int i = 0; i < rawSegments.Count; i++)
+            {
+                string seg = rawSegments[i].Trim();
+                string origSeg = (i < origSegments.Count) ? origSegments[i].Trim() : seg;
+                string origSegLower = origSeg.ToLower();
+
+                // Lấy số lượng q và kiểm tra xem người dùng có chỉ định số lượng cụ thể không
+                int q = 1;
+                bool hasExplicitQuantity = false;
+                var qMatch = Regex.Match(seg, @"\b(\d+)\b");
+                if (qMatch.Success && int.TryParse(qMatch.Value, out int pq) && pq > 0)
+                {
+                    q = pq;
+                    hasExplicitQuantity = true;
+                }
+                else
+                {
+                    if (Regex.IsMatch(seg, @"\b(mot|môt|một)\b", RegexOptions.IgnoreCase)) { q = 1; hasExplicitQuantity = true; }
+                    else if (Regex.IsMatch(seg, @"\b(hai)\b", RegexOptions.IgnoreCase)) { q = 2; hasExplicitQuantity = true; }
+                    else if (Regex.IsMatch(seg, @"\b(ba)\b", RegexOptions.IgnoreCase)) { q = 3; hasExplicitQuantity = true; }
+                    else if (Regex.IsMatch(seg, @"\b(bon|bốn)\b", RegexOptions.IgnoreCase)) { q = 4; hasExplicitQuantity = true; }
+                    else if (Regex.IsMatch(seg, @"\b(nam|năm)\b", RegexOptions.IgnoreCase)) { q = 5; hasExplicitQuantity = true; }
+                    else if (Regex.IsMatch(seg, @"\b(sau|sáu)\b", RegexOptions.IgnoreCase)) { q = 6; hasExplicitQuantity = true; }
+                    else if (Regex.IsMatch(seg, @"\b(bay|bảy)\b", RegexOptions.IgnoreCase)) { q = 7; hasExplicitQuantity = true; }
+                    else if (Regex.IsMatch(seg, @"\b(tam|tám)\b", RegexOptions.IgnoreCase)) { q = 8; hasExplicitQuantity = true; }
+                    else if (Regex.IsMatch(seg, @"\b(chin|chín)\b", RegexOptions.IgnoreCase)) { q = 9; hasExplicitQuantity = true; }
+                    else if (Regex.IsMatch(seg, @"\b(muoi|mười)\b", RegexOptions.IgnoreCase)) { q = 10; hasExplicitQuantity = true; }
+                }
+
+                string action = "";
+
+                // 1. Kiểm tra DELETE (xóa, xóa bỏ, loại bỏ, hủy, remove, delete, hoặc lệnh 'bỏ hết'/'xóa hết')
+                if (Regex.IsMatch(seg, @"\b(xoa|xoa\s*bo|loai\s*bo|remove|delete|huy)\b") ||
+                    Regex.IsMatch(seg, @"\b(xoa\s*het|bo\s*het|huy\s*het)\b") ||
+                    seg == "xoa tat ca" || seg == "bo tat ca")
+                {
+                    action = "DELETE";
+                }
+                // 2. Người dùng bảo "bỏ [món]" KHÔNG KÈM SỐ LƯỢNG -> XÓA LUÔN KHỎI GIỎ HÀNG
+                else if ((origSegLower.Contains("bỏ") || Regex.IsMatch(seg, @"\bbo\b")) && !hasExplicitQuantity)
+                {
+                    bool isBeef = seg.Contains("thit bo") || seg.Contains("bo my") || seg.Contains("bo uc") ||
+                                  seg.Contains("bo xao") || seg.Contains("bo kho") || seg.Contains("bo nuong") ||
+                                  seg.Contains("bo luc lac") || seg.Contains("bo bit tet") || seg.Contains("bo vien");
+                    if (!isBeef)
+                    {
+                        action = "DELETE";
+                    }
+                }
+
+                // 3. Kiểm tra REDUCE (bớt, trừ, giảm, hoặc "bỏ" CÓ SỐ LƯỢNG)
+                if (string.IsNullOrEmpty(action))
+                {
+                    if (Regex.IsMatch(seg, @"\b(bot|giam|tru)\b"))
+                    {
+                        action = "REDUCE";
+                    }
+                    else if ((origSegLower.Contains("bỏ") || Regex.IsMatch(seg, @"\bbo\b")) && hasExplicitQuantity)
+                    {
+                        bool isBeef = seg.Contains("thit bo") || seg.Contains("bo my") || seg.Contains("bo uc") ||
+                                      seg.Contains("bo xao") || seg.Contains("bo kho") || seg.Contains("bo nuong") ||
+                                      seg.Contains("bo luc lac") || seg.Contains("bo bit tet") || seg.Contains("bo vien");
+                        if (!isBeef)
+                        {
+                            action = "REDUCE";
+                        }
+                    }
+                }
+
+                // 4. Kiểm tra ADD (thêm, cho, tăng, cộng, lấy, mua, đặt, nữa)
+                if (string.IsNullOrEmpty(action))
+                {
+                    if (seg.Contains("them") || seg.Contains("cong") || seg.Contains("tang") || seg.Contains("nua") ||
+                        Regex.IsMatch(seg, @"\b(cho|lay|mua|dat)\b"))
+                    {
+                        action = "ADD";
+                    }
+                }
+
+                // 5. Kiểm tra SET (sửa thành, đổi thành, sửa số lượng)
+                if (string.IsNullOrEmpty(action))
+                {
+                    if (seg.Contains("thanh") || seg.Contains("sua") || seg.Contains("doi"))
+                    {
+                        action = "SET";
+                    }
+                }
+
+                // 6. Kế thừa hành động từ phân đoạn trước nếu là câu ghép không lặp từ khóa
+                if (string.IsNullOrEmpty(action))
+                {
+                    action = !string.IsNullOrEmpty(lastAction) ? lastAction : "ADD";
+                }
+                else
+                {
+                    lastAction = action;
+                }
+
+                // Trích xuất từ khóa tên món segTerm (loại bỏ từ khóa hành động, số lượng, từ đệm, đại từ xưng hô)
+                string segTerm = Regex.Replace(seg, @"\b(xoa\s*bo|loai\s*bo|xoa|bot|giam|tru|them|tang|cong|cho|lay|mua|dat|nua|thanh|doi|chinh|so|luong|mon|phan|suat|hop|cai|lon|chai|kg|g|to|bat|dia|khay|tui|di|dum|giup|ho|nhe|nha|oi|vao|gio|hang|toi|t|minh|em|anh|chi|ban|\d+)\b", " ", RegexOptions.IgnoreCase).Trim();
+                bool isBeefSeg = seg.Contains("thit bo") || seg.Contains("bo my") || seg.Contains("bo uc") ||
+                                 seg.Contains("bo xao") || seg.Contains("bo kho") || seg.Contains("bo nuong") ||
+                                 seg.Contains("bo luc lac") || seg.Contains("bo bit tet") || seg.Contains("bo vien");
+                if (!isBeefSeg)
+                {
+                    segTerm = Regex.Replace(segTerm, @"\bbo\b", " ", RegexOptions.IgnoreCase).Trim();
+                }
+                // Chỉ loại bỏ từ số đếm ở đầu câu nếu có (ví dụ: 'một gà xối mỡ' -> 'gà xối mỡ')
+                // TUYỆT ĐỐI KHÔNG loại bỏ 'tam' (tấm trong cơm tấm), 'nam' (nấm), 'chin' (chín)!
+                segTerm = Regex.Replace(segTerm, @"^(?:mot|hai|ba|bon|sau|bay|muoi)\s+", "", RegexOptions.IgnoreCase).Trim();
+                segTerm = Regex.Replace(segTerm, @"\s+", " ").Trim();
+
+                // THỰC HIỆN HÀNH ĐỘNG
+                if (action == "DELETE")
+                {
+                    var target = await FindBestMatchingCartItemAsync(state.CartItems, segTerm);
+                    if (target != null)
+                    {
+                        state.CartItems.Remove(target);
+                        changes.Add($"🗑️ Đã xóa món **{target.ProductName}** khỏi giỏ hàng");
+                    }
+                    else
+                    {
+                        changes.Add($"⚠️ Không tìm thấy món '{(string.IsNullOrWhiteSpace(segTerm) ? "này" : segTerm)}' trong giỏ hàng để xóa");
+                    }
+                }
+                else if (action == "REDUCE")
+                {
+                    var target = await FindBestMatchingCartItemAsync(state.CartItems, segTerm);
+                    if (target != null)
+                    {
+                        target.Quantity -= q;
+                        if (target.Quantity <= 0)
+                        {
+                            state.CartItems.Remove(target);
+                            changes.Add($"🗑️ Đã bớt hết món **{target.ProductName}** khỏi giỏ hàng");
+                        }
+                        else
+                        {
+                            changes.Add($"➖ Giảm món **{target.ProductName}** đi -{q} (còn lại: **{target.Quantity}**)");
+                        }
+                    }
+                    else
+                    {
+                        changes.Add($"⚠️ Không tìm thấy món '{(string.IsNullOrWhiteSpace(segTerm) ? "này" : segTerm)}' trong giỏ hàng để bớt");
+                    }
+                }
+                else if (action == "ADD")
+                {
+                    // Nếu từ khóa chỉ là từ ngữ chung chung chỉ đồ/hàng/món (VD: 'đồ', 'hàng', 'món', 'đồ ăn')
+                    // hoặc là danh mục chung chung không có số lượng (VD: 'cơm', 'phở', 'bánh mì', 'bún')
+                    // CẤM TUYỆT ĐỐI việc tự ý nhặt bừa các món ngẫu nhiên vào giỏ hàng!
+                    if (IsGenericItemTerm(segTerm) || (!hasExplicitQuantity && IsGenericFoodCategoryTerm(segTerm)))
+                    {
+                        continue;
+                    }
+
+                    // 1. Kiểm tra xem món đã có trong giỏ hàng chưa
+                    var existingInCart = await FindBestMatchingCartItemAsync(state.CartItems, segTerm);
+                    if (existingInCart != null)
+                    {
+                        existingInCart.Quantity += q;
+                        changes.Add($"➕ Tăng món **{existingInCart.ProductName}** thêm +{q} (hiện có: **{existingInCart.Quantity}**)");
+                    }
+                    else
+                    {
+                        // 2. Chưa có trong giỏ hàng: Truy xuất Database theo thời gian thực để thêm 1 dòng mới
+                        if (!string.IsNullOrWhiteSpace(segTerm))
+                        {
+                            var foundProds = await SearchProductsInDatabaseAsync(segTerm);
+                            if (foundProds != null && foundProds.Count > 0)
+                            {
+                                var matched = foundProds.First();
+                                var inCartById = state.CartItems.FirstOrDefault(it => it.ProductId == matched.Id ||
+                                    RemoveVietnameseTones(it.ProductName.ToLower()) == RemoveVietnameseTones((matched.ProductName ?? "").ToLower()));
+
+                                if (inCartById != null)
+                                {
+                                    inCartById.Quantity += q;
+                                    changes.Add($"➕ Tăng món **{inCartById.ProductName}** thêm +{q} (hiện có: **{inCartById.Quantity}**)");
+                                }
+                                else
+                                {
+                                    state.CartItems.Add(new OrderItemDto
+                                    {
+                                        ProductId = matched.Id ?? "",
+                                        ProductName = matched.ProductName ?? "",
+                                        Price = matched.Price,
+                                        Quantity = q,
+                                        StoreId = matched.StoreId ?? "store_default",
+                                        StoreName = matched.StoreName ?? "ZoneMart Store",
+                                        ImageUrl = !string.IsNullOrWhiteSpace(matched.ImageUrl) ? matched.ImageUrl : "/images/anhxoanen.png"
+                                    });
+                                    changes.Add($"🛒 Đã thêm mới **{q}x {matched.ProductName}** ({matched.Price:N0}đ/SP - Gian hàng: *{matched.StoreName ?? "ZoneMart Store"}*)");
+                                }
+                            }
+                            else
+                            {
+                                changes.Add($"⚠️ Không tìm thấy món '{segTerm}' trên sàn ZoneMart");
+                            }
+                        }
+                    }
+                }
+                else if (action == "SET")
+                {
+                    var target = await FindBestMatchingCartItemAsync(state.CartItems, segTerm);
+                    if (target != null)
+                    {
+                        target.Quantity = q;
+                        changes.Add($"✏️ Sửa món **{target.ProductName}** thành số lượng: **{q}**");
+                    }
+                    else
+                    {
+                        changes.Add($"⚠️ Không tìm thấy món '{(string.IsNullOrWhiteSpace(segTerm) ? "này" : segTerm)}' trong giỏ hàng để sửa");
+                    }
+                }
+            }
+
+            if (changes.Count == 0) return null;
+
+            if (state.CartItems.Count == 0)
+            {
+                state.Step = "AWAITING_ITEM_NAME";
+                state.PendingItem = null;
+                return Ok(new
+                {
+                    success = true,
+                    reply = $"Dạ mình đã cập nhật giỏ hàng theo yêu cầu: 🛒✨\n{string.Join("\n", changes)}\n\n🛒 **Giỏ hàng hiện tại đang trống!** Bạn có muốn chọn thêm sản phẩm nào khác không ạ? Hãy nhắn tên món bạn muốn đặt nhé! (Ví dụ: Cơm gà, Bánh mì chảo, Sữa tươi, Trái cây...)",
+                    provider = "ZoneMart AI Assistant",
+                    orderState = state
+                });
+            }
+
+            state.Step = "ASK_ADD_MORE";
+            state.PendingItem = null;
+            decimal total = state.CartItems.Sum(it => it.Price * it.Quantity);
+            string itemsSummary = string.Join("\n", state.CartItems.Select((it, idx) => $"  {idx + 1}️⃣ {it.Quantity}x **{it.ProductName}** ({it.Price:N0}đ/SP) = {it.Price * it.Quantity:N0}đ"));
+
+            return Ok(new
+            {
+                success = true,
+                reply = $"Dạ tuyệt vời! Mình đã ghi nhận vào danh sách đặt hàng: 🛒✨\n{string.Join("\n", changes)}\n\n📋 **GIỎ HÀNG HIỆN TẠI ({state.CartItems.Count} món):**\n{itemsSummary}\n\n👉 **Tổng cộng: {total:N0} ₫**\n\n**Bạn có muốn đặt thêm đồ gì nữa không ạ?** (Bấm nút 'Có' hoặc 'Không' bên dưới nhé!)",
+                provider = "ZoneMart AI Assistant",
+                actionIntent = "SHOW_YES_NO_ADD_MORE_BUTTONS",
+                orderState = state
+            });
+        }
+
         private async Task<string> FetchRealtimeMarketDataAsync(string userMsg, string cleanMsgNoTone)
         {
             var sb = new StringBuilder();
 
             try
             {
-                var allProducts = await _mongoService.Products
-                    .Find(p => p.StockStatus == "in_stock" || p.AiStatus == "approved")
-                    .ToListAsync();
-
-                var allStores = await _mongoService.Stores
-                    .Find(s => s.Status == "Active")
-                    .ToListAsync();
+                var allProducts = await GetCachedActiveProductsAsync();
+                var allStores = await GetCachedActiveStoresAsync();
 
                 // NẠP THỐNG KÊ REALTIME CHÍNH XÁC TỪ DATABASE MONGODB ATLAS
                 sb.AppendLine("📊 THỐNG KÊ DỮ LIỆU REALTIME SÀN ZONEMART TỪ DATABASE MONGODB ATLAS:");
@@ -3271,21 +5269,21 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
                     }
                     else if (!isLocationQuery)
                     {
-                    bool isAskingForRecommendation = cleanMsgNoTone.Contains("goi y") || cleanMsgNoTone.Contains("tham khao") || cleanMsgNoTone.Contains("an gi") || cleanMsgNoTone.Contains("mon ngon") || cleanMsgNoTone.Contains("top mon") || cleanMsgNoTone.Contains("do an vat");
-                    if (isAskingForRecommendation)
-                    {
-                        sb.AppendLine("\n📦 KHÁCH HỎI GỢI Ý THAM KHẢO, DƯỚI ĐÂY LÀ SẢN PHẨM THỰC TẾ TRÊN SÀN:");
-                        foreach (var p in allProducts.Take(5))
+                        bool isAskingForRecommendation = cleanMsgNoTone.Contains("goi y") || cleanMsgNoTone.Contains("tham khao") || cleanMsgNoTone.Contains("an gi") || cleanMsgNoTone.Contains("mon ngon") || cleanMsgNoTone.Contains("top mon") || cleanMsgNoTone.Contains("do an vat");
+                        if (isAskingForRecommendation)
                         {
-                            sb.AppendLine($"  + Cửa hàng: [{p.StoreName ?? "ZoneMart Store"}] bán món: [{p.ProductName}] - Giá: {p.Price:N0}đ");
+                            sb.AppendLine("\n📦 KHÁCH HỎI GỢI Ý THAM KHẢO, DƯỚI ĐÂY LÀ SẢN PHẨM THỰC TẾ TRÊN SÀN:");
+                            foreach (var p in allProducts.Take(5))
+                            {
+                                sb.AppendLine($"  + Cửa hàng: [{p.StoreName ?? "ZoneMart Store"}] bán món: [{p.ProductName}] - Giá: {p.Price:N0}đ");
+                            }
+                        }
+                        else
+                        {
+                            sb.AppendLine($"\n(Lưu ý: Không tìm thấy sản phẩm khớp chính xác từ khóa '{userMsg}'. Nếu người dùng trò chuyện đời sống/thắc mắc số liệu thì dùng dữ liệu thống kê ở trên để trả lời nhé).");
                         }
                     }
-                    else
-                    {
-                        sb.AppendLine($"\n(Lưu ý: Không tìm thấy sản phẩm khớp chính xác từ khóa '{userMsg}'. Nếu người dùng trò chuyện đời sống/thắc mắc số liệu thì dùng dữ liệu thống kê ở trên để trả lời nhé).");
-                    }
                 }
-            }
             }
             catch (Exception ex)
             {
@@ -3340,9 +5338,7 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
             {
                 if (IsHotWeatherIntent(cleanMsgNoTone))
                 {
-                    var allProds = await _mongoService.Products
-                        .Find(p => p.StockStatus == "in_stock" || p.AiStatus == "approved")
-                        .ToListAsync();
+                    var allProds = await GetCachedActiveProductsAsync();
 
                     var coldItems = allProds.Where(IsProductCooling).Take(4).ToList();
                     if (coldItems.Count == 0) coldItems = allProds.Take(4).ToList();
@@ -3364,9 +5360,7 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
 
                 if (IsColdWeatherIntent(cleanMsgNoTone))
                 {
-                    var allProds = await _mongoService.Products
-                        .Find(p => p.StockStatus == "in_stock" || p.AiStatus == "approved")
-                        .ToListAsync();
+                    var allProds = await GetCachedActiveProductsAsync();
 
                     var warmItems = allProds.Where(IsProductWarming).Take(4).ToList();
                     if (warmItems.Count == 0) warmItems = allProds.Take(4).ToList();
@@ -3394,10 +5388,7 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
 
                 if (matchedProducts.Count == 0 && (isWeatherQuery || isLocationQuery || isRecommendationQuery))
                 {
-                    matchedProducts = await _mongoService.Products
-                        .Find(p => p.StockStatus == "in_stock" || p.AiStatus == "approved")
-                        .Limit(4)
-                        .ToListAsync();
+                    matchedProducts = (await GetCachedActiveProductsAsync()).Take(4).ToList();
                 }
 
                 foreach (var p in matchedProducts.Take(4))
@@ -3436,8 +5427,8 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
                 return cards;
             }
 
-            // Lấy tất cả gian hàng đang Active từ MongoDB Atlas
-            var activeStores = await _mongoService.Stores.Find(s => s.Status == "Active").ToListAsync();
+            // Lấy tất cả gian hàng đang Active từ cache MongoDB Atlas
+            var activeStores = await GetCachedActiveStoresAsync();
 
             // Nếu người dùng hỏi tìm quán ở một địa điểm / khu vực cụ thể
             bool isLocationQuery = cleanMsgNoTone.Contains("quan o") || cleanMsgNoTone.Contains("shop o") ||
@@ -3539,10 +5530,19 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
             }
 
             // 2. Phân tách ranh giới từ (\b) cho các từ thô tục rõ ràng (không chứa từ Tiếng Việt thông dụng như 'các', 'phở', 'lon')
-            string pattern = @"\b(cack|dkm|clm|vcl|vl|dit|buoi|deo)\b";
+            string pattern = @"\b(cack|dkm|clm|vcl|vl|dit|deo)\b";
             if (Regex.IsMatch(cleanMsgNoTone, pattern, RegexOptions.IgnoreCase))
             {
                 return true;
+            }
+
+            if (Regex.IsMatch(cleanMsgNoTone, @"\bbuoi\b", RegexOptions.IgnoreCase))
+            {
+                // Loại trừ "buổi" (buổi sáng, buổi tối, buổi trưa...) và "bưởi" (trái bưởi, chè bưởi...)
+                if (!rawLower.Contains("buổi") && !rawLower.Contains("bưởi"))
+                {
+                    return true;
+                }
             }
 
             return false;
@@ -3565,6 +5565,424 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
 
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DirectRegDraft> _directRegSessionCache = new System.Collections.Concurrent.ConcurrentDictionary<string, DirectRegDraft>();
 
+        private static readonly string[] AllowedSellerTypes = new[]
+        {
+            "Chợ truyền thống",
+            "Hộ kinh doanh tại nhà",
+            "Cửa hàng / Cơ sở SX",
+            "Người bán địa phương khác"
+        };
+
+        private static string? MatchSellerType(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return null;
+            string clean = RemoveVietnameseTones(input.Trim().ToLower());
+            if (clean.Contains("cho truyen thong") || clean.Contains("sap cho") || clean.Contains("sieu thi") || clean == "1" || clean.Contains("truyen thong"))
+                return "Chợ truyền thống";
+            if (clean.Contains("ho kinh doanh tai nha") || clean.Contains("kinh doanh tai nha") || clean.Contains("che bien tai gia") || clean.Contains("tai gia") || clean.Contains("tai nha") || clean == "2")
+                return "Hộ kinh doanh tại nhà";
+            if (clean.Contains("cua hang") || clean.Contains("co so sx") || clean.Contains("tiem tap hoa") || clean.Contains("xuong sx") || clean.Contains("co so san xuat") || clean == "3")
+                return "Cửa hàng / Cơ sở SX";
+            if (clean.Contains("nguoi ban dia phuong khac") || clean.Contains("dia phuong khac") || clean.Contains("nong dan") || clean.Contains("ban nong san") || clean == "4")
+                return "Người bán địa phương khác";
+            return null;
+        }
+
+        private static readonly string[] AllowedSellerCategories = new[]
+        {
+            "Thực phẩm & Nhu yếu phẩm",
+            "Trái cây & Đồ uống",
+            "Cơm & Thức ăn nhanh",
+            "Đồ gia dụng tiện ích",
+            "Thời trang & Phụ kiện",
+            "Mỹ phẩm & Chăm sóc cá nhân"
+        };
+
+        private static string? MatchSellerCategory(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return null;
+            string clean = RemoveVietnameseTones(input.Trim().ToLower());
+            if (clean.Contains("thuc pham") || clean.Contains("nhu yeu pham") || clean == "1") return "Thực phẩm & Nhu yếu phẩm";
+            if (clean.Contains("trai cay") || clean.Contains("do uong") || clean.Contains("hoa qua") || clean.Contains("nuoc") || clean == "2") return "Trái cây & Đồ uống";
+            if (clean.Contains("com") || clean.Contains("thuc an nhanh") || clean.Contains("an nhanh") || clean.Contains("do an") || clean == "3") return "Cơm & Thức ăn nhanh";
+            if (clean.Contains("gia dung") || clean.Contains("tien ich") || clean == "4") return "Đồ gia dụng tiện ích";
+            if (clean.Contains("thoi trang") || clean.Contains("phu kien") || clean.Contains("quan ao") || clean == "5") return "Thời trang & Phụ kiện";
+            if (clean.Contains("my pham") || clean.Contains("cham soc ca nhan") || clean.Contains("lam dep") || clean == "6") return "Mỹ phẩm & Chăm sóc cá nhân";
+            return null;
+        }
+
+        private static readonly string[] AllowedSellerBanks = new[]
+        {
+            "Vietcombank (VCB)",
+            "MB Bank (MB)",
+            "Techcombank (TCB)",
+            "VietinBank (CTG)",
+            "BIDV",
+            "VPBank",
+            "Agribank",
+            "TPBank"
+        };
+
+        private static string? MatchSellerBank(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return null;
+            string clean = RemoveVietnameseTones(input.Trim().ToLower()).Replace(" ", "");
+            if (clean.Contains("vietcombank") || clean.Contains("vcb") || clean == "1") return "Vietcombank (VCB)";
+            if (clean.Contains("mbbank") || clean.Contains("quandoi") || clean == "mb" || clean == "2") return "MB Bank (MB)";
+            if (clean.Contains("techcombank") || clean.Contains("tcb") || clean == "3") return "Techcombank (TCB)";
+            if (clean.Contains("vietinbank") || clean.Contains("ctg") || clean == "4") return "VietinBank (CTG)";
+            if (clean.Contains("bidv") || clean == "5") return "BIDV";
+            if (clean.Contains("vpbank") || clean.Contains("vpb") || clean == "6") return "VPBank";
+            if (clean.Contains("agribank") || clean.Contains("nongnghiep") || clean == "7") return "Agribank";
+            if (clean.Contains("tpbank") || clean.Contains("tienphong") || clean == "8") return "TPBank";
+            return null;
+        }
+
+        private static readonly string[] AllowedSellerOpenHours = new[]
+        {
+            "07:00 - 22:00 (Mở cả ngày & Buổi tối)",
+            "06:00 - 21:00 (Mở sớm - Đóng sớm)",
+            "08:00 - 20:00 (Giờ hành chính)",
+            "07:00 - 23:00 (Phục vụ đêm)",
+            "24/24 (Mở cửa 24/7 toàn thời gian)",
+            "Tùy chọn khung giờ mở - đóng khác..."
+        };
+
+        private static string BuildSellerReviewSummaryReply(DirectRegDraft draft)
+        {
+            string cccdFrontStatus = !string.IsNullOrWhiteSpace(draft.CccdFrontImage) ? "<i class=\"bi bi-check2-circle me-1\"></i>Đã tải ảnh lên" : "Chưa tải";
+            string cccdBackStatus = !string.IsNullOrWhiteSpace(draft.CccdBackImage) ? "<i class=\"bi bi-check2-circle me-1\"></i>Đã tải ảnh lên" : "Chưa tải";
+            string foodSafetyStatus = !string.IsNullOrWhiteSpace(draft.FoodSafetyImage) ? "<i class=\"bi bi-check2-circle me-1\"></i>Đã tải ảnh lên" : "Chưa tải";
+            string marketNameVal = string.IsNullOrWhiteSpace(draft.MarketName) ? "Chưa điền" : draft.MarketName;
+
+            return $@"<div class=""seller-fee-card"">
+  <div class=""fee-row""><i class=""bi bi-gift-fill me-1"" style=""color: #EA580C;""></i><strong>Phí Khởi Tạo Gian Hàng Số:</strong> <span style=""color: #16A34A; font-weight: 700;"">0 VNĐ (MIỄN PHÍ)</span></div>
+  <div class=""fee-sub"">Được UBND Xã/Phường & Ban Quản Lý Chợ tài trợ 100% trong khuôn khổ Đề án Chuyển Đổi Số Chợ Địa Phương.</div>
+  <div class=""fee-status-line""><i class=""bi bi-check-circle-fill me-1"" style=""color: #16A34A;""></i><strong>Trạng thái phí:</strong> <span style=""color: #16A34A; font-weight: 600;"">Đã miễn trừ (Chính sách hỗ trợ Chợ số)</span> &bull; <span class=""badge-bql""><i class=""bi bi-shield-check me-1""></i>Bảo chứng BQL Chợ</span></div>
+</div>
+<hr class=""chat-divider""/>
+<div class=""seller-summary-title""><i class=""bi bi-clipboard2-check-fill me-1"" style=""color: #D94E15;""></i><strong>BẢNG TỔNG KẾT HỒ SƠ ĐĂNG KÝ GIAN HÀNG</strong></div>
+<div class=""seller-summary-list"">
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-shop me-1"" style=""color: #EA580C;""></i>1. Mô hình:</span><span class=""seller-row-value"">{draft.SellerType}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-geo-alt me-1"" style=""color: #EF4444;""></i>2. Xã / Phường:</span><span class=""seller-row-value"">{draft.Ward}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-pin-map me-1"" style=""color: #2563EB;""></i>3. Quận / Huyện:</span><span class=""seller-row-value"">{draft.District}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-buildings me-1"" style=""color: #0284C7;""></i>4. Tên Chợ:</span><span class=""seller-row-value"">{marketNameVal}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-house-door me-1"" style=""color: #10B981;""></i>5. Tên cửa hàng:</span><span class=""seller-row-value"">{draft.StoreName}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-geo me-1"" style=""color: #DC2626;""></i>6. Địa chỉ tiệm:</span><span class=""seller-row-value"">{draft.Address}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-tags me-1"" style=""color: #D97706;""></i>7. Danh mục bán:</span><span class=""seller-row-value"">{draft.Category}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-envelope-at me-1"" style=""color: #2563EB;""></i>8. Gmail đăng ký:</span><span class=""seller-row-value seller-code-val"" title=""{draft.Email}"">{draft.Email}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-key me-1"" style=""color: #D97706;""></i>9. Mật khẩu:</span><span class=""seller-row-value"">[MASKED_PWD:{draft.Password}]</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-shield-lock me-1"" style=""color: #0284C7;""></i>10. Nhập lại MK:</span><span class=""seller-row-value"">[MASKED_PWD:{draft.ConfirmPassword}]</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-clock me-1"" style=""color: #0284C7;""></i>11. Khung giờ:</span><span class=""seller-row-value"">{draft.OpenHours}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-person-vcard me-1"" style=""color: #64748B;""></i>12. CCCD Trước:</span><span class=""seller-row-value badge-uploaded"">{cccdFrontStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-person-vcard-fill me-1"" style=""color: #64748B;""></i>13. CCCD Sau:</span><span class=""seller-row-value badge-uploaded"">{cccdBackStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-file-earmark-medical me-1"" style=""color: #10B981;""></i>14. Giấy CN ATTP:</span><span class=""seller-row-value badge-uploaded"">{foodSafetyStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-bank me-1"" style=""color: #2563EB;""></i>15. Ngân hàng:</span><span class=""seller-row-value"">{draft.BankName}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-credit-card-2-front me-1"" style=""color: #10B981;""></i>16. Số tài khoản:</span><span class=""seller-row-value seller-code-val"">{draft.BankAccountNumber}</span></div>
+</div>
+<hr class=""chat-divider""/>
+<div class=""seller-summary-hint""><i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i><em>Vui lòng kiểm tra lại hồ sơ và chọn một trong 2 nút bên dưới:</em></div>";
+        }
+
+        private static readonly HashSet<string> VietnameseSurnames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Nguyễn", "Nguyen", "Trần", "Tran", "Lê", "Le", "Phạm", "Pham", "Hoàng", "Hoang", "Huỳnh", "Huynh",
+            "Phan", "Vũ", "Vu", "Võ", "Vo", "Đặng", "Dang", "Bùi", "Bui", "Đỗ", "Do", "Hồ", "Ho",
+            "Ngô", "Ngo", "Dương", "Duong", "Lý", "Ly", "Đào", "Dao", "Đoàn", "Doan", "Vương", "Vuong",
+            "Trịnh", "Trinh", "Trương", "Truong", "Đinh", "Dinh", "Lâm", "Lam", "Phùng", "Phung", "Mai",
+            "Tô", "To", "Hà", "Ha", "Tạ", "Ta", "Thân", "Than", "Bạch", "Bach", "Chu", "Châu", "Chau",
+            "Văn", "Van", "Quách", "Quach", "Lưu", "Luu", "Lương", "Luong", "Nghiêm", "Nghiem", "Hứa", "Hua",
+            "Triệu", "Trieu", "La", "Lục", "Luc", "Cấn", "Can", "Giang", "Phí", "Phi", "Doãn", "Doan",
+            "Nông", "Nong", "Mã", "Ma", "Khưu", "Khuu", "Tống", "Tong", "Diệp", "Diep", "Vi", "Thái", "Thai",
+            "Cao", "Hà", "Lạc", "Thi", "Quản", "Tôn", "Thạch", "Lại", "Lai", "Tào", "Tao"
+        };
+
+        private static bool IsValidShipperFullName(string input, out string errorMsg)
+        {
+            errorMsg = "";
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                errorMsg = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Vui lòng nhập Họ và tên thật của tài xế!";
+                return false;
+            }
+            string trimmed = input.Trim();
+            if (trimmed.Length < 6 || trimmed.Length > 30)
+            {
+                errorMsg = $@"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Họ và tên thật của tài xế phải từ 6 đến 30 ký tự (Hiện tại: {trimmed.Length} ký tự)! Vui lòng nhập lại nhé!";
+                return false;
+            }
+            bool isOnlyLetters = Regex.IsMatch(trimmed, @"^[a-zA-Z\sàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ]+$");
+            if (!isOnlyLetters)
+            {
+                errorMsg = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Họ tên chỉ được nhập chữ cái (không nhận số hay các ký tự đặc biệt như %^&*#)! Vui lòng nhập lại nhé!";
+                return false;
+            }
+
+            string[] words = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (words.Length < 3 || words.Length > 4)
+            {
+                errorMsg = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Họ tên bắt buộc gồm 3 từ (Ví dụ: Lê Thành Đạt) hoặc 4 từ (Ví dụ: Nguyễn Thị Phương Anh) với họ, tên đệm (1-2 từ) và tên (1 từ)!";
+                return false;
+            }
+
+            string surname = words[0];
+            if (!VietnameseSurnames.Contains(surname))
+            {
+                errorMsg = $@"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Họ '{surname}' không nằm trong danh sách họ Việt Nam phổ biến (như Nguyễn, Trần, Lê, Đỗ, Phạm, Hoàng, Vũ...)! Vui lòng nhập lại nhé!";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsValidCccdNumber(string input, out string errorMsg)
+        {
+            errorMsg = "";
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                errorMsg = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Vui lòng nhập số Căn cước công dân (CCCD)!";
+                return false;
+            }
+            string trimmed = input.Trim();
+            if (!Regex.IsMatch(trimmed, @"^\d+$"))
+            {
+                errorMsg = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Số CCCD chỉ được nhập số, không nhận chữ cái và ký tự đặc biệt như $%^&*! Vui lòng nhập lại nhé!";
+                return false;
+            }
+            if (trimmed.Length != 12)
+            {
+                errorMsg = $@"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Số CCCD bắt buộc phải có đúng 12 chữ số (Hiện tại: {trimmed.Length} số)! Vui lòng nhập lại nhé!";
+                return false;
+            }
+            string provStr = trimmed.Substring(0, 3);
+            if (!int.TryParse(provStr, out int provCode) || provCode < 1 || provCode > 96)
+            {
+                errorMsg = $@"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> 3 số đầu của CCCD ({provStr}) phải là mã tỉnh/thành phố hợp lệ từ 001 đến 096 (Ví dụ: 001 là Hà Nội, 079 là TP.HCM)! Vui lòng kiểm tra lại!";
+                return false;
+            }
+            char centuryGender = trimmed[3];
+            if (centuryGender < '0' || centuryGender > '9')
+            {
+                errorMsg = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Số thứ 4 của CCCD phải là mã thế kỷ và giới tính (từ 0 đến 9)! Vui lòng nhập lại!";
+                return false;
+            }
+            return true;
+        }
+
+        private static bool IsValidLicensePlate(string input, out string formattedPlate, out string errorMsg)
+        {
+            formattedPlate = "";
+            errorMsg = "";
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                errorMsg = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Vui lòng nhập Biển số xe máy!";
+                return false;
+            }
+            string trimmed = input.Trim().ToUpperInvariant();
+            var m = Regex.Match(trimmed, @"^([1-9][0-9])[-.\s]?([A-Z]{1,2}[0-9A-Z]?)[-.\s]?(\d{3}[.]\d{2}|\d{5}|\d{4})$");
+            if (!m.Success)
+            {
+                errorMsg = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Biển số xe không đúng quy định! Quy luật: Ký hiệu địa phương (2 số đầu) + Sê-ri đăng ký (Ví dụ: 29-AA, 59-AB) và Dãy 4 hoặc 5 số tự nhiên (Ví dụ: 123.45 hoặc 12345 hoặc 1234). Vui lòng nhập lại!";
+                return false;
+            }
+
+            string prov = m.Groups[1].Value;
+            string series = m.Groups[2].Value;
+            string numberPart = m.Groups[3].Value;
+            formattedPlate = $"{prov}-{series} {numberPart}";
+            return true;
+        }
+
+        private static readonly string[] AllowedShipperVehicleTypes = new[]
+        {
+            "Xe máy xăng",
+            "Xe máy điện"
+        };
+
+        private static string? MatchShipperVehicleType(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return null;
+            string clean = RemoveVietnameseTones(input.Trim().ToLower());
+            if (clean.Contains("xang") || clean == "1" || clean == "xe may xang") return "Xe máy xăng";
+            if (clean.Contains("dien") || clean == "2" || clean == "xe may dien") return "Xe máy điện";
+            return null;
+        }
+
+        private static readonly string[] AllowedShipperElectricModels = new[]
+        {
+            "VinFast Feliz",
+            "VinFast Klara",
+            "VinFast Evo200",
+            "Dat Bike Weaver"
+        };
+
+        private static readonly string[] AllowedShipperGasModels = new[]
+        {
+            "Honda Wave Alpha",
+            "Honda Vision",
+            "Honda Air Blade",
+            "Honda Lead",
+            "Yamaha Sirius",
+            "Yamaha Exciter",
+            "Honda Winner X"
+        };
+
+        private static string? MatchShipperVehicleModel(string input, string vehicleType)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return null;
+            string clean = RemoveVietnameseTones(input.Trim().ToLower()).Replace(" ", "");
+            bool isElectric = vehicleType.Contains("điện") || vehicleType.Contains("dien");
+            if (isElectric)
+            {
+                if (clean.Contains("feliz") || clean == "1") return "VinFast Feliz";
+                if (clean.Contains("klara") || clean == "2") return "VinFast Klara";
+                if (clean.Contains("evo") || clean.Contains("evo200") || clean == "3") return "VinFast Evo200";
+                if (clean.Contains("weaver") || clean.Contains("datbike") || clean == "4") return "Dat Bike Weaver";
+                return null;
+            }
+            else
+            {
+                if (clean.Contains("wave") || clean.Contains("wavealpha") || clean == "1") return "Honda Wave Alpha";
+                if (clean.Contains("vision") || clean == "2") return "Honda Vision";
+                if (clean.Contains("airblade") || clean.Contains("ab") || clean == "3") return "Honda Air Blade";
+                if (clean.Contains("lead") || clean == "4") return "Honda Lead";
+                if (clean.Contains("sirius") || clean == "5") return "Yamaha Sirius";
+                if (clean.Contains("exciter") || clean == "6") return "Yamaha Exciter";
+                if (clean.Contains("winner") || clean.Contains("winnerx") || clean == "7") return "Honda Winner X";
+                return null;
+            }
+        }
+
+        private static readonly string[] AllowedShipperOperatingAreas = new[]
+        {
+            "Quận Cầu Giấy",
+            "Quận Nam Từ Liêm",
+            "Quận Bắc Từ Liêm",
+            "Quận Đống Đa",
+            "Quận Ba Đình",
+            "Quận Thanh Xuân",
+            "Quận Hà Đông",
+            "Quận Tây Hồ",
+            "Quận Hoàn Kiếm",
+            "Quận Hai Bà Trưng",
+            "Quận Hoàng Mai",
+            "Quận Long Biên",
+            "Huyện Hoài Đức",
+            "Huyện Đan Phượng",
+            "Huyện Chương Mỹ",
+            "Huyện Thanh Trì",
+            "Huyện Gia Lâm",
+            "Huyện Đông Anh",
+            "Huyện Sóc Sơn",
+            "Huyện Quốc Oai",
+            "Huyện Thạch Thất"
+        };
+
+        private static string? MatchShipperOperatingArea(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return null;
+            string clean = RemoveVietnameseTones(input.Trim().ToLower());
+            for (int i = 0; i < AllowedShipperOperatingAreas.Length; i++)
+            {
+                string area = AllowedShipperOperatingAreas[i];
+                string areaClean = RemoveVietnameseTones(area.ToLower());
+                string areaShort = areaClean.Replace("quan ", "").Replace("huyen ", "");
+                if (clean == (i + 1).ToString() || clean == areaClean || clean == areaShort || clean.Contains(areaShort))
+                {
+                    return area;
+                }
+            }
+            return null;
+        }
+
+        private static readonly string[] AllowedShipperBanks = new[]
+        {
+            "Vietcombank",
+            "MB Bank",
+            "Techcombank",
+            "BIDV",
+            "VietinBank",
+            "Agribank",
+            "ACB",
+            "TPBank",
+            "VPBank",
+            "VIB"
+        };
+
+        private static string? MatchShipperBank(string input)
+        {
+            if (string.IsNullOrWhiteSpace(input)) return null;
+            string clean = RemoveVietnameseTones(input.Trim().ToLower()).Replace(" ", "");
+            if (clean.Contains("vietcombank") || clean.Contains("vcb") || clean == "1") return "Vietcombank";
+            if (clean.Contains("mbbank") || clean.Contains("quandoi") || clean == "mb" || clean == "2") return "MB Bank";
+            if (clean.Contains("techcombank") || clean.Contains("tcb") || clean == "3") return "Techcombank";
+            if (clean.Contains("bidv") || clean == "4") return "BIDV";
+            if (clean.Contains("vietinbank") || clean.Contains("ctg") || clean == "5") return "VietinBank";
+            if (clean.Contains("agribank") || clean.Contains("nongnghiep") || clean == "6") return "Agribank";
+            if (clean.Contains("acb") || clean.Contains("achau") || clean == "7") return "ACB";
+            if (clean.Contains("tpbank") || clean.Contains("tienphong") || clean == "8") return "TPBank";
+            if (clean.Contains("vpbank") || clean.Contains("vpb") || clean == "9") return "VPBank";
+            if (clean.Contains("vib") || clean.Contains("quocte") || clean == "10") return "VIB";
+            return null;
+        }
+
+        private static bool IsValidBankAccountNumber(string input, out string errorMsg)
+        {
+            errorMsg = "";
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                errorMsg = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Vui lòng nhập Số tài khoản ngân hàng!";
+                return false;
+            }
+            string trimmed = input.Trim();
+            if (!Regex.IsMatch(trimmed, @"^\d+$"))
+            {
+                errorMsg = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Số tài khoản chỉ được nhập số, không nhận chữ cái hay ký tự đặc biệt như %^&*! Vui lòng nhập lại nhé!";
+                return false;
+            }
+            if (trimmed.Length < 8 || trimmed.Length > 16)
+            {
+                errorMsg = $@"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Số tài khoản ngân hàng phải từ 8 đến 16 chữ số (Hiện tại: {trimmed.Length} số)! Vui lòng nhập lại nhé!";
+                return false;
+            }
+            return true;
+        }
+
+        private static string BuildShipperReviewSummaryReply(DirectRegDraft draft)
+        {
+            string portraitStatus = !string.IsNullOrWhiteSpace(draft.PortraitImage) ? @"<i class=""bi bi-check2-circle me-1""></i>Đã tải ảnh lên" : "Chưa tải";
+            string cccdFrontStatus = !string.IsNullOrWhiteSpace(draft.CccdFrontImage) ? @"<i class=""bi bi-check2-circle me-1""></i>Đã tải ảnh lên" : "Chưa tải";
+            string cccdBackStatus = !string.IsNullOrWhiteSpace(draft.CccdBackImage) ? @"<i class=""bi bi-check2-circle me-1""></i>Đã tải ảnh lên" : "Chưa tải";
+            string gplxStatus = !string.IsNullOrWhiteSpace(draft.DrivingLicenseImage) ? @"<i class=""bi bi-check2-circle me-1""></i>Đã tải ảnh lên" : "Chưa tải";
+
+            return $@"<div class=""seller-fee-card"">
+  <div class=""fee-row""><i class=""bi bi-gift-fill me-1"" style=""color: #EA580C;""></i><strong>Phí Gia Nhập Đối Tác Tài Xế:</strong> <span style=""color: #16A34A; font-weight: 700;"">0 VNĐ (MIỄN PHÍ)</span></div>
+  <div class=""fee-sub"">Được sàn thương mại điện tử ZoneMart tài trợ 100% chi phí kích hoạt app & đồng phục tài xế năm 2026.</div>
+  <div class=""fee-status-line""><i class=""bi bi-check-circle-fill me-1"" style=""color: #16A34A;""></i><strong>Trạng thái:</strong> <span style=""color: #16A34A; font-weight: 600;"">Đã miễn phí (Chính sách hỗ trợ ZoneMart Driver)</span> &bull; <span class=""badge-bql""><i class=""bi bi-shield-check me-1""></i>Tài xế công nghệ ZoneMart</span></div>
+</div>
+<hr class=""chat-divider""/>
+<div class=""seller-summary-title""><i class=""bi bi-clipboard2-check-fill me-1"" style=""color: #D94E15;""></i><strong>BẢNG TỔNG KẾT HỒ SƠ ĐĂNG KÝ SHIPPER</strong></div>
+<div class=""seller-summary-list"">
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-person-fill me-1"" style=""color: #EA580C;""></i>1. Họ tên tài xế:</span><span class=""seller-row-value"">{draft.FullName}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-envelope-at-fill me-1"" style=""color: #2563EB;""></i>2. Gmail đăng ký:</span><span class=""seller-row-value seller-code-val"" title=""{draft.Email}"">{draft.Email}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-key-fill me-1"" style=""color: #D97706;""></i>3. Mật khẩu:</span><span class=""seller-row-value"">[MASKED_PWD:{draft.Password}]</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-shield-lock-fill me-1"" style=""color: #0284C7;""></i>4. Nhập lại MK:</span><span class=""seller-row-value"">[MASKED_PWD:{draft.ConfirmPassword}]</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-person-vcard-fill me-1"" style=""color: #2563EB;""></i>5. Số CCCD:</span><span class=""seller-row-value seller-code-val"">{draft.CccdNumber}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-person-bounding-box me-1"" style=""color: #0284C7;""></i>6. Ảnh chân dung:</span><span class=""seller-row-value badge-uploaded"">{portraitStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-card-heading me-1"" style=""color: #64748B;""></i>7. CCCD Trước:</span><span class=""seller-row-value badge-uploaded"">{cccdFrontStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-card-text me-1"" style=""color: #64748B;""></i>8. CCCD Sau:</span><span class=""seller-row-value badge-uploaded"">{cccdBackStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-speedometer2 me-1"" style=""color: #DC2626;""></i>9. Biển số xe:</span><span class=""seller-row-value seller-code-val"">{draft.LicensePlate}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-bicycle me-1"" style=""color: #EA580C;""></i>10. Loại xe:</span><span class=""seller-row-value"">{draft.VehicleType}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-fuel-pump-fill me-1"" style=""color: #10B981;""></i>11. Dòng xe:</span><span class=""seller-row-value"">{draft.VehicleModel}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-card-checklist me-1"" style=""color: #0284C7;""></i>12. Ảnh GPLX:</span><span class=""seller-row-value badge-uploaded"">{gplxStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-geo-alt-fill me-1"" style=""color: #EF4444;""></i>13. Khu vực chạy:</span><span class=""seller-row-value"">{draft.OperatingArea}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-bank me-1"" style=""color: #2563EB;""></i>14. Ngân hàng:</span><span class=""seller-row-value"">{draft.BankName}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-credit-card-2-front-fill me-1"" style=""color: #10B981;""></i>15. Số tài khoản:</span><span class=""seller-row-value seller-code-val"">{draft.BankAccountNumber}</span></div>
+</div>
+<hr class=""chat-divider""/>
+<div class=""seller-summary-hint""><i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i><em>Vui lòng kiểm tra lại hồ sơ và chọn một trong 2 nút bên dưới:</em></div>";
+        }
+
         private async Task<(bool Exists, string DetailRole)> CheckIfEmailAlreadyRegisteredAsync(string email)
         {
             return await AuthController.CheckEmailRegisteredAsync(_mongoService, email);
@@ -3583,9 +6001,35 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
             string activeState = currentRegState ?? "NONE";
             var draft = incomingDraft ?? new DirectRegDraft();
 
-            // 1. KIỂM TRA LỆNH "HỦY YÊU CẦU" / "HỦY ĐĂNG KÝ" (Ở BẤT KỲ BƯỚC NÀO)
+            // 1. NẾU ĐANG Ở CÁC BƯỚC CHỈNH SỬA VÀ BẤM/NHẮN "QUAY LẠI" HOẶC "LƯU VÀ QUAY LẠI" -> TRỞ VỀ BẢNG TỔNG KẾT HỒ SƠ
+            if (activeState.StartsWith("REGISTER_SELLER_EDIT") && (cleanMsgNoTone == "quay lai" || cleanMsgNoTone == "back" || cleanMsgNoTone.Contains("quay ve bang tong ket") || cleanMsgNoTone.Contains("quay lai") || cleanMsgNoTone.Contains("luu va quay lai") || cleanMsgNoTone == "luu" || cleanMsgNoTone.Contains("luu ho so")))
+            {
+                return new
+                {
+                    success = true,
+                    reply = BuildSellerReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            if (activeState.StartsWith("REGISTER_SHIPPER_EDIT") && (cleanMsgNoTone == "quay lai" || cleanMsgNoTone == "back" || cleanMsgNoTone.Contains("quay ve bang tong ket") || cleanMsgNoTone.Contains("quay lai") || cleanMsgNoTone.Contains("luu va quay lai") || cleanMsgNoTone == "luu" || cleanMsgNoTone.Contains("luu ho so")))
+            {
+                return new
+                {
+                    success = true,
+                    reply = BuildShipperReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY",
+                    actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+
+            // 1b. KIỂM TRA LỆNH "HỦY YÊU CẦU" / "HỦY ĐĂNG KÝ" (CHỈ HỦY KHI NGƯỜI DÙNG NHẮN TỪ "HỦY")
             bool isExplicitCancel = Regex.IsMatch(cleanMsgNoTone, @"\b(huy yeu cau|huy dang ky|khong muon dang ky|khong dang ky nua|khong muon lam nua|dung dang ky)\b") ||
-                                    Regex.IsMatch(cleanMsgNoTone, @"^\s*(huy|thoat|cancel|stop|thoi|quay lai)\s*$");
+                                    Regex.IsMatch(cleanMsgNoTone, @"^\s*(huy|cancel)\s*$");
 
             if (isExplicitCancel)
             {
@@ -3606,7 +6050,13 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
                                 cleanMsgNoTone.Contains("dang ky giup") || cleanMsgNoTone.Contains("dang ky bang ai") ||
                                 cleanMsgNoTone.Contains("nhap thong tin") || cleanMsgNoTone.Contains("dang ky truc tiep") ||
                                 cleanMsgNoTone.Contains("nho ai dang ky") || cleanMsgNoTone.Contains("nho ai lam") ||
-                                cleanMsgNoTone.Contains("toi muon ai dang ky") || cleanMsgNoTone.Contains("cach 2"));
+                                cleanMsgNoTone.Contains("toi muon ai dang ky") || cleanMsgNoTone.Contains("cach 2") ||
+                                ((cleanMsgNoTone.Contains("shipper") || cleanMsgNoTone.Contains("tai xe") || cleanMsgNoTone.Contains("chay xe")) &&
+                                 (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("lam") || cleanMsgNoTone.Contains("chay") || cleanMsgNoTone.Contains("muon"))) ||
+                                ((cleanMsgNoTone.Contains("seller") || cleanMsgNoTone.Contains("ban hang") || cleanMsgNoTone.Contains("gian hang") || cleanMsgNoTone.Contains("mo shop") || cleanMsgNoTone.Contains("shop")) &&
+                                 (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("mo") || cleanMsgNoTone.Contains("muon") || cleanMsgNoTone.Contains("ban"))) ||
+                                ((cleanMsgNoTone.Contains("khach hang") || cleanMsgNoTone.Contains("nguoi mua") || cleanMsgNoTone.Contains("tai khoan")) &&
+                                 (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("tao") || cleanMsgNoTone.Contains("lap") || cleanMsgNoTone.Contains("muon"))));
 
             if (isStartAiReg)
             {
@@ -3618,14 +6068,21 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
                         success = true,
                         reply = @"📝 **ĐĂNG KÝ GIAN HÀNG SELLER QUA AI (TRỰC TIẾP HỎI TỪNG CÂU)**
 
-Dạ vâng! AI sẽ hỏi bạn lần lượt **từng câu một** để hoàn thiện hồ sơ gian hàng bán lẻ trên ZoneMart nhé! 😊
+Dạ vâng! AI sẽ hỏi bạn lần lượt **16 câu hỏi** để hoàn thiện hồ sơ gian hàng bán lẻ trên ZoneMart nhé! 😊
 
 ---
-1️⃣ **Câu 1 / 14:** Cho mình xin **Tên cửa hàng / Tiệm** (Từ 12 - 30 ký tự, không chứa ký tự đặc biệt) nhé?
+1️⃣ **Câu 1 / 16:** Vui lòng chọn **Mô hình kinh doanh địa phương \*** (Chọn đúng nhóm đối tượng của gian hàng):
+1. **Chợ truyền thống** (Tiểu thương tại sạp chợ 🏡)
+2. **Hộ kinh doanh tại nhà** (Chế biến / bán tại gia 🏭)
+3. **Cửa hàng / Cơ sở SX** (Tiệm tạp hóa, xưởng SX 👨‍🌾)
+4. **Người bán địa phương khác** (Nông dân bán nông sản)
 
-💡 *(Nếu không muốn đăng ký nữa, bạn nhắn **""Hủy yêu cầu""** để quay lại bình thường nhé!)*",
+*(Bấm nút bên dưới hoặc nhập đúng 1 trong 4 lựa chọn trên nhé)*
+
+💡 *(Nếu không muốn đăng ký nữa, bạn nhắn **""hủy""** để quay lại bình thường nhé!)*",
                         provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q1_STORENAME",
+                        registrationState = "REGISTER_SELLER_Q1_TYPE",
+                        actionIntent = "SELLER_CHOOSE_TYPE",
                         regDraft = draft
                     };
                 }
@@ -3635,14 +6092,18 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **từng câu một** để hoàn 
                     return new
                     {
                         success = true,
-                        reply = @"📝 **ĐĂNG KÝ TÀI XẾ SHIPPER QUA AI (TRỰC TIẾP HỎI TỪNG CÂU)**
+                        reply = @"<i class=""bi bi-file-earmark-person-fill me-1"" style=""color: #EA580C;""></i> <strong>ĐĂNG KÝ TÀI XẾ SHIPPER QUA AI (TRỰC TIẾP HỎI TỪNG CÂU)</strong>
 
-Dạ vâng! AI sẽ hỏi bạn lần lượt **từng câu một** để làm hồ sơ đối tác tài xế ZoneMart Driver nhé! 🛵
+Dạ vâng! AI sẽ hỏi bạn lần lượt <strong>từng câu một</strong> để làm hồ sơ đối tác tài xế ZoneMart Driver nhé! <i class=""bi bi-bicycle"" style=""color: #EA580C;""></i>
 
----
-1️⃣ **Câu 1 / 15:** Cho mình xin **Họ và tên thật của tài xế** (Từ 6 - 16 ký tự) nhé?
+<hr class=""chat-divider""/>
+1. <strong>Câu 1 / 15:</strong> Cho mình xin <strong>Họ và tên thật của tài xế</strong> (Từ 6 - 30 ký tự) nhé?
+- Bắt đầu bằng các họ phổ biến ở Việt Nam (như Đỗ, Nguyễn, Trần, Lê, Phạm, Hoàng, Vũ...)
+- Tên đệm tối thiểu 1 từ, tối đa 2 từ (như Thị, Thị Phương...)
+- Tên tối đa 1 từ (như Bình, Huy, Đạt, Anh...)
+- Tổng cộng gồm 3 từ (Ví dụ: Lê Thành Đạt) hoặc 4 từ (Ví dụ: Nguyễn Thị Phương Anh). Chỉ nhập chữ cái, không nhận số hay ký tự đặc biệt (%^&*).
 
-💡 *(Nếu không muốn đăng ký nữa, bạn nhắn **""Hủy yêu cầu""** để quay lại bình thường nhé!)*",
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nếu không muốn đăng ký nữa, bạn nhắn <strong>""hủy""</strong> hoặc <strong>""hủy yêu cầu""</strong> để dừng nhé!)*",
                         provider = "ZoneMart AI Direct Registration Engine",
                         registrationState = "REGISTER_SHIPPER_Q1_NAME",
                         regDraft = draft
@@ -3681,7 +6142,7 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                 return await ProcessFullFormRegistrationAsync(userMsg, activeState);
             }
 
-            // 3b. XỬ LÝ KHI NGƯỜI DÙNG CUỘN LÊN ĐỂ TẢI LẠI ẢNH (RE-UPLOAD PHOTO CHO SELLER / SHIPPER)
+            // 3b. XỬ LÝ KHI NGƯỜI DÙNG TẢI ẢNH (RE-UPLOAD HOẶC TRONG LUỒNG SELLER / SHIPPER)
             bool isPhotoUploadMsg = userMsg.StartsWith("[Ảnh ") && (userMsg.Contains("đã tải") || userMsg.Contains("thành công"));
             if (isPhotoUploadMsg)
             {
@@ -3692,7 +6153,7 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                 if (userMsg.Contains("CCCD Mặt Trước") || cleanMsgNoTone.Contains("cccd mat truoc"))
                 {
                     photoTitle = "CCCD Mặt Trước";
-                    targetExpectedStateSeller = "REGISTER_SELLER_Q10_CCCD_FRONT";
+                    targetExpectedStateSeller = "REGISTER_SELLER_Q12_CCCD_FRONT";
                     targetExpectedStateShipper = "REGISTER_SHIPPER_Q7_CCCD_FRONT";
                     if (!string.IsNullOrWhiteSpace(incomingDraft?.CccdFrontImage))
                         draft.CccdFrontImage = incomingDraft.CccdFrontImage;
@@ -3700,7 +6161,7 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                 else if (userMsg.Contains("CCCD Mặt Sau") || cleanMsgNoTone.Contains("cccd mat sau"))
                 {
                     photoTitle = "CCCD Mặt Sau";
-                    targetExpectedStateSeller = "REGISTER_SELLER_Q11_CCCD_BACK";
+                    targetExpectedStateSeller = "REGISTER_SELLER_Q13_CCCD_BACK";
                     targetExpectedStateShipper = "REGISTER_SHIPPER_Q8_CCCD_BACK";
                     if (!string.IsNullOrWhiteSpace(incomingDraft?.CccdBackImage))
                         draft.CccdBackImage = incomingDraft.CccdBackImage;
@@ -3708,7 +6169,7 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                 else if (userMsg.Contains("An Toàn Thực Phẩm") || cleanMsgNoTone.Contains("an toan thuc pham") || cleanMsgNoTone.Contains("attp"))
                 {
                     photoTitle = "Giấy CN An Toàn Thực Phẩm";
-                    targetExpectedStateSeller = "REGISTER_SELLER_Q12_FOOD_SAFETY";
+                    targetExpectedStateSeller = "REGISTER_SELLER_Q14_FOOD_SAFETY";
                     if (!string.IsNullOrWhiteSpace(incomingDraft?.FoodSafetyImage))
                         draft.FoodSafetyImage = incomingDraft.FoodSafetyImage;
                 }
@@ -3727,14 +6188,174 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                         draft.DrivingLicenseImage = incomingDraft.DrivingLicenseImage;
                 }
 
+                // Xử lý trực tiếp nếu đang ở các câu hỏi upload của Seller
+                if (activeState == "REGISTER_SELLER_Q12_CCCD_FRONT")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"Đã tải lên ảnh **CCCD Mặt Trước** thành công! 🆔
+
+---
+1️⃣3️⃣ **Câu 13 / 16:** Vui lòng tải lên ảnh **CCCD Mặt Sau \*** của chủ tiệm:
+(Nhấp vào khung bên dưới để chọn ảnh từ thư mục máy tính, không nhận video)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q13_CCCD_BACK",
+                        actionIntent = "SELLER_UPLOAD_CCCD_BACK",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SELLER_Q13_CCCD_BACK")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"Đã tải lên ảnh **CCCD Mặt Sau** thành công! 🆔
+
+---
+1️⃣4️⃣ **Câu 14 / 16:** Vui lòng tải lên ảnh **Giấy Chứng Nhận An Toàn Thực Phẩm \*** (hoặc Giấy Phép Kinh Doanh):
+(Nhấp vào khung bên dưới để chọn ảnh từ thư mục máy tính, không nhận video)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q14_FOOD_SAFETY",
+                        actionIntent = "SELLER_UPLOAD_FOOD_SAFETY",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SELLER_Q14_FOOD_SAFETY")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"Đã tải lên ảnh **Giấy Chứng Nhận An Toàn Thực Phẩm** thành công! 📜
+
+---
+1️⃣5️⃣ **Câu 15 / 16:** Vui lòng chọn **Ngân hàng nhận doanh thu \*** từ 8 ngân hàng bên dưới (Bấm nút hoặc nhập đúng 1 trong 8 ngân hàng):",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q15_BANK",
+                        actionIntent = "SELLER_CHOOSE_BANK",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SELLER_EDIT_Q12_CCCD_FRONT" || activeState == "REGISTER_SELLER_EDIT_Q13_CCCD_BACK" || activeState == "REGISTER_SELLER_EDIT_Q14_FOOD_SAFETY")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật ảnh <strong>{photoTitle}</strong> thành công! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+{BuildSellerReviewSummaryReply(draft)}",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_REVIEW_SUMMARY",
+                        actionIntent = "SELLER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+                // Xử lý trực tiếp nếu đang ở các câu hỏi upload của Shipper
+                else if (activeState == "REGISTER_SHIPPER_Q6_PORTRAIT")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên <strong>Ảnh Chân Dung Tài Xế</strong> thành công!
+
+<hr class=""chat-divider""/>
+7. <strong>Câu 7 / 15:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Trước</strong> của tài xế:
+(Nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_Q7_CCCD_FRONT",
+                        actionIntent = "SHIPPER_UPLOAD_CCCD_FRONT",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SHIPPER_Q7_CCCD_FRONT")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên ảnh <strong>CCCD Mặt Trước</strong> thành công!
+
+<hr class=""chat-divider""/>
+8. <strong>Câu 8 / 15:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Sau</strong> của tài xế:
+(Nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_Q8_CCCD_BACK",
+                        actionIntent = "SHIPPER_UPLOAD_CCCD_BACK",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SHIPPER_Q8_CCCD_BACK")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên ảnh <strong>CCCD Mặt Sau</strong> thành công!
+
+<hr class=""chat-divider""/>
+9. <strong>Câu 9 / 15:</strong> Cho mình xin <strong>Biển số xe máy</strong> bạn chạy đơn:
+- Hàng trên: 2 số địa phương + 2 chữ cái sê-ri (Ví dụ: `29-AA`, `59-AB`)
+- Hàng dưới: Dãy 4 hoặc 5 số tự nhiên (Ví dụ: `123.45` hoặc `12345` hoặc `1234`)
+<em>(AI sẽ tự động định dạng và viết hoa chuẩn quy định nhé)</em>",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_Q9_LICENSE_PLATE",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SHIPPER_Q12_GPLX")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên ảnh <strong>Bằng Lái Xe (GPLX)</strong> thành công!
+
+<hr class=""chat-divider""/>
+13. <strong>Câu 13 / 15:</strong> Vui lòng chọn <strong>Khu vực đăng ký chạy chính</strong> từ danh sách 21 Quận / Huyện bên dưới:
+(Bấm nút hoặc nhập đúng 1 trong 21 lựa chọn Quận / Huyện)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_Q13_AREA",
+                        actionIntent = "SHIPPER_CHOOSE_AREA",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SHIPPER_EDIT_Q6_PORTRAIT" || activeState == "REGISTER_SHIPPER_EDIT_Q7_CCCD_FRONT" || activeState == "REGISTER_SHIPPER_EDIT_Q8_CCCD_BACK" || activeState == "REGISTER_SHIPPER_EDIT_Q12_GPLX")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật ảnh <strong>{photoTitle}</strong> thành công! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+{BuildShipperReviewSummaryReply(draft)}",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY",
+                        actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+
                 bool isReupload = userMsg.Contains("một lần nữa") || userMsg.Contains("tải lại") ||
                                   (activeState != targetExpectedStateSeller && activeState != targetExpectedStateShipper &&
-                                   activeState != "REGISTER_SELLER_Q9_CCCD_FRONT" && activeState != "REGISTER_SELLER_Q10_CCCD_BACK" &&
-                                   activeState != "REGISTER_SELLER_Q11_FOOD_SAFETY");
+                                   activeState != "REGISTER_SELLER_Q12_CCCD_FRONT" && activeState != "REGISTER_SELLER_Q13_CCCD_BACK" &&
+                                   activeState != "REGISTER_SELLER_Q14_FOOD_SAFETY" &&
+                                   activeState != "REGISTER_SHIPPER_Q6_PORTRAIT" && activeState != "REGISTER_SHIPPER_Q7_CCCD_FRONT" &&
+                                   activeState != "REGISTER_SHIPPER_Q8_CCCD_BACK" && activeState != "REGISTER_SHIPPER_Q12_GPLX");
 
                 if (isReupload)
                 {
                     var (shortTitle, nextPrompt, qIntent) = GetQuestionInfoForState(activeState);
+                    if (activeState.StartsWith("REGISTER_SHIPPER"))
+                    {
+                        return new
+                        {
+                            success = true,
+                            reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lại ảnh <strong>{photoTitle}</strong> thành công! Tiếp tục với câu <strong>{shortTitle}</strong> nhé:
+
+<hr class=""chat-divider""/>
+{nextPrompt}",
+                            provider = "ZoneMart AI Direct Registration Engine",
+                            registrationState = activeState,
+                            actionIntent = qIntent,
+                            regDraft = draft
+                        };
+                    }
                     return new
                     {
                         success = true,
@@ -3753,7 +6374,133 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
             // 4. LUỒNG HỎI LẦN LƯỢT TỪNG CÂU MỘT VỚI VALIDATE CHẶT CHẼ
 
             // ==================== [ROLE 1] SELLER GIAN HÀNG ====================
-            if (activeState == "REGISTER_SELLER_Q1_STORENAME" || activeState == "REGISTER_SELLER_STEP1" || activeState == "REGISTER_SELLER_WAITING")
+            if (activeState == "REGISTER_SELLER_Q1_TYPE" || activeState == "REGISTER_SELLER_STEP1" || activeState == "REGISTER_SELLER_WAITING")
+            {
+                string? matchedType = MatchSellerType(userMsg);
+                if (matchedType == null)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Mô hình kinh doanh không hợp lệ! Bạn chỉ được chọn hoặc nhập đúng 1 trong 4 lựa chọn sau:\n" +
+                                "1. **Chợ truyền thống** (Tiểu thương tại sạp chợ 🏡)\n" +
+                                "2. **Hộ kinh doanh tại nhà** (Chế biến / bán tại gia 🏭)\n" +
+                                "3. **Cửa hàng / Cơ sở SX** (Tiệm tạp hóa, xưởng SX 👨‍🌾)\n" +
+                                "4. **Người bán địa phương khác** (Nông dân bán nông sản)\n\n" +
+                                "Vui lòng bấm chọn hoặc nhập lại chính xác nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q1_TYPE",
+                        actionIntent = "SELLER_CHOOSE_TYPE",
+                        regDraft = draft
+                    };
+                }
+
+                draft.SellerType = matchedType;
+                return new
+                {
+                    success = true,
+                    reply = $@"Dạ đã lưu Mô hình kinh doanh: **{matchedType}**! 🏪
+
+---
+2️⃣ **Câu 2 / 16:** Cho mình xin **Xã / Phường \*** của bạn nhé?
+
+*(Lưu ý: Chỉ được nhập chữ cái, không nhận số hay ký tự đặc biệt như %&*)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SELLER_Q2_WARD",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "REGISTER_SELLER_Q2_WARD")
+            {
+                string ward = userMsg.Trim();
+                if (ward.Length < 2 || !Regex.IsMatch(ward, @"^[\p{L}\s]+$"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Tên Xã / Phường chỉ được nhập chữ cái (không nhận số hay các ký tự đặc biệt như %&*)! Vui lòng nhập lại tên Xã / Phường nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q2_WARD",
+                        regDraft = draft
+                    };
+                }
+
+                draft.Ward = ward;
+                return new
+                {
+                    success = true,
+                    reply = $@"Dạ đã lưu Xã / Phường: **{ward}**! 📍
+
+---
+3️⃣ **Câu 3 / 16:** Cho mình xin **Quận / Huyện \*** của bạn nhé?
+
+*(Lưu ý: Chỉ được nhập chữ cái, không nhận số hay ký tự đặc biệt như %&*)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SELLER_Q3_DISTRICT",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "REGISTER_SELLER_Q3_DISTRICT")
+            {
+                string district = userMsg.Trim();
+                if (district.Length < 2 || !Regex.IsMatch(district, @"^[\p{L}\s]+$"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Tên Quận / Huyện chỉ được nhập chữ cái (không nhận số hay các ký tự đặc biệt như %&*)! Vui lòng nhập lại tên Quận / Huyện nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q3_DISTRICT",
+                        regDraft = draft
+                    };
+                }
+
+                draft.District = district;
+                return new
+                {
+                    success = true,
+                    reply = $@"Dạ đã lưu Quận / Huyện: **{district}**! 📍
+
+---
+4️⃣ **Câu 4 / 16:** Cho mình xin **Tên Chợ Truyền Thống / Cụm Chợ Số Địa Phương** (Ví dụ: Chợ Cầu Giấy, Chợ Đồng Xuân...) nhé?
+
+*(Lưu ý: Nhập chữ và số, không nhận ký tự đặc biệt như %&*)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SELLER_Q4_MARKETNAME",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "REGISTER_SELLER_Q4_MARKETNAME")
+            {
+                string marketName = userMsg.Trim();
+                if (marketName.Length < 2 || !Regex.IsMatch(marketName, @"^[\p{L}0-9\s]+$"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Tên Chợ Truyền Thống / Cụm Chợ Số chỉ được nhập chữ và số (không nhận các ký tự đặc biệt như %&*)! Vui lòng nhập lại nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q4_MARKETNAME",
+                        regDraft = draft
+                    };
+                }
+
+                draft.MarketName = marketName;
+                return new
+                {
+                    success = true,
+                    reply = $@"Dạ đã lưu Tên Chợ / Cụm Chợ: **{marketName}**! 🏛️
+
+---
+5️⃣ **Câu 5 / 16:** Cho mình xin **Tên cửa hàng \*** (Từ 12 - 30 ký tự) nhé?
+
+*(Lưu ý: Chỉ được nhập chữ cái, không nhận số hay ký tự đặc biệt như %&*)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SELLER_Q5_STORENAME",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "REGISTER_SELLER_Q5_STORENAME" || activeState == "REGISTER_SELLER_Q1_STORENAME")
             {
                 string storeName = userMsg.Trim();
                 if (storeName.Length < 12 || storeName.Length > 30)
@@ -3761,20 +6508,20 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                     return new
                     {
                         success = true,
-                        reply = $"⚠️ Tên cửa hàng phải có độ dài từ 12 đến 30 ký tự (Hiện tại bạn nhập {storeName.Length} ký tự)! Vui lòng nhập lại tên tiệm nhé!\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
+                        reply = $"⚠️ Tên cửa hàng phải có độ dài từ 12 đến 30 ký tự (Hiện tại bạn nhập {storeName.Length} ký tự)! Vui lòng nhập lại tên tiệm nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
                         provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q1_STORENAME",
+                        registrationState = "REGISTER_SELLER_Q5_STORENAME",
                         regDraft = draft
                     };
                 }
-                if (Regex.IsMatch(storeName, @"[!@#$%^&*()_+=\[\]{};':""\\|,.<>?~`]"))
+                if (!Regex.IsMatch(storeName, @"^[\p{L}\s]+$"))
                 {
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Tên cửa hàng không được chứa ký tự đặc biệt! Vui lòng chỉ nhập chữ cái, số và khoảng trắng (Ví dụ: `Cửa Hàng Nông Sản Ba Vì`) nhé!",
+                        reply = "⚠️ Tên cửa hàng chỉ được nhập chữ cái (từ 12 - 30 ký tự, không nhận số hay ký tự đặc biệt như %&*)! Vui lòng nhập lại nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
                         provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q1_STORENAME",
+                        registrationState = "REGISTER_SELLER_Q5_STORENAME",
                         regDraft = draft
                     };
                 }
@@ -3783,16 +6530,21 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                 return new
                 {
                     success = true,
-                    reply = $@"Dạ đã lưu Tên gian hàng: **{storeName}**! 🏪
+                    reply = $@"Dạ đã lưu Tên cửa hàng: **{storeName}**! 🏪
 
 ---
-2️⃣ **Câu 2 / 14:** Cho mình xin **Địa chỉ tiệm** của bạn (Ví dụ: Số 125 Cầu Giấy, Quan Hoa, Cầu Giấy, Hà Nội) nhé?",
+6️⃣ **Câu 6 / 16:** Cho mình xin **Địa chỉ tiệm \*** của bạn nhé?
+
+*(Lưu ý: Bắt buộc phải có thông tin ngõ gì, đường gì, thành phố gì - có thể bỏ chữ thành phố. Nhận chữ và số, không nhận ký tự đặc biệt như ^&*)*
+
+💡 *Hoặc bạn có thể bấm nút **""Lấy GPS hiện tại""** bên dưới để tự động lấy địa chỉ chính xác nhé!*",
                     provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q2_ADDRESS",
+                    registrationState = "REGISTER_SELLER_Q6_ADDRESS",
+                    actionIntent = "SELLER_INPUT_ADDRESS_GPS",
                     regDraft = draft
                 };
             }
-            else if (activeState == "REGISTER_SELLER_Q2_ADDRESS")
+            else if (activeState == "REGISTER_SELLER_Q6_ADDRESS" || activeState == "REGISTER_SELLER_Q2_ADDRESS")
             {
                 string address = userMsg.Trim();
                 if (address.Length < 6)
@@ -3802,7 +6554,35 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                         success = true,
                         reply = "⚠️ Địa chỉ tiệm phải nhập rõ ràng (tối thiểu 6 ký tự)! Vui lòng nhập lại nhé!",
                         provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q2_ADDRESS",
+                        registrationState = "REGISTER_SELLER_Q6_ADDRESS",
+                        actionIntent = "SELLER_INPUT_ADDRESS_GPS",
+                        regDraft = draft
+                    };
+                }
+                if (Regex.IsMatch(address, @"[\^&*]"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Địa chỉ tiệm không được chứa ký tự đặc biệt như ^&*! Vui lòng chỉ nhập chữ cái, số và khoảng trắng nhé!",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q6_ADDRESS",
+                        actionIntent = "SELLER_INPUT_ADDRESS_GPS",
+                        regDraft = draft
+                    };
+                }
+                string addrNoTone = RemoveVietnameseTones(address.ToLower());
+                bool hasNgo = addrNoTone.Contains("ngo") || address.ToLower().Contains("ngõ");
+                bool hasDuong = addrNoTone.Contains("duong") || address.ToLower().Contains("đường");
+                if (!hasNgo || !hasDuong)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Địa chỉ tiệm phải có đầy đủ thông tin ngõ gì, đường gì (Ví dụ: `Ngõ 12 đường Cầu Giấy, Hà Nội`)! Vui lòng nhập lại hoặc bấm nút **Lấy GPS hiện tại** bên dưới nhé!",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q6_ADDRESS",
+                        actionIntent = "SELLER_INPUT_ADDRESS_GPS",
                         regDraft = draft
                     };
                 }
@@ -3814,76 +6594,97 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                     reply = $@"Đã lưu Địa chỉ: **{address}**! 📍
 
 ---
-3️⃣ **Câu 3 / 14:** Vui lòng chọn **Ngành hàng kinh doanh chính** của bạn từ danh sách bên dưới (Bấm nút để chọn trực tiếp):",
+7️⃣ **Câu 7 / 16:** Vui lòng chọn **Danh mục hàng bán chính \*** từ 6 danh mục bên dưới (Bấm nút hoặc nhập đúng 1 trong 6 danh mục):",
                     provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q3_CATEGORY",
+                    registrationState = "REGISTER_SELLER_Q7_CATEGORY",
                     actionIntent = "SELLER_CHOOSE_CATEGORY",
                     regDraft = draft
                 };
             }
-            else if (activeState == "REGISTER_SELLER_Q3_CATEGORY")
+            else if (activeState == "REGISTER_SELLER_Q7_CATEGORY" || activeState == "REGISTER_SELLER_Q3_CATEGORY")
             {
-                string category = userMsg.Trim();
-                if (string.IsNullOrWhiteSpace(category)) category = "Thực phẩm & Nhu yếu phẩm";
-
-                draft.Category = category;
-                return new
-                {
-                    success = true,
-                    reply = $@"Đã lưu Ngành hàng: **{category}**! 🏷️
-
----
-4️⃣ **Câu 4 / 14:** Cho mình xin **Địa chỉ Gmail đăng ký gian hàng** (Bắt buộc đuôi **@gmail.com**) nhé?",
-                    provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q4_GMAIL",
-                    regDraft = draft
-                };
-            }
-            else if (activeState == "REGISTER_SELLER_Q4_GMAIL")
-            {
-                string rawEmail = userMsg.Trim().ToLowerInvariant();
-                var match = Regex.Match(rawEmail, @"[a-zA-Z0-9._%+-]+@gmail\.com");
-                if (!match.Success)
+                string? matchedCat = MatchSellerCategory(userMsg);
+                if (matchedCat == null)
                 {
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Địa chỉ Gmail đăng ký gian hàng bắt buộc phải có đuôi **@gmail.com** (Ví dụ: `cuahang@gmail.com`)! Vui lòng nhập lại nhé!\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
+                        reply = "⚠️ Danh mục hàng bán chính không hợp lệ! Bạn chỉ được chọn hoặc nhập đúng 1 trong 6 danh mục sau:\n" +
+                                "- **Thực phẩm & Nhu yếu phẩm**\n" +
+                                "- **Trái cây & Đồ uống**\n" +
+                                "- **Cơm & Thức ăn nhanh**\n" +
+                                "- **Đồ gia dụng tiện ích**\n" +
+                                "- **Thời trang & Phụ kiện**\n" +
+                                "- **Mỹ phẩm & Chăm sóc cá nhân**\n\n" +
+                                "Vui lòng bấm chọn hoặc nhập lại chính xác nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
                         provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q4_GMAIL",
+                        registrationState = "REGISTER_SELLER_Q7_CATEGORY",
+                        actionIntent = "SELLER_CHOOSE_CATEGORY",
                         regDraft = draft
                     };
                 }
 
-                string candidateEmail = match.Value;
-                var (isRegistered, detailRole) = await CheckIfEmailAlreadyRegisteredAsync(candidateEmail);
+                draft.Category = matchedCat;
+                return new
+                {
+                    success = true,
+                    reply = $@"Đã lưu Danh mục hàng bán chính: **{matchedCat}**! 🏷️
+
+---
+8️⃣ **Câu 8 / 16:** Cho mình xin **Địa chỉ Gmail đăng ký gian hàng \*** (Bắt buộc đuôi **@gmail.com**) nhé?
+
+*(Lưu ý: Chỉ nhận đúng 1 ký tự @ và 1 Gmail chỉ đăng ký được 1 tài khoản)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SELLER_Q8_GMAIL",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "REGISTER_SELLER_Q8_GMAIL" || activeState == "REGISTER_SELLER_Q4_GMAIL")
+            {
+                string rawEmail = userMsg.Trim().ToLowerInvariant();
+                int atCount = rawEmail.Count(c => c == '@');
+                bool isValidGmail = atCount == 1 && Regex.IsMatch(rawEmail, @"^[a-zA-Z0-9._%+-]+@gmail\.com$");
+                if (!isValidGmail)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Địa chỉ Gmail không hợp lệ! Gmail đăng ký gian hàng chỉ được phép có đúng một ký tự `@` và bắt buộc phải có đuôi **@gmail.com** (Ví dụ: `cuahang@gmail.com`)! Vui lòng nhập lại nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q8_GMAIL",
+                        regDraft = draft
+                    };
+                }
+
+                var (isRegistered, detailRole) = await CheckIfEmailAlreadyRegisteredAsync(rawEmail);
                 if (isRegistered)
                 {
                     return new
                     {
                         success = true,
-                        reply = $"Oh no! Gmail `{candidateEmail}` này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi ạ 😅. Mỗi tài khoản chỉ đăng ký 1 Gmail duy nhất, bạn vui lòng chọn và nhập một địa chỉ Gmail khác nhé! 🔑\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
+                        reply = "Oh no tài khoản gmail của bạn đã đăng ký rồi ạ, bạn dùng tài khoản gmail khác nhé! 😅🔑\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
                         provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q4_GMAIL",
+                        registrationState = "REGISTER_SELLER_Q8_GMAIL",
                         regDraft = draft
                     };
                 }
 
-                draft.Email = candidateEmail;
+                draft.Email = rawEmail;
                 return new
                 {
                     success = true,
                     reply = $@"Đã lưu Gmail gian hàng: `{draft.Email}`! 📧
 
 ---
-5️⃣ **Câu 5 / 14:** Cho mình xin **Mật khẩu tạo tài khoản** (Từ 6 - 16 ký tự) nhé?
-💡 *(Bấm icon mắt 👁️ ở ô nhập bên dưới để ẩn/hiện mật khẩu)*",
+9️⃣ **Câu 9 / 16:** Cho mình xin **Mật khẩu tạo tài khoản \*** (Từ 6 - 16 ký tự) nhé?
+
+💡 *(Bấm icon con mắt 👁️ ở ô nhập bên dưới để ẩn / hiện mật khẩu)*",
                     provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q5_PASSWORD",
+                    registrationState = "REGISTER_SELLER_Q9_PASSWORD",
                     regDraft = draft
                 };
             }
-            else if (activeState == "REGISTER_SELLER_Q5_PASSWORD")
+            else if (activeState == "REGISTER_SELLER_Q9_PASSWORD" || activeState == "REGISTER_SELLER_Q5_PASSWORD")
             {
                 string pwd = userMsg.Trim();
                 if (pwd.Length < 6 || pwd.Length > 16)
@@ -3891,9 +6692,9 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Mật khẩu phải có độ dài từ 6 đến 16 ký tự! Vui lòng nhập lại nhé!",
+                        reply = "⚠️ Mật khẩu phải có độ dài từ 6 đến 16 ký tự! Vui lòng nhập lại nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
                         provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q5_PASSWORD",
+                        registrationState = "REGISTER_SELLER_Q9_PASSWORD",
                         regDraft = draft
                     };
                 }
@@ -3905,14 +6706,15 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                     reply = @"Đã ghi nhận mật khẩu! 🔒
 
 ---
-6️⃣ **Câu 6 / 14:** Vui lòng **Nhập lại mật khẩu** (Xác nhận trùng khớp) nhé?
-💡 *(Bấm icon mắt 👁️ ở ô nhập để kiểm tra tính chính xác)*",
+🔟 **Câu 10 / 16:** Vui lòng **Nhập lại mật khẩu \*** (Xác nhận trùng khớp) nhé?
+
+💡 *(Bấm icon con mắt 👁️ ở ô nhập để kiểm tra tính chính xác)*",
                     provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q6_CONFIRM_PASSWORD",
+                    registrationState = "REGISTER_SELLER_Q10_CONFIRM_PASSWORD",
                     regDraft = draft
                 };
             }
-            else if (activeState == "REGISTER_SELLER_Q6_CONFIRM_PASSWORD")
+            else if (activeState == "REGISTER_SELLER_Q10_CONFIRM_PASSWORD" || activeState == "REGISTER_SELLER_Q6_CONFIRM_PASSWORD")
             {
                 string confirmPwd = userMsg.Trim();
                 if (confirmPwd != draft.Password)
@@ -3920,9 +6722,9 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Mật khẩu xác nhận không trùng khớp với mật khẩu vừa nhập ở câu 5! Vui lòng nhập lại chính xác mật khẩu nhé!",
+                        reply = "⚠️ Mật khẩu xác nhận không trùng khớp với mật khẩu vừa nhập ở câu 9! Vui lòng nhập lại chính xác mật khẩu nhé!",
                         provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q6_CONFIRM_PASSWORD",
+                        registrationState = "REGISTER_SELLER_Q10_CONFIRM_PASSWORD",
                         regDraft = draft
                     };
                 }
@@ -3934,14 +6736,14 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                     reply = @"Mật khẩu xác nhận trùng khớp hoàn toàn! ✅
 
 ---
-7️⃣ **Câu 7 / 14:** Vui lòng chọn **Khung giờ mở cửa kinh doanh** của tiệm (Bấm nút bên dưới để chọn):",
+1️⃣1️⃣ **Câu 11 / 16:** Vui lòng chọn **Khung giờ mở cửa kinh doanh \*** của tiệm (Bấm nút bên dưới hoặc nhập 1 trong 6 lựa chọn):",
                     provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q7_OPENHOURS",
+                    registrationState = "REGISTER_SELLER_Q11_OPENHOURS",
                     actionIntent = "SELLER_CHOOSE_OPENHOURS",
                     regDraft = draft
                 };
             }
-            else if (activeState == "REGISTER_SELLER_Q7_OPENHOURS")
+            else if (activeState == "REGISTER_SELLER_Q11_OPENHOURS" || activeState == "REGISTER_SELLER_Q7_OPENHOURS")
             {
                 string openChoice = userMsg.Trim();
                 if (openChoice.Contains("Tùy chọn") || openChoice.Contains("Tùy chỉnh") || openChoice.Contains("tuy chinh") || openChoice.Contains("tuy chon"))
@@ -3951,39 +6753,68 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
                         success = true,
                         reply = @"Bạn đã chọn **Tùy chỉnh khung giờ**! ⏰
 
-Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 - 22:00` hoặc `07:00 - 23:00`).
-⚠️ Lưu ý: Giờ mở và giờ đóng phải cách nhau **tối thiểu 4 tiếng** như quy định đăng ký nhé!",
+Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `07:00 - 22:00`, `7h - 22h`, `7 giờ - 22 giờ` hoặc `00:00 - 20:00`).
+⚠️ Lưu ý: Thời gian tối đa 24h, giờ mở và giờ đóng cách nhau **tối thiểu 4 tiếng** và không chứa ký tự đặc biệt nhé!",
                         provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q7_CUSTOM_OPENHOURS",
+                        registrationState = "REGISTER_SELLER_Q11_CUSTOM_OPENHOURS",
                         regDraft = draft
                     };
                 }
-                else
+
+                string? matchedPreset = AllowedSellerOpenHours.FirstOrDefault(p => openChoice.Equals(p, StringComparison.OrdinalIgnoreCase) || openChoice.StartsWith(p.Split(" (")[0], StringComparison.OrdinalIgnoreCase));
+                if (matchedPreset != null && !matchedPreset.Contains("Tùy"))
                 {
-                    draft.OpenHours = openChoice.Split(" (")[0];
+                    draft.OpenHours = matchedPreset.Split(" (")[0];
                     return new
                     {
                         success = true,
                         reply = $@"Đã lưu Khung giờ kinh doanh: **{draft.OpenHours}**! ⏰
 
 ---
-8️⃣ **Câu 8 / 14:** Cho mình xin **Họ và tên chủ tiệm** (Từ 6 - 16 ký tự) nhé?",
+1️⃣2️⃣ **Câu 12 / 16:** Vui lòng tải lên ảnh **CCCD Mặt Trước \*** của chủ tiệm:
+
+*(Lưu ý: Chỉ nhận tệp ảnh, không nhận video. Bấm vào khung bên dưới để chọn ảnh từ thư mục máy tính)*",
                         provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q8_OWNERNAME",
+                        registrationState = "REGISTER_SELLER_Q12_CCCD_FRONT",
+                        actionIntent = "SELLER_UPLOAD_CCCD_FRONT",
                         regDraft = draft
                     };
                 }
+
+                return new
+                {
+                    success = true,
+                    reply = "⚠️ Khung giờ không hợp lệ! Vui lòng chọn hoặc nhập đúng 1 trong 6 lựa chọn khung giờ mở cửa kinh doanh bên dưới nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SELLER_Q11_OPENHOURS",
+                    actionIntent = "SELLER_CHOOSE_OPENHOURS",
+                    regDraft = draft
+                };
             }
-            else if (activeState == "REGISTER_SELLER_Q7_CUSTOM_OPENHOURS")
+            else if (activeState == "REGISTER_SELLER_Q11_CUSTOM_OPENHOURS" || activeState == "REGISTER_SELLER_Q7_CUSTOM_OPENHOURS")
             {
                 string customHours = userMsg.Trim();
-                var hourMatches = Regex.Matches(customHours, @"\b(\d{1,2})(:|\s*h)?(\d{2})?\b");
-                bool validGap = true;
+                if (Regex.IsMatch(customHours, @"[!@#$%^&*()_+=\[\]{};':""\\|,.<>?~`]"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Khung giờ không được chứa ký tự đặc biệt! Vui lòng nhập định dạng như `07:00 - 22:00`, `7h - 22h` hoặc `7 giờ - 22 giờ` nhé!",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q11_CUSTOM_OPENHOURS",
+                        regDraft = draft
+                    };
+                }
+                var hourMatches = Regex.Matches(customHours, @"(\d{1,2})(?::(\d{1,2})|\s*(?:h|giờ))?", RegexOptions.IgnoreCase);
+                bool validGap = false;
                 if (hourMatches.Count >= 2 && int.TryParse(hourMatches[0].Groups[1].Value, out int h1) && int.TryParse(hourMatches[1].Groups[1].Value, out int h2))
                 {
-                    int diff = h2 - h1;
-                    if (diff <= 0) diff += 24;
-                    if (diff < 4) validGap = false;
+                    if (h1 >= 0 && h1 <= 24 && h2 >= 0 && h2 <= 24)
+                    {
+                        int diff = h2 - h1;
+                        if (diff <= 0) diff += 24;
+                        if (diff >= 4) validGap = true;
+                    }
                 }
 
                 if (!validGap)
@@ -3991,9 +6822,9 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Khung giờ mở cửa và đóng cửa phải cách nhau **tối thiểu 4 tiếng** (Ví dụ: `08:00 - 22:00` hoặc `07:00 - 23:00`)! Vui lòng nhập lại nhé!",
+                        reply = "⚠️ Khung giờ không hợp lệ! Giờ mở và giờ đóng phải cách nhau **tối thiểu 4 tiếng** (tối đa 24h, chấp nhận định dạng như `07:00 - 22:00`, `7h - 22h`, `7 giờ - 22 giờ`, `00:00`, `0h`, `0 giờ`)! Vui lòng nhập lại nhé!",
                         provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q7_CUSTOM_OPENHOURS",
+                        registrationState = "REGISTER_SELLER_Q11_CUSTOM_OPENHOURS",
                         regDraft = draft
                     };
                 }
@@ -4005,145 +6836,72 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
                     reply = $@"Đã lưu Khung giờ kinh doanh: **{draft.OpenHours}**! ⏰
 
 ---
-8️⃣ **Câu 8 / 14:** Cho mình xin **Họ và tên chủ tiệm** (Từ 6 - 16 ký tự) nhé?",
+1️⃣2️⃣ **Câu 12 / 16:** Vui lòng tải lên ảnh **CCCD Mặt Trước \*** của chủ tiệm:
+
+*(Lưu ý: Chỉ nhận tệp ảnh, không nhận video. Bấm vào khung bên dưới để chọn ảnh từ thư mục máy tính)*",
                     provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q8_OWNERNAME",
-                    regDraft = draft
-                };
-            }
-            else if (activeState == "REGISTER_SELLER_Q8_OWNERNAME")
-            {
-                string ownerName = userMsg.Trim();
-                if (ownerName.Length < 6 || ownerName.Length > 30)
-                {
-                    return new
-                    {
-                        success = true,
-                        reply = "⚠️ Họ và tên chủ tiệm phải có độ dài từ 6 đến 30 ký tự! Vui lòng nhập lại nhé!",
-                        provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q8_OWNERNAME",
-                        regDraft = draft
-                    };
-                }
-
-                draft.OwnerFullName = ownerName;
-                return new
-                {
-                    success = true,
-                    reply = $@"Đã lưu Chủ tiệm: **{ownerName}**! 👤
-
----
-9️⃣ **Câu 9 / 14:** Cho mình xin **Số Căn cước công dân (CCCD)** của chủ tiệm (Đúng 12 chữ số theo quy định) nhé?",
-                    provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q9_CCCD",
-                    regDraft = draft
-                };
-            }
-            else if (activeState == "REGISTER_SELLER_Q9_CCCD")
-            {
-                string cccd = userMsg.Trim();
-                if (!Regex.IsMatch(cccd, @"^\d{12}$"))
-                {
-                    return new
-                    {
-                        success = true,
-                        reply = "⚠️ Số CCCD phải bao gồm đúng 12 chữ số theo quy định nhà nước! Vui lòng nhập lại chính xác 12 số CCCD của chủ tiệm nhé!",
-                        provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q9_CCCD",
-                        regDraft = draft
-                    };
-                }
-
-                draft.CccdNumber = cccd;
-                return new
-                {
-                    success = true,
-                    reply = $@"Đã lưu Số CCCD chủ tiệm: `{cccd}`! 🆔
-
----
-🔟 **Câu 10 / 14:** Vui lòng tải lên ảnh **CCCD Mặt Trước** của chủ tiệm (Nhấp vào khung nét đứt bên dưới để chọn ảnh):",
-                    provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q10_CCCD_FRONT",
+                    registrationState = "REGISTER_SELLER_Q12_CCCD_FRONT",
                     actionIntent = "SELLER_UPLOAD_CCCD_FRONT",
                     regDraft = draft
                 };
             }
-            else if (activeState == "REGISTER_SELLER_Q10_CCCD_FRONT" || activeState == "REGISTER_SELLER_Q9_CCCD_FRONT")
+            else if (activeState == "REGISTER_SELLER_Q12_CCCD_FRONT" || activeState == "REGISTER_SELLER_Q13_CCCD_BACK" || activeState == "REGISTER_SELLER_Q14_FOOD_SAFETY" ||
+                     activeState == "REGISTER_SELLER_Q10_CCCD_FRONT" || activeState == "REGISTER_SELLER_Q11_CCCD_BACK" || activeState == "REGISTER_SELLER_Q12_FOOD_SAFETY" ||
+                     activeState == "REGISTER_SELLER_Q9_CCCD_FRONT")
             {
-                if (string.IsNullOrWhiteSpace(draft.CccdFrontImage) || (!draft.CccdFrontImage.StartsWith("data:image") && !draft.CccdFrontImage.StartsWith("http")))
-                {
-                    if (userMsg.Trim().StartsWith("data:image") || userMsg.Trim().StartsWith("http"))
-                        draft.CccdFrontImage = userMsg.Trim();
-                }
+                string targetIntent = (activeState.Contains("FRONT") ? "SELLER_UPLOAD_CCCD_FRONT" :
+                                      activeState.Contains("BACK") ? "SELLER_UPLOAD_CCCD_BACK" : "SELLER_UPLOAD_FOOD_SAFETY");
                 return new
                 {
                     success = true,
-                    reply = @"Đã tải lên CCCD Mặt Trước thành công! 🆔
-
----
-1️⃣1️⃣ **Câu 11 / 14:** Vui lòng tải lên ảnh **CCCD Mặt Sau** của chủ tiệm (Nhấp vào khung nét đứt bên dưới để chọn ảnh):",
+                    reply = "⚠️ Mục này chỉ nhận tệp hình ảnh (.jpg, .png)! Vui lòng nhấp vào khung bên dưới để tải ảnh lên (không nhận video hay tin nhắn văn bản)!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
                     provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q11_CCCD_BACK",
-                    actionIntent = "SELLER_UPLOAD_CCCD_BACK",
+                    registrationState = activeState,
+                    actionIntent = targetIntent,
                     regDraft = draft
                 };
             }
-            else if (activeState == "REGISTER_SELLER_Q11_CCCD_BACK" || activeState == "REGISTER_SELLER_Q10_CCCD_BACK")
+            else if (activeState == "REGISTER_SELLER_Q15_BANK" || activeState == "REGISTER_SELLER_Q13_BANK")
             {
-                if (string.IsNullOrWhiteSpace(draft.CccdBackImage) || (!draft.CccdBackImage.StartsWith("data:image") && !draft.CccdBackImage.StartsWith("http")))
+                string? matchedBank = MatchSellerBank(userMsg);
+                if (matchedBank == null)
                 {
-                    if (userMsg.Trim().StartsWith("data:image") || userMsg.Trim().StartsWith("http"))
-                        draft.CccdBackImage = userMsg.Trim();
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Ngân hàng không hợp lệ! Bạn chỉ được chọn hoặc nhập đúng 1 trong 8 ngân hàng sau:\n" +
+                                "- **Vietcombank (VCB)**\n" +
+                                "- **MB Bank (MB)**\n" +
+                                "- **Techcombank (TCB)**\n" +
+                                "- **VietinBank (CTG)**\n" +
+                                "- **BIDV**\n" +
+                                "- **VPBank**\n" +
+                                "- **Agribank**\n" +
+                                "- **TPBank**\n\n" +
+                                "Vui lòng bấm chọn hoặc nhập lại nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q15_BANK",
+                        actionIntent = "SELLER_CHOOSE_BANK",
+                        regDraft = draft
+                    };
                 }
-                return new
-                {
-                    success = true,
-                    reply = @"Đã tải lên CCCD Mặt Sau thành công! 🆔
 
----
-1️⃣2️⃣ **Câu 12 / 14:** Vui lòng tải lên ảnh **Giấy Chứng Nhận An Toàn Thực Phẩm** (hoặc Giấy Phép Kinh Doanh) của tiệm:",
-                    provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q12_FOOD_SAFETY",
-                    actionIntent = "SELLER_UPLOAD_FOOD_SAFETY",
-                    regDraft = draft
-                };
-            }
-            else if (activeState == "REGISTER_SELLER_Q12_FOOD_SAFETY" || activeState == "REGISTER_SELLER_Q11_FOOD_SAFETY")
-            {
-                if (string.IsNullOrWhiteSpace(draft.FoodSafetyImage) || (!draft.FoodSafetyImage.StartsWith("data:image") && !draft.FoodSafetyImage.StartsWith("http")))
-                {
-                    if (userMsg.Trim().StartsWith("data:image") || userMsg.Trim().StartsWith("http"))
-                        draft.FoodSafetyImage = userMsg.Trim();
-                }
-                return new
-                {
-                    success = true,
-                    reply = @"Đã tải lên Giấy CN An Toàn Thực Phẩm thành công! 📜
-
----
-1️⃣3️⃣ **Câu 13 / 14:** Vui lòng chọn **Ngân hàng nhận doanh thu** từ danh sách bên dưới (Bấm nút để chọn):",
-                    provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q13_BANK",
-                    actionIntent = "SELLER_CHOOSE_BANK",
-                    regDraft = draft
-                };
-            }
-            else if (activeState == "REGISTER_SELLER_Q13_BANK" || activeState == "REGISTER_SELLER_Q12_BANK")
-            {
-                draft.BankName = userMsg.Trim();
+                draft.BankName = matchedBank;
                 return new
                 {
                     success = true,
                     reply = $@"Đã lưu Ngân hàng: **{draft.BankName}**! 💳
 
 ---
-1️⃣4️⃣ **Câu 14 / 14 (Cuối cùng):** Cho mình xin **Số tài khoản ngân hàng** (Từ 8 - 15 chữ số) để sàn chuyển tiền doanh thu về cho bạn nhé?",
+1️⃣6️⃣ **Câu 16 / 16 (Cuối cùng):** Cho mình xin **Số tài khoản ngân hàng \*** (Từ 8 - 15 chữ số) để sàn chuyển tiền doanh thu về cho bạn nhé?
+
+*(Lưu ý: Chỉ nhận chữ số, không nhận chữ cái hay ký tự đặc biệt)*",
                     provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SELLER_Q14_BANKACC",
+                    registrationState = "REGISTER_SELLER_Q16_BANKACC",
                     regDraft = draft
                 };
             }
-            else if (activeState == "REGISTER_SELLER_Q14_BANKACC" || activeState == "REGISTER_SELLER_Q13_BANKACC" || activeState == "REGISTER_SELLER_STEP3")
+            else if (activeState == "REGISTER_SELLER_Q16_BANKACC" || activeState == "REGISTER_SELLER_Q14_BANKACC" || activeState == "REGISTER_SELLER_STEP3")
             {
                 string bankAcc = userMsg.Trim();
                 if (!Regex.IsMatch(bankAcc, @"^\d{8,15}$"))
@@ -4151,27 +6909,572 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Số tài khoản ngân hàng phải có độ dài từ 8 đến 15 chữ số! Vui lòng nhập lại nhé!",
+                        reply = "⚠️ Số tài khoản ngân hàng chỉ nhận chữ số (từ 8 đến 15 chữ số, không nhận chữ hay ký tự đặc biệt)! Vui lòng nhập lại số tài khoản nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
                         provider = "ZoneMart AI Direct Registration Engine",
-                        registrationState = "REGISTER_SELLER_Q14_BANKACC",
+                        registrationState = "REGISTER_SELLER_Q16_BANKACC",
                         regDraft = draft
                     };
                 }
 
                 draft.BankAccountNumber = bankAcc;
-                return await CompleteSellerRegistrationAsync(draft);
+                return new
+                {
+                    success = true,
+                    reply = BuildSellerReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "REGISTER_SELLER_REVIEW_SUMMARY")
+            {
+                string norm = RemoveVietnameseTones(userMsg.Trim().ToLower());
+                if (norm.Contains("gui ho so") || norm == "gui" || norm.Contains("nop ho so") || norm == "nop" || norm.Contains("hoan tat"))
+                {
+                    return await CompleteSellerRegistrationAsync(draft);
+                }
+                else if (norm.Contains("sua ho so") || norm == "sua" || norm.Contains("chinh sua"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"📝 **CHỌN MỤC BẠN MUỐN CHỈNH SỬA TRONG HỒ SƠ:**
+
+Dạ bạn muốn chỉnh sửa mục nào trong 16 mục dưới đây ạ? Hãy bấm vào nút tương ứng bên dưới nhé:
+1. Mô hình kinh doanh địa phương
+2. Xã / Phường
+3. Quận / Huyện
+4. Tên Chợ Truyền Thống / Cụm Chợ Số Địa Phương
+5. Tên cửa hàng
+6. Địa chỉ tiệm
+7. Danh mục hàng bán chính
+8. Gmail đăng ký gian hàng
+9. Mật khẩu tạo tài khoản
+10. Nhập lại mật khẩu
+11. Khung giờ mở cửa kinh doanh
+12. CCCD mặt trước
+13. CCCD mặt sau
+14. Giấy CN an toàn thực phẩm
+15. Ngân hàng nhận doanh thu
+16. Số tài khoản ngân hàng
+
+*(Bấm **[⬅️ Quay lại bảng tổng kết]** nếu không muốn sửa nữa nhé)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_MENU",
+                        actionIntent = "SELLER_EDIT_MENU",
+                        regDraft = draft
+                    };
+                }
+                else
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Ở bước này bạn chỉ được chọn **[Sửa hồ sơ]** hoặc **[Gửi hồ sơ]** bằng 2 nút bên dưới nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn hủy luồng đăng ký)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_REVIEW_SUMMARY",
+                        actionIntent = "SELLER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_MENU")
+            {
+                string norm = RemoveVietnameseTones(userMsg.Trim().ToLower());
+                if (norm.Contains("quay lai") || norm == "back" || norm.Contains("bang tong ket"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = BuildSellerReviewSummaryReply(draft),
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_REVIEW_SUMMARY",
+                        actionIntent = "SELLER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+
+                if (norm == "1" || norm.Contains("mo hinh") || norm.Contains("doi tuong"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"1️⃣ **Sửa mục 1 / 16:** Vui lòng chọn lại **Mô hình kinh doanh địa phương***:
+1. **Chợ truyền thống** (Tiểu thương tại sạp chợ 🏡)
+2. **Hộ kinh doanh tại nhà** (Chế biến / bán tại gia 🏭)
+3. **Cửa hàng / Cơ sở SX** (Tiệm tạp hóa, xưởng SX 👨‍🌾)
+4. **Người bán địa phương khác** (Nông dân bán nông sản)
+
+*(Bấm nút bên dưới hoặc nhập đúng 1 trong 4 lựa chọn trên. Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q1_TYPE",
+                        actionIntent = "SELLER_CHOOSE_TYPE",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "2" || norm.Contains("xa") || norm.Contains("phuong"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"2️⃣ **Sửa mục 2 / 16:** Cho mình xin lại **Xã / Phường*** của bạn nhé?
+
+*(Chỉ nhập chữ cái, không nhận số hay ký tự đặc biệt như %&*. Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q2_WARD",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "3" || norm.Contains("quan") || norm.Contains("huyen"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"3️⃣ **Sửa mục 3 / 16:** Cho mình xin lại **Quận / Huyện*** của bạn nhé?
+
+*(Chỉ nhập chữ cái, không nhận số hay ký tự đặc biệt như %&*. Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q3_DISTRICT",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "4" || norm.Contains("ten cho") || norm.Contains("cum cho"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"4️⃣ **Sửa mục 4 / 16:** Cho mình xin lại **Tên Chợ Truyền Thống / Cụm Chợ Số Địa Phương** nhé?
+
+*(Nhập chữ và số, không nhận ký tự đặc biệt như %&*. Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q4_MARKETNAME",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "5" || norm.Contains("ten cua hang") || norm.Contains("ten shop") || norm.Contains("ten tiem"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"5️⃣ **Sửa mục 5 / 16:** Cho mình xin lại **Tên cửa hàng*** (Từ 12 - 30 ký tự) nhé?
+
+*(Chỉ nhập chữ cái, không nhận số hay ký tự đặc biệt như %&*. Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q5_STORENAME",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "6" || norm.Contains("dia chi"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"6️⃣ **Sửa mục 6 / 16:** Cho mình xin lại **Địa chỉ tiệm*** của bạn nhé?
+
+*(Bắt buộc có ngõ gì, đường gì. Nhận chữ và số, không nhận ký tự đặc biệt như ^&*. Bạn cũng có thể bấm nút Lấy GPS hiện tại bên dưới)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q6_ADDRESS",
+                        actionIntent = "SELLER_INPUT_ADDRESS_GPS",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "7" || norm.Contains("danh muc") || norm.Contains("hang ban chinh"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"7️⃣ **Sửa mục 7 / 16:** Vui lòng chọn lại **Danh mục hàng bán chính*** từ danh sách bên dưới (Bấm nút hoặc nhập đúng 1 trong 6 danh mục):
+
+*(Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q7_CATEGORY",
+                        actionIntent = "SELLER_CHOOSE_CATEGORY",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "8" || norm.Contains("gmail") || norm.Contains("email"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"8️⃣ **Sửa mục 8 / 16:** Cho mình xin lại **Địa chỉ Gmail đăng ký gian hàng*** (Bắt buộc đuôi @gmail.com) nhé?
+
+*(Chỉ có 1 ký tự @ và 1 Gmail chỉ đăng ký 1 tài khoản. Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q8_GMAIL",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "9" || norm == "10" || norm.Contains("tao mat khau") || norm.Contains("nhap lai mat khau") || norm.Contains("mat khau") || norm.Contains("xac nhan"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-key-fill me-1"" style=""color: #D97706;""></i> <strong>Sửa Mật khẩu & Xác nhận mật khẩu (Mục 9 & 10):</strong> Cho mình xin <strong>Mật khẩu mới</strong> cho gian hàng (độ dài từ 6 - 16 ký tự) nhé?
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Bấm icon con mắt ở ô nhập bên dưới để xem/ẩn mật khẩu. Sau khi nhập xong, AI sẽ yêu cầu bạn xác nhận lại mật khẩu mới để đồng bộ cả 2 mục 9 & 10 nhé)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q9_PASSWORD",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "11" || norm.Contains("khung gio") || norm.Contains("gio mo"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"1️⃣1️⃣ **Sửa mục 11 / 16:** Vui lòng chọn lại **Khung giờ mở cửa kinh doanh*** từ các nút bên dưới:
+
+*(Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q11_OPENHOURS",
+                        actionIntent = "SELLER_CHOOSE_OPENHOURS",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "12" || norm.Contains("mat truoc"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"1️⃣2️⃣ **Sửa mục 12 / 16:** Vui lòng tải lên ảnh **CCCD Mặt Trước*** mới của chủ tiệm:
+
+*(Nhấp vào khung bên dưới để chọn ảnh, không nhận video. Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q12_CCCD_FRONT",
+                        actionIntent = "SELLER_UPLOAD_CCCD_FRONT",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "13" || norm.Contains("mat sau"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"1️⃣3️⃣ **Sửa mục 13 / 16:** Vui lòng tải lên ảnh **CCCD Mặt Sau*** mới của chủ tiệm:
+
+*(Nhấp vào khung bên dưới để chọn ảnh, không nhận video. Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q13_CCCD_BACK",
+                        actionIntent = "SELLER_UPLOAD_CCCD_BACK",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "14" || norm.Contains("an toan thuc pham") || norm.Contains("attp") || norm.Contains("gpkd"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"1️⃣4️⃣ **Sửa mục 14 / 16:** Vui lòng tải lên ảnh **Giấy Chứng Nhận An Toàn Thực Phẩm*** mới:
+
+*(Nhấp vào khung bên dưới để chọn ảnh, không nhận video. Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q14_FOOD_SAFETY",
+                        actionIntent = "SELLER_UPLOAD_FOOD_SAFETY",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "15" || norm.Contains("ngan hang"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"1️⃣5️⃣ **Sửa mục 15 / 16:** Vui lòng chọn lại **Ngân hàng nhận doanh thu*** từ 8 ngân hàng bên dưới:
+
+*(Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q15_BANK",
+                        actionIntent = "SELLER_CHOOSE_BANK",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "16" || norm.Contains("so tai khoan") || norm.Contains("stk"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"1️⃣6️⃣ **Sửa mục 16 / 16:** Cho mình xin lại **Số tài khoản ngân hàng*** (Từ 8 - 15 chữ số) nhé?
+
+*(Chỉ nhận chữ số, không nhận chữ hay ký tự đặc biệt. Nhắn ""Quay lại"" nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q16_BANKACC",
+                        regDraft = draft
+                    };
+                }
+                else
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Vui lòng chọn đúng 1 trong 16 mục bằng cách bấm nút bên dưới hoặc nhập số từ 1 đến 16 nhé!\n\n💡 *(Bấm **[Quay lại]** để quay về bảng tổng kết)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_MENU",
+                        actionIntent = "SELLER_EDIT_MENU",
+                        regDraft = draft
+                    };
+                }
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q1_TYPE")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string? matched = MatchSellerType(userMsg);
+                if (matched == null)
+                {
+                    return new { success = true, reply = "⚠️ Mô hình kinh doanh không hợp lệ! Vui lòng chọn 1 trong 4 lựa chọn trên hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q1_TYPE", actionIntent = "SELLER_CHOOSE_TYPE", regDraft = draft };
+                }
+                draft.SellerType = matched;
+                return new { success = true, reply = $"✅ Đã cập nhật **Mô hình kinh doanh** thành: **{matched}**!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q2_WARD")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string ward = userMsg.Trim();
+                if (ward.Length < 2 || !Regex.IsMatch(ward, @"^[\p{L}\s]+$"))
+                {
+                    return new { success = true, reply = "⚠️ Tên Xã / Phường chỉ được nhập chữ cái (không nhận số hay các ký tự đặc biệt như %&*)! Vui lòng nhập lại hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q2_WARD", regDraft = draft };
+                }
+                draft.Ward = ward;
+                return new { success = true, reply = $"✅ Đã cập nhật **Xã / Phường** thành: **{ward}**!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q3_DISTRICT")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string district = userMsg.Trim();
+                if (district.Length < 2 || !Regex.IsMatch(district, @"^[\p{L}\s]+$"))
+                {
+                    return new { success = true, reply = "⚠️ Tên Quận / Huyện chỉ được nhập chữ cái (không nhận số hay các ký tự đặc biệt như %&*)! Vui lòng nhập lại hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q3_DISTRICT", regDraft = draft };
+                }
+                draft.District = district;
+                return new { success = true, reply = $"✅ Đã cập nhật **Quận / Huyện** thành: **{district}**!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q4_MARKETNAME")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string marketName = userMsg.Trim();
+                if (marketName.Length < 2 || !Regex.IsMatch(marketName, @"^[\p{L}0-9\s]+$"))
+                {
+                    return new { success = true, reply = "⚠️ Tên Chợ Truyền Thống / Cụm Chợ Số chỉ được nhập chữ và số (không nhận các ký tự đặc biệt như %&*)! Vui lòng nhập lại hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q4_MARKETNAME", regDraft = draft };
+                }
+                draft.MarketName = marketName;
+                return new { success = true, reply = $"✅ Đã cập nhật **Tên Chợ / Cụm Chợ Số** thành: **{marketName}**!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q5_STORENAME")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string storeName = userMsg.Trim();
+                if (storeName.Length < 12 || storeName.Length > 30 || !Regex.IsMatch(storeName, @"^[\p{L}\s]+$"))
+                {
+                    return new { success = true, reply = "⚠️ Tên cửa hàng phải từ 12 - 30 ký tự và chỉ chứa chữ cái (không nhận số hay ký tự đặc biệt như %&*)! Vui lòng nhập lại hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q5_STORENAME", regDraft = draft };
+                }
+                draft.StoreName = storeName;
+                return new { success = true, reply = $"✅ Đã cập nhật **Tên cửa hàng** thành: **{storeName}**!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q6_ADDRESS")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string address = userMsg.Trim();
+                string addrNoTone = RemoveVietnameseTones(address.ToLower());
+                bool hasNgo = addrNoTone.Contains("ngo") || address.ToLower().Contains("ngõ");
+                bool hasDuong = addrNoTone.Contains("duong") || address.ToLower().Contains("đường");
+                if (address.Length < 6 || Regex.IsMatch(address, @"[\^&*]") || !hasNgo || !hasDuong)
+                {
+                    return new { success = true, reply = "⚠️ Địa chỉ tiệm phải có đầy đủ thông tin ngõ gì, đường gì (không chứa ký tự đặc biệt như ^&*)! Vui lòng nhập lại, bấm **Lấy GPS hiện tại** hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q6_ADDRESS", actionIntent = "SELLER_INPUT_ADDRESS_GPS", regDraft = draft };
+                }
+                draft.Address = address;
+                return new { success = true, reply = $"✅ Đã cập nhật **Địa chỉ tiệm** thành: **{address}**!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q7_CATEGORY")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string? matched = MatchSellerCategory(userMsg);
+                if (matched == null)
+                {
+                    return new { success = true, reply = "⚠️ Danh mục không hợp lệ! Vui lòng chọn đúng 1 trong 6 danh mục hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q7_CATEGORY", actionIntent = "SELLER_CHOOSE_CATEGORY", regDraft = draft };
+                }
+                draft.Category = matched;
+                return new { success = true, reply = $"✅ Đã cập nhật **Danh mục hàng bán chính** thành: **{matched}**!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q8_GMAIL")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string rawEmail = userMsg.Trim().ToLowerInvariant();
+                int atCount = rawEmail.Count(c => c == '@');
+                if (atCount != 1 || !Regex.IsMatch(rawEmail, @"^[a-zA-Z0-9._%+-]+@gmail\.com$"))
+                {
+                    return new { success = true, reply = "⚠️ Địa chỉ Gmail không hợp lệ (phải có đúng 1 ký tự @ và kết thúc bằng @gmail.com)! Vui lòng nhập lại hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q8_GMAIL", regDraft = draft };
+                }
+                var (isRegistered, _) = await CheckIfEmailAlreadyRegisteredAsync(rawEmail);
+                if (isRegistered && rawEmail != draft.Email?.ToLowerInvariant())
+                {
+                    return new { success = true, reply = "Oh no tài khoản gmail của bạn đã đăng ký rồi ạ, bạn dùng tài khoản gmail khác nhé! 😅🔑\n\n*(Hoặc nhắn **\"Quay lại\"** để giữ nguyên)*", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q8_GMAIL", regDraft = draft };
+                }
+                draft.Email = rawEmail;
+                return new { success = true, reply = $"✅ Đã cập nhật **Gmail đăng ký** thành: `{rawEmail}`!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q9_PASSWORD")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string pwd = userMsg.Trim();
+                if (pwd.Length < 6 || pwd.Length > 16)
+                {
+                    return new { success = true, reply = "⚠️ Mật khẩu phải có độ dài từ 6 đến 16 ký tự! Vui lòng nhập lại hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q9_PASSWORD", regDraft = draft };
+                }
+                draft.Password = pwd;
+                return new
+                {
+                    success = true,
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã ghi nhận Mật khẩu mới!
+
+<hr class=""chat-divider""/>
+<i class=""bi bi-shield-lock-fill me-1"" style=""color: #0284C7;""></i> <strong>Xác nhận mật khẩu:</strong> Vui lòng <strong>Nhập lại mật khẩu mới</strong> để hoàn tất đồng bộ cả 2 mục 9 & 10:
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Bấm icon con mắt ở ô nhập bên dưới để xem/ẩn mật khẩu)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SELLER_EDIT_Q10_CONFIRM_PASSWORD",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q10_CONFIRM_PASSWORD")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string confirmPwd = userMsg.Trim();
+                if (confirmPwd != draft.Password)
+                {
+                    return new { success = true, reply = "<i class=\"bi bi-exclamation-triangle-fill me-1\" style=\"color: #F59E0B;\"></i> Mật khẩu xác nhận không trùng khớp với mật khẩu mới vừa nhập! Vui lòng nhập lại hoặc bấm **[Quay lại]** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q10_CONFIRM_PASSWORD", regDraft = draft };
+                }
+                draft.ConfirmPassword = confirmPwd;
+                return new { success = true, reply = $"<i class=\"bi bi-check-circle-fill me-1\" style=\"color: #10B981;\"></i> Đã cập nhật thành công cả <strong>Mật khẩu</strong> và <strong>Xác nhận mật khẩu</strong>!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q11_OPENHOURS")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string openChoice = userMsg.Trim();
+                if (openChoice.Contains("Tùy chọn") || openChoice.Contains("Tùy chỉnh") || openChoice.Contains("tuy chinh") || openChoice.Contains("tuy chon"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "Bạn đã chọn **Tùy chỉnh khung giờ**! ⏰\n\nVui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `07:00 - 22:00`, `7h - 22h`, `7 giờ - 22 giờ` hoặc `00:00 - 20:00`):\n*(Nhắn **\"Quay lại\"** nếu muốn giữ nguyên)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_EDIT_Q11_CUSTOM_OPENHOURS",
+                        regDraft = draft
+                    };
+                }
+                string? matchedPreset = AllowedSellerOpenHours.FirstOrDefault(p => openChoice.Equals(p, StringComparison.OrdinalIgnoreCase) || openChoice.StartsWith(p.Split(" (")[0], StringComparison.OrdinalIgnoreCase));
+                if (matchedPreset != null && !matchedPreset.Contains("Tùy"))
+                {
+                    draft.OpenHours = matchedPreset.Split(" (")[0];
+                    return new { success = true, reply = $"✅ Đã cập nhật **Khung giờ mở cửa** thành: **{draft.OpenHours}**!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                return new { success = true, reply = "⚠️ Khung giờ không hợp lệ! Vui lòng chọn 1 trong các nút hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q11_OPENHOURS", actionIntent = "SELLER_CHOOSE_OPENHOURS", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q11_CUSTOM_OPENHOURS")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string customHours = userMsg.Trim();
+                var hourMatches = Regex.Matches(customHours, @"(\d{1,2})(?::(\d{1,2})|\s*(?:h|giờ))?", RegexOptions.IgnoreCase);
+                bool validGap = false;
+                if (!Regex.IsMatch(customHours, @"[!@#$%^&*()_+=\[\]{};':""\\|,.<>?~`]") && hourMatches.Count >= 2 && int.TryParse(hourMatches[0].Groups[1].Value, out int h1) && int.TryParse(hourMatches[1].Groups[1].Value, out int h2))
+                {
+                    if (h1 >= 0 && h1 <= 24 && h2 >= 0 && h2 <= 24)
+                    {
+                        int diff = h2 - h1;
+                        if (diff <= 0) diff += 24;
+                        if (diff >= 4) validGap = true;
+                    }
+                }
+                if (!validGap)
+                {
+                    return new { success = true, reply = "⚠️ Khung giờ không hợp lệ! Giờ mở và giờ đóng phải cách nhau tối thiểu 4 tiếng (tối đa 24h, chấp nhận `00:00`, `0h`, `0 giờ`)! Vui lòng nhập lại hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q11_CUSTOM_OPENHOURS", regDraft = draft };
+                }
+                draft.OpenHours = customHours;
+                return new { success = true, reply = $"✅ Đã cập nhật **Khung giờ mở cửa** thành: **{customHours}**!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q12_CCCD_FRONT" || activeState == "REGISTER_SELLER_EDIT_Q13_CCCD_BACK" || activeState == "REGISTER_SELLER_EDIT_Q14_FOOD_SAFETY")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string targetIntent = activeState.Contains("FRONT") ? "SELLER_UPLOAD_CCCD_FRONT" : activeState.Contains("BACK") ? "SELLER_UPLOAD_CCCD_BACK" : "SELLER_UPLOAD_FOOD_SAFETY";
+                return new { success = true, reply = "⚠️ Mục này chỉ nhận tệp hình ảnh (.jpg, .png)! Vui lòng nhấp vào khung bên dưới để tải ảnh lên (hoặc nhắn **\"Quay lại\"** để giữ ảnh cũ)!", provider = "ZoneMart AI Direct Registration Engine", registrationState = activeState, actionIntent = targetIntent, regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q15_BANK")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string? matched = MatchSellerBank(userMsg);
+                if (matched == null)
+                {
+                    return new { success = true, reply = "⚠️ Ngân hàng không hợp lệ! Vui lòng chọn đúng 1 trong 8 ngân hàng bên dưới hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q15_BANK", actionIntent = "SELLER_CHOOSE_BANK", regDraft = draft };
+                }
+                draft.BankName = matched;
+                return new { success = true, reply = $"✅ Đã cập nhật **Ngân hàng nhận doanh thu** thành: **{matched}**!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SELLER_EDIT_Q16_BANKACC")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string bankAcc = userMsg.Trim();
+                if (!Regex.IsMatch(bankAcc, @"^\d{8,15}$"))
+                {
+                    return new { success = true, reply = "⚠️ Số tài khoản ngân hàng chỉ nhận chữ số (từ 8 đến 15 chữ số, không nhận chữ hay ký tự đặc biệt)! Vui lòng nhập lại hoặc nhắn **\"Quay lại\"** nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_EDIT_Q16_BANKACC", regDraft = draft };
+                }
+                draft.BankAccountNumber = bankAcc;
+                return new { success = true, reply = $"✅ Đã cập nhật **Số tài khoản ngân hàng** thành: `{bankAcc}`!\n\n" + BuildSellerReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SELLER_REVIEW_SUMMARY", actionIntent = "SELLER_REVIEW_SUMMARY", regDraft = draft };
             }
 
             // ==================== [ROLE 2] SHIPPER TÀI XẾ ====================
             if (activeState == "REGISTER_SHIPPER_Q1_NAME" || activeState == "REGISTER_SHIPPER_STEP1" || activeState == "REGISTER_SHIPPER_WAITING")
             {
                 string fullName = userMsg.Trim();
-                if (fullName.Length < 6 || fullName.Length > 16)
+                if (!IsValidShipperFullName(fullName, out string nameErr))
                 {
                     return new
                     {
                         success = true,
-                        reply = $"⚠️ Họ và tên thật của tài xế phải từ 6 đến 16 ký tự (Hiện tại: {fullName.Length} ký tự)! Vui lòng nhập lại nhé!\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
+                        reply = $"{nameErr}\n\n<i class=\"bi bi-info-circle me-1\" style=\"color: #0284C7;\"></i> *(Nhắn <strong>\"hủy\"</strong> nếu bạn muốn hủy luồng đăng ký)*",
                         provider = "ZoneMart AI Direct Registration Engine",
                         registrationState = "REGISTER_SHIPPER_Q1_NAME",
                         regDraft = draft
@@ -4182,10 +7485,10 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
                 return new
                 {
                     success = true,
-                    reply = $@"Dạ chào tài xế **{fullName}**! 🛵
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Dạ chào tài xế <strong>{fullName}</strong>!
 
----
-2️⃣ **Câu 2 / 15:** Cho mình xin **Địa chỉ Gmail đăng ký tài xế** (Bắt buộc đuôi **@gmail.com**) nhé?",
+<hr class=""chat-divider""/>
+2. <strong>Câu 2 / 15:</strong> Cho mình xin <strong>Địa chỉ Gmail đăng ký tài xế</strong> (Bắt buộc đuôi <strong>@gmail.com</strong>) nhé?",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "REGISTER_SHIPPER_Q2_GMAIL",
                     regDraft = draft
@@ -4193,28 +7496,33 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
             }
             else if (activeState == "REGISTER_SHIPPER_Q2_GMAIL")
             {
-                string email = userMsg.Trim().ToLowerInvariant();
-                var match = Regex.Match(email, @"[a-zA-Z0-9._%+-]+@gmail\.com");
-                if (!match.Success)
+                string rawEmail = userMsg.Trim().ToLowerInvariant();
+                int atCount = rawEmail.Count(c => c == '@');
+                bool isValidGmail = atCount == 1 && Regex.IsMatch(rawEmail, @"^[a-zA-Z0-9._%+-]+@gmail\.com$");
+                if (!isValidGmail)
                 {
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Địa chỉ Gmail đăng ký tài xế bắt buộc phải có đuôi **@gmail.com** (Ví dụ: `taixe@gmail.com`)! Vui lòng nhập lại nhé!\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
+                        reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Địa chỉ Gmail không hợp lệ! Gmail đăng ký tài xế chỉ được phép có đúng một ký tự `@` và bắt buộc phải có đuôi <strong>@gmail.com</strong> (Ví dụ: `taixe@gmail.com`)! Vui lòng nhập lại nhé!
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""hủy""</strong> nếu bạn muốn dừng)*",
                         provider = "ZoneMart AI Direct Registration Engine",
                         registrationState = "REGISTER_SHIPPER_Q2_GMAIL",
                         regDraft = draft
                     };
                 }
 
-                string candidateEmail = match.Value;
+                string candidateEmail = rawEmail;
                 var (isRegistered, detailRole) = await CheckIfEmailAlreadyRegisteredAsync(candidateEmail);
                 if (isRegistered)
                 {
                     return new
                     {
                         success = true,
-                        reply = $"Oh no! Gmail `{candidateEmail}` này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi ạ 😅. Mỗi tài khoản chỉ đăng ký 1 Gmail duy nhất, bạn vui lòng chọn và nhập một địa chỉ Gmail khác nhé! 🔑\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
+                        reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Oh no tài khoản gmail của bạn đã đăng ký rồi ạ, bạn dùng tài khoản gmail khác nhé!
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""hủy""</strong> nếu bạn muốn dừng)*",
                         provider = "ZoneMart AI Direct Registration Engine",
                         registrationState = "REGISTER_SHIPPER_Q2_GMAIL",
                         regDraft = draft
@@ -4225,11 +7533,11 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
                 return new
                 {
                     success = true,
-                    reply = $@"Đã lưu Gmail tài xế: `{draft.Email}`! 📧
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã lưu Gmail tài xế: <code>{draft.Email}</code>!
 
----
-3️⃣ **Câu 3 / 15:** Cho mình xin **Mật khẩu tạo tài khoản** (Từ 6 - 16 ký tự) nhé?
-💡 *(Bấm icon mắt 👁️ ở ô nhập bên dưới để ẩn/hiện mật khẩu)*",
+<hr class=""chat-divider""/>
+3. <strong>Câu 3 / 15:</strong> Cho mình xin <strong>Mật khẩu tạo tài khoản</strong> (Từ 6 - 16 ký tự) nhé?
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Bấm icon mắt <i class=""bi bi-eye-fill""></i> ở ô nhập bên dưới để ẩn/hiện mật khẩu)*",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "REGISTER_SHIPPER_Q3_PASSWORD",
                     regDraft = draft
@@ -4243,7 +7551,7 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Mật khẩu phải có độ dài từ 6 đến 16 ký tự! Vui lòng nhập lại nhé!",
+                        reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Mật khẩu phải có độ dài từ 6 đến 16 ký tự! Vui lòng nhập lại nhé!",
                         provider = "ZoneMart AI Direct Registration Engine",
                         registrationState = "REGISTER_SHIPPER_Q3_PASSWORD",
                         regDraft = draft
@@ -4254,11 +7562,11 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
                 return new
                 {
                     success = true,
-                    reply = @"Đã ghi nhận mật khẩu! 🔒
+                    reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã ghi nhận mật khẩu!
 
----
-4️⃣ **Câu 4 / 15:** Vui lòng **Nhập lại mật khẩu** (Xác nhận trùng khớp) nhé?
-💡 *(Bấm icon mắt 👁️ ở ô nhập để kiểm tra)*",
+<hr class=""chat-divider""/>
+4. <strong>Câu 4 / 15:</strong> Vui lòng <strong>Nhập lại mật khẩu</strong> (Xác nhận trùng khớp) nhé?
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Bấm icon mắt <i class=""bi bi-eye-fill""></i> ở ô nhập để kiểm tra)*",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "REGISTER_SHIPPER_Q4_CONFIRM_PASSWORD",
                     regDraft = draft
@@ -4272,7 +7580,7 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Mật khẩu xác nhận không trùng khớp với mật khẩu vừa nhập! Vui lòng nhập lại chính xác mật khẩu nhé!",
+                        reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Mật khẩu xác nhận không trùng khớp với mật khẩu vừa nhập! Vui lòng nhập lại chính xác mật khẩu nhé!",
                         provider = "ZoneMart AI Direct Registration Engine",
                         registrationState = "REGISTER_SHIPPER_Q4_CONFIRM_PASSWORD",
                         regDraft = draft
@@ -4283,10 +7591,15 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
                 return new
                 {
                     success = true,
-                    reply = @"Mật khẩu xác nhận trùng khớp hoàn toàn! ✅
+                    reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Mật khẩu xác nhận trùng khớp hoàn toàn!
 
----
-5️⃣ **Câu 5 / 15:** Cho mình xin **Số Căn cước công dân (CCCD)** của bạn (Đúng 12 chữ số) nhé?",
+<hr class=""chat-divider""/>
+5. <strong>Câu 5 / 15:</strong> Cho mình xin <strong>Số Căn cước công dân (CCCD)</strong> của bạn (Đúng 12 chữ số theo quy chuẩn Bộ Công An) nhé?
+- 3 số đầu: Mã tỉnh/TP nơi khai sinh (001 - 096, ví dụ: Hà Nội 001, TP.HCM 079)
+- 1 số tiếp: Mã thế kỷ sinh và giới tính (0 - 9, ví dụ Thế kỷ 20: Nam 0, Nữ 1; Thế kỷ 21: Nam 2, Nữ 3)
+- 2 số tiếp: 2 số cuối năm sinh (Ví dụ: 1998 là 98)
+- 6 số cuối: Dãy số ngẫu nhiên duy nhất
+(Ví dụ hợp lệ: `001198012345` - chỉ nhập số, không nhận chữ hay ký tự đặc biệt)",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "REGISTER_SHIPPER_Q5_CCCD",
                     regDraft = draft
@@ -4295,12 +7608,12 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
             else if (activeState == "REGISTER_SHIPPER_Q5_CCCD")
             {
                 string cccd = userMsg.Trim();
-                if (!Regex.IsMatch(cccd, @"^\d{12}$"))
+                if (!IsValidCccdNumber(cccd, out string cccdErr))
                 {
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Số CCCD phải bao gồm đúng 12 chữ số theo quy định nhà nước! Vui lòng nhập lại chính xác 12 số CCCD nhé!",
+                        reply = $"{cccdErr}\n\n<i class=\"bi bi-info-circle me-1\" style=\"color: #0284C7;\"></i> *(Nhắn <strong>\"hủy\"</strong> nếu bạn muốn dừng)*",
                         provider = "ZoneMart AI Direct Registration Engine",
                         registrationState = "REGISTER_SHIPPER_Q5_CCCD",
                         regDraft = draft
@@ -4311,10 +7624,11 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
                 return new
                 {
                     success = true,
-                    reply = $@"Đã lưu Số CCCD: `{cccd}`! 🆔
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã lưu Số CCCD: <code>{cccd}</code>!
 
----
-6️⃣ **Câu 6 / 15:** Vui lòng tải lên **Ảnh chân dung tài xế** (Nhấp vào ô bên dưới để chọn ảnh):",
+<hr class=""chat-divider""/>
+6. <strong>Câu 6 / 15:</strong> Vui lòng tải lên <strong>Ảnh chân dung tài xế</strong>:
+(Nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4 hay tin nhắn văn bản)",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "REGISTER_SHIPPER_Q6_PORTRAIT",
                     actionIntent = "SHIPPER_UPLOAD_PORTRAIT",
@@ -4323,86 +7637,71 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
             }
             else if (activeState == "REGISTER_SHIPPER_Q6_PORTRAIT")
             {
-                if (string.IsNullOrWhiteSpace(draft.PortraitImage) || (!draft.PortraitImage.StartsWith("data:image") && !draft.PortraitImage.StartsWith("http")))
-                {
-                    if (userMsg.Trim().StartsWith("data:image") || userMsg.Trim().StartsWith("http"))
-                        draft.PortraitImage = userMsg.Trim();
-                }
                 return new
                 {
                     success = true,
-                    reply = @"Đã tải lên Ảnh chân dung thành công! 👤
+                    reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Mục này bắt buộc phải tải lên tệp hình ảnh (.jpg, .png, .webp)! Vui lòng nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính (không nhận tin nhắn văn bản hay video như .mp4)!
 
----
-7️⃣ **Câu 7 / 15:** Vui lòng tải lên ảnh **CCCD Mặt Trước** của tài xế:",
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""hủy""</strong> nếu bạn muốn hủy luồng đăng ký)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SHIPPER_Q6_PORTRAIT",
+                    actionIntent = "SHIPPER_UPLOAD_PORTRAIT",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "REGISTER_SHIPPER_Q7_CCCD_FRONT")
+            {
+                return new
+                {
+                    success = true,
+                    reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Mục này bắt buộc phải tải lên tệp hình ảnh CCCD Mặt Trước! Vui lòng nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính (không nhận tin nhắn văn bản hay video như .mp4)!
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""hủy""</strong> nếu bạn muốn hủy luồng đăng ký)*",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "REGISTER_SHIPPER_Q7_CCCD_FRONT",
                     actionIntent = "SHIPPER_UPLOAD_CCCD_FRONT",
                     regDraft = draft
                 };
             }
-            else if (activeState == "REGISTER_SHIPPER_Q7_CCCD_FRONT")
+            else if (activeState == "REGISTER_SHIPPER_Q8_CCCD_BACK")
             {
-                if (string.IsNullOrWhiteSpace(draft.CccdFrontImage) || (!draft.CccdFrontImage.StartsWith("data:image") && !draft.CccdFrontImage.StartsWith("http")))
-                {
-                    if (userMsg.Trim().StartsWith("data:image") || userMsg.Trim().StartsWith("http"))
-                        draft.CccdFrontImage = userMsg.Trim();
-                }
                 return new
                 {
                     success = true,
-                    reply = @"Đã tải lên CCCD Mặt Trước thành công! 🆔
+                    reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Mục này bắt buộc phải tải lên tệp hình ảnh CCCD Mặt Sau! Vui lòng nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính (không nhận tin nhắn văn bản hay video như .mp4)!
 
----
-8️⃣ **Câu 8 / 15:** Vui lòng tải lên ảnh **CCCD Mặt Sau** của tài xế:",
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""hủy""</strong> nếu bạn muốn hủy luồng đăng ký)*",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "REGISTER_SHIPPER_Q8_CCCD_BACK",
                     actionIntent = "SHIPPER_UPLOAD_CCCD_BACK",
                     regDraft = draft
                 };
             }
-            else if (activeState == "REGISTER_SHIPPER_Q8_CCCD_BACK")
-            {
-                if (string.IsNullOrWhiteSpace(draft.CccdBackImage) || (!draft.CccdBackImage.StartsWith("data:image") && !draft.CccdBackImage.StartsWith("http")))
-                {
-                    if (userMsg.Trim().StartsWith("data:image") || userMsg.Trim().StartsWith("http"))
-                        draft.CccdBackImage = userMsg.Trim();
-                }
-                return new
-                {
-                    success = true,
-                    reply = @"Đã tải lên CCCD Mặt Sau thành công! 🆔
-
----
-9️⃣ **Câu 9 / 15:** Cho mình xin **Biển số xe máy** bạn chạy đơn (Ví dụ: `29ak1233` - AI sẽ tự động viết hoa thành `29AK1233` nhé):",
-                    provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SHIPPER_Q9_LICENSE_PLATE",
-                    regDraft = draft
-                };
-            }
             else if (activeState == "REGISTER_SHIPPER_Q9_LICENSE_PLATE")
             {
-                string plate = userMsg.Trim().ToUpperInvariant();
-                if (string.IsNullOrWhiteSpace(plate) || plate.Length < 4)
+                if (!IsValidLicensePlate(userMsg, out string formattedPlate, out string plateErr))
                 {
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Vui lòng nhập Biển số xe máy rõ ràng (Ví dụ: `29ak1233` hoặc `29A1-99999`) nhé!",
+                        reply = $"{plateErr}\n\n<i class=\"bi bi-info-circle me-1\" style=\"color: #0284C7;\"></i> *(Nhắn <strong>\"hủy\"</strong> nếu bạn muốn dừng)*",
                         provider = "ZoneMart AI Direct Registration Engine",
                         registrationState = "REGISTER_SHIPPER_Q9_LICENSE_PLATE",
                         regDraft = draft
                     };
                 }
 
-                draft.LicensePlate = plate;
+                draft.LicensePlate = formattedPlate;
                 return new
                 {
                     success = true,
-                    reply = $@"Đã lưu Biển số xe: **{plate}**! 🛵
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã lưu Biển số xe: <strong>{formattedPlate}</strong>!
 
----
-🔟 **Câu 10 / 15:** Vui lòng chọn **Loại xe đăng ký** (Bấm nút bên dưới để chọn):",
+<hr class=""chat-divider""/>
+10. <strong>Câu 10 / 15:</strong> Vui lòng chọn <strong>Loại xe đăng ký</strong>:
+1. <strong>Xe máy xăng</strong>
+2. <strong>Xe máy điện</strong>
+(Bấm nút bên dưới hoặc nhập đúng 1 trong 2 lựa chọn trên)",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "REGISTER_SHIPPER_Q10_VEHICLE_TYPE",
                     actionIntent = "SHIPPER_CHOOSE_VEHICLE_TYPE",
@@ -4411,14 +7710,37 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
             }
             else if (activeState == "REGISTER_SHIPPER_Q10_VEHICLE_TYPE")
             {
-                draft.VehicleType = userMsg.Trim();
+                string? matchedType = MatchShipperVehicleType(userMsg);
+                if (matchedType == null)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Loại xe không hợp lệ! Bạn chỉ được chọn hoặc nhập đúng 1 trong 2 lựa chọn: <strong>Xe máy xăng</strong> hoặc <strong>Xe máy điện</strong>!
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Bấm nút bên dưới để chọn hoặc nhắn <strong>""hủy""</strong> nếu muốn dừng)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_Q10_VEHICLE_TYPE",
+                        actionIntent = "SHIPPER_CHOOSE_VEHICLE_TYPE",
+                        regDraft = draft
+                    };
+                }
+
+                draft.VehicleType = matchedType;
+                bool isElectric = matchedType.Contains("điện");
+                string modelsListText = isElectric
+                    ? "- VinFast Feliz\n- VinFast Klara\n- VinFast Evo200\n- Dat Bike Weaver"
+                    : "- Honda Wave Alpha\n- Honda Vision\n- Honda Air Blade\n- Honda Lead\n- Yamaha Sirius\n- Yamaha Exciter\n- Honda Winner X";
+
                 return new
                 {
                     success = true,
-                    reply = $@"Đã lưu Loại xe: **{draft.VehicleType}**! 🏍️
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã lưu Loại xe: <strong>{draft.VehicleType}</strong>!
 
----
-1️⃣1️⃣ **Câu 11 / 15:** Vui lòng chọn **Dòng xe / Mẫu xe** bạn sử dụng từ danh sách bên dưới (Bấm nút để chọn):",
+<hr class=""chat-divider""/>
+11. <strong>Câu 11 / 15:</strong> Vui lòng chọn <strong>Dòng xe / Mẫu xe</strong> bạn sử dụng từ danh sách bên dưới:
+{modelsListText}
+(Bấm nút bên dưới hoặc nhập đúng tên dòng xe trong danh sách trên)",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "REGISTER_SHIPPER_Q11_VEHICLE_MODEL",
                     actionIntent = "SHIPPER_CHOOSE_VEHICLE_MODEL",
@@ -4427,14 +7749,37 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
             }
             else if (activeState == "REGISTER_SHIPPER_Q11_VEHICLE_MODEL")
             {
-                draft.VehicleModel = userMsg.Trim();
+                string? matchedModel = MatchShipperVehicleModel(userMsg, draft.VehicleType ?? "Xe máy xăng");
+                if (matchedModel == null)
+                {
+                    bool isElectric = (draft.VehicleType ?? "").Contains("điện");
+                    string allowedText = isElectric
+                        ? "VinFast Feliz, VinFast Klara, VinFast Evo200, Dat Bike Weaver"
+                        : "Honda Wave Alpha, Honda Vision, Honda Air Blade, Honda Lead, Yamaha Sirius, Yamaha Exciter, Honda Winner X";
+
+                    return new
+                    {
+                        success = true,
+                        reply = $@"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Dòng xe không hợp lệ! Với <strong>{draft.VehicleType}</strong>, bạn vui lòng chọn hoặc nhập đúng một trong các dòng xe sau:
+{allowedText}
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Bấm nút bên dưới hoặc nhắn <strong>""hủy""</strong> nếu muốn dừng)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_Q11_VEHICLE_MODEL",
+                        actionIntent = "SHIPPER_CHOOSE_VEHICLE_MODEL",
+                        regDraft = draft
+                    };
+                }
+
+                draft.VehicleModel = matchedModel;
                 return new
                 {
                     success = true,
-                    reply = $@"Đã lưu Dòng xe: **{draft.VehicleModel}**! 🏍️
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã lưu Dòng xe: <strong>{draft.VehicleModel}</strong>!
 
----
-1️⃣2️⃣ **Câu 12 / 15:** Vui lòng tải lên ảnh **Bằng Lái Xe (GPLX)** của bạn (Nhấp vào ô bên dưới để chọn ảnh):",
+<hr class=""chat-divider""/>
+12. <strong>Câu 12 / 15:</strong> Vui lòng tải lên ảnh <strong>Bằng Lái Xe (GPLX)</strong> của bạn:
+(Nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4 hay tin nhắn văn bản)",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "REGISTER_SHIPPER_Q12_GPLX",
                     actionIntent = "SHIPPER_UPLOAD_GPLX",
@@ -4443,34 +7788,45 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
             }
             else if (activeState == "REGISTER_SHIPPER_Q12_GPLX")
             {
-                if (string.IsNullOrWhiteSpace(draft.DrivingLicenseImage) || (!draft.DrivingLicenseImage.StartsWith("data:image") && !draft.DrivingLicenseImage.StartsWith("http")))
-                {
-                    if (userMsg.Trim().StartsWith("data:image") || userMsg.Trim().StartsWith("http"))
-                        draft.DrivingLicenseImage = userMsg.Trim();
-                }
                 return new
                 {
                     success = true,
-                    reply = @"Đã tải lên Bằng lái xe (GPLX) thành công! 📜
+                    reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Mục này bắt buộc phải tải lên tệp hình ảnh Bằng Lái Xe (GPLX)! Vui lòng nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính (không nhận tin nhắn văn bản hay video như .mp4)!
 
----
-1️⃣3️⃣ **Câu 13 / 15:** Vui lòng chọn **Khu vực đăng ký chạy chính** của bạn từ danh sách Quận / Huyện bên dưới (Bấm nút để chọn):",
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""hủy""</strong> nếu bạn muốn hủy luồng đăng ký)*",
                     provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "REGISTER_SHIPPER_Q13_AREA",
-                    actionIntent = "SHIPPER_CHOOSE_AREA",
+                    registrationState = "REGISTER_SHIPPER_Q12_GPLX",
+                    actionIntent = "SHIPPER_UPLOAD_GPLX",
                     regDraft = draft
                 };
             }
             else if (activeState == "REGISTER_SHIPPER_Q13_AREA")
             {
-                draft.OperatingArea = userMsg.Trim();
+                string? matchedArea = MatchShipperOperatingArea(userMsg);
+                if (matchedArea == null)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Khu vực không hợp lệ! Vui lòng bấm chọn hoặc nhập đúng 1 trong 21 Quận / Huyện có trong danh sách lựa chọn bên dưới nhé (Ví dụ: Huyện Hoài Đức, Huyện Chương Mỹ, Quận Cầu Giấy...)!
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""hủy""</strong> nếu bạn muốn hủy luồng đăng ký)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_Q13_AREA",
+                        actionIntent = "SHIPPER_CHOOSE_AREA",
+                        regDraft = draft
+                    };
+                }
+
+                draft.OperatingArea = matchedArea;
                 return new
                 {
                     success = true,
-                    reply = $@"Đã lưu Khu vực chạy đơn: **{draft.OperatingArea}**! 📍
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã lưu Khu vực chạy: <strong>{draft.OperatingArea}</strong>!
 
----
-1️⃣4️⃣ **Câu 14 / 15:** Vui lòng chọn **Ngân hàng nhận cước** từ danh sách bên dưới (Bấm nút để chọn):",
+<hr class=""chat-divider""/>
+14. <strong>Câu 14 / 15:</strong> Vui lòng chọn <strong>Ngân hàng nhận cước</strong> từ 10 ngân hàng bên dưới:
+(Bấm nút hoặc nhập đúng 1 trong 10 ngân hàng)",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "REGISTER_SHIPPER_Q14_BANK",
                     actionIntent = "SHIPPER_CHOOSE_BANK",
@@ -4479,14 +7835,43 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
             }
             else if (activeState == "REGISTER_SHIPPER_Q14_BANK")
             {
-                draft.BankName = userMsg.Trim();
+                string? matchedBank = MatchShipperBank(userMsg);
+                if (matchedBank == null)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Ngân hàng không hợp lệ! Bạn chỉ được chọn hoặc nhập đúng 1 trong 10 ngân hàng sau:
+- Vietcombank
+- MB Bank
+- Techcombank
+- BIDV
+- VietinBank
+- Agribank
+- ACB
+- TPBank
+- VPBank
+- VIB
+
+Vui lòng bấm chọn hoặc nhập lại nhé!
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""hủy""</strong> nếu bạn muốn hủy luồng đăng ký)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_Q14_BANK",
+                        actionIntent = "SHIPPER_CHOOSE_BANK",
+                        regDraft = draft
+                    };
+                }
+
+                draft.BankName = matchedBank;
                 return new
                 {
                     success = true,
-                    reply = $@"Đã lưu Ngân hàng: **{draft.BankName}**! 💳
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã lưu Ngân hàng: <strong>{draft.BankName}</strong>!
 
----
-1️⃣5️⃣ **Câu 15 / 15 (Cuối cùng):** Cho mình xin **Số tài khoản ngân hàng** (Từ 8 - 15 chữ số) để sàn chuyển thu nhập cước xe cho bạn nhé?",
+<hr class=""chat-divider""/>
+15. <strong>Câu 15 / 15 (Cuối cùng):</strong> Cho mình xin <strong>Số tài khoản ngân hàng</strong> (Từ 8 - 16 chữ số) để sàn chuyển thu nhập cước xe cho bạn nhé?
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Chỉ nhận chữ số, không nhận chữ cái hay ký tự đặc biệt như %^&*)*",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "REGISTER_SHIPPER_Q15_BANKACC",
                     regDraft = draft
@@ -4495,12 +7880,12 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
             else if (activeState == "REGISTER_SHIPPER_Q15_BANKACC" || activeState == "REGISTER_SHIPPER_STEP3")
             {
                 string bankAcc = userMsg.Trim();
-                if (!Regex.IsMatch(bankAcc, @"^\d{8,15}$"))
+                if (!IsValidBankAccountNumber(bankAcc, out string bankErr))
                 {
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Số tài khoản ngân hàng phải có độ dài từ 8 đến 15 chữ số! Vui lòng nhập lại nhé!",
+                        reply = $"{bankErr}\n\n<i class=\"bi bi-info-circle me-1\" style=\"color: #0284C7;\"></i> *(Nhắn <strong>\"hủy\"</strong> nếu bạn muốn hủy luồng đăng ký)*",
                         provider = "ZoneMart AI Direct Registration Engine",
                         registrationState = "REGISTER_SHIPPER_Q15_BANKACC",
                         regDraft = draft
@@ -4508,19 +7893,539 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
                 }
 
                 draft.BankAccountNumber = bankAcc;
-                return await CompleteShipperRegistrationAsync(draft);
+                return new
+                {
+                    success = true,
+                    reply = BuildShipperReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY",
+                    actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "REGISTER_SHIPPER_REVIEW_SUMMARY")
+            {
+                string norm = RemoveVietnameseTones(userMsg.Trim().ToLower());
+                if (norm.Contains("gui ho so") || norm == "gui" || norm.Contains("nop ho so") || norm == "nop" || norm.Contains("hoan tat"))
+                {
+                    return await CompleteShipperRegistrationAsync(draft);
+                }
+                else if (norm.Contains("sua ho so") || norm == "sua" || norm.Contains("chinh sua"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-pencil-square me-1"" style=""color: #D94E15;""></i> <strong>CHỌN MỤC BẠN MUỐN CHỈNH SỬA TRONG HỒ SƠ TÀI XẾ:</strong>
+
+Dạ bạn muốn chỉnh sửa mục nào trong 15 mục dưới đây ạ? Hãy bấm vào nút tương ứng bên dưới nhé:
+1. Họ và tên thật tài xế
+2. Gmail đăng ký tài xế
+3. Mật khẩu tạo tài khoản
+4. Nhập lại mật khẩu
+5. Số Căn cước công dân (CCCD)
+6. Ảnh chân dung tài xế
+7. Ảnh CCCD Mặt Trước
+8. Ảnh CCCD Mặt Sau
+9. Biển số xe máy
+10. Loại xe đăng ký
+11. Dòng xe / Mẫu xe đăng ký
+12. Ảnh Bằng Lái Xe (GPLX)
+13. Khu vực đăng ký chạy chính
+14. Ngân hàng nhận cước
+15. Số tài khoản ngân hàng
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Bấm <strong>[Quay lại bảng tổng kết]</strong> nếu không muốn sửa nữa nhé)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_MENU",
+                        actionIntent = "SHIPPER_EDIT_MENU",
+                        regDraft = draft
+                    };
+                }
+                else
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Ở bước này bạn chỉ được chọn <strong>[Sửa hồ sơ]</strong> hoặc <strong>[Gửi hồ sơ đăng ký]</strong> bằng 2 nút bên dưới nhé!
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""hủy""</strong> nếu bạn muốn hủy luồng đăng ký)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY",
+                        actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_MENU")
+            {
+                string norm = RemoveVietnameseTones(userMsg.Trim().ToLower());
+                if (norm.Contains("quay lai") || norm == "back" || norm.Contains("bang tong ket"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = BuildShipperReviewSummaryReply(draft),
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY",
+                        actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+
+                if (norm == "1" || norm.Contains("ho ten") || norm.Contains("ten tai xe"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"1. <strong>Sửa mục 1 / 15:</strong> Cho mình xin lại <strong>Họ và tên thật của tài xế</strong> (Từ 6 - 30 ký tự) nhé?
+- Bắt đầu bằng họ phổ biến ở Việt Nam (Đỗ, Nguyễn, Trần, Lê...)
+- Tên đệm 1-2 từ, tên 1 từ (Tổng 3 hoặc 4 từ, ví dụ: Lê Thành Đạt, Nguyễn Thị Phương Anh)
+- Chỉ nhập chữ cái, không nhận số hay ký tự đặc biệt
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q1_NAME",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "2" || norm.Contains("gmail") || norm.Contains("email"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"2. <strong>Sửa mục 2 / 15:</strong> Cho mình xin lại <strong>Địa chỉ Gmail đăng ký tài xế</strong> (Bắt buộc đuôi @gmail.com) nhé?
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q2_GMAIL",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "3" || norm == "4" || norm.Contains("tao mat khau") || norm.Contains("nhap lai mat khau") || norm.Contains("mat khau") || norm.Contains("xac nhan"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-key-fill me-1"" style=""color: #D97706;""></i> <strong>Sửa Mật khẩu & Xác nhận mật khẩu (Mục 3 & 4):</strong> Cho mình xin <strong>Mật khẩu mới</strong> cho tài khoản tài xế (độ dài từ 6 - 16 ký tự) nhé?
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Bấm icon con mắt ở ô nhập bên dưới để xem/ẩn mật khẩu. Sau khi nhập xong, AI sẽ yêu cầu bạn xác nhận lại mật khẩu mới để đồng bộ cả 2 mục 3 & 4 nhé)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q3_PASSWORD",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "5" || norm.Contains("cccd") || norm.Contains("can cuoc"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"5. <strong>Sửa mục 5 / 15:</strong> Cho mình xin lại <strong>Số Căn cước công dân (CCCD)</strong> của bạn (Đúng 12 chữ số) nhé?
+- 3 số đầu là mã tỉnh từ 001 đến 096 (Hà Nội là 001)
+- 1 số tiếp theo là thế kỷ & giới tính (0 - 9)
+- 2 số kế là 2 số cuối năm sinh, 6 số cuối là số ngẫu nhiên
+- Chỉ nhập số, không nhận chữ hay ký tự đặc biệt
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q5_CCCD",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "6" || norm.Contains("chan dung"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"6. <strong>Sửa mục 6 / 15:</strong> Vui lòng tải lên <strong>Ảnh chân dung tài xế</strong> mới:
+(Nhấp vào ô bên dưới để chọn ảnh từ máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q6_PORTRAIT",
+                        actionIntent = "SHIPPER_UPLOAD_PORTRAIT",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "7" || norm.Contains("mat truoc"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"7. <strong>Sửa mục 7 / 15:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Trước</strong> mới:
+(Nhấp vào ô bên dưới để chọn ảnh từ máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q7_CCCD_FRONT",
+                        actionIntent = "SHIPPER_UPLOAD_CCCD_FRONT",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "8" || norm.Contains("mat sau"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"8. <strong>Sửa mục 8 / 15:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Sau</strong> mới:
+(Nhấp vào ô bên dưới để chọn ảnh từ máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q8_CCCD_BACK",
+                        actionIntent = "SHIPPER_UPLOAD_CCCD_BACK",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "9" || norm.Contains("bien so"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"9. <strong>Sửa mục 9 / 15:</strong> Cho mình xin lại <strong>Biển số xe máy</strong> bạn chạy đơn:
+- Hàng trên: 2 số địa phương + 2 chữ cái sê-ri (Ví dụ: `29-AA`, `59-AB`)
+- Hàng dưới: Dãy 4 hoặc 5 số tự nhiên (Ví dụ: `123.45` hoặc `12345` hoặc `1234`)
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q9_LICENSE_PLATE",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "10" || norm.Contains("loai xe"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"10. <strong>Sửa mục 10 / 15:</strong> Vui lòng chọn lại <strong>Loại xe đăng ký</strong>:
+1. <strong>Xe máy xăng</strong>
+2. <strong>Xe máy điện</strong>
+(Bấm nút bên dưới hoặc nhập đúng 1 trong 2 lựa chọn)
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q10_VEHICLE_TYPE",
+                        actionIntent = "SHIPPER_CHOOSE_VEHICLE_TYPE",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "11" || norm.Contains("dong xe") || norm.Contains("mau xe"))
+                {
+                    bool isElectric = (draft.VehicleType ?? "").Contains("điện");
+                    string allowedText = isElectric
+                        ? "- VinFast Feliz\n- VinFast Klara\n- VinFast Evo200\n- Dat Bike Weaver"
+                        : "- Honda Wave Alpha\n- Honda Vision\n- Honda Air Blade\n- Honda Lead\n- Yamaha Sirius\n- Yamaha Exciter\n- Honda Winner X";
+
+                    return new
+                    {
+                        success = true,
+                        reply = $@"11. <strong>Sửa mục 11 / 15:</strong> Vui lòng chọn lại <strong>Dòng xe / Mẫu xe</strong> sử dụng:
+{allowedText}
+(Bấm nút bên dưới hoặc nhập đúng tên dòng xe trong danh sách trên)
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q11_VEHICLE_MODEL",
+                        actionIntent = "SHIPPER_CHOOSE_VEHICLE_MODEL",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "12" || norm.Contains("bang lai") || norm.Contains("gplx"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"12. <strong>Sửa mục 12 / 15:</strong> Vui lòng tải lên ảnh <strong>Bằng Lái Xe (GPLX)</strong> mới:
+(Nhấp vào ô bên dưới để chọn ảnh từ máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q12_GPLX",
+                        actionIntent = "SHIPPER_UPLOAD_GPLX",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "13" || norm.Contains("khu vuc"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"13. <strong>Sửa mục 13 / 15:</strong> Vui lòng chọn lại <strong>Khu vực đăng ký chạy chính</strong> từ danh sách 21 Quận / Huyện bên dưới:
+(Bấm nút hoặc nhập đúng 1 trong 21 lựa chọn Quận / Huyện)
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q13_AREA",
+                        actionIntent = "SHIPPER_CHOOSE_AREA",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "14" || norm.Contains("ngan hang"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"14. <strong>Sửa mục 14 / 15:</strong> Vui lòng chọn lại <strong>Ngân hàng nhận cước</strong> từ 10 ngân hàng bên dưới:
+(Bấm nút hoặc nhập đúng 1 trong 10 ngân hàng)
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q14_BANK",
+                        actionIntent = "SHIPPER_CHOOSE_BANK",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "15" || norm.Contains("so tai khoan") || norm.Contains("stk"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"15. <strong>Sửa mục 15 / 15:</strong> Cho mình xin lại <strong>Số tài khoản ngân hàng</strong> (Từ 8 - 16 chữ số) nhé?
+(Chỉ nhận chữ số, không nhận chữ hay ký tự đặc biệt)
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""Quay lại""</strong> nếu không muốn sửa nữa)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_Q15_BANKACC",
+                        regDraft = draft
+                    };
+                }
+                else
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Vui lòng chọn đúng 1 trong 15 mục bằng cách bấm nút bên dưới hoặc nhập số từ 1 đến 15 nhé!
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Bấm <strong>[Quay lại bảng tổng kết]</strong> để quay về)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_EDIT_MENU",
+                        actionIntent = "SHIPPER_EDIT_MENU",
+                        regDraft = draft
+                    };
+                }
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_Q1_NAME")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string fullName = userMsg.Trim();
+                if (!IsValidShipperFullName(fullName, out string nameErr))
+                {
+                    return new { success = true, reply = $"{nameErr}\n\n<i class=\"bi bi-info-circle me-1\" style=\"color: #0284C7;\"></i> *(Nhập lại hoặc nhắn <strong>\"Quay lại\"</strong> để giữ nguyên)*", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_EDIT_Q1_NAME", regDraft = draft };
+                }
+                draft.FullName = fullName;
+                return new { success = true, reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật <strong>Họ tên tài xế</strong> thành: <strong>{fullName}</strong>! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+" + BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_Q2_GMAIL")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string rawEmail = userMsg.Trim().ToLowerInvariant();
+                int atCount = rawEmail.Count(c => c == '@');
+                if (atCount != 1 || !Regex.IsMatch(rawEmail, @"^[a-zA-Z0-9._%+-]+@gmail\.com$"))
+                {
+                    return new { success = true, reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Địa chỉ Gmail không hợp lệ (phải có đúng 1 ký tự @ và kết thúc bằng @gmail.com)! Vui lòng nhập lại hoặc nhắn <strong>""Quay lại""</strong> nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_EDIT_Q2_GMAIL", regDraft = draft };
+                }
+                var (isRegistered, _) = await CheckIfEmailAlreadyRegisteredAsync(rawEmail);
+                if (isRegistered && rawEmail != draft.Email?.ToLowerInvariant())
+                {
+                    return new { success = true, reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Oh no tài khoản gmail của bạn đã đăng ký rồi ạ, bạn dùng tài khoản gmail khác nhé!
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Hoặc nhắn <strong>""Quay lại""</strong> để giữ nguyên)*", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_EDIT_Q2_GMAIL", regDraft = draft };
+                }
+                draft.Email = rawEmail;
+                return new { success = true, reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật <strong>Gmail đăng ký</strong> thành: <code>{rawEmail}</code>! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+" + BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_Q3_PASSWORD")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string pwd = userMsg.Trim();
+                if (pwd.Length < 6 || pwd.Length > 16)
+                {
+                    return new { success = true, reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Mật khẩu phải có độ dài từ 6 đến 16 ký tự! Vui lòng nhập lại hoặc nhắn <strong>""Quay lại""</strong> nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_EDIT_Q3_PASSWORD", regDraft = draft };
+                }
+                draft.Password = pwd;
+                return new
+                {
+                    success = true,
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã ghi nhận Mật khẩu mới!
+
+<hr class=""chat-divider""/>
+<i class=""bi bi-shield-lock-fill me-1"" style=""color: #0284C7;""></i> <strong>Xác nhận mật khẩu:</strong> Vui lòng <strong>Nhập lại mật khẩu mới</strong> để hoàn tất đồng bộ cả 2 mục 3 & 4:
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Bấm icon con mắt ở ô nhập bên dưới để xem/ẩn mật khẩu)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "REGISTER_SHIPPER_EDIT_Q4_CONFIRM_PASSWORD",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_Q4_CONFIRM_PASSWORD")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string confirmPwd = userMsg.Trim();
+                if (confirmPwd != draft.Password)
+                {
+                    return new { success = true, reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Mật khẩu xác nhận không trùng khớp với mật khẩu mới vừa nhập! Vui lòng nhập lại hoặc bấm <strong>[Quay lại]</strong> nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_EDIT_Q4_CONFIRM_PASSWORD", regDraft = draft };
+                }
+                draft.ConfirmPassword = confirmPwd;
+                return new { success = true, reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật thành công cả <strong>Mật khẩu</strong> và <strong>Xác nhận mật khẩu</strong>! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+" + BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_Q5_CCCD")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string cccd = userMsg.Trim();
+                if (!IsValidCccdNumber(cccd, out string cccdErr))
+                {
+                    return new { success = true, reply = $"{cccdErr}\n\n<i class=\"bi bi-info-circle me-1\" style=\"color: #0284C7;\"></i> *(Nhập lại hoặc nhắn <strong>\"Quay lại\"</strong> để giữ nguyên)*", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_EDIT_Q5_CCCD", regDraft = draft };
+                }
+                draft.CccdNumber = cccd;
+                return new { success = true, reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật <strong>Số CCCD</strong> thành: <code>{cccd}</code>! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+" + BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_Q6_PORTRAIT" || activeState == "REGISTER_SHIPPER_EDIT_Q7_CCCD_FRONT" || activeState == "REGISTER_SHIPPER_EDIT_Q8_CCCD_BACK" || activeState == "REGISTER_SHIPPER_EDIT_Q12_GPLX")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string targetIntent = activeState.Contains("PORTRAIT") ? "SHIPPER_UPLOAD_PORTRAIT" :
+                                      activeState.Contains("FRONT") ? "SHIPPER_UPLOAD_CCCD_FRONT" :
+                                      activeState.Contains("BACK") ? "SHIPPER_UPLOAD_CCCD_BACK" : "SHIPPER_UPLOAD_GPLX";
+                return new { success = true, reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Mục này chỉ nhận tệp hình ảnh (.jpg, .png)! Vui lòng nhấp vào khung bên dưới để tải ảnh lên (hoặc nhắn <strong>""Quay lại""</strong> để giữ ảnh cũ)!", provider = "ZoneMart AI Direct Registration Engine", registrationState = activeState, actionIntent = targetIntent, regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_Q9_LICENSE_PLATE")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                if (!IsValidLicensePlate(userMsg, out string formattedPlate, out string plateErr))
+                {
+                    return new { success = true, reply = $"{plateErr}\n\n<i class=\"bi bi-info-circle me-1\" style=\"color: #0284C7;\"></i> *(Nhập lại hoặc nhắn <strong>\"Quay lại\"</strong> để giữ nguyên)*", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_EDIT_Q9_LICENSE_PLATE", regDraft = draft };
+                }
+                draft.LicensePlate = formattedPlate;
+                return new { success = true, reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật <strong>Biển số xe</strong> thành: <strong>{formattedPlate}</strong>! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+" + BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_Q10_VEHICLE_TYPE")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string? matched = MatchShipperVehicleType(userMsg);
+                if (matched == null)
+                {
+                    return new { success = true, reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Loại xe không hợp lệ! Vui lòng chọn hoặc nhập đúng <strong>Xe máy xăng</strong> hoặc <strong>Xe máy điện</strong> hoặc nhắn <strong>""Quay lại""</strong> nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_EDIT_Q10_VEHICLE_TYPE", actionIntent = "SHIPPER_CHOOSE_VEHICLE_TYPE", regDraft = draft };
+                }
+                draft.VehicleType = matched;
+                return new { success = true, reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật <strong>Loại xe đăng ký</strong> thành: <strong>{matched}</strong>! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+" + BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_Q11_VEHICLE_MODEL")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string? matched = MatchShipperVehicleModel(userMsg, draft.VehicleType ?? "Xe máy xăng");
+                if (matched == null)
+                {
+                    bool isElectric = (draft.VehicleType ?? "").Contains("điện");
+                    string allowedText = isElectric
+                        ? "VinFast Feliz, VinFast Klara, VinFast Evo200, Dat Bike Weaver"
+                        : "Honda Wave Alpha, Honda Vision, Honda Air Blade, Honda Lead, Yamaha Sirius, Yamaha Exciter, Honda Winner X";
+
+                    return new { success = true, reply = $@"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Dòng xe không hợp lệ! Vui lòng chọn hoặc nhập đúng dòng xe ({allowedText}) hoặc nhắn <strong>""Quay lại""</strong> nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_EDIT_Q11_VEHICLE_MODEL", actionIntent = "SHIPPER_CHOOSE_VEHICLE_MODEL", regDraft = draft };
+                }
+                draft.VehicleModel = matched;
+                return new { success = true, reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật <strong>Dòng xe / Mẫu xe</strong> thành: <strong>{matched}</strong>! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+" + BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_Q13_AREA")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string? matched = MatchShipperOperatingArea(userMsg);
+                if (matched == null)
+                {
+                    return new { success = true, reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Khu vực không hợp lệ! Vui lòng chọn hoặc nhập đúng 1 trong 21 Quận / Huyện bên dưới hoặc nhắn <strong>""Quay lại""</strong> nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_EDIT_Q13_AREA", actionIntent = "SHIPPER_CHOOSE_AREA", regDraft = draft };
+                }
+                draft.OperatingArea = matched;
+                return new { success = true, reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật <strong>Khu vực đăng ký chạy chính</strong> thành: <strong>{matched}</strong>! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+" + BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_Q14_BANK")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string? matched = MatchShipperBank(userMsg);
+                if (matched == null)
+                {
+                    return new { success = true, reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Ngân hàng không hợp lệ! Vui lòng chọn đúng 1 trong 10 ngân hàng bên dưới hoặc nhắn <strong>""Quay lại""</strong> nhé!", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_EDIT_Q14_BANK", actionIntent = "SHIPPER_CHOOSE_BANK", regDraft = draft };
+                }
+                draft.BankName = matched;
+                return new { success = true, reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật <strong>Ngân hàng nhận cước</strong> thành: <strong>{matched}</strong>! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+" + BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+            }
+            else if (activeState == "REGISTER_SHIPPER_EDIT_Q15_BANKACC")
+            {
+                if (userMsg.Trim().Equals("quay lại", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("quay lai", StringComparison.OrdinalIgnoreCase) || userMsg.Trim().Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new { success = true, reply = BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
+                }
+                string bankAcc = userMsg.Trim();
+                if (!IsValidBankAccountNumber(bankAcc, out string bankErr))
+                {
+                    return new { success = true, reply = $"{bankErr}\n\n<i class=\"bi bi-info-circle me-1\" style=\"color: #0284C7;\"></i> *(Nhập lại hoặc nhắn <strong>\"Quay lại\"</strong> để giữ nguyên)*", provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_EDIT_Q15_BANKACC", regDraft = draft };
+                }
+                draft.BankAccountNumber = bankAcc;
+                return new { success = true, reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật <strong>Số tài khoản ngân hàng</strong> thành: <code>{bankAcc}</code>! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+" + BuildShipperReviewSummaryReply(draft), provider = "ZoneMart AI Direct Registration Engine", registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY", actionIntent = "SHIPPER_REVIEW_SUMMARY", regDraft = draft };
             }
 
             // ==================== [ROLE 3] KHÁCH HÀNG / NGƯỜI MUA ====================
             if (activeState == "REGISTER_BUYER_Q1_NAME" || activeState == "REGISTER_BUYER_STEP1" || activeState == "REGISTER_BUYER_WAITING")
             {
                 string fullName = userMsg.Trim();
-                if (fullName.Length < 2)
+
+                // Chỉ cho phép chữ cái tiếng Việt / tiếng Anh và khoảng trắng, không được chứa số hoặc ký tự đặc biệt như %, ^, &, #...
+                bool isValidName = fullName.Length >= 2 && Regex.IsMatch(fullName, @"^[a-zA-Z\sàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ]+$");
+                if (!isValidName)
                 {
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Vui lòng nhập đầy đủ **Họ và tên của bạn** nhé!\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
+                        reply = "⚠️ Họ và tên chỉ được ghi bằng chữ cái (không được chứa số hoặc các ký tự đặc biệt như %, ^, &, #...)! Vui lòng nhập lại họ và tên của bạn nhé!\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
                         provider = "ZoneMart AI Direct Registration Engine",
                         registrationState = "REGISTER_BUYER_Q1_NAME",
                         regDraft = draft
@@ -4542,28 +8447,31 @@ Vui lòng nhập khung giờ mở - đóng cửa của tiệm (Ví dụ: `08:00 
             }
             else if (activeState == "REGISTER_BUYER_Q2_EMAIL" || activeState == "REGISTER_BUYER_STEP2")
             {
-                string email = userMsg.Trim().ToLowerInvariant();
-                var match = Regex.Match(email, @"[a-zA-Z0-9._%+-]+@gmail\.com");
-                if (!match.Success)
+                string rawEmail = userMsg.Trim().ToLowerInvariant();
+
+                // Chỉ được phép đúng 1 ký tự '@' và kết thúc bằng @gmail.com
+                int atCount = rawEmail.Count(c => c == '@');
+                bool isValidGmail = atCount == 1 && Regex.IsMatch(rawEmail, @"^[a-zA-Z0-9._%+-]+@gmail\.com$");
+                if (!isValidGmail)
                 {
                     return new
                     {
                         success = true,
-                        reply = "⚠️ Địa chỉ Gmail phải có đuôi **@gmail.com** (Ví dụ: `khachhang@gmail.com`)! Vui lòng nhập lại Gmail của bạn nhé!\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
+                        reply = "⚠️ Địa chỉ Gmail không hợp lệ! Gmail chỉ được phép có đúng một ký tự `@` và bắt buộc phải có đuôi **@gmail.com** (Ví dụ: `khachhang@gmail.com`)! Vui lòng nhập lại Gmail của bạn nhé!\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
                         provider = "ZoneMart AI Direct Registration Engine",
                         registrationState = "REGISTER_BUYER_Q2_EMAIL",
                         regDraft = draft
                     };
                 }
 
-                string validEmail = match.Value;
+                string validEmail = rawEmail;
                 var (isRegistered, detailRole) = await CheckIfEmailAlreadyRegisteredAsync(validEmail);
                 if (isRegistered)
                 {
                     return new
                     {
                         success = true,
-                        reply = $"Oh no! Gmail `{validEmail}` này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi ạ 😅. Mỗi tài khoản chỉ đăng ký 1 Gmail duy nhất, bạn vui lòng chọn và nhập một địa chỉ Gmail khác nhé! 🔑\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
+                        reply = "Oh no tài khoản gmail của bạn đã đăng ký rồi ạ, bạn dùng tài khoản gmail khác nhé! 😅🔑\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
                         provider = "ZoneMart AI Direct Registration Engine",
                         registrationState = "REGISTER_BUYER_Q2_EMAIL",
                         regDraft = draft
@@ -5215,69 +9123,149 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
         {
             return state switch
             {
-                // SELLER
-                "REGISTER_SELLER_Q1_STORENAME" or "REGISTER_SELLER_STEP1" or "REGISTER_SELLER_WAITING" =>
-                    ("Tên cửa hàng", "1️⃣ **Câu 1 / 14:** Cho mình xin **Tên cửa hàng / Tiệm** (Từ 12 - 30 ký tự, không chứa ký tự đặc biệt) nhé?", null),
-                "REGISTER_SELLER_Q2_ADDRESS" =>
-                    ("Địa chỉ tiệm", "2️⃣ **Câu 2 / 14:** Cho mình xin **Địa chỉ tiệm** của bạn (Ví dụ: Số 125 Cầu Giấy, Quan Hoa, Cầu Giấy, Hà Nội) nhé?", null),
-                "REGISTER_SELLER_Q3_CATEGORY" =>
-                    ("Danh mục ngành hàng", "3️⃣ **Câu 3 / 14:** Tiệm bạn kinh doanh **Danh mục ngành hàng** nào chính? (Bấm nút bên dưới để chọn):", "SELLER_CHOOSE_CATEGORY"),
-                "REGISTER_SELLER_Q4_GMAIL" =>
-                    ("Gmail đăng nhập", "4️⃣ **Câu 4 / 14:** Cho mình xin **Địa chỉ Gmail** của bạn (Ví dụ: `abc@gmail.com`) để làm tài khoản đăng nhập tiệm nhé?", null),
-                "REGISTER_SELLER_Q5_PASSWORD" =>
-                    ("Mật khẩu đăng nhập", "5️⃣ **Câu 5 / 14:** Vui lòng tạo **Mật khẩu đăng nhập** (Từ 6 - 16 ký tự, nhập vào ô bên dưới) nhé?", null),
-                "REGISTER_SELLER_Q6_CONFIRM_PASSWORD" =>
-                    ("Nhập lại mật khẩu", "6️⃣ **Câu 6 / 14:** Vui lòng **Nhập lại mật khẩu** (Xác nhận trùng khớp) nhé?", null),
-                "REGISTER_SELLER_Q7_OPENHOURS" =>
-                    ("Khung giờ mở cửa", "7️⃣ **Câu 7 / 14:** Vui lòng chọn **Khung giờ mở cửa** hoạt động của tiệm (Bấm nút bên dưới để chọn):", "SELLER_CHOOSE_OPENHOURS"),
-                "REGISTER_SELLER_Q7_CUSTOM_OPENHOURS" =>
-                    ("Khung giờ tùy chỉnh", "7️⃣ **Câu 7 / 14:** Vui lòng nhập khung giờ hoạt động tùy chỉnh của bạn (Ví dụ: `08:00 - 21:30`):", null),
-                "REGISTER_SELLER_Q8_OWNERNAME" =>
-                    ("Họ và tên thật chủ tiệm", "8️⃣ **Câu 8 / 14:** Cho mình xin **Họ và tên thật của chủ tiệm** (Từ 6 - 16 ký tự) để làm hợp đồng gian hàng nhé?", null),
-                "REGISTER_SELLER_Q9_CCCD" =>
-                    ("Số CCCD chủ tiệm", "9️⃣ **Câu 9 / 14:** Cho mình xin **Số Căn cước công dân (CCCD)** của chủ tiệm (Đúng 12 chữ số) nhé?", null),
-                "REGISTER_SELLER_Q10_CCCD_FRONT" or "REGISTER_SELLER_Q9_CCCD_FRONT" =>
-                    ("ảnh CCCD Mặt Trước", "🔟 **Câu 10 / 14:** Vui lòng tải lên ảnh **CCCD Mặt Trước** của chủ tiệm (Nhấp vào khung nét đứt bên dưới để chọn ảnh):", "SELLER_UPLOAD_CCCD_FRONT"),
-                "REGISTER_SELLER_Q11_CCCD_BACK" or "REGISTER_SELLER_Q10_CCCD_BACK" =>
-                    ("ảnh CCCD Mặt Sau", "1️⃣1️⃣ **Câu 11 / 14:** Vui lòng tải lên ảnh **CCCD Mặt Sau** của chủ tiệm (Nhấp vào khung nét đứt bên dưới để chọn ảnh):", "SELLER_UPLOAD_CCCD_BACK"),
-                "REGISTER_SELLER_Q12_FOOD_SAFETY" or "REGISTER_SELLER_Q11_FOOD_SAFETY" =>
-                    ("ảnh Giấy CN An toàn thực phẩm", "1️⃣2️⃣ **Câu 12 / 14:** Vui lòng tải lên ảnh **Giấy Chứng Nhận An Toàn Thực Phẩm** (hoặc Giấy Phép Kinh Doanh) của tiệm:", "SELLER_UPLOAD_FOOD_SAFETY"),
-                "REGISTER_SELLER_Q13_BANK" or "REGISTER_SELLER_Q12_BANK" =>
-                    ("Ngân hàng thụ hưởng", "1️⃣3️⃣ **Câu 13 / 14:** Vui lòng chọn **Ngân hàng thụ hưởng** để nhận doanh thu thanh toán (Bấm nút bên dưới để chọn):", "SELLER_CHOOSE_BANK"),
-                "REGISTER_SELLER_Q14_BANKACC" or "REGISTER_SELLER_Q13_BANKACC" or "REGISTER_SELLER_STEP3" =>
-                    ("Số tài khoản ngân hàng", "1️⃣4️⃣ **Câu 14 / 14 (Cuối cùng):** Cho mình xin **Số tài khoản ngân hàng** (Từ 8 - 15 chữ số) để sàn đối soát chuyển tiền nhé?", null),
+                // SELLER (16 CÂU HỎI CHÍNH THỨC)
+                "REGISTER_SELLER_Q1_TYPE" or "REGISTER_SELLER_STEP1" or "REGISTER_SELLER_WAITING" =>
+                    ("Mô hình kinh doanh", "1️⃣ **Câu 1 / 16:** Vui lòng chọn **Mô hình kinh doanh địa phương*** (Chọn đúng nhóm đối tượng của gian hàng):", "SELLER_CHOOSE_TYPE"),
+                "REGISTER_SELLER_Q2_WARD" =>
+                    ("Xã / Phường", "2️⃣ **Câu 2 / 16:** Cho mình xin tên **Xã / Phường*** nơi đặt gian hàng (Chỉ nhập chữ cái tiếng Việt, không chứa số hoặc ký tự đặc biệt nhé):", null),
+                "REGISTER_SELLER_Q3_DISTRICT" =>
+                    ("Quận / Huyện", "3️⃣ **Câu 3 / 16:** Cho mình xin tên **Quận / Huyện*** nơi đặt gian hàng (Chỉ nhập chữ cái tiếng Việt, không chứa số hoặc ký tự đặc biệt nhé):", null),
+                "REGISTER_SELLER_Q4_MARKET" =>
+                    ("Tên Chợ Truyền Thống / Cụm Chợ", "4️⃣ **Câu 4 / 16:** Cho mình xin **Tên Chợ Truyền Thống / Cụm Chợ Số Địa Phương** (Chỉ chứa chữ và số, không chứa ký tự đặc biệt):", null),
+                "REGISTER_SELLER_Q5_STORENAME" or "REGISTER_SELLER_Q1_STORENAME" =>
+                    ("Tên cửa hàng", "5️⃣ **Câu 5 / 16:** Cho mình xin **Tên cửa hàng*** (Từ 12 - 30 ký tự, chỉ gồm chữ cái và khoảng trắng, không chứa số hoặc ký tự đặc biệt) nhé?", null),
+                "REGISTER_SELLER_Q6_ADDRESS" or "REGISTER_SELLER_Q2_ADDRESS" =>
+                    ("Địa chỉ tiệm", "6️⃣ **Câu 6 / 16:** Cho mình xin **Địa chỉ tiệm*** (Bắt buộc phải có cả từ \"ngõ\" và \"đường\" - Có thể bấm nút **[📍 Lấy GPS hiện tại]** bên dưới):", "SELLER_INPUT_ADDRESS_GPS"),
+                "REGISTER_SELLER_Q7_CATEGORY" or "REGISTER_SELLER_Q3_CATEGORY" =>
+                    ("Danh mục hàng bán chính", "7️⃣ **Câu 7 / 16:** Tiệm bạn kinh doanh **Danh mục hàng bán chính*** nào? (Chọn 1 trong 6 danh mục bên dưới):", "SELLER_CHOOSE_CATEGORY"),
+                "REGISTER_SELLER_Q8_GMAIL" or "REGISTER_SELLER_Q4_GMAIL" =>
+                    ("Gmail đăng ký", "8️⃣ **Câu 8 / 16:** Cho mình xin **Địa chỉ Gmail đăng ký gian hàng*** (Bắt buộc có đuôi **@gmail.com**):", null),
+                "REGISTER_SELLER_Q9_PASSWORD" or "REGISTER_SELLER_Q5_PASSWORD" =>
+                    ("Mật khẩu tạo tài khoản", "9️⃣ **Câu 9 / 16:** Vui lòng tạo **Mật khẩu tạo tài khoản*** (Từ 6 - 16 ký tự):\n💡 *(Bấm icon mắt 👁️ ở ô nhập để ẩn/hiện mật khẩu)*", null),
+                "REGISTER_SELLER_Q10_CONFIRM_PASSWORD" or "REGISTER_SELLER_Q6_CONFIRM_PASSWORD" =>
+                    ("Nhập lại mật khẩu", "🔟 **Câu 10 / 16:** Vui lòng **Nhập lại mật khẩu*** (Xác nhận trùng khớp):\n💡 *(Bấm icon mắt 👁️ ở ô nhập để kiểm tra)*", null),
+                "REGISTER_SELLER_Q11_OPENHOURS" or "REGISTER_SELLER_Q7_OPENHOURS" =>
+                    ("Khung giờ mở cửa", "1️⃣1️⃣ **Câu 11 / 16:** Vui lòng chọn **Khung giờ mở cửa kinh doanh*** (Bấm nút bên dưới để chọn):", "SELLER_CHOOSE_OPENHOURS"),
+                "REGISTER_SELLER_Q11_CUSTOM_OPENHOURS" or "REGISTER_SELLER_Q7_CUSTOM_OPENHOURS" =>
+                    ("Khung giờ tùy chỉnh", "1️⃣1️⃣ **Câu 11 / 16:** Vui lòng nhập khung giờ mở - đóng cửa tùy chỉnh của bạn (Ví dụ: `07:00 - 21:00`):", null),
+                "REGISTER_SELLER_Q12_CCCD_FRONT" or "REGISTER_SELLER_Q10_CCCD_FRONT" or "REGISTER_SELLER_Q9_CCCD_FRONT" =>
+                    ("ảnh CCCD Mặt Trước", "1️⃣2️⃣ **Câu 12 / 16:** Vui lòng tải lên ảnh **CCCD Mặt Trước** của chủ tiệm (Nhấp vào ô bên dưới để chọn ảnh):", "SELLER_UPLOAD_CCCD_FRONT"),
+                "REGISTER_SELLER_Q13_CCCD_BACK" or "REGISTER_SELLER_Q11_CCCD_BACK" or "REGISTER_SELLER_Q10_CCCD_BACK" =>
+                    ("ảnh CCCD Mặt Sau", "1️⃣3️⃣ **Câu 13 / 16:** Vui lòng tải lên ảnh **CCCD Mặt Sau** của chủ tiệm (Nhấp vào ô bên dưới để chọn ảnh):", "SELLER_UPLOAD_CCCD_BACK"),
+                "REGISTER_SELLER_Q14_FOOD_SAFETY" or "REGISTER_SELLER_Q12_FOOD_SAFETY" or "REGISTER_SELLER_Q11_FOOD_SAFETY" =>
+                    ("ảnh Giấy CN An toàn thực phẩm", "1️⃣4️⃣ **Câu 14 / 16:** Vui lòng tải lên ảnh **Giấy CN An Toàn Thực Phẩm** (hoặc Giấy phép kinh doanh) của tiệm:", "SELLER_UPLOAD_FOOD_SAFETY"),
+                "REGISTER_SELLER_Q15_BANK" or "REGISTER_SELLER_Q13_BANK" or "REGISTER_SELLER_Q12_BANK" =>
+                    ("Ngân hàng nhận doanh thu", "1️⃣5️⃣ **Câu 15 / 16:** Vui lòng chọn **Ngân hàng nhận doanh thu*** từ danh sách 8 ngân hàng bên dưới:", "SELLER_CHOOSE_BANK"),
+                "REGISTER_SELLER_Q16_BANKACC" or "REGISTER_SELLER_Q14_BANKACC" or "REGISTER_SELLER_Q13_BANKACC" or "REGISTER_SELLER_STEP3" =>
+                    ("Số tài khoản ngân hàng", "1️⃣6️⃣ **Câu 16 / 16 (Cuối cùng):** Cho mình xin **Số tài khoản ngân hàng*** (Từ 8 - 15 chữ số) để nhận doanh thu nhé?", null),
+
+                // SELLER CHỈNH SỬA TỪNG MỤC
+                "REGISTER_SELLER_EDIT_Q1_TYPE" =>
+                    ("Chỉnh sửa Mô hình kinh doanh", "Vui lòng chọn lại **Mô hình kinh doanh địa phương**:", "SELLER_CHOOSE_TYPE"),
+                "REGISTER_SELLER_EDIT_Q2_WARD" =>
+                    ("Chỉnh sửa Xã / Phường", "Vui lòng nhập lại tên **Xã / Phường** (chỉ chữ cái tiếng Việt):", null),
+                "REGISTER_SELLER_EDIT_Q3_DISTRICT" =>
+                    ("Chỉnh sửa Quận / Huyện", "Vui lòng nhập lại tên **Quận / Huyện** (chỉ chữ cái tiếng Việt):", null),
+                "REGISTER_SELLER_EDIT_Q4_MARKET" =>
+                    ("Chỉnh sửa Tên Chợ", "Vui lòng nhập lại **Tên Chợ Truyền Thống / Cụm Chợ Số Địa Phương** (chữ và số):", null),
+                "REGISTER_SELLER_EDIT_Q5_STORENAME" =>
+                    ("Chỉnh sửa Tên cửa hàng", "Vui lòng nhập lại **Tên cửa hàng** (12 - 30 ký tự, chỉ chữ cái và khoảng trắng):", null),
+                "REGISTER_SELLER_EDIT_Q6_ADDRESS" =>
+                    ("Chỉnh sửa Địa chỉ tiệm", "Vui lòng nhập lại **Địa chỉ tiệm** (phải có 'ngõ' và 'đường' hoặc bấm **[📍 Lấy GPS hiện tại]**):", "SELLER_INPUT_ADDRESS_GPS"),
+                "REGISTER_SELLER_EDIT_Q7_CATEGORY" =>
+                    ("Chỉnh sửa Danh mục hàng bán", "Vui lòng chọn lại **Danh mục hàng bán chính** (1 trong 6 danh mục):", "SELLER_CHOOSE_CATEGORY"),
+                "REGISTER_SELLER_EDIT_Q8_GMAIL" =>
+                    ("Chỉnh sửa Gmail", "Vui lòng nhập lại **Địa chỉ Gmail đăng ký gian hàng** (đuôi @gmail.com):", null),
+                "REGISTER_SELLER_EDIT_Q9_PASSWORD" =>
+                    ("Chỉnh sửa Mật khẩu", "Vui lòng nhập lại **Mật khẩu tạo tài khoản** (6 - 16 ký tự):", null),
+                "REGISTER_SELLER_EDIT_Q10_CONFIRM_PASSWORD" =>
+                    ("Chỉnh sửa Xác nhận mật khẩu", "Vui lòng nhập lại **Mật khẩu xác nhận**:", null),
+                "REGISTER_SELLER_EDIT_Q11_OPENHOURS" =>
+                    ("Chỉnh sửa Khung giờ mở cửa", "Vui lòng chọn lại **Khung giờ mở cửa kinh doanh**:", "SELLER_CHOOSE_OPENHOURS"),
+                "REGISTER_SELLER_EDIT_Q11_CUSTOM_OPENHOURS" =>
+                    ("Chỉnh sửa Khung giờ tùy chỉnh", "Vui lòng nhập khung giờ mở - đóng cửa tùy chỉnh:", null),
+                "REGISTER_SELLER_EDIT_Q12_CCCD_FRONT" =>
+                    ("Chỉnh sửa CCCD Mặt Trước", "Vui lòng tải lại ảnh **CCCD Mặt Trước**:", "SELLER_UPLOAD_CCCD_FRONT"),
+                "REGISTER_SELLER_EDIT_Q13_CCCD_BACK" =>
+                    ("Chỉnh sửa CCCD Mặt Sau", "Vui lòng tải lại ảnh **CCCD Mặt Sau**:", "SELLER_UPLOAD_CCCD_BACK"),
+                "REGISTER_SELLER_EDIT_Q14_FOOD_SAFETY" =>
+                    ("Chỉnh sửa Giấy CN ATTP", "Vui lòng tải lại ảnh **Giấy CN An Toàn Thực Phẩm**:", "SELLER_UPLOAD_FOOD_SAFETY"),
+                "REGISTER_SELLER_EDIT_Q15_BANK" =>
+                    ("Chỉnh sửa Ngân hàng", "Vui lòng chọn lại **Ngân hàng nhận doanh thu**:", "SELLER_CHOOSE_BANK"),
+                "REGISTER_SELLER_EDIT_Q16_BANKACC" =>
+                    ("Chỉnh sửa Số tài khoản", "Vui lòng nhập lại **Số tài khoản ngân hàng** (8 - 15 chữ số):", null),
+                "REGISTER_SELLER_REVIEW_SUMMARY" =>
+                    ("Bảng tổng kết hồ sơ", "Vui lòng kiểm tra lại thông tin hồ sơ bên dưới và chọn **[Sửa hồ sơ]** hoặc **[Gửi hồ sơ đăng ký]**:", "SELLER_REVIEW_SUMMARY"),
+                "REGISTER_SELLER_EDIT_MENU" =>
+                    ("Danh sách mục chỉnh sửa", "Vui lòng chọn mục bạn muốn chỉnh sửa từ danh sách bên dưới:", "SELLER_EDIT_MENU"),
 
                 // SHIPPER
                 "REGISTER_SHIPPER_Q1_NAME" or "REGISTER_SHIPPER_STEP1" or "REGISTER_SHIPPER_WAITING" =>
-                    ("Họ và tên thật của tài xế", "1️⃣ **Câu 1 / 15:** Cho mình xin **Họ và tên thật của tài xế** (Từ 6 - 16 ký tự) nhé?", null),
+                    ("Họ và tên thật của tài xế", @"1. <strong>Câu 1 / 15:</strong> Cho mình xin <strong>Họ và tên thật của tài xế</strong> (Từ 6 - 30 ký tự, gồm 3 hoặc 4 từ bắt đầu bằng họ tiếng Việt) nhé?", null),
                 "REGISTER_SHIPPER_Q2_GMAIL" =>
-                    ("Gmail đăng nhập", "2️⃣ **Câu 2 / 15:** Cho mình xin **Địa chỉ Gmail** của bạn (Ví dụ: `taixe@gmail.com`) để làm tài khoản đăng nhập app tài xế nhé?", null),
+                    ("Gmail đăng nhập", @"2. <strong>Câu 2 / 15:</strong> Cho mình xin <strong>Địa chỉ Gmail</strong> của bạn (Ví dụ: `taixe@gmail.com`) để làm tài khoản đăng nhập app tài xế nhé?", null),
                 "REGISTER_SHIPPER_Q3_PASSWORD" =>
-                    ("Mật khẩu đăng nhập", "3️⃣ **Câu 3 / 15:** Vui lòng tạo **Mật khẩu đăng nhập** (Từ 6 - 16 ký tự) nhé?", null),
+                    ("Mật khẩu đăng nhập", @"3. <strong>Câu 3 / 15:</strong> Vui lòng tạo <strong>Mật khẩu đăng nhập</strong> (Từ 6 - 16 ký tự) nhé?", null),
                 "REGISTER_SHIPPER_Q4_CONFIRM_PASSWORD" =>
-                    ("Nhập lại mật khẩu", "4️⃣ **Câu 4 / 15:** Vui lòng **Nhập lại mật khẩu** (Xác nhận trùng khớp) nhé?", null),
+                    ("Nhập lại mật khẩu", @"4. <strong>Câu 4 / 15:</strong> Vui lòng <strong>Nhập lại mật khẩu</strong> (Xác nhận trùng khớp) nhé?", null),
                 "REGISTER_SHIPPER_Q5_CCCD" =>
-                    ("Số CCCD", "5️⃣ **Câu 5 / 15:** Cho mình xin **Số Căn Cước Công Dân (CCCD)** (Đúng chuẩn 12 chữ số) nhé?", null),
+                    ("Số CCCD", @"5. <strong>Câu 5 / 15:</strong> Cho mình xin <strong>Số Căn Cước Công Dân (CCCD)</strong> (Đúng chuẩn 12 chữ số) nhé?", null),
                 "REGISTER_SHIPPER_Q6_PORTRAIT" =>
-                    ("Ảnh chân dung tài xế", "6️⃣ **Câu 6 / 15:** Vui lòng tải lên **Ảnh chân dung tài xế** (Nhấp vào ô bên dưới để chọn ảnh):", "SHIPPER_UPLOAD_PORTRAIT"),
+                    ("Ảnh chân dung tài xế", @"6. <strong>Câu 6 / 15:</strong> Vui lòng tải lên <strong>Ảnh chân dung tài xế</strong> (Nhấp vào ô bên dưới để chọn ảnh):", "SHIPPER_UPLOAD_PORTRAIT"),
                 "REGISTER_SHIPPER_Q7_CCCD_FRONT" =>
-                    ("ảnh CCCD Mặt Trước", "7️⃣ **Câu 7 / 15:** Vui lòng tải lên ảnh **CCCD Mặt Trước** của tài xế:", "SHIPPER_UPLOAD_CCCD_FRONT"),
+                    ("ảnh CCCD Mặt Trước", @"7. <strong>Câu 7 / 15:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Trước</strong> của tài xế:", "SHIPPER_UPLOAD_CCCD_FRONT"),
                 "REGISTER_SHIPPER_Q8_CCCD_BACK" =>
-                    ("ảnh CCCD Mặt Sau", "8️⃣ **Câu 8 / 15:** Vui lòng tải lên ảnh **CCCD Mặt Sau** của tài xế:", "SHIPPER_UPLOAD_CCCD_BACK"),
+                    ("ảnh CCCD Mặt Sau", @"8. <strong>Câu 8 / 15:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Sau</strong> của tài xế:", "SHIPPER_UPLOAD_CCCD_BACK"),
                 "REGISTER_SHIPPER_Q9_LICENSE_PLATE" =>
-                    ("Biển số xe máy", "9️⃣ **Câu 9 / 15:** Cho mình xin **Biển số xe máy** bạn chạy đơn (Ví dụ: `29AK1233`):", null),
+                    ("Biển số xe máy", @"9. <strong>Câu 9 / 15:</strong> Cho mình xin <strong>Biển số xe máy</strong> bạn chạy đơn (Ví dụ: `29AA-12345`):", null),
                 "REGISTER_SHIPPER_Q10_VEHICLE_TYPE" =>
-                    ("Loại xe đăng ký", "🔟 **Câu 10 / 15:** Vui lòng chọn **Loại xe đăng ký** (Bấm nút bên dưới để chọn):", "SHIPPER_CHOOSE_VEHICLE_TYPE"),
+                    ("Loại xe đăng ký", @"10. <strong>Câu 10 / 15:</strong> Vui lòng chọn <strong>Loại xe đăng ký</strong> (Bấm nút bên dưới để chọn):", "SHIPPER_CHOOSE_VEHICLE_TYPE"),
                 "REGISTER_SHIPPER_Q11_VEHICLE_MODEL" =>
-                    ("Dòng xe / Mẫu xe", "1️⃣1️⃣ **Câu 11 / 15:** Vui lòng chọn **Dòng xe / Mẫu xe** bạn sử dụng từ danh sách bên dưới (Bấm nút để chọn):", "SHIPPER_CHOOSE_VEHICLE_MODEL"),
+                    ("Dòng xe / Mẫu xe", @"11. <strong>Câu 11 / 15:</strong> Vui lòng chọn <strong>Dòng xe / Mẫu xe</strong> bạn sử dụng từ danh sách bên dưới (Bấm nút để chọn):", "SHIPPER_CHOOSE_VEHICLE_MODEL"),
                 "REGISTER_SHIPPER_Q12_GPLX" =>
-                    ("ảnh Bằng Lái Xe (GPLX)", "1️⃣2️⃣ **Câu 12 / 15:** Vui lòng tải lên ảnh **Bằng Lái Xe (GPLX)** của bạn (Nhấp vào ô bên dưới để chọn ảnh):", "SHIPPER_UPLOAD_GPLX"),
+                    ("ảnh Bằng Lái Xe (GPLX)", @"12. <strong>Câu 12 / 15:</strong> Vui lòng tải lên ảnh <strong>Bằng Lái Xe (GPLX)</strong> của bạn (Nhấp vào ô bên dưới để chọn ảnh):", "SHIPPER_UPLOAD_GPLX"),
                 "REGISTER_SHIPPER_Q13_AREA" =>
-                    ("Khu vực chạy chính", "1️⃣3️⃣ **Câu 13 / 15:** Vui lòng chọn **Khu vực đăng ký chạy chính** của bạn từ danh sách Quận / Huyện bên dưới (Bấm nút để chọn):", "SHIPPER_CHOOSE_AREA"),
+                    ("Khu vực chạy chính", @"13. <strong>Câu 13 / 15:</strong> Vui lòng chọn <strong>Khu vực đăng ký chạy chính</strong> của bạn từ danh sách Quận / Huyện bên dưới (Bấm nút để chọn):", "SHIPPER_CHOOSE_AREA"),
                 "REGISTER_SHIPPER_Q14_BANK" =>
-                    ("Ngân hàng nhận cước", "1️⃣4️⃣ **Câu 14 / 15:** Vui lòng chọn **Ngân hàng nhận cước** từ danh sách bên dưới (Bấm nút để chọn):", "SHIPPER_CHOOSE_BANK"),
+                    ("Ngân hàng nhận cước", @"14. <strong>Câu 14 / 15:</strong> Vui lòng chọn <strong>Ngân hàng nhận cước</strong> từ danh sách bên dưới (Bấm nút để chọn):", "SHIPPER_CHOOSE_BANK"),
                 "REGISTER_SHIPPER_Q15_BANKACC" or "REGISTER_SHIPPER_STEP3" =>
-                    ("Số tài khoản ngân hàng", "1️⃣5️⃣ **Câu 15 / 15 (Cuối cùng):** Cho mình xin **Số tài khoản ngân hàng** (Từ 8 - 15 chữ số) để sàn chuyển thu nhập cước xe cho bạn nhé?", null),
+                    ("Số tài khoản ngân hàng", @"15. <strong>Câu 15 / 15 (Cuối cùng):</strong> Cho mình xin <strong>Số tài khoản ngân hàng</strong> (Từ 8 - 16 chữ số) để sàn chuyển thu nhập cước xe cho bạn nhé?", null),
+
+                // SHIPPER EDIT
+                "REGISTER_SHIPPER_EDIT_Q1_NAME" =>
+                    ("Chỉnh sửa Họ tên", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng nhập lại <strong>Họ và tên thật của tài xế</strong> (Từ 6 - 30 ký tự, gồm 3 hoặc 4 từ bắt đầu bằng họ tiếng Việt):", null),
+                "REGISTER_SHIPPER_EDIT_Q2_GMAIL" =>
+                    ("Chỉnh sửa Gmail", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng nhập lại <strong>Địa chỉ Gmail</strong> của bạn (Ví dụ: `taixe@gmail.com`):", null),
+                "REGISTER_SHIPPER_EDIT_Q3_PASSWORD" =>
+                    ("Chỉnh sửa Mật khẩu", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng nhập <strong>Mật khẩu mới</strong> (Từ 6 - 16 ký tự):", null),
+                "REGISTER_SHIPPER_EDIT_Q4_CONFIRM_PASSWORD" =>
+                    ("Xác nhận Mật khẩu mới", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng <strong>Nhập lại mật khẩu mới</strong> để xác nhận:", null),
+                "REGISTER_SHIPPER_EDIT_Q5_CCCD" =>
+                    ("Chỉnh sửa CCCD", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng nhập lại <strong>Số CCCD</strong> (Đúng chuẩn 12 số của Bộ Công An):", null),
+                "REGISTER_SHIPPER_EDIT_Q6_PORTRAIT" =>
+                    ("Chỉnh sửa Ảnh chân dung", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng tải lại <strong>Ảnh chân dung tài xế</strong>:", "SHIPPER_UPLOAD_PORTRAIT"),
+                "REGISTER_SHIPPER_EDIT_Q7_CCCD_FRONT" =>
+                    ("Chỉnh sửa CCCD Mặt Trước", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng tải lại ảnh <strong>CCCD Mặt Trước</strong>:", "SHIPPER_UPLOAD_CCCD_FRONT"),
+                "REGISTER_SHIPPER_EDIT_Q8_CCCD_BACK" =>
+                    ("Chỉnh sửa CCCD Mặt Sau", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng tải lại ảnh <strong>CCCD Mặt Sau</strong>:", "SHIPPER_UPLOAD_CCCD_BACK"),
+                "REGISTER_SHIPPER_EDIT_Q9_LICENSE_PLATE" =>
+                    ("Chỉnh sửa Biển số xe", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng nhập lại <strong>Biển số xe</strong> (Ví dụ: `29AA-12345`):", null),
+                "REGISTER_SHIPPER_EDIT_Q10_VEHICLE_TYPE" =>
+                    ("Chỉnh sửa Loại xe", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng chọn lại <strong>Loại xe đăng ký</strong>:", "SHIPPER_CHOOSE_VEHICLE_TYPE"),
+                "REGISTER_SHIPPER_EDIT_Q11_VEHICLE_MODEL" =>
+                    ("Chỉnh sửa Dòng xe", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng chọn lại <strong>Dòng xe / Mẫu xe</strong>:", "SHIPPER_CHOOSE_VEHICLE_MODEL"),
+                "REGISTER_SHIPPER_EDIT_Q12_GPLX" =>
+                    ("Chỉnh sửa Giấy phép lái xe", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng tải lại ảnh <strong>Bằng Lái Xe (GPLX)</strong>:", "SHIPPER_UPLOAD_GPLX"),
+                "REGISTER_SHIPPER_EDIT_Q13_AREA" =>
+                    ("Chỉnh sửa Khu vực chạy", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng chọn lại <strong>Khu vực đăng ký chạy chính</strong> (1 trong 21 Quận/Huyện):", "SHIPPER_CHOOSE_AREA"),
+                "REGISTER_SHIPPER_EDIT_Q14_BANK" =>
+                    ("Chỉnh sửa Ngân hàng", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng chọn lại <strong>Ngân hàng nhận cước</strong> (1 trong 10 ngân hàng):", "SHIPPER_CHOOSE_BANK"),
+                "REGISTER_SHIPPER_EDIT_Q15_BANKACC" =>
+                    ("Chỉnh sửa Số tài khoản", @"<i class=""bi bi-pencil-square me-1"" style=""color: #EA580C;""></i> Vui lòng nhập lại <strong>Số tài khoản ngân hàng</strong> (Từ 8 - 16 chữ số):", null),
+                "REGISTER_SHIPPER_REVIEW_SUMMARY" =>
+                    ("Bảng tổng kết hồ sơ", @"Vui lòng kiểm tra lại thông tin hồ sơ bên dưới và chọn <strong>[Sửa hồ sơ]</strong> hoặc <strong>[Gửi hồ sơ đăng ký]</strong>:", "SHIPPER_REVIEW_SUMMARY"),
+                "REGISTER_SHIPPER_EDIT_MENU" =>
+                    ("Danh sách mục chỉnh sửa", @"Vui lòng chọn mục bạn muốn chỉnh sửa từ danh sách bên dưới:", "SHIPPER_EDIT_MENU"),
 
                 // BUYER
                 "REGISTER_BUYER_Q1_NAME" or "REGISTER_BUYER_STEP1" or "REGISTER_BUYER_WAITING" =>
@@ -5317,7 +9305,7 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
                 return new
                 {
                     success = true,
-                    reply = $"Oh no! Gmail `{targetEmail}` này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi ạ 😅. Mỗi tài khoản chỉ đăng ký 1 Gmail duy nhất, bạn vui lòng chọn và nhập một địa chỉ Gmail khác nhé! 🔑\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
+                    reply = "Oh no tài khoản gmail của bạn đã đăng ký rồi ạ, bạn dùng tài khoản gmail khác nhé! 😅🔑\n\n💡 *(Nhắn **\"Hủy yêu cầu\"** nếu bạn muốn dừng)*",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = activeState,
                     regDraft = new DirectRegDraft()
@@ -5409,8 +9397,9 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
         private async Task<object> CompleteSellerRegistrationAsync(DirectRegDraft draft)
         {
             string cleanAccount = draft.Email?.Trim().ToLowerInvariant() ?? "";
-            string fullName = draft.OwnerFullName?.Trim() ?? "Chủ Tiệm ZoneMart";
             string storeName = draft.StoreName?.Trim() ?? "Gian Hàng ZoneMart";
+            string fullName = draft.OwnerFullName?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(fullName)) fullName = storeName;
             string address = draft.Address?.Trim() ?? "Hà Nội";
             string category = draft.Category?.Trim() ?? "Thực phẩm & Nhu yếu phẩm";
             string openHours = draft.OpenHours?.Trim() ?? "07:00 - 22:00";
@@ -5418,6 +9407,10 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
             string bankAcc = draft.BankAccountNumber?.Trim() ?? "123456789";
             string password = draft.Password?.Trim() ?? "123456";
             string cccdNumber = draft.CccdNumber?.Trim() ?? "";
+            string sellerType = draft.SellerType?.Trim() ?? "Chợ truyền thống";
+            string ward = draft.Ward?.Trim() ?? "";
+            string district = draft.District?.Trim() ?? "";
+            string marketName = draft.MarketName?.Trim() ?? "";
 
             var (alreadyReg, detailRole) = await CheckIfEmailAlreadyRegisteredAsync(cleanAccount);
             if (alreadyReg)
@@ -5425,13 +9418,18 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
                 return new
                 {
                     success = true,
-                    reply = $"Oh no! Gmail `{cleanAccount}` này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi ạ 😅. Mỗi tài khoản chỉ đăng ký 1 Gmail duy nhất, bạn vui lòng chọn và nhập một địa chỉ Gmail khác nhé! 🔑",
+                    reply = "Oh no tài khoản gmail của bạn đã đăng ký rồi ạ, bạn dùng tài khoản gmail khác nhé! 😅🔑",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "NONE"
                 };
             }
 
             var existingUser = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == cleanAccount || u.Phone == cleanAccount).FirstOrDefaultAsync();
+            if (existingUser != null && (existingUser.IsDeleted || existingUser.AccountStatus == "deleted"))
+            {
+                await _mongoService.Users.DeleteManyAsync(u => u.Id == existingUser.Id || u.PhoneEmail.ToLower() == cleanAccount);
+                existingUser = null;
+            }
             if (existingUser == null)
             {
                 existingUser = new User
@@ -5463,6 +9461,10 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
                 StoreName = storeName,
                 Category = category,
                 Address = address,
+                SellerType = sellerType,
+                Ward = ward,
+                District = district,
+                MarketName = marketName,
                 OpenHours = openHours,
                 OwnerFullName = fullName,
                 CccdNumber = cccdNumber,
@@ -5471,6 +9473,9 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
                 CccdFrontImage = draft.CccdFrontImage ?? "",
                 CccdBackImage = draft.CccdBackImage ?? "",
                 FoodSafetyCertImage = draft.FoodSafetyImage ?? "",
+                RegistrationFee = 0,
+                FeePaymentStatus = "waived",
+                FeePaymentNote = "Được UBND & BQL Chợ hỗ trợ 100% kinh phí chuyển đổi số địa phương",
                 Status = "Pending",
                 CreatedAt = DateTime.UtcNow
             };
@@ -5483,7 +9488,7 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
                 {
                     Type = "seller",
                     Title = "AI Tự Động Đăng Ký Gian Hàng",
-                    Message = $"Chủ tiệm {fullName} đã nhờ AI nộp hồ sơ gian hàng '{storeName}'.",
+                    Message = $"Chủ tiệm {storeName} ({sellerType}) đã nhờ AI nộp hồ sơ gian hàng tại {ward}, {district}.",
                     TargetUserId = newStore.Id ?? "",
                     TargetName = storeName,
                     IsRead = false,
@@ -5495,35 +9500,45 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
             // GỬI EMAIL THÔNG BÁO PENDING VỀ GMAIL SELLER (SỬ DỤNG GMAIL dobinh225599@gmail.com ĐÃ CẤU HÌNH)
             if (!string.IsNullOrEmpty(cleanAccount) && cleanAccount.Contains("@"))
             {
-                _ = Task.Run(async () =>
+                try
                 {
-                    try
-                    {
-                        await AuthController.SendSellerPendingEmailAsync(cleanAccount, storeName, fullName);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"⚠️ [AI Seller Email Error] {ex.Message}");
-                    }
-                });
+                    Console.WriteLine($"🚀 [MailKit SMTP] Đang chuẩn bị gửi thư cảm ơn Seller tới Gmail: {cleanAccount} qua dobinh225599@gmail.com...");
+                    await AuthController.SendSellerPendingEmailAsync(cleanAccount, storeName, fullName);
+                    Console.WriteLine($"💌 [SMTP Success] Đã gửi mail thành công cho {cleanAccount} qua dobinh225599@gmail.com");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ [AI Seller Email Error] {ex.Message}");
+                }
             }
 
             return new
             {
                 success = true,
-                reply = $@"🎉 **HỒ SƠ ĐĂNG KÝ SELLER ĐÃ ĐƯỢC GỬI THÀNH CÔNG!**
+                reply = $@"<div class=""seller-success-header""><i class=""bi bi-check-circle-fill me-2"" style=""color: #16A34A;""></i><strong>HỒ SƠ ĐĂNG KÝ GIAN HÀNG ĐÃ ĐƯỢC GỬI THÀNH CÔNG!</strong></div>
 
-📋 **THÔNG TIN HỒ SƠ GIAN HÀNG ĐÃ NỘP:**
-🏪 **Gian hàng:** {storeName} ({category})
-📍 **Địa chỉ:** {address}
-⏰ **Khung giờ:** {openHours}
-👤 **Chủ tiệm:** {fullName} | `{cleanAccount}`
-🆔 **CCCD:** `{cccdNumber}`
-📄 **Giấy tờ:** Đã nộp ảnh CCCD 2 mặt & Giấy CN An toàn thực phẩm
-💳 **Thanh toán:** {bankName} - STK: `{bankAcc}`
-🔑 **Mật khẩu:** [MASKED_PWD:{password}]
+<div class=""seller-fee-card"">
+  <div class=""fee-row""><i class=""bi bi-gift-fill me-1"" style=""color: #EA580C;""></i><strong>CHÍNH SÁCH HỖ TRỢ ĐẶC BIỆT:</strong> <span style=""color: #16A34A; font-weight: 700;"">0 VNĐ (Miễn phí 100%)</span></div>
+  <div class=""fee-sub"">Được UBND & Ban Quản Lý Chợ hỗ trợ 100% kinh phí chuyển đổi số địa phương.</div>
+</div>
 
-⏳ **Thông báo phê duyệt:** Đội ngũ Ban Quản Lý & Trợ lý AI Admin sẽ kiểm tra và phê duyệt hồ sơ sớm nhất. Khi nào hồ sơ được duyệt sẽ có thông báo gửi về Gmail **{cleanAccount}** nhé ạ!",
+<div class=""seller-summary-title""><i class=""bi bi-clipboard2-check-fill me-1"" style=""color: #D94E15;""></i><strong>TỔNG KẾT HỒ SƠ ĐÃ NỘP (16 MỤC):</strong></div>
+<div class=""seller-summary-list"">
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-shop me-1"" style=""color: #EA580C;""></i>1. Mô hình kinh doanh:</span><span class=""seller-row-value"">{sellerType}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-geo-alt me-1"" style=""color: #EF4444;""></i>2. Xã / Phường:</span><span class=""seller-row-value"">{ward}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-pin-map me-1"" style=""color: #2563EB;""></i>3. Quận / Huyện:</span><span class=""seller-row-value"">{district}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-buildings me-1"" style=""color: #0284C7;""></i>4. Tên Chợ / Cụm Chợ:</span><span class=""seller-row-value"">{marketName}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-house-door me-1"" style=""color: #10B981;""></i>5. Tên cửa hàng:</span><span class=""seller-row-value"">{storeName}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-geo me-1"" style=""color: #DC2626;""></i>6. Địa chỉ tiệm:</span><span class=""seller-row-value"">{address}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-tags me-1"" style=""color: #D97706;""></i>7. Danh mục hàng bán:</span><span class=""seller-row-value"">{category}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-envelope-at me-1"" style=""color: #2563EB;""></i>8. Gmail đăng ký:</span><span class=""seller-row-value seller-code-val"">{cleanAccount}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-key me-1"" style=""color: #D97706;""></i>9. Mật khẩu:</span><span class=""seller-row-value"">[MASKED_PWD:{password}]</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-clock me-1"" style=""color: #0284C7;""></i>10. Khung giờ kinh doanh:</span><span class=""seller-row-value"">{openHours}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-camera me-1"" style=""color: #2563EB;""></i>11-14. Giấy tờ xác thực:</span><span class=""seller-row-value badge-uploaded"">Đã nộp đủ 3 ảnh (CCCD & ATTP)</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-credit-card-2-front me-1"" style=""color: #10B981;""></i>15-16. Doanh thu:</span><span class=""seller-row-value"">{bankName} - `{bankAcc}`</span></div>
+</div>
+<hr class=""chat-divider""/>
+<div class=""seller-summary-hint""><i class=""bi bi-hourglass-split me-1"" style=""color: #EA580C;""></i><strong>Thông báo phê duyệt:</strong> Đội ngũ Ban Quản Lý & Trợ lý AI Admin sẽ kiểm tra và phê duyệt hồ sơ sớm nhất. Thư xác nhận & cảm ơn đã được gửi đến Gmail <strong>{cleanAccount}</strong> từ hộp thư <strong>dobinh225599@gmail.com</strong> nhé ạ!</div>",
                 provider = "ZoneMart AI Direct Registration Engine",
                 registrationState = "NONE",
                 actionIntent = "SELLER_REGISTER_SUCCESS",
@@ -5532,6 +9547,10 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
                 {
                     role = "SELLER",
                     storeName = storeName,
+                    sellerType = sellerType,
+                    ward = ward,
+                    district = district,
+                    marketName = marketName,
                     category = category,
                     address = address,
                     openHours = openHours,
@@ -5541,6 +9560,8 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
                     bankName = bankName,
                     bankAcc = bankAcc,
                     password = password,
+                    registrationFee = 0,
+                    feePaymentStatus = "waived",
                     status = "Chờ duyệt (Pending)"
                 }
             };
@@ -5565,13 +9586,18 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
                 return new
                 {
                     success = true,
-                    reply = $"Oh no! Gmail `{cleanAccount}` này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi ạ 😅. Mỗi tài khoản chỉ đăng ký 1 Gmail duy nhất, bạn vui lòng chọn và nhập một địa chỉ Gmail khác nhé! 🔑",
+                    reply = @"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Oh no tài khoản gmail của bạn đã đăng ký rồi ạ, bạn dùng tài khoản gmail khác nhé!",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "NONE"
                 };
             }
 
             var existingUser = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == cleanAccount || u.Phone == cleanAccount).FirstOrDefaultAsync();
+            if (existingUser != null && (existingUser.IsDeleted || existingUser.AccountStatus == "deleted"))
+            {
+                await _mongoService.Users.DeleteManyAsync(u => u.Id == existingUser.Id || u.PhoneEmail.ToLower() == cleanAccount);
+                existingUser = null;
+            }
             if (existingUser == null)
             {
                 existingUser = new User
@@ -5653,18 +9679,25 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
             return new
             {
                 success = true,
-                reply = $@"🎉 **HỒ SƠ ĐĂNG KÝ SHIPPER ĐÃ ĐƯỢC GỬI THÀNH CÔNG!**
+                reply = $@"<div class=""seller-fee-card mt-2 mb-2"" style=""border-left: 4px solid #10B981;"">
+  <div class=""seller-summary-title"" style=""color: #10B981;"">
+    <i class=""bi bi-check-circle-fill me-2""></i> HỒ SƠ ĐĂNG KÝ SHIPPER ĐÃ ĐƯỢC GỬI THÀNH CÔNG!
+  </div>
+  <div class=""seller-summary-desc mb-2"">Hồ sơ đối tác tài xế của bạn đã được tiếp nhận và chuyển đến Ban Quản Lý để xét duyệt.</div>
+  <div class=""seller-summary-list"">
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-person-fill me-1"" style=""color: #0284C7;""></i> Họ và tên:</span> <span class=""seller-summary-val font-semibold"">{fullName}</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-envelope-fill me-1"" style=""color: #0284C7;""></i> Gmail đăng nhập:</span> <span class=""seller-summary-val""><code>{cleanAccount}</code></span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-person-vcard-fill me-1"" style=""color: #0284C7;""></i> Số CCCD:</span> <span class=""seller-summary-val""><code>{cccdNumber}</code></span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-bicycle me-1"" style=""color: #0284C7;""></i> Phương tiện & Biển số:</span> <span class=""seller-summary-val"">{vehicleType} - {vehicleModel} (<strong>{licensePlate}</strong>)</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-file-earmark-person-fill me-1"" style=""color: #0284C7;""></i> GPLX & Giấy tờ:</span> <span class=""seller-summary-val text-success"">Đã tải đầy đủ ảnh CCCD 2 mặt, chân dung & GPLX</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-geo-alt-fill me-1"" style=""color: #0284C7;""></i> Khu vực hoạt động:</span> <span class=""seller-summary-val"">{area}</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-bank2 me-1"" style=""color: #0284C7;""></i> Ngân hàng nhận cước:</span> <span class=""seller-summary-val"">{bankName} (STK: <code>{bankAcc}</code>)</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-key-fill me-1"" style=""color: #0284C7;""></i> Mật khẩu đăng nhập:</span> <span class=""seller-summary-val"">[MASKED_PWD:{password}]</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-shield-check me-1"" style=""color: #10B981;""></i> Trạng thái hồ sơ:</span> <span class=""seller-summary-val"" style=""color: #EA580C; font-weight: 600;""><i class=""bi bi-clock-history me-1""></i> Chờ duyệt (Pending)</span></div>
+  </div>
+</div>
 
-📋 **THÔNG TIN HỒ SƠ TÀI XẾ ĐÃ NỘP:**
-👤 **Tài xế:** {fullName} | `{cleanAccount}`
-🆔 **CCCD:** `{cccdNumber}` (Đã nộp ảnh CCCD 2 mặt & chân dung)
-🛵 **Phương tiện:** Biển số: **{licensePlate}** ({vehicleType} - {vehicleModel})
-📜 **Bằng lái:** Đã nộp ảnh GPLX
-📍 **Khu vực chạy:** {area}
-💳 **Thanh toán:** {bankName} - STK: `{bankAcc}`
-🔑 **Mật khẩu:** [MASKED_PWD:{password}]
-
-⏳ **Thông báo phê duyệt:** Đội ngũ Ban Quản Lý & Trợ lý AI Admin sẽ kiểm tra và phê duyệt hồ sơ sớm nhất. Khi nào hồ sơ được duyệt sẽ có thông báo gửi về Gmail **{cleanAccount}** nhé ạ!",
+<i class=""bi bi-bell-fill me-1"" style=""color: #0284C7;""></i> <strong>Thông báo phê duyệt:</strong> Khi hồ sơ được phê duyệt, thông báo xác nhận sẽ được gửi trực tiếp về Gmail <strong>{cleanAccount}</strong>. Cảm ơn bạn đã đồng hành cùng ZoneMart Driver!",
                 provider = "ZoneMart AI Direct Registration Engine",
                 registrationState = "NONE",
                 actionIntent = "SHIPPER_REGISTER_SUCCESS",
@@ -5699,7 +9732,7 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
                 return new
                 {
                     success = true,
-                    reply = $"Oh no! Gmail `{cleanAccount}` này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi ạ 😅. Mỗi tài khoản chỉ đăng ký 1 Gmail duy nhất, bạn vui lòng chọn và nhập một địa chỉ Gmail khác nhé! 🔑",
+                    reply = "Oh no tài khoản gmail của bạn đã đăng ký rồi ạ, bạn dùng tài khoản gmail khác nhé! 😅🔑",
                     provider = "ZoneMart AI Direct Registration Engine",
                     registrationState = "NONE",
                     regDraft = new DirectRegDraft()
@@ -5709,14 +9742,22 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
             var checkExistingBuyer = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == cleanAccount || u.Phone == cleanAccount).FirstOrDefaultAsync();
             if (checkExistingBuyer != null)
             {
-                return new
+                if (checkExistingBuyer.IsDeleted || checkExistingBuyer.AccountStatus == "deleted")
                 {
-                    success = true,
-                    reply = $"⚠️ Tài khoản `{cleanAccount}` đã tồn tại trên hệ thống ZoneMart! Bạn có thể sử dụng nút **[Đăng Nhập]** để truy cập tài khoản ngay lập tức nhé! 😊",
-                    provider = "ZoneMart AI Direct Registration Engine",
-                    registrationState = "NONE",
-                    regDraft = new DirectRegDraft()
-                };
+                    await _mongoService.Users.DeleteManyAsync(u => u.Id == checkExistingBuyer.Id || u.PhoneEmail.ToLower() == cleanAccount);
+                    checkExistingBuyer = null;
+                }
+                else
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "Oh no tài khoản gmail của bạn đã đăng ký rồi ạ, bạn dùng tài khoản gmail khác nhé! 😅🔑",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "NONE",
+                        regDraft = new DirectRegDraft()
+                    };
+                }
             }
 
             var newBuyerUser = new User
@@ -5741,17 +9782,15 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
             // GỬI THƯ CẢM ƠN TỚI GMAIL VỪA ĐĂNG KÝ (SỬ DỤNG GMAIL dobinh225599@gmail.com ĐÃ CẤU HÌNH)
             if (!string.IsNullOrEmpty(cleanAccount) && cleanAccount.Contains("@"))
             {
-                _ = Task.Run(async () =>
+                try
                 {
-                    try
-                    {
-                        await AuthController.SendThankYouEmailAsync(cleanAccount, fullName);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"⚠️ [AI Buyer Email Error] {ex.Message}");
-                    }
-                });
+                    bool sent = await AuthController.SendThankYouEmailAsync(cleanAccount, fullName);
+                    Console.WriteLine($"💌 [AI Buyer Registration] Kết quả gửi thư cảm ơn tới {cleanAccount}: {(sent ? "Thành công" : "Thất bại")}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ [AI Buyer Email Error] {ex.Message}");
+                }
             }
 
             return new
@@ -5793,30 +9832,46 @@ Bạn có muốn đăng nhập ngay không?",
             return string.Empty;
         }
 
-        private static bool IsColdWeatherIntent(string cleanMsgNoTone)
+        private static bool IsColdWeatherIntent(string cleanMsgNoTone, string userMsg = "")
         {
             if (string.IsNullOrWhiteSpace(cleanMsgNoTone)) return false;
+            string origLower = (userMsg ?? "").ToLower();
+
+            // Chú ý: "đỡ nóng", "bớt nóng", "giảm nóng", "chống nóng" là muốn giải nhiệt (HOT weather intent), không phải món nóng!
+            if (origLower.Contains("đỡ nóng") || origLower.Contains("bớt nóng") || origLower.Contains("giảm nóng") ||
+                origLower.Contains("hết nóng") || origLower.Contains("chống nóng"))
+            {
+                return false;
+            }
+
             return cleanMsgNoTone.Contains("se lanh") || cleanMsgNoTone.Contains("troi lanh") ||
                    cleanMsgNoTone.Contains("thoi tiet lanh") || cleanMsgNoTone.Contains("ret") ||
                    cleanMsgNoTone.Contains("mua lanh") || cleanMsgNoTone.Contains("troi mua") ||
                    cleanMsgNoTone.Contains("gio mua") || cleanMsgNoTone.Contains("am nong") ||
                    cleanMsgNoTone.Contains("am bung") || cleanMsgNoTone.Contains("suyt xoa") ||
+                   cleanMsgNoTone.Contains("mua dong") || cleanMsgNoTone.Contains("ngay lanh") ||
+                   cleanMsgNoTone.Contains("mon nong") || cleanMsgNoTone.Contains("an do nong") ||
+                   cleanMsgNoTone.Contains("an gi am nong") || cleanMsgNoTone.Contains("an gi do nong") ||
+                   origLower.Contains("đồ nóng") || origLower.Contains("món nóng") || origLower.Contains("ấm nóng") || origLower.Contains("nóng hổi") ||
                    (cleanMsgNoTone.Contains("lanh") && !cleanMsgNoTone.Contains("mat lanh") && !cleanMsgNoTone.Contains("uop lanh") && !cleanMsgNoTone.Contains("da lanh"));
         }
 
-        private static bool IsHotWeatherIntent(string cleanMsgNoTone)
+        private static bool IsHotWeatherIntent(string cleanMsgNoTone, string userMsg = "")
         {
             if (string.IsNullOrWhiteSpace(cleanMsgNoTone)) return false;
-            if (IsColdWeatherIntent(cleanMsgNoTone)) return false;
+            if (IsColdWeatherIntent(cleanMsgNoTone, userMsg)) return false;
+
+            string origLower = (userMsg ?? "").ToLower();
 
             return cleanMsgNoTone.Contains("troi nong") || cleanMsgNoTone.Contains("thoi tiet nong") ||
                    cleanMsgNoTone.Contains("nang nong") || cleanMsgNoTone.Contains("oi buc") ||
-                   cleanMsgNoTone.Contains("oi a") || cleanMsgNoTone.Contains("do nong") ||
-                   cleanMsgNoTone.Contains("bot nong") || cleanMsgNoTone.Contains("giai nhiet") ||
+                   cleanMsgNoTone.Contains("oi a") || cleanMsgNoTone.Contains("giai nhiet") ||
                    cleanMsgNoTone.Contains("giai khat") || cleanMsgNoTone.Contains("mat lanh") ||
                    cleanMsgNoTone.Contains("thanh nhiet") || cleanMsgNoTone.Contains("do mat") ||
                    cleanMsgNoTone.Contains("mon mat") || cleanMsgNoTone.Contains("mon lanh") ||
-                   cleanMsgNoTone.Contains("giam nhiet") ||
+                   cleanMsgNoTone.Contains("giam nhiet") || cleanMsgNoTone.Contains("mua he") ||
+                   cleanMsgNoTone.Contains("ngay he") || cleanMsgNoTone.Contains("ngay nong") ||
+                   origLower.Contains("đỡ nóng") || origLower.Contains("bớt nóng") || origLower.Contains("giảm nóng") ||
                    (cleanMsgNoTone.Contains("nong") && !cleanMsgNoTone.Contains("nong hoi") && !cleanMsgNoTone.Contains("am nong"));
         }
 
@@ -5827,18 +9882,34 @@ Bạn có muốn đăng nhập ngay không?",
             string cat = RemoveVietnameseTones(p.Category ?? "").ToLower();
             string desc = RemoveVietnameseTones(p.Description ?? "").ToLower();
 
-            // Loại trừ hoàn toàn các món nóng / món xào / lẩu / bốc khói / bánh mì chảo
-            if (cat.Contains("mon an nong") || name.Contains("nong hoi") || name.Contains("banh mi chao") ||
-                name.Contains("pho") || name.Contains("xoi mo") || name.Contains("lau") || name.Contains("chao"))
+            // 1. Tuyệt đối loại trừ đồ gia dụng / phi thực phẩm
+            if (cat.Contains("gia dung") || cat.Contains("do dung") ||
+                name.Contains("chao chong dinh") || name.Contains("noi inox") || name.Contains("bo noi") ||
+                name.Contains("nuoc rua bat") || name.Contains("tui rac") || name.Contains("khan"))
             {
                 return false;
             }
 
-            return name.Contains("trai cay") || name.Contains("dau tay") || name.Contains("sua") ||
-                   name.Contains("rau") || name.Contains("cu qua") || name.Contains("xa lach") ||
-                   name.Contains("ca chua") || name.Contains("nuoc") || name.Contains("che") ||
-                   cat.Contains("trai cay") || cat.Contains("rau") || cat.Contains("do uong") ||
-                   cat.Contains("nong san") || desc.Contains("mat") || desc.Contains("giai nhiet");
+            // 2. Tuyệt đối loại trừ các món ăn nóng / xào / nướng / lẩu / bốc khói / bánh mì chảo / thịt kho
+            if (cat.Contains("mon an nong") || name.Contains("banh mi chao") || name.Contains("pho") ||
+                name.Contains("com ga") || name.Contains("com tam") || name.Contains("banh bao") ||
+                name.Contains("lau") || name.Contains("nuong") || name.Contains("chao") ||
+                name.Contains("nong hoi") || name.Contains("thit bo my") || name.Contains("thit trau") ||
+                name.Contains("canh cua") || name.Contains("khoai lang"))
+            {
+                return false;
+            }
+
+            // 3. Các sản phẩm mát lạnh / giải nhiệt / mùa hè (ưu tiên đồ uống, hoa quả mọng nước, giải khát):
+            return cat.Contains("trai cay") || cat.Contains("do uong") || cat.Contains("rau cu") ||
+                   name.Contains("tra tac") || name.Contains("ca phe") || name.Contains("dua xiem") ||
+                   name.Contains("dau tay") || name.Contains("cam sanh") || name.Contains("xoai cat") ||
+                   name.Contains("buoi da xanh") || name.Contains("ca chua") || name.Contains("ot chuong") ||
+                   name.Contains("xa lach") || name.Contains("rau muong") || name.Contains("bi xanh") ||
+                   name.Contains("sua tuoi") || name.Contains("sua dac") || name.Contains("kem") ||
+                   name.Contains("che") || name.Contains("sinh to") || name.Contains("nuoc ep") ||
+                   desc.Contains("mat lanh") || desc.Contains("giai nhiet") || desc.Contains("thanh nhiet") ||
+                   desc.Contains("mong nuoc") || desc.Contains("giai khat") || desc.Contains("ngot mat");
         }
 
         private static bool IsProductWarming(Product p)
@@ -5846,10 +9917,91 @@ Bạn có muốn đăng nhập ngay không?",
             if (p == null) return false;
             string name = RemoveVietnameseTones(p.ProductName ?? "").ToLower();
             string cat = RemoveVietnameseTones(p.Category ?? "").ToLower();
+            string desc = RemoveVietnameseTones(p.Description ?? "").ToLower();
 
-            return cat.Contains("mon an nong") || name.Contains("pho") || name.Contains("banh mi chao") ||
-                   name.Contains("com ga") || name.Contains("bo my") || name.Contains("thit bo") ||
-                   name.Contains("lau") || name.Contains("nong hoi") || name.Contains("chao");
+            // 1. Tuyệt đối loại trừ đồ gia dụng / dụng cụ nhà bếp / phi thực phẩm
+            if (cat.Contains("gia dung") || cat.Contains("do dung") ||
+                name.Contains("chao chong dinh") || name.Contains("chao da") ||
+                name.Contains("noi inox") || name.Contains("bo noi") ||
+                name.Contains("nuoc rua bat") || name.Contains("tui rac") || name.Contains("khan"))
+            {
+                return false;
+            }
+
+            // 2. Tuyệt đối loại trừ các sản phẩm giải nhiệt / mát lạnh / hoa quả / đồ uống đá
+            if (name.Contains("tra tac") || name.Contains("tra da") || name.Contains("ca phe sua da") ||
+                name.Contains("dua xiem") || name.Contains("dau tay") || name.Contains("cam sanh") ||
+                name.Contains("xoai cat") || name.Contains("buoi da xanh") || name.Contains("ca chua bi") ||
+                name.Contains("ot chuong") || name.Contains("xa lach") || name.Contains("rau muong") ||
+                name.Contains("bi xanh") || name.Contains("kem") ||
+                name.Contains("che") || name.Contains("mat lanh") || name.Contains("giai nhiet") ||
+                cat.Contains("trai cay") || cat.Contains("do uong"))
+            {
+                return false;
+            }
+
+            // 3. Các sản phẩm ấm nóng / mùa đông:
+            return cat.Contains("mon an nong") ||
+                   name.Contains("pho") || name.Contains("banh mi chao") || name.Contains("banh mi kep") ||
+                   name.Contains("com ga") || name.Contains("com tam") || name.Contains("com nieu") ||
+                   (name.Contains("chao") && !name.Contains("chao chong dinh") && !name.Contains("chao da")) ||
+                   name.Contains("lau") || name.Contains("nuong") ||
+                   name.Contains("bo my") || name.Contains("thit bo") || name.Contains("banh bao") ||
+                   name.Contains("khoai lang") || name.Contains("thit trau") || name.Contains("canh cua") ||
+                   name.Contains("canh") || name.Contains("sup") || name.Contains("nong hoi") ||
+                   name.Contains("xoi mo") || name.Contains("sot") || name.Contains("ham") ||
+                   desc.Contains("nong hoi") || desc.Contains("am bung") || desc.Contains("xeo xeo") ||
+                   desc.Contains("nuoc dung") || desc.Contains("khoai lang");
+        }
+
+        private static string GetWarmDishHighlight(string? productName)
+        {
+            string name = (productName ?? "").ToLower();
+            if (name.Contains("bánh mì chảo") || name.Contains("banh mi chao"))
+                return "Chảo sốt xèo xèo nóng hổi, pate ngậy béo thơm lừng chấm bánh mì giòn rụm ấm lòng ngày lạnh.";
+            if (name.Contains("cơm gà") || name.Contains("com ga"))
+                return "Đùi gà chiên giòn tan nóng rụm sốt tỏi ớt cay cay cùng cơm chiên thơm nức, ăn ấm bụng tuyệt đối.";
+            if (name.Contains("cơm tấm") || name.Contains("com tam"))
+                return "Sườn nướng than hoa mật ong xém cạnh thơm nức mũi, ăn kèm cơm dẻo và canh nóng hổi đậm đà.";
+            if (name.Contains("bánh mì kẹp") || name.Contains("banh mi kep"))
+                return "Thịt nướng sả ngũ vị nóng hổi kẹp trong ổ bánh mì giòn tan, ăn lót dạ ngày se lạnh cực đã.";
+            if (name.Contains("bánh bao") || name.Contains("banh bao"))
+                return "Bánh bao nóng hổi vừa ra lò mềm xốp bốc khói, nhân xá xíu trứng muối béo ngậy ấm lòng.";
+            if (name.Contains("khoai lang") || name.Contains("khoai lang mat"))
+                return "Khoai nướng mật nóng hổi tứa mật óng ả ngọt bùi, món ăn vặt kinh điển sưởi ấm mùa đông.";
+            if (name.Contains("bò mỹ") || name.Contains("thịt bò") || name.Contains("lẩu"))
+                return "Thịt bò mềm mọng cẩm thạch cực kỳ lý tưởng để cùng người thân quây quần nhúng nồi lẩu nóng nghi ngút.";
+            if (name.Contains("trâu gác bếp") || name.Contains("thit trau"))
+                return "Thịt hun khói thơm lừng gia vị mắc khén hạt dổi cay nồng, ăn lai rai ngày se lạnh là hết ý.";
+            if (name.Contains("canh") || name.Contains("súp") || name.Contains("cháo") || name.Contains("phở"))
+                return "Nước dùng ninh ngọt thanh đậm đà nóng hổi, húp xì xụp xua tan ngay cái lạnh se sắt.";
+            return "Món ăn nóng hổi bốc khói nghi ngút, đậm đà hương vị rất thích hợp thưởng thức trong thời tiết se lạnh.";
+        }
+
+        private static string GetCoolDishHighlight(string? productName)
+        {
+            string name = (productName ?? "").ToLower();
+            if (name.Contains("trà tắc") || name.Contains("tra tac"))
+                return "Trà lài ủ lạnh kết hợp tắc tươi và mật ong hoa rừng, chua ngọt sảng khoái đập tan cơn khát ngày hè oi ả.";
+            if (name.Contains("cà phê") || name.Contains("ca phe"))
+                return "Cà phê sữa đá pha phin mát lạnh đậm đà, giải nhiệt và đánh thức mọi giác quan tỉnh táo.";
+            if (name.Contains("dâu tây") || name.Contains("dau tay"))
+                return "Dâu tây Hana tươi mọng ngọt thanh giàu vitamin C, ướp lạnh ăn liền hoặc dầm sữa chua giải nhiệt siêu ngon.";
+            if (name.Contains("dừa xiêm") || name.Contains("dua xiem"))
+                return "Nước dừa ngọt lịm mát lành tự nhiên kèm cùi non mềm dẻo, thanh nhiệt cơ thể tức thì.";
+            if (name.Contains("cam sành") || name.Contains("cam sanh"))
+                return "Cam sành mọng nước ngọt đậm đà, vắt lấy nước uống cùng đá lạnh thanh mát bổ sung năng lượng.";
+            if (name.Contains("xoài") || name.Contains("xoai cat"))
+                return "Xoài chín cây vàng óng thơm lừng, thịt quả dày ngọt lịm ướp lạnh giải nhiệt cực đã.";
+            if (name.Contains("bưởi") || name.Contains("buoi da xanh"))
+                return "Tép bưởi hồng đỏ mọng nước thanh mát, không đắng hậu, giải nhiệt và hỗ trợ thanh lọc cơ thể.";
+            if (name.Contains("cà chua") || name.Contains("ca chua bi"))
+                return "Cà chua bi socola căng mọng ngọt mát, giàu dưỡng chất chống oxy hóa giúp làm dịu ngày nắng nóng.";
+            if (name.Contains("sữa tươi") || name.Contains("sua tuoi"))
+                return "Sữa tươi tiệt trùng ướp lạnh thanh khiết, giải khát tức thì và bổ sung dinh dưỡng mát lành.";
+            if (name.Contains("bí xanh") || name.Contains("bi xanh"))
+                return "Bí xanh nấu canh tôm hoặc ép nước thanh nhiệt làm mát cơ thể, giải độc ngày oi bức cực tốt.";
+            return "Món ăn thanh mát mọng nước, giải nhiệt sảng khoái và đập tan cảm giác oi bức ngày nắng nóng.";
         }
 
         private static (bool IsUnsafe, string Reply) CheckSafetyGuardrails(string userMsg, string cleanMsgNoTone)
@@ -6078,7 +10230,7 @@ Bạn có muốn đăng nhập ngay không?",
             }
 
             // 2. SUY LUẬN Ý ĐỊNH HỎI AI LÀM ĐƯỢC GÌ / BẠN LÀ AI / TÍNH NĂNG CỦA AI
-            if (cleanMsgNoTone.Contains("lam duoc gi") || cleanMsgNoTone.Contains("giup duoc gi") || cleanMsgNoTone.Contains("ho tro gi") || cleanMsgNoTone.Contains("tinh nang") || cleanMsgNoTone.Contains("chuc nang") || cleanMsgNoTone.Contains("ban la ai") || cleanMsgNoTone.Contains("tro ly la ai") || cleanMsgNoTone.Contains("ai lam gi"))
+            if (IsCapabilitiesQuery(cleanMsgNoTone) || cleanMsgNoTone.Contains("ban la ai") || cleanMsgNoTone.Contains("tro ly la ai"))
             {
                 return @"🤖 **Mình là Trợ lý AI Thông Minh 24/7 của sàn ZoneMart!** Mình có thể hỗ trợ bạn các tính năng chuyên biệt sau:
 

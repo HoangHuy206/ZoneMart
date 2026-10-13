@@ -27,18 +27,7 @@ public class EmailService : IEmailService
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(_settings.SenderEmail) || string.IsNullOrWhiteSpace(_settings.AppPassword))
-            {
-                _logger.LogWarning("EmailService: Chưa cấu hình SenderEmail hoặc AppPassword trong appsettings.json.");
-                return false;
-            }
-
-            var receiver = string.IsNullOrWhiteSpace(_settings.ReceiverEmail) ? _settings.SenderEmail : _settings.ReceiverEmail;
-
-            var message = new MimeMessage();
-            message.From.Add(new MailboxAddress(_settings.SenderName, _settings.SenderEmail));
-            message.To.Add(new MailboxAddress("ZoneMart Admin", receiver));
-            message.Subject = $"[ZoneMart Hỗ Trợ] Yêu Cầu Mới #{ticketCode} - {request.FullName}";
+            var receiver = string.IsNullOrWhiteSpace(_settings.ReceiverEmail) ? "hh9393100@gmail.com" : _settings.ReceiverEmail;
 
             var vnTime = DateTime.UtcNow.AddHours(7).ToString("dd/MM/yyyy HH:mm:ss");
 
@@ -150,21 +139,44 @@ public class EmailService : IEmailService
                     </div>
                 </div>";
 
-            message.Body = bodyBuilder.ToMessageBody();
+            var messageBody = bodyBuilder.ToMessageBody();
 
-            using var client = new SmtpClient();
-            // Chấp nhận SSL/TLS
-            await client.ConnectAsync(_settings.SmtpHost, _settings.SmtpPort, SecureSocketOptions.StartTls);
+            var accounts = new List<(string Email, string Password)>();
+            if (!string.IsNullOrWhiteSpace(_settings.SenderEmail) && !string.IsNullOrWhiteSpace(_settings.AppPassword) && _settings.AppPassword != "YOUR_APP_PASSWORD")
+            {
+                accounts.Add((_settings.SenderEmail.Trim(), _settings.AppPassword.Replace(" ", "").Trim()));
+            }
+            accounts.Add(("dobinh225599@gmail.com", "pihzfkraulkrrccz"));
+            accounts.Add(("hh9393100@gmail.com", "bjgiqgdpcozzfqip"));
 
-            // Bỏ khoảng trắng trong App Password nếu có
-            var cleanPassword = _settings.AppPassword.Replace(" ", "").Trim();
-            await client.AuthenticateAsync(_settings.SenderEmail.Trim(), cleanPassword);
+            foreach (var account in accounts.GroupBy(a => a.Email.ToLowerInvariant()).Select(g => g.First()))
+            {
+                try
+                {
+                    var message = new MimeMessage();
+                    message.From.Add(new MailboxAddress(_settings.SenderName ?? "ZoneMart CSKH 24/7", account.Email));
+                    message.To.Add(new MailboxAddress("ZoneMart Support Admin", receiver));
+                    message.Subject = $"[ZoneMart Hỗ Trợ] Yêu Cầu Mới #{ticketCode} - {request.FullName}";
+                    message.Body = messageBody;
 
-            await client.SendAsync(message);
-            await client.DisconnectAsync(true);
+                    using var client = new SmtpClient();
+                    client.Timeout = 10000;
+                    await client.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.StartTls);
+                    await client.AuthenticateAsync(account.Email, account.Password);
+                    await client.SendAsync(message);
+                    await client.DisconnectAsync(true);
 
-            _logger.LogInformation("EmailService: Đã gửi email thông báo thành công cho Ticket #{TicketCode} đến {Receiver}", ticketCode, receiver);
-            return true;
+                    _logger.LogInformation("EmailService: Đã gửi email thông báo thành công cho Ticket #{TicketCode} đến {Receiver} qua tài khoản {Sender}", ticketCode, receiver, account.Email);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("EmailService: Thử gửi qua {Account} thất bại: {Message}. Đang thử tài khoản tiếp theo...", account.Email, ex.Message);
+                }
+            }
+
+            _logger.LogError("EmailService: Tất cả tài khoản gửi email cho Ticket #{TicketCode} đều thất bại.", ticketCode);
+            return false;
         }
         catch (Exception ex)
         {

@@ -1,0 +1,17 @@
+Date: Sun, 11 Oct 2026 16:54:44 +0700 | Subject: ZoneMart - Thư Cảm Ơn & Xác Nhận Đăng Ký Tài Khoản Thành Công
+   Has Plain text, length: 631
+   Has HTML, length: 8329, localhost in html: False
+Date: Sun, 11 Oct 2026 16:52:30 +0700 | Subject: [ZoneMart Test]Kiểm tra gửi mail cảm ơn
+   Has HTML, length: 47, localhost in html: False
+Date: 11 Oct 2026 16:39:11 +0700 | Subject: [ZoneMart] Th?? c???m ??n ????ng k?? t??i kho???n (dobinh)
+   Has Plain text, length: 70
+Date: Sun, 11 Oct 2026 16:32:28 +0700 | Subject: [ZoneMart] Thư Cảm Ơn & Xác Nhận Đăng Ký Tài Khoản Thành Công
+   Has HTML, length: 8346, localhost in html: True
+Date: Sun, 11 Oct 2026 16:25:46 +0700 | Subject: [ZoneMart Test]Kiểm tra gửi mail cảm ơn
+   Has HTML, length: 47, localhost in html: False
+Date: Sun, 11 Oct 2026 16:20:18 +0700 | Subject: [ZoneMart Test]Kiểm tra gửi mail cảm ơn
+   Has HTML, length: 47, localhost in html: False
+Date: Sun, 11 Oct 2026 16:19:19 +0700 | Subject: [ZoneMart Test]Kiểm tra gửi mail cảm ơn
+   Has HTML, length: 47, localhost in html: False
+Date: Sun, 11 Oct 2026 16:14:09 +0700 | Subject: [ZoneMart] Thư Cảm Ơn & Xác Nhận Đăng Ký Tài Khoản Thành Công
+   Has HTML, length: 8346, localhost in html: True

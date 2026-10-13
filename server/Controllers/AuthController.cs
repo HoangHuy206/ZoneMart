@@ -189,7 +189,7 @@ public class AuthController : ControllerBase
                 // Nếu User này là Seller nhưng Store tương ứng đã bị xóa trong Database Compass:
                 if (existingUser.IsSeller)
                 {
-                    if (existingStore == null)
+                    if (existingStore == null || existingStore.Status == "deleted")
                     {
                         // Store đã bị xóa hoàn toàn khỏi Database -> Tự động dọn dẹp User này để cho phép đăng ký lại
                         await mongoService.Users.DeleteOneAsync(u => u.Id == existingUser.Id);
@@ -198,7 +198,7 @@ public class AuthController : ControllerBase
                 }
                 else if (existingUser.IsShipper)
                 {
-                    if (existingShipper == null)
+                    if (existingShipper == null || existingShipper.Status == "deleted")
                     {
                         // Shipper đã bị xóa hoàn toàn khỏi Database -> Tự động dọn dẹp User này để cho phép đăng ký lại
                         await mongoService.Users.DeleteOneAsync(u => u.Id == existingUser.Id);
@@ -213,7 +213,14 @@ public class AuthController : ControllerBase
                 }
             }
 
-            // 4. Nếu Database MongoDB không còn tài khoản này, đồng bộ xóa sạch khỏi bộ nhớ đệm InMemoryUsers
+            // 4. Nếu tài khoản này đã từng có trong DB nhưng đã bị xóa (IsDeleted == true hoặc AccountStatus == 'deleted'):
+            // Tự động dọn dẹp bản ghi cũ để giải phóng Gmail cho phép đăng ký mới lại bình thường
+            if (existingUser != null && (existingUser.IsDeleted || existingUser.AccountStatus == "deleted"))
+            {
+                await mongoService.Users.DeleteManyAsync(u => u.Id == existingUser.Id || (u.PhoneEmail != null && u.PhoneEmail.ToLower() == cleanEmail));
+            }
+
+            // 5. Nếu Database MongoDB không còn tài khoản này (hoặc đã bị xóa), đồng bộ xóa sạch khỏi bộ nhớ đệm InMemoryUsers
             if (InMemoryUsers != null)
             {
                 InMemoryUsers.TryRemove(cleanEmail, out _);
@@ -1302,16 +1309,27 @@ public class AuthController : ControllerBase
 
         string email = request.Email.Trim().ToLower();
 
-        if (!email.Contains("@") || !email.Contains("."))
+        int atCount = email.Count(c => c == '@');
+        if (atCount != 1 || !Regex.IsMatch(email, @"^[a-zA-Z0-9._%+-]+@gmail\.com$"))
         {
-            return BadRequest(new { success = false, message = "Địa chỉ Gmail không đúng định dạng!" });
+            return BadRequest(new { success = false, message = "Địa chỉ Gmail không hợp lệ! Gmail chỉ được phép có đúng một ký tự @ và bắt buộc phải có đuôi @gmail.com!" });
+        }
+
+        // RÀNG BUỘC HỌ VÀ TÊN: Chỉ được chứa chữ cái
+        if (!string.IsNullOrWhiteSpace(request.FullName))
+        {
+            bool isNameLettersOnly = Regex.IsMatch(request.FullName.Trim(), @"^[a-zA-Z\sàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ]+$");
+            if (!isNameLettersOnly)
+            {
+                return BadRequest(new { success = false, message = "Họ và tên chỉ được ghi bằng chữ cái (không được chứa số hoặc ký tự đặc biệt như %, ^, &...)!" });
+            }
         }
 
         // 1. Kiểm tra tài khoản đã tồn tại chưa trên toàn bộ hệ thống (Users, Stores, Shippers)
         var (isEmailTaken, roleDetail) = await CheckEmailRegisteredAsync(_mongoService, email);
         if (isEmailTaken)
         {
-            return BadRequest(new { success = false, message = $"Oh no! Gmail {email} này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi! Vui lòng chọn Gmail khác nhé." });
+            return BadRequest(new { success = false, message = "Oh no tài khoản gmail của bạn đã đăng ký rồi ạ, bạn dùng tài khoản gmail khác nhé!" });
         }
 
         // 2. Tạo đối tượng User mới cho Khách Hàng (Mã ID: CUST-0001, CUST-0002...)
@@ -1347,18 +1365,15 @@ public class AuthController : ControllerBase
             Console.WriteLine($"⚠️ [MongoDB Atlas Insert Warning] {dbEx.Message}");
         }
 
-        // 3. GỬI THƯ CẢM ƠN TẠO TÀI KHOẢN THÀNH CÔNG VỀ GMAIL NGUỜI DÙNG VỪA ĐĂNG KÝ (BẰNG BACKGROUND TASK ĐỂ KHÔNG BỊ BLOCK HTTP RESPONSE)
-        _ = Task.Run(async () =>
+        // 3. GỬI THƯ CẢM ƠN TẠO TÀI KHOẢN THÀNH CÔNG VỀ GMAIL NGUỜI DÙNG VỪA ĐĂNG KÝ
+        try
         {
-            try
-            {
-                await SendThankYouEmailAsync(email, newUser.FullName);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"⚠️ [Email Send Error] {ex.Message}");
-            }
-        });
+            await SendThankYouEmailAsync(email, newUser.FullName);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ [Email Send Error] {ex.Message}");
+        }
 
         return Ok(new
         {
@@ -1370,12 +1385,27 @@ public class AuthController : ControllerBase
     /// <summary>
     /// HÀM GỬI THƯ CẢM ƠN ĐĂNG KÝ TÀI KHOẢN QUA GMAIL SMTP
     /// </summary>
-    public static async Task SendThankYouEmailAsync(string toEmail, string fullName)
+    public static async Task<bool> SendThankYouEmailAsync(string toEmail, string fullName)
     {
         try
         {
             Console.WriteLine($"📧 [MailKit SMTP] Đang chuẩn bị gửi thư cảm ơn tới Gmail: {toEmail}...");
-            string subject = "[ZoneMart] Thư Cảm Ơn & Xác Nhận Đăng Ký Tài Khoản Thành Công";
+            string subject = "ZoneMart - Thư Cảm Ơn & Xác Nhận Đăng Ký Tài Khoản Thành Công";
+            string textBody = $@"ZoneMart - Cảm Ơn Bạn Đã Đăng Ký Tài Khoản Khách Hàng!
+
+Chào {fullName},
+Chân thành cảm ơn bạn đã lựa chọn và tạo tài khoản Khách Hàng tại ZoneMart.
+Thông tin tài khoản của bạn:
+- Gmail đăng nhập: {toEmail}
+- Vai trò: Khách hàng mua sắm (Buyer)
+- Trạng thái: Đã kích hoạt chính thức
+
+Bây giờ bạn có thể đăng nhập ngay vào ứng dụng ZoneMart để trải nghiệm mua sắm tiện lợi với hàng ngàn ưu đãi hấp dẫn và dịch vụ giao hàng hỏa tốc trong bán kính 10km!
+
+Tổng đài hỗ trợ: 1900 6868
+Email liên hệ: dobinh225599@gmail.com
+© 2026 ZoneMart E-Commerce Platform. Thư cảm ơn tự động từ hệ thống ZoneMart.";
+
             string htmlBody = $@"
                     <div style='background-color: #FAF5EF; padding: 24px 10px; font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, Helvetica, Arial, sans-serif;'>
                         <table align='center' border='0' cellpadding='0' cellspacing='0' width='100%' style='max-width: 520px; background-color: #FFFFFF; border-radius: 20px; border: 1px solid #F0E6DC; overflow: hidden; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.05);'>
@@ -1404,7 +1434,7 @@ public class AuthController : ControllerBase
                             <!-- TIÊU ĐỀ NỔI BẬT -->
                             <tr>
                                 <td align='center' style='padding: 20px 24px 10px 24px;'>
-                                    <h2 style='color: #D94E15 !important; font-size: 19px; font-weight: 900; margin: 0 0 8px 0;'>🎉 CẢM ƠN BẠN ĐÃ ĐĂNG KÝ TÀI KHOẢN!</h2>
+                                    <h2 style='color: #D94E15 !important; font-size: 19px; font-weight: 900; margin: 0 0 8px 0;'>CẢM ƠN BẠN ĐÃ ĐĂNG KÝ TÀI KHOẢN!</h2>
                                     <p style='color: #475569 !important; font-size: 13.5px; margin: 0; line-height: 1.5;'>Chào mừng bạn gia nhập cộng đồng mua sắm thông minh ZoneMart</p>
                                 </td>
                             </tr>
@@ -1417,7 +1447,7 @@ public class AuthController : ControllerBase
                                 </td>
                             </tr>
 
-                            <!-- CARD THÔNG TIN TÀI KHOẢN (SỬ DỤNG BẢNG HTML TRÁNH VỠ GIAO DIỆN FLEXBOX TRÊN GMAIL MOBILE) -->
+                            <!-- CARD THÔNG TIN TÀI KHOẢN -->
                             <tr>
                                 <td style='padding: 8px 24px 16px 24px;'>
                                     <table border='0' cellpadding='0' cellspacing='0' width='100%' style='background-color: #FFF7ED; border: 1.5px solid #FED7AA; border-radius: 16px; padding: 18px 20px;'>
@@ -1458,13 +1488,13 @@ public class AuthController : ControllerBase
                                 </td>
                             </tr>
 
-                            <!-- NÚT BẤM ĐĂNG NHẬP -->
+                            <!-- NÚT BẤM ĐĂNG NHẬP (SỬ DỤNG LINK AN TOÀN TRÁNH BỊ GMAIL ĐƯA VÀO THƯ RÁC) -->
                             <tr>
                                 <td align='center' style='padding: 0 24px 24px 24px;'>
                                     <table border='0' cellpadding='0' cellspacing='0'>
                                         <tr>
                                             <td align='center' style='background-color: #D94E15; border-radius: 30px;'>
-                                                <a href='http://localhost:5173/login' style='background-color: #D94E15 !important; color: #FFFFFF !important; font-size: 14px; font-weight: 800; text-decoration: none; padding: 13px 32px; border-radius: 30px; display: inline-block; letter-spacing: 0.5px; border: 1px solid #D94E15;'>
+                                                <a href='https://zonemart.vn/login' style='background-color: #D94E15 !important; color: #FFFFFF !important; font-size: 14px; font-weight: 800; text-decoration: none; padding: 13px 32px; border-radius: 30px; display: inline-block; letter-spacing: 0.5px; border: 1px solid #D94E15;'>
                                                     ĐĂNG NHẬP ZONEMART NGAY ➔
                                                 </a>
                                             </td>
@@ -1485,12 +1515,22 @@ public class AuthController : ControllerBase
                         </table>
                     </div>";
 
-            await SendEmailViaMailKitAsync(toEmail, subject, htmlBody);
+            bool sent = await SendEmailViaMailKitAsync(toEmail, subject, htmlBody, textBody);
+            return sent;
         }
         catch (Exception mailEx)
         {
             Console.WriteLine($"❌ [Gmail SMTP Error] Lỗi gửi thư cảm ơn tới {toEmail}: {mailEx.Message}");
+            return false;
         }
+    }
+
+    [HttpGet("test-thankyou-email")]
+    public async Task<IActionResult> TestThankYouEmail([FromQuery] string? email)
+    {
+        string target = string.IsNullOrWhiteSpace(email) ? "binhbinh225599@gmail.com" : email.Trim();
+        bool sent = await SendThankYouEmailAsync(target, "Khách Hàng ZoneMart");
+        return Ok(new { success = sent, sender = "dobinh225599@gmail.com", to = target, message = sent ? "Đã gửi mail cảm ơn chính thức thành công!" : "Gửi mail thất bại!" });
     }
 
     private static string GetRoleDisplayName(string role) => role switch
@@ -2039,13 +2079,13 @@ public class AuthController : ControllerBase
 
 
 
-    private static async Task SendEmailViaMailKitAsync(string toEmail, string subject, string htmlBody)
+    private static async Task<bool> SendEmailViaMailKitAsync(string toEmail, string subject, string htmlBody, string? textBody = null)
     {
         string cleanToEmail = toEmail?.Trim().ToLower() ?? "";
         if (string.IsNullOrWhiteSpace(cleanToEmail) || !cleanToEmail.Contains("@"))
         {
             Console.WriteLine("⚠️ [SMTP Warning] Bỏ qua gửi email do địa chỉ toEmail không hợp lệ!");
-            return;
+            return false;
         }
 
         var accounts = new (string Email, string Password)[]
@@ -2059,27 +2099,35 @@ public class AuthController : ControllerBase
             try
             {
                 var message = new MimeMessage();
-                message.From.Add(new MailboxAddress("ZoneMart Platform", account.Email));
+                message.From.Add(new MailboxAddress("ZoneMart CSKH", account.Email));
                 message.To.Add(new MailboxAddress("", cleanToEmail));
+                message.ReplyTo.Add(new MailboxAddress("ZoneMart CSKH", account.Email));
                 message.Subject = subject;
+                message.Date = DateTimeOffset.Now;
+                message.MessageId = MimeKit.Utils.MimeUtils.GenerateMessageId();
 
-                var bodyBuilder = new BodyBuilder { HtmlBody = htmlBody };
+                var bodyBuilder = new BodyBuilder
+                {
+                    HtmlBody = htmlBody,
+                    TextBody = !string.IsNullOrWhiteSpace(textBody) ? textBody : "ZoneMart - Thông báo từ hệ thống"
+                };
                 message.Body = bodyBuilder.ToMessageBody();
 
                 using var client = new SmtpClient();
-                client.Timeout = 8000;
+                client.Timeout = 10000;
                 await client.ConnectAsync("smtp.gmail.com", 587, SecureSocketOptions.StartTls);
                 await client.AuthenticateAsync(account.Email, account.Password);
                 await client.SendAsync(message);
                 await client.DisconnectAsync(true);
                 Console.WriteLine($"💌 [SMTP Success] Đã gửi mail cho {toEmail} qua {account.Email}");
-                return;
+                return true;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"⚠️ [SMTP Warning] Lỗi gửi qua {account.Email}: {ex.Message}");
             }
         }
+        return false;
     }
 
     /// <summary>
