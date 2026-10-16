@@ -5,6 +5,7 @@ import { useAuth } from '../../composables/useAuth';
 import { useCart } from '../../composables/useCart';
 import { useToast } from '../../composables/useToast';
 import { orderRealtimeService } from '../../services/orderRealtimeService';
+import { getSafeCurrentLocation } from '../../composables/useSafeLocation';
 
 const router = useRouter();
 const auth = useAuth();
@@ -127,6 +128,7 @@ interface ChatMessage {
   products?: any[];
   stores?: any[];
   actionIntent?: string | null;
+  existingCartItems?: any[];
   qrCodeUrl?: string;
   totalAmount?: number;
   orderCode?: string;
@@ -141,16 +143,32 @@ function getCurrentTime(): string {
   return now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
 }
 
-// Lấy vị trí / địa chỉ hiện tại của khách hàng
-const userGpsAddress = ref<string>(localStorage.getItem('zonemart_gps_address') || '');
+// Hàm làm sạch vị trí hiển thị: Tuyệt đối không để lộ tọa độ thô hay chuỗi GPS ra màn hình
+const sanitizeLocation = (raw?: string | null): string => {
+  if (!raw || !raw.trim()) return '';
+  const trimmed = raw.trim();
+  if (/toa\s*do|gps|lat|lon|\d+\.\d{3,}/i.test(trimmed)) {
+    return '';
+  }
+  return trimmed;
+};
+
+// Lấy vị trí / địa chỉ hiện tại của khách hàng (làm sạch dữ liệu cũ trong localStorage)
+const rawSavedGps = localStorage.getItem('zonemart_gps_address');
+const initialGps = sanitizeLocation(rawSavedGps);
+if (!initialGps && rawSavedGps) {
+  localStorage.removeItem('zonemart_gps_address');
+  localStorage.removeItem('zonemart_user_address');
+}
+const userGpsAddress = ref<string>(initialGps);
 const isLocating = ref<boolean>(false);
 
 const userLocation = computed(() => {
-  if (userGpsAddress.value && userGpsAddress.value.trim()) return userGpsAddress.value.trim();
+  if (userGpsAddress.value && userGpsAddress.value.trim()) return sanitizeLocation(userGpsAddress.value.trim());
   const uAddr = (auth.currentUser.value as any)?.address;
-  if (uAddr && typeof uAddr === 'string' && uAddr.trim()) return uAddr.trim();
+  if (uAddr && typeof uAddr === 'string' && uAddr.trim()) return sanitizeLocation(uAddr.trim());
   const saved = localStorage.getItem('zonemart_user_address');
-  if (saved && saved.trim()) return saved.trim();
+  if (saved && saved.trim()) return sanitizeLocation(saved.trim());
   return '';
 });
 
@@ -194,9 +212,16 @@ const welcomeMessage = computed<ChatMessage>(() => {
 });
 
 // Đọc/Ghi/Xoá lịch sử chat lưu trong sessionStorage để giữ nguyên khi chuyển giữa các trang
+function getSessionHistoryKey(): string {
+  const u = auth.currentUser.value;
+  const uid = u?.id || u?.phoneEmail;
+  return uid ? `zonemart_ai_chat_history_${uid.toLowerCase().trim()}` : 'zonemart_ai_chat_history_guest';
+}
+
 function loadChatHistory(): ChatMessage[] {
   try {
-    const saved = sessionStorage.getItem('zonemart_ai_chat_history');
+    const key = getSessionHistoryKey();
+    const saved = sessionStorage.getItem(key);
     return saved ? JSON.parse(saved) : [];
   } catch {
     return [];
@@ -205,7 +230,8 @@ function loadChatHistory(): ChatMessage[] {
 
 function saveChatHistory(history: ChatMessage[]) {
   try {
-    sessionStorage.setItem('zonemart_ai_chat_history', JSON.stringify(history));
+    const key = getSessionHistoryKey();
+    sessionStorage.setItem(key, JSON.stringify(history));
   } catch {}
 }
 
@@ -397,12 +423,21 @@ function formatMessageHtml(msg: ChatMessage): string {
   text = text.replace(/(<hr[^>]*>)\s*<br\s*\/?>/gi, '$1');
   text = text.replace(/<br\s*\/?>\s*(<hr[^>]*>)/gi, '$1');
   text = text.replace(/<br\s*\/?>\s*(<div class="summary-line-item">)/gi, '$1');
+  text = text.replace(/<br\s*\/?>\s*(<div class="seller-[^"]*">)/gi, '$1');
   text = text.replace(/(<\/div>)\s*<br\s*\/?>/gi, '$1');
+  text = text.replace(/<br\s*\/?>\s*(<\/div>)/gi, '$1');
 
   return text;
 }
 
-// Danh sách danh mục, khung giờ, ngân hàng, xe, khu vực cho AI chọn trực tiếp
+// Danh sách mô hình kinh doanh, danh mục, khung giờ, 8 ngân hàng cho Seller đăng ký trực tiếp
+const sellerTypes = [
+  { label: "Chợ truyền thống 🏡", desc: "Tiểu thương tại sạp chợ", value: "Chợ truyền thống" },
+  { label: "Hộ kinh doanh tại nhà 🏭", desc: "Chế biến / bán tại gia", value: "Hộ kinh doanh tại nhà" },
+  { label: "Cửa hàng / Cơ sở SX 👨‍🌾", desc: "Tiệm tạp hóa, xưởng SX", value: "Cửa hàng / Cơ sở SX" },
+  { label: "Người bán địa phương khác 🌾", desc: "Nông dân bán nông sản", value: "Người bán địa phương khác" }
+];
+
 const sellerCategories = [
   "Thực phẩm & Nhu yếu phẩm",
   "Trái cây & Đồ uống",
@@ -418,10 +453,10 @@ const sellerOpenHoursList = [
   "08:00 - 20:00 (Giờ hành chính)",
   "07:00 - 23:00 (Phục vụ đêm)",
   "24/24 (Mở cửa 24/7 toàn thời gian)",
-  "Tùy chỉnh khung giờ..."
+  "Tùy chọn khung giờ mở - đóng khác..."
 ];
 
-const banksList = [
+const sellerBanks = [
   "Vietcombank (VCB)",
   "MB Bank (MB)",
   "Techcombank (TCB)",
@@ -429,9 +464,167 @@ const banksList = [
   "BIDV",
   "VPBank",
   "Agribank",
-  "TPBank",
+  "TPBank"
+];
+
+const sellerEditOptions = [
+  "Mô hình kinh doanh địa phương",
+  "Xã / Phường",
+  "Quận / Huyện",
+  "Tên Chợ Truyền Thống / Cụm Chợ Số Địa Phương",
+  "Tên cửa hàng",
+  "Địa chỉ tiệm (ngõ, đường, GPS)",
+  "Danh mục hàng bán chính",
+  "Địa chỉ Gmail đăng ký gian hàng",
+  "Mật khẩu & Nhập lại mật khẩu",
+  "Nhập lại mật khẩu (đồng bộ với mật khẩu)",
+  "Khung giờ mở cửa kinh doanh",
+  "Ảnh CCCD Mặt Trước",
+  "Ảnh CCCD Mặt Sau",
+  "Ảnh Giấy CN An Toàn Thực Phẩm",
+  "Ngân hàng nhận doanh thu",
+  "Số tài khoản ngân hàng"
+];
+
+const shipperEditOptions = [
+  "Họ và tên thật của tài xế",
+  "Địa chỉ Gmail đăng nhập app tài xế",
+  "Mật khẩu & Xác nhận mật khẩu",
+  "Xác nhận mật khẩu (đồng bộ với mật khẩu)",
+  "Số Căn Cước Công Dân (CCCD)",
+  "Ảnh chân dung tài xế",
+  "Ảnh CCCD Mặt Trước",
+  "Ảnh CCCD Mặt Sau",
+  "Biển số xe máy",
+  "Loại xe đăng ký (Xe xăng / Xe điện)",
+  "Dòng xe / Mẫu xe máy",
+  "Ảnh Bằng Lái Xe (GPLX)",
+  "Khu vực đăng ký chạy chính",
+  "Ngân hàng nhận cước xe",
+  "Số tài khoản ngân hàng"
+];
+
+const isLocatingSellerGps = ref(false);
+const pendingEditPhotoIntent = ref<string | null>(null);
+
+function getPreviewForIntent(intent?: string | null): string {
+  if (!intent) return '';
+  if (uploadedPreviews[intent]) return uploadedPreviews[intent];
+  if (intent === 'SELLER_UPLOAD_CCCD_FRONT' || intent === 'SHIPPER_UPLOAD_CCCD_FRONT') return regDraft.value?.cccdFrontImage || '';
+  if (intent === 'SELLER_UPLOAD_CCCD_BACK' || intent === 'SHIPPER_UPLOAD_CCCD_BACK') return regDraft.value?.cccdBackImage || '';
+  if (intent === 'SELLER_UPLOAD_FOOD_SAFETY') return regDraft.value?.foodSafetyImage || '';
+  if (intent === 'SHIPPER_UPLOAD_PORTRAIT') return regDraft.value?.portraitImage || '';
+  if (intent === 'SHIPPER_UPLOAD_GPLX') return regDraft.value?.drivingLicenseImage || '';
+  return '';
+}
+
+async function handleSellerGpsLocate() {
+  isLocatingSellerGps.value = true;
+  try {
+    const loc = await getSafeCurrentLocation();
+    let addr = (loc && loc.safeLocationName) ? loc.safeLocationName.trim() : '';
+
+    // Chuẩn hóa tên "Phố" thành "Đường"
+    if (addr) {
+      addr = addr.replace(/\bphố\s+/gi, 'Đường ');
+    }
+
+    const addrLower = addr.toLowerCase();
+    const hasNgo = addrLower.includes('ngõ') || addrLower.includes('ngo') || addrLower.includes('ngách') || addrLower.includes('hẻm');
+    const hasDuong = addrLower.includes('đường') || addrLower.includes('duong');
+
+    if (!addr) {
+      addr = 'Ngõ 12, Đường Cầu Giấy, Phường Dịch Vọng Hậu, Quận Cầu Giấy, Hà Nội';
+    } else if (!hasNgo && !hasDuong) {
+      const wardMatch = addr.match(/(?:Phường|Xã|Thị trấn)\s+([^,]+)/i);
+      const wardName = wardMatch ? wardMatch[1].trim() : '';
+      if (wardName) {
+        addr = `Ngõ 1, Đường ${wardName}, ${addr}`;
+      } else {
+        addr = `Ngõ 1, Đường Cầu Giấy, ${addr}`;
+      }
+    } else if (!hasNgo) {
+      addr = `Ngõ 1, ${addr}`;
+    } else if (!hasDuong) {
+      const wardMatch = addr.match(/(?:Phường|Xã|Thị trấn)\s+([^,]+)/i);
+      const wardName = wardMatch ? wardMatch[1].trim() : 'Cầu Giấy';
+      addr = addr.replace(/(Ngõ\s+[^,]+)(,|$)/i, `$1, Đường ${wardName}$2`);
+    }
+
+    // Đảm bảo không bị lặp từ
+    addr = addr.replace(/,\s*,/g, ',').trim();
+    await sendMessage(addr);
+  } catch (e: any) {
+    console.warn('GPS location error:', e);
+    await sendMessage('Ngõ 12, Đường Cầu Giấy, Phường Dịch Vọng Hậu, Quận Cầu Giấy, Hà Nội');
+  } finally {
+    isLocatingSellerGps.value = false;
+  }
+}
+
+function isImageAlreadyUploaded(intent?: string | null): boolean {
+  if (!intent) return false;
+  // Khi đang ở các bước chỉnh sửa hồ sơ (REGISTER_SELLER_EDIT_Q... hoặc REGISTER_SHIPPER_EDIT_Q...), KHÔNG KHÓA để người dùng bấm vào ảnh đổi ảnh khác
+  const s = registrationState.value || '';
+  if (s.startsWith('REGISTER_SELLER_EDIT_Q') || s.startsWith('REGISTER_SHIPPER_EDIT_Q')) {
+    return false;
+  }
+  if (intent === 'SELLER_UPLOAD_CCCD_FRONT' || intent === 'SHIPPER_UPLOAD_CCCD_FRONT') {
+    return !!regDraft.value?.cccdFrontImage || !!uploadedPreviews[intent];
+  }
+  if (intent === 'SELLER_UPLOAD_CCCD_BACK' || intent === 'SHIPPER_UPLOAD_CCCD_BACK') {
+    return !!regDraft.value?.cccdBackImage || !!uploadedPreviews[intent];
+  }
+  if (intent === 'SELLER_UPLOAD_FOOD_SAFETY') {
+    return !!regDraft.value?.foodSafetyImage || !!uploadedPreviews[intent];
+  }
+  if (intent === 'SHIPPER_UPLOAD_PORTRAIT') {
+    return !!regDraft.value?.portraitImage || !!uploadedPreviews[intent];
+  }
+  if (intent === 'SHIPPER_UPLOAD_GPLX') {
+    return !!regDraft.value?.drivingLicenseImage || !!uploadedPreviews[intent];
+  }
+  return false;
+}
+
+function isSellerEditStep(msg: any): boolean {
+  const s = msg.registrationState || registrationState.value || '';
+  return s.startsWith('REGISTER_SELLER_EDIT_Q') || s.startsWith('REGISTER_SHIPPER_EDIT_Q');
+}
+
+async function handleSaveAndBackToSummary() {
+  if (pendingEditPhotoIntent.value) {
+    const intent = pendingEditPhotoIntent.value;
+    pendingEditPhotoIntent.value = null;
+    const title = getUploadTitle(intent).replace(' *', '');
+    await sendMessage(`[Ảnh ${title} đã tải lên thành công]`);
+    return;
+  }
+  if (userMessage.value && userMessage.value.trim().length > 0) {
+    const textToSend = userMessage.value.trim();
+    userMessage.value = '';
+    await sendMessage(textToSend);
+    return;
+  }
+  await sendMessage('Lưu và quay lại bảng tổng kết');
+}
+
+function handleCancelEditBackToSummary() {
+  pendingEditPhotoIntent.value = null;
+  sendMessage('Quay lại');
+}
+
+const banksList = [
+  "Vietcombank",
+  "MB Bank",
+  "Techcombank",
+  "BIDV",
+  "VietinBank",
+  "Agribank",
   "ACB",
-  "Sacombank"
+  "TPBank",
+  "VPBank",
+  "VIB"
 ];
 
 const shipperVehicleTypes = ["Xe máy xăng", "Xe máy điện"];
@@ -440,50 +633,41 @@ const shipperGasModels = [
   "Honda Wave Alpha",
   "Honda Vision",
   "Honda Air Blade",
-  "Honda SH Mode",
-  "Honda SH 125i/150i",
-  "Honda Winner X",
-  "Yamaha Exciter 150/155",
-  "Yamaha Sirius"
+  "Honda Lead",
+  "Yamaha Sirius",
+  "Yamaha Exciter",
+  "Honda Winner X"
 ];
 
 const shipperElectricModels = [
-  "VinFast Feliz S",
-  "VinFast Klara S",
+  "VinFast Feliz",
+  "VinFast Klara",
   "VinFast Evo200",
-  "Dat Bike Quantum"
+  "Dat Bike Weaver"
 ];
 
 const shipperAreas = [
   "Quận Cầu Giấy",
+  "Quận Nam Từ Liêm",
+  "Quận Bắc Từ Liêm",
   "Quận Đống Đa",
   "Quận Ba Đình",
   "Quận Thanh Xuân",
-  "Quận Hai Bà Trưng",
-  "Quận Hoàng Mai",
-  "Quận Nam Từ Liêm",
-  "Quận Bắc Từ Liêm",
   "Quận Hà Đông",
   "Quận Tây Hồ",
   "Quận Hoàn Kiếm",
+  "Quận Hai Bà Trưng",
+  "Quận Hoàng Mai",
   "Quận Long Biên",
-  "Thị xã Sơn Tây",
-  "Huyện Đông Anh",
-  "Huyện Gia Lâm",
-  "Huyện Thanh Trì",
   "Huyện Hoài Đức",
   "Huyện Đan Phượng",
-  "Huyện Thường Tín",
-  "Huyện Sóc Sơn",
-  "Huyện Mê Linh",
-  "Huyện Quốc Oai",
-  "Huyện Thạch Thất",
   "Huyện Chương Mỹ",
-  "Huyện Ba Vì",
-  "Huyện Phú Xuyên",
-  "Huyện Ứng Hòa",
-  "Huyện Mỹ Đức",
-  "Tất cả các quận, xã"
+  "Huyện Thanh Trì",
+  "Huyện Gia Lâm",
+  "Huyện Đông Anh",
+  "Huyện Sóc Sơn",
+  "Huyện Quốc Oai",
+  "Huyện Thạch Thất"
 ];
 
 // Xử lý tải ảnh trong đoạn chat AI
@@ -549,6 +733,17 @@ function handleFileUploadChange(e: Event) {
   const file = input.files?.[0];
   if (!file) return;
 
+  // Kiểm tra định dạng tệp: Chỉ nhận tệp hình ảnh (.png, .jpg, .jpeg, .webp), từ chối video (.mp4...)
+  const validExtensions = /\.(png|jpe?g|webp)$/i;
+  const isVideo = file.type?.startsWith('video/') || /\.(mp4|avi|mov|mkv|wmv|flv|webm)$/i.test(file.name);
+  const isImage = (file.type?.startsWith('image/') || validExtensions.test(file.name)) && !isVideo;
+
+  if (!isImage || isVideo) {
+    toast.warning('Mục này chỉ nhận tệp hình ảnh (.jpg, .jpeg, .png, .webp). Không nhận video (.mp4...) hay các định dạng khác!', 'Định Dạng Không Hợp Lệ');
+    input.value = '';
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = (event) => {
     const dataUrl = event.target?.result as string;
@@ -577,11 +772,16 @@ function handleFileUploadChange(e: Event) {
     }
 
     const title = getUploadTitle(intent).replace(' *', '');
-    const uploadText = isReupload
-      ? `[Ảnh ${title} đã tải lên một lần nữa thành công]`
-      : `[Ảnh ${title} đã tải lên thành công]`;
-
-    sendMessage(uploadText);
+    const s = registrationState.value || '';
+    if (s.startsWith('REGISTER_SELLER_EDIT_Q') || s.startsWith('REGISTER_SHIPPER_EDIT_Q')) {
+      pendingEditPhotoIntent.value = intent;
+      toast.success('Đã tải ảnh mới lên thành công! Bấm nút "Lưu và quay lại bảng tổng kết" bên dưới để hoàn tất nhé.', 'Đã Chọn Ảnh Mới');
+    } else {
+      const uploadText = isReupload
+        ? `[Ảnh ${title} đã tải lên một lần nữa thành công]`
+        : `[Ảnh ${title} đã tải lên thành công]`;
+      sendMessage(uploadText);
+    }
     input.value = '';
   };
   reader.readAsDataURL(file);
@@ -616,67 +816,42 @@ async function requestBrowserLocation(forNearbyStores: boolean = false, radiusKm
   }
 
   isLocating.value = true;
-  navigator.geolocation.getCurrentPosition(
-    async (pos) => {
-      try {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        let resolvedAddr = '';
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
-            headers: { 'Accept-Language': 'vi' }
-          });
-          if (res.ok) {
-            const geo = await res.json();
-            resolvedAddr = geo.display_name || geo.address?.suburb || geo.address?.city || '';
-          }
-        } catch {}
+  try {
+    const loc = await getSafeCurrentLocation();
+    if (loc && loc.safeLocationName) {
+      userGpsAddress.value = loc.safeLocationName;
+      localStorage.setItem('zonemart_gps_address', loc.safeLocationName);
+      localStorage.setItem('zonemart_user_address', loc.safeLocationName);
 
-        if (!resolvedAddr) {
-          resolvedAddr = `Tọa độ GPS (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
-        }
-
-        userGpsAddress.value = resolvedAddr;
-        localStorage.setItem('zonemart_gps_address', resolvedAddr);
-        localStorage.setItem('zonemart_user_address', resolvedAddr);
-
-        if (forOrderAddress) {
-          await sendMessage(resolvedAddr);
-        } else if (forNearbyStores) {
-          await sendMessage(`[TÌM QUÁN BÁN KÍNH ${radiusKm}KM]: Vị trí của tôi là ${resolvedAddr}`);
-        } else {
-          await sendMessage(`[VỊ TRÍ GPS]: Tôi đang ở ${resolvedAddr}`);
-        }
-      } catch (e) {
-        userChatHistory.value.push({
-          id: Date.now().toString(),
-          sender: 'ai',
-          text: '⚠️ Không thể giải mã tên đường từ GPS. Bạn vui lòng gõ trực tiếp tên đường/quận vào đây để mình hỗ trợ nhé!',
-          timestamp: getCurrentTime(),
-          provider: 'ZoneMart AI Assistant'
-        });
-      } finally {
-        isLocating.value = false;
-        scrollToBottom();
+      // Gửi vị trí địa danh an toàn lên giao diện chat, không để lộ tọa độ lat/lon trên UI
+      if (forOrderAddress) {
+        await sendMessage(loc.safeLocationName);
+      } else if (forNearbyStores) {
+        await sendMessage(`[TÌM QUÁN BÁN KÍNH ${radiusKm}KM]: Vị trí của tôi là ${loc.safeLocationName}`);
+      } else {
+        await sendMessage('vị trí hiện tại của tôi');
       }
-    },
-    (_err) => {
-      isLocating.value = false;
-      const errorMsg = forOrderAddress
-        ? 'Oh no bạn không cho phép mình thì sẽ không biết được vị trí hiện tại của bạn đâu ạ huhu 😢 Bạn vui lòng nhập trực tiếp tên đường/số nhà vào ô chat để mình giao đồ cho bạn nhé! 😊'
-        : 'Oh no bạn không cho phép mình thì sẽ không biết được vị trí hiện tại của bạn đâu ạ huhu 😢 Bạn có thể bấm vào biểu tượng cài đặt/ổ khóa 🔒 trên thanh địa chỉ của trình duyệt, chọn "Cho phép truy cập vị trí" (Location: Allow) rồi thử lại, hoặc bạn có thể gõ trực tiếp tên đường/quận vào đây để mình hỗ trợ nhé! 😊';
-
+    } else {
       userChatHistory.value.push({
         id: Date.now().toString(),
         sender: 'ai',
-        text: errorMsg,
+        text: '⚠️ Không thể xác định vị trí an toàn qua GPS. Bạn có thể nhập trực tiếp địa chỉ vào ô chat nhé!',
         timestamp: getCurrentTime(),
         provider: 'ZoneMart AI Assistant'
       });
-      scrollToBottom();
-    },
-    { timeout: 10000, enableHighAccuracy: true }
-  );
+    }
+  } catch (e: any) {
+    userChatHistory.value.push({
+      id: Date.now().toString(),
+      sender: 'ai',
+      text: '⚠️ Có lỗi xảy ra khi xác định vị trí. Bạn có thể nhập trực tiếp địa chỉ vào ô chat nhé!',
+      timestamp: getCurrentTime(),
+      provider: 'ZoneMart AI Assistant'
+    });
+  } finally {
+    isLocating.value = false;
+    scrollToBottom();
+  }
 }
 
 async function findNearbyStores(radiusKm: number = 5) {
@@ -1322,7 +1497,7 @@ const startAiPaymentListener = (orderCode: string, amount: number) => {
 };
 
 
-function clearChatHistory() {
+function resetAllAiFlows() {
   stopAiPaymentListener();
   if (aiRedirectInterval) {
     clearInterval(aiRedirectInterval);
@@ -1331,10 +1506,41 @@ function clearChatHistory() {
   userChatHistory.value = [];
   userMessage.value = '';
   registrationState.value = 'NONE';
+  regDraft.value = {};
+  supportState.value = 'NONE';
+  supportDraft.value = {};
+  selectedSupportTopic.value = '';
   orderState.value = { step: 'IDLE', cartItems: [], pendingItem: null };
+
+  // Xóa sạch bộ nhớ ảnh tạm thời giữa các tài khoản, tuyệt đối không rò rỉ sang tài khoản khác
+  for (const k in uploadedPreviews) {
+    delete uploadedPreviews[k];
+  }
+  for (const k in uploadedCounts) {
+    delete uploadedCounts[k];
+  }
+  activeUploadIntent.value = '';
+  if (fileUploadInputRef.value) {
+    fileUploadInputRef.value.value = '';
+  }
+
   try {
     sessionStorage.removeItem('zonemart_ai_chat_history');
+    sessionStorage.removeItem(getSessionHistoryKey());
+    sessionStorage.removeItem('zonemart_ai_chat_history_guest');
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && k.startsWith('zonemart_ai_chat_history')) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => sessionStorage.removeItem(k));
   } catch {}
+}
+
+function clearChatHistory() {
+  resetAllAiFlows();
 }
 
 onMounted(() => {
@@ -1473,7 +1679,7 @@ function scrollToBottom() {
   });
 }
 
-async function sendMessage(customText?: string) {
+async function sendMessage(customText?: string, extraPayload?: any) {
   const textToSend = customText || userMessage.value.trim();
   if (!textToSend || isLoading.value) return;
 
@@ -1493,6 +1699,143 @@ async function sendMessage(customText?: string) {
   isLoading.value = true;
 
   try {
+    const cleanLower = textToSend.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').trim();
+    const isLocMsg = 
+      /\b(t|toi|minh|em|anh)?\s*(dang\s*o\s*dau|o\s*dau)\b/.test(cleanLower) ||
+      /\bdinh\s*vi(\s*cho\s*(toi|t|minh|em|anh))?\b/.test(cleanLower) ||
+      /\bvi\s*tri(\s*hien\s*tai)?(\s*cua\s*(toi|t|minh|em|anh))?\b/.test(cleanLower) ||
+      cleanLower.includes('vi tri') ||
+      cleanLower.includes('dinh vi') ||
+      cleanLower.includes('o dau') ||
+      cleanLower.includes('dang o dau') ||
+      cleanLower === 'hien tai' ||
+      cleanLower.includes('cho toi dang o') ||
+      cleanLower.includes('cho t dang o');
+
+    // Bất cứ câu nào hỏi về vị trí: Trình duyệt trực tiếp hỏi quyền vị trí ở góc trên bên trái thanh URL (cạnh chữ i/ổ khóa).
+    // Tuyệt đối không có nút bấm trong chat.
+    if (isLocMsg) {
+      if (!navigator.geolocation) {
+        isLoading.value = false;
+        userChatHistory.value.push({
+          id: (Date.now() + 1).toString(),
+          sender: 'ai',
+          text: 'Oh no bạn không cho phép truy cập vị trí thì mình bó tay ròi huhu! 🥺📍\n\nNếu muốn mình xem vị trí và gợi ý quán ngon gần nhất, bạn bấm vào biểu tượng ổ khóa/chữ (i) ở góc bên trái thanh địa chỉ trình duyệt để Bật lại quyền vị trí nhé! ✨',
+          timestamp: getCurrentTime(),
+          provider: 'ZoneMart AI Assistant',
+          actionIntent: null
+        });
+        scrollToBottom();
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          // Người dùng bấm "Cho phép" (Allow): Lập tức AI dò luôn vị trí và trả về kết quả ngay, không hỏi lại
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          localStorage.setItem('zonemart_lat', lat.toString());
+          localStorage.setItem('zonemart_lon', lon.toString());
+
+          try {
+            const historyPayload = messages.value.slice(-6).map(m => ({
+              sender: m.sender,
+              text: m.text
+            }));
+
+            const response = await fetch('http://localhost:5000/api/aichat/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                message: textToSend,
+                userRole: auth.currentRole.value,
+                userEmail: auth.currentUser.value?.phoneEmail,
+                userId: auth.currentUser.value?.id,
+                userLocation: userLocation.value || undefined,
+                lat,
+                lon,
+                history: historyPayload,
+                registrationState: registrationState.value,
+                orderState: orderState.value,
+                regDraft: regDraft.value,
+                supportState: supportState.value,
+                supportDraft: supportDraft.value,
+                cartStores: cart.cartStores.value || [],
+                selectedCartItems: extraPayload?.selectedCartItems || undefined
+              })
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              if (data.userLocation && typeof data.userLocation === 'string' && data.userLocation.trim()) {
+                const cleanLoc = sanitizeLocation(data.userLocation.trim());
+                if (cleanLoc) {
+                  userGpsAddress.value = cleanLoc;
+                  localStorage.setItem('zonemart_gps_address', cleanLoc);
+                  localStorage.setItem('zonemart_user_address', cleanLoc);
+                }
+              }
+              userChatHistory.value.push({
+                id: (Date.now() + 1).toString(),
+                sender: 'ai',
+                text: data.reply || 'Dạ mình đã định vị được vị trí của bạn!',
+                timestamp: getCurrentTime(),
+                provider: 'ZoneMart AI Assistant',
+                actionIntent: null
+              });
+            } else {
+              userChatHistory.value.push({
+                id: (Date.now() + 1).toString(),
+                sender: 'ai',
+                text: 'Có lỗi xảy ra khi xác định vị trí. Bạn vui lòng thử lại nhé!',
+                timestamp: getCurrentTime(),
+                provider: 'ZoneMart AI Assistant'
+              });
+            }
+          } catch (e) {
+            userChatHistory.value.push({
+              id: (Date.now() + 1).toString(),
+              sender: 'ai',
+              text: 'Có lỗi kết nối đến hệ thống định vị. Bạn vui lòng thử lại nhé!',
+              timestamp: getCurrentTime(),
+              provider: 'ZoneMart AI Assistant'
+            });
+          } finally {
+            isLoading.value = false;
+            scrollToBottom();
+          }
+        },
+        (_err) => {
+          // Người dùng bấm "Không cho phép" (Block / Deny): Phản hồi hóm hỉnh, không có nút bấm
+          isLoading.value = false;
+          userChatHistory.value.push({
+            id: (Date.now() + 1).toString(),
+            sender: 'ai',
+            text: 'Oh no bạn không cho phép truy cập vị trí thì mình bó tay ròi huhu! 🥺📍\n\nNếu muốn mình xem vị trí và gợi ý quán ngon gần nhất, bạn bấm vào biểu tượng ổ khóa/chữ (i) ở góc bên trái thanh địa chỉ trình duyệt để Bật lại quyền vị trí nhé! ✨',
+            timestamp: getCurrentTime(),
+            provider: 'ZoneMart AI Assistant',
+            actionIntent: null
+          });
+          scrollToBottom();
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 20000,
+          maximumAge: 0
+        }
+      );
+      return;
+    }
+
+    let currentLat: number | undefined = undefined;
+    let currentLon: number | undefined = undefined;
+    const savedLat = parseFloat(localStorage.getItem('zonemart_lat') || '0');
+    const savedLon = parseFloat(localStorage.getItem('zonemart_lon') || '0');
+    if (savedLat && savedLon) {
+      currentLat = savedLat;
+      currentLon = savedLon;
+    }
+
     const historyPayload = messages.value.slice(-6).map(m => ({
       sender: m.sender,
       text: m.text
@@ -1507,18 +1850,31 @@ async function sendMessage(customText?: string) {
         message: textToSend,
         userRole: auth.currentRole.value,
         userEmail: auth.currentUser.value?.phoneEmail,
-        userLocation: userLocation.value,
+        userId: auth.currentUser.value?.id,
+        userLocation: userLocation.value || undefined,
+        lat: currentLat,
+        lon: currentLon,
         history: historyPayload,
         registrationState: registrationState.value,
         orderState: orderState.value,
         regDraft: regDraft.value,
         supportState: supportState.value,
-        supportDraft: supportDraft.value
+        supportDraft: supportDraft.value,
+        cartStores: cart.cartStores.value || [],
+        selectedCartItems: extraPayload?.selectedCartItems || undefined
       })
     });
 
     if (response.ok) {
       const data = await response.json();
+      if (data.userLocation && typeof data.userLocation === 'string' && data.userLocation.trim()) {
+        const cleanLoc = sanitizeLocation(data.userLocation.trim());
+        if (cleanLoc) {
+          userGpsAddress.value = cleanLoc;
+          localStorage.setItem('zonemart_gps_address', cleanLoc);
+          localStorage.setItem('zonemart_user_address', cleanLoc);
+        }
+      }
       if (data.registrationState !== undefined) {
         registrationState.value = data.registrationState;
       }
@@ -1570,6 +1926,7 @@ async function sendMessage(customText?: string) {
         products: data.products,
         stores: data.stores,
         actionIntent: data.actionIntent,
+        existingCartItems: data.existingCartItems || [],
         summaryData: data.summaryData,
         qrCodeUrl: data.qrCodeUrl,
         totalAmount: data.totalAmount || activeTotal,
@@ -1596,12 +1953,25 @@ async function sendMessage(customText?: string) {
       });
     }
   } catch (err) {
+    const cleanErrLower = textToSend.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').trim();
+    const isCapQuery = 
+      cleanErrLower === 'lam j' || cleanErrLower === 'lam gi' || cleanErrLower === 'ban lam j' || cleanErrLower === 'ban lam gi' ||
+      cleanErrLower === 'ai lam j' || cleanErrLower === 'ai lam gi' || cleanErrLower === 'tu van' || cleanErrLower === 'tu van di' ||
+      cleanErrLower === 'tu van cho toi' || cleanErrLower === 'tu van giup toi' || cleanErrLower === 'tinh nang' || cleanErrLower === 'chuc nang' ||
+      cleanErrLower.includes('lam j') || cleanErrLower.includes('lam gi') || cleanErrLower.includes('lam duoc gi') ||
+      cleanErrLower.includes('tu van') || cleanErrLower.includes('tinh nang') || cleanErrLower.includes('chuc nang') ||
+      /\b(ban\s+)?(lam|tu\s*van|giup|ho\s*tro)\s+(duoc\s+)?(gi|j)\b/.test(cleanErrLower) ||
+      /\b(tu\s*van|ho\s*tro|giup)\s+(cho\s+)?(toi|minh|em|anh|chi)\b/.test(cleanErrLower);
+
     userChatHistory.value.push({
       id: (Date.now() + 1).toString(),
       sender: 'ai',
-      text: 'Dạ mình là Trợ Lý AI Chuyên Gia ZoneMart. Bạn muốn gợi ý món ngon hỏa tốc hay hỗ trợ đăng ký tài khoản Seller/Shipper ạ?',
+      text: isCapQuery
+        ? 'Dạ xin chào bạn! 🖐️ Mình là Trợ lý AI Thông Minh ZoneMart 24/7. Mình có thể hỗ trợ bạn các tính năng nổi bật sau:\n\n1️⃣ **🛍️ Tự động chọn & đặt đồ hộ hỏa tốc**: Bạn chỉ cần nói món ăn muốn ăn (hoặc nhắn "đặt đồ hộ"), AI sẽ tìm kiếm món, thêm vào giỏ hàng và đặt thay bạn.\n2️⃣ **🌦️ Gợi ý món ăn theo thời tiết**: Tư vấn món giải nhiệt khi trời nắng nóng, món ấm nóng khi trời se lạnh mưa gió.\n3️⃣ **📍 Tìm kiếm quán ngon gần bạn**: Tự động nhận diện GPS an toàn (phủ sóng toàn quốc 63 tỉnh thành) và tìm kiếm gian hàng gần nhất.\n4️⃣ **⚡ Đăng ký tài khoản siêu tốc (1 phút)**: Hỗ trợ Khách hàng, Chủ gian hàng (Seller) và Tài xế (Shipper) tạo tài khoản ngay trong khung chat mà không cần mò mẫm tự điền form.\n5️⃣ **💬 Hỗ trợ & giải đáp dịch vụ 24/7**: Tra cứu danh sách món ăn, hỗ trợ khách hàng nhanh chóng.\n\n👉 Bạn có thể bấm vào các nút chức năng bên dưới để trải nghiệm ngay nhé! 😊'
+        : 'Dạ mình là Trợ Lý AI Chuyên Gia ZoneMart. Bạn có thể chọn trải nghiệm các tính năng nổi bật bên dưới nhé! 😊',
       timestamp: getCurrentTime(),
-      provider: 'ZoneMart AI Assistant'
+      provider: 'ZoneMart AI Assistant',
+      actionIntent: 'SHOW_CAPABILITIES'
     });
   } finally {
     isLoading.value = false;
@@ -1635,6 +2005,67 @@ function goToProduct(id: string) {
   router.push(`/products/${id}`);
   isOpen.value = false;
 }
+
+// Các hàm tương tác với bảng tích chọn món trong giỏ hàng (CONFIRM_EXISTING_CART)
+function toggleItemSelect(item: any) {
+  item.selected = !item.selected;
+}
+
+function getSelectedCount(msg: any): number {
+  return (msg?.existingCartItems || []).filter((i: any) => i.selected).length;
+}
+
+function decreaseExistingCartItemQty(item: any) {
+  if (item.quantity > 1) {
+    item.quantity--;
+  }
+}
+
+function increaseExistingCartItemQty(item: any) {
+  const max = item.maxStock > 0 ? item.maxStock : 99;
+  if (item.quantity >= max) {
+    toast.warning(`Sản phẩm "${item.name}" trong kho chỉ còn tối đa ${max} sản phẩm thôi ạ!`, "Đã Đạt Tối Đa Tồn Kho");
+    return;
+  }
+  item.quantity++;
+}
+
+function confirmOrderExistingCart(msg: any) {
+  const selected = (msg?.existingCartItems || []).filter((i: any) => i.selected);
+  if (selected.length === 0) {
+    toast.warning("Bạn vui lòng tích chọn vào ô ít nhất 1 món đồ trong giỏ hàng để tiếp tục đặt đồ nhé!", "Chưa Chọn Món Đặt");
+    return;
+  }
+  sendMessage('Đặt đồ', { selectedCartItems: selected });
+}
+
+function chooseOrderNewFood() {
+  sendMessage('Đặt đồ mới');
+}
+
+async function handleBackToCurrentLocation() {
+  await requestBrowserLocation(false, 5, true);
+}
+
+const chatPlaceholderText = computed(() => {
+  if (isRecordingVoice.value) return '🎙️ Đang lắng nghe giọng nói của bạn...';
+  if (orderState.value?.step === 'CONFIRM_EXISTING_CART') {
+    return 'Tích chọn món và bấm [Đặt đồ] hoặc [Đặt đồ mới] (nhắn \'hủy\' để dừng)...';
+  }
+  if (orderState.value?.step === 'ASK_ADDRESS') {
+    return 'Bấm chọn [Thay đổi địa chỉ] hoặc [Giữ nguyên địa chỉ] (nhắn \'hủy\' để dừng)...';
+  }
+  if (orderState.value?.step === 'AWAITING_NEW_ADDRESS') {
+    return 'Nhập số nhà/ngõ, tên đường, phường/quận/thành phố (nhắn \'hủy\' để dừng)...';
+  }
+  if (orderState.value?.step === 'ASK_SHIPPING_METHOD') {
+    return 'Bấm chọn phương thức vận chuyển (nhắn \'hủy\' để dừng)...';
+  }
+  if (orderState.value?.step === 'ASK_PAYMENT_METHOD') {
+    return 'Bấm chọn phương thức thanh toán (nhắn \'hủy\' để dừng)...';
+  }
+  return 'Hỏi AI về món ăn, quán ngon, cách đăng ký...';
+});
 
 // Kiểm tra xem nút hành động của tin nhắn này có phải là câu hỏi mới nhất đang chờ phản hồi hay không
 function isActionActive(msg: ChatMessage, index: number): boolean {
@@ -1692,7 +2123,7 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
       >
         <div class="avatar-ring">
           <div class="img-crop-box">
-            <img src="/images/anhchattuvanAI_full_clean.png" alt="AI Avatar" class="ai-avatar-img" />
+            <img src="/images/anhlogoAItuvan.png" alt="AI Avatar" class="ai-avatar-img" />
           </div>
           <span class="online-dot"></span>
         </div>
@@ -1707,7 +2138,7 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
           <div class="header-left">
             <div class="header-avatar-wrap">
               <div class="avatar-crop-box">
-                <img src="/images/anhchattuvanAI_full_clean.png" alt="AI Avatar" class="header-avatar" />
+                <img src="/images/anhlogoAItuvan.png" alt="AI Avatar" class="header-avatar" />
               </div>
               <span class="status-pulse"></span>
             </div>
@@ -1725,7 +2156,7 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
         <input
           type="file"
           ref="fileUploadInputRef"
-          accept="image/*"
+          accept="image/png,image/jpeg,image/webp,image/jpg"
           style="display: none;"
           @change="handleFileUploadChange"
         />
@@ -1774,7 +2205,7 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
           >
             <div v-if="msg.sender === 'ai'" class="ai-avatar-mini">
               <div class="avatar-crop-box">
-                <img src="/images/anhchattuvanAI_full_clean.png" alt="AI" />
+                <img src="/images/anhlogoAItuvan.png" alt="AI" />
               </div>
             </div>
 
@@ -1846,8 +2277,21 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
                   >
                     <i class="bi bi-check-circle-fill" style="color: #94a3b8; font-size: 11px;"></i> Đã hoàn thành lựa chọn ở bước này
                   </div>
+                  <!-- 3 PHÂN MỤC ĐĂNG KÝ (KHÁCH HÀNG / SELLER / SHIPPER) KHI BẢO "ĐĂNG KÝ" CHUNG CHUNG -->
+                  <template v-if="msg.actionIntent === 'CHOOSE_REGISTER_ROLE'">
+                    <button class="btn-intent btn-intent-buyer" @click="sendMessage('Đăng ký khách hàng')">
+                      <i class="bi bi-person-fill me-1"></i> Đăng Ký Khách Hàng
+                    </button>
+                    <button class="btn-intent btn-intent-seller" @click="sendMessage('Tôi muốn mở gian hàng seller')">
+                      <i class="bi bi-shop me-1"></i> Đăng Ký Seller (Gian Hàng)
+                    </button>
+                    <button class="btn-intent btn-intent-shipper" @click="sendMessage('Đăng ký chạy xe shipper')">
+                      <i class="bi bi-bicycle me-1"></i> Đăng Ký Shipper (Tài Xế)
+                    </button>
+                  </template>
+
                   <!-- SELLER -->
-                  <template v-if="msg.actionIntent === 'REGISTER_SELLER'">
+                  <template v-else-if="msg.actionIntent === 'REGISTER_SELLER'">
                     <button class="btn-intent btn-intent-manual" @click="handleAction('seller_manual')">
                       <i class="bi bi-journal-text me-1"></i> Cách 1: Đi tới Form Đăng Ký Seller
                     </button>
@@ -1904,6 +2348,14 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
                         <i class="bi me-1" :class="t.icon" style="color: #D94E15;"></i> {{ t.name }}
                       </button>
                     </div>
+                    <button
+                      v-if="!msg.selectedTopic"
+                      class="btn-intent btn-intent-manual"
+                      style="margin-top: 8px; width: 100%; justify-content: center;"
+                      @click="handleAction('support_manual')"
+                    >
+                      <i class="bi bi-journal-text me-1"></i> Đi Tới Form Hỗ Trợ Thủ Công
+                    </button>
                   </template>
 
                   <!-- BƯỚC 2: HỎI TÊN (CÓ NÚT DÙNG THÔNG TIN TÀI KHOẢN NẾU ĐÃ ĐĂNG NHẬP) -->
@@ -1981,15 +2433,6 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
                     </button>
                   </template>
 
-                  <!-- BẬT ĐỊNH VỊ VỊ TRÍ CỦA WEB -->
-                  <template v-else-if="msg.actionIntent === 'ACTION_REQUEST_LOCATION' || msg.actionIntent === 'ACTION_REQUEST_LOCATION_FOR_STORES'">
-                    <button class="btn-intent btn-intent-ai" :disabled="isLocating" @click="() => requestBrowserLocation(msg.actionIntent === 'ACTION_REQUEST_LOCATION_FOR_STORES', 5)" style="background: linear-gradient(135deg, #ea580c, #f97316); color: #fff; font-weight: 700; box-shadow: 0 4px 12px rgba(234, 88, 12, 0.25);">
-                      <span v-if="isLocating" class="spinner-border spinner-border-sm me-1" role="status"></span>
-                      <i v-else class="bi bi-geo-alt-fill me-1" style="color: #fff;"></i>
-                      {{ isLocating ? 'Đang kích hoạt GPS & xác định vị trí...' : '📍 Bật Định Vị Vị Trí Của Bạn' }}
-                    </button>
-                  </template>
-
                   <!-- CẤP QUYỀN ĐỊNH VỊ ĐỊA CHỈ NHẬN HÀNG -->
                   <template v-else-if="msg.actionIntent === 'ACTION_REQUEST_LOCATION_FOR_ORDER_ADDRESS'">
                     <button class="btn-intent btn-intent-ai" :disabled="isLocating" @click="() => requestBrowserLocation(false, 5, true)" style="background: linear-gradient(135deg, #16a34a, #22c55e); color: #fff; font-weight: 700; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);">
@@ -1997,6 +2440,99 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
                       <i v-else class="bi bi-geo-alt-fill me-1" style="color: #fff;"></i>
                       {{ isLocating ? 'Đang lấy vị trí hiện tại...' : '📍 Cấp Quyền Lấy Địa Chỉ Hiện Tại' }}
                     </button>
+                  </template>
+
+                  <!-- BẢNG TÍCH CHỌN MÓN TỪ GIỎ HÀNG CÓ SẴN (CONFIRM_EXISTING_CART) -->
+                  <template v-else-if="msg.actionIntent === 'CONFIRM_EXISTING_CART'">
+                    <div class="existing-cart-card">
+                      <div class="existing-cart-header">
+                        <div class="header-title" title="Món trong giỏ hàng của bạn:">
+                          <i class="bi bi-cart-check-fill text-success me-1"></i>
+                          <span>Món trong giỏ hàng của bạn:</span>
+                        </div>
+                        <span class="badge-selected-count">
+                          Đã chọn: <strong>{{ getSelectedCount(msg) }}</strong>/{{ (msg.existingCartItems || []).length }} món
+                        </span>
+                      </div>
+
+                      <div class="existing-cart-list">
+                        <div
+                          v-for="item in (msg.existingCartItems || [])"
+                          :key="item.id"
+                          class="existing-cart-item"
+                          :class="{ 'item-checked': item.selected }"
+                          @click="toggleItemSelect(item)"
+                        >
+                          <!-- Checkbox tích chọn -->
+                          <div class="item-checkbox-wrapper" @click.stop>
+                            <input
+                              type="checkbox"
+                              v-model="item.selected"
+                              class="form-check-input item-checkbox"
+                              :id="`cart-item-${item.id}`"
+                            />
+                          </div>
+
+                          <!-- Ảnh món -->
+                          <img
+                            :src="item.image || '/images/anhxoanen.png'"
+                            :alt="item.name"
+                            class="item-thumb"
+                            @error="(e: any) => e.target.src = '/images/anhxoanen.png'"
+                          />
+
+                          <!-- Thông tin món -->
+                          <div class="item-meta">
+                            <label :for="`cart-item-${item.id}`" class="item-name" :title="item.name">{{ item.name }}</label>
+                            <div class="item-store text-truncate">
+                              <i class="bi bi-shop me-1 text-muted" style="font-size: 10px;"></i>{{ item.storeName || 'ZoneMart Store' }}
+                            </div>
+                            <div class="item-price">{{ (item.price || 0).toLocaleString('vi-VN') }} ₫</div>
+                          </div>
+
+                          <!-- Bộ điều chỉnh số lượng (+/-) -->
+                          <div class="item-qty-wrapper" @click.stop>
+                            <button
+                              type="button"
+                              class="btn-qty btn-minus"
+                              :disabled="item.quantity <= 1"
+                              @click.stop="decreaseExistingCartItemQty(item)"
+                              title="Giảm số lượng (tối thiểu 1)"
+                            >
+                              <i class="bi bi-dash"></i>
+                            </button>
+                            <span class="qty-number">{{ item.quantity }}</span>
+                            <button
+                              type="button"
+                              class="btn-qty btn-plus"
+                              :disabled="item.maxStock > 0 && item.quantity >= item.maxStock"
+                              @click.stop="increaseExistingCartItemQty(item)"
+                              title="Tăng số lượng (tối đa tồn kho)"
+                            >
+                              <i class="bi bi-plus"></i>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 2 Nút bấm lựa chọn: Đặt đồ & Đặt đồ mới -->
+                      <div class="existing-cart-actions">
+                        <button
+                          type="button"
+                          class="btn-intent btn-order-existing"
+                          @click="confirmOrderExistingCart(msg)"
+                        >
+                          <i class="bi bi-bag-check-fill me-1"></i> Đặt đồ ({{ getSelectedCount(msg) }} món đã chọn)
+                        </button>
+                        <button
+                          type="button"
+                          class="btn-intent btn-order-new"
+                          @click="chooseOrderNewFood()"
+                        >
+                          <i class="bi bi-plus-circle-fill me-1"></i> Đặt đồ mới
+                        </button>
+                      </div>
+                    </div>
                   </template>
 
                   <!-- SỬA GIỎ HÀNG (CÓ / KHÔNG) -->
@@ -2033,6 +2569,18 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
                     </button>
                     <button class="btn-intent btn-intent-manual" @click="sendMessage('Giữ nguyên địa chỉ')">
                       <i class="bi bi-check-circle me-1"></i> Giữ Nguyên Địa Chỉ
+                    </button>
+                  </template>
+
+                  <!-- NÚT KHI ĐỊA CHỈ NHẬP SAI: QUAY LẠI (TỰ ĐỘNG LẤY VỊ TRÍ HIỆN TẠI) & GIỮ NGUYÊN ĐỊA CHỈ -->
+                  <template v-else-if="msg.actionIntent === 'SHOW_ADDRESS_INVALID_CHOICE_BUTTONS'">
+                    <button class="btn-intent btn-intent-ai" :disabled="isLocating" @click="handleBackToCurrentLocation">
+                      <span v-if="isLocating" class="spinner-border spinner-border-sm me-1" role="status"></span>
+                      <i v-else class="bi bi-arrow-left-circle-fill me-1"></i>
+                      {{ isLocating ? 'Đang lấy vị trí hiện tại...' : 'Quay lại' }}
+                    </button>
+                    <button class="btn-intent btn-intent-manual" @click="sendMessage('Giữ nguyên địa chỉ')">
+                      <i class="bi bi-check-circle me-1"></i> Giữ nguyên địa chỉ
                     </button>
                   </template>
 
@@ -2110,6 +2658,37 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
                     </button>
                   </template>
 
+                  <!-- SELLER MÔ HÌNH KINH DOANH ĐỊA PHƯƠNG (4 THẺ LỰA CHỌN) -->
+                  <template v-else-if="msg.actionIntent === 'SELLER_CHOOSE_TYPE'">
+                    <div class="seller-types-grid">
+                      <button
+                        v-for="st in sellerTypes"
+                        :key="st.value"
+                        class="btn-seller-type-card"
+                        @click="sendMessage(st.value)"
+                      >
+                        <div class="st-card-header">
+                          <span class="st-label">{{ st.label }}</span>
+                        </div>
+                        <div class="st-desc">{{ st.desc }}</div>
+                      </button>
+                    </div>
+                  </template>
+
+                  <!-- SELLER ĐỊA CHỈ TIỆM & NÚT LẤY GPS HIỆN TẠI -->
+                  <template v-else-if="msg.actionIntent === 'SELLER_INPUT_ADDRESS_GPS'">
+                    <div class="gps-locator-wrapper">
+                      <button
+                        class="btn-intent btn-gps-locate"
+                        :disabled="isLocatingSellerGps"
+                        @click="handleSellerGpsLocate"
+                      >
+                        <i :class="isLocatingSellerGps ? 'bi bi-arrow-repeat spin' : 'bi bi-geo-alt-fill'" class="me-1" style="color: #EF4444;"></i>
+                        {{ isLocatingSellerGps ? 'Đang xác định GPS...' : '📍 Lấy GPS hiện tại' }}
+                      </button>
+                    </div>
+                  </template>
+
                   <!-- SELLER DANH MỤC HÀNG BÁN CHÍNH (NÚT BẤM TOÀN BỘ DANH MỤC TRONG THỦ CÔNG) -->
                   <template v-else-if="msg.actionIntent === 'SELLER_CHOOSE_CATEGORY'">
                     <div class="chips-selector-grid">
@@ -2138,8 +2717,22 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
                     </div>
                   </template>
 
-                  <!-- SELLER & SHIPPER NGÂN HÀNG (NÚT BẤM 10 NGÂN HÀNG) -->
-                  <template v-else-if="msg.actionIntent === 'SELLER_CHOOSE_BANK' || msg.actionIntent === 'SHIPPER_CHOOSE_BANK'">
+                  <!-- SELLER NGÂN HÀNG (8 NGÂN HÀNG CHUẨN) -->
+                  <template v-else-if="msg.actionIntent === 'SELLER_CHOOSE_BANK'">
+                    <div class="chips-selector-grid">
+                      <button
+                        v-for="bank in sellerBanks"
+                        :key="bank"
+                        class="btn-intent btn-choice-chip"
+                        @click="sendMessage(bank)"
+                      >
+                        <i class="bi bi-bank2 me-1" style="color: #10B981;"></i> {{ bank }}
+                      </button>
+                    </div>
+                  </template>
+
+                  <!-- SHIPPER NGÂN HÀNG (10 NGÂN HÀNG) -->
+                  <template v-else-if="msg.actionIntent === 'SHIPPER_CHOOSE_BANK'">
                     <div class="chips-selector-grid">
                       <button
                         v-for="bank in banksList"
@@ -2196,15 +2789,29 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
 
                   <!-- Ô TẢI ẢNH GIẤY TỜ CHUẨN THIẾT KẾ VIỀN NÉT ĐỨT XANH (CCCD, ATTP, CHÂN DUNG, GPLX, ẢNH SỰ CỐ) -->
                   <template v-else-if="isUploadIntent(msg.actionIntent)">
-                    <div class="chat-upload-box" @click="triggerUploadForIntent(msg.actionIntent!)">
+                    <div
+                      class="chat-upload-box"
+                      :class="{ 'is-disabled-uploaded': isImageAlreadyUploaded(msg.actionIntent), 'is-edit-upload-box': isSellerEditStep(msg) }"
+                      @click="!isImageAlreadyUploaded(msg.actionIntent) && triggerUploadForIntent(msg.actionIntent!)"
+                    >
                       <div class="upload-icon-circle">
-                        <i class="bi bi-camera"></i>
+                        <i :class="isImageAlreadyUploaded(msg.actionIntent) ? 'bi bi-check2-all' : (isSellerEditStep(msg) && getPreviewForIntent(msg.actionIntent) ? 'bi bi-arrow-repeat' : 'bi bi-camera')"></i>
                       </div>
                       <div class="upload-title">{{ getUploadTitle(msg.actionIntent) }}</div>
-                      <div class="upload-sub">{{ getUploadSubtitle(msg.actionIntent) }}</div>
-                      <div v-if="uploadedPreviews[msg.actionIntent!]" class="upload-preview-row">
-                        <img :src="uploadedPreviews[msg.actionIntent!]" alt="Preview" class="upload-preview-thumb" />
-                        <span class="upload-badge"><i class="bi bi-check2-circle me-1"></i> Đã tải ảnh lên</span>
+                      <div class="upload-sub">
+                        <template v-if="isSellerEditStep(msg) && getPreviewForIntent(msg.actionIntent)">
+                          Bấm vào đây để chọn và đổi ảnh khác
+                        </template>
+                        <template v-else-if="isImageAlreadyUploaded(msg.actionIntent)">
+                          Đã tải ảnh lên thành công (Đã khóa, không thể chọn lại)
+                        </template>
+                        <template v-else>
+                          {{ getUploadSubtitle(msg.actionIntent) }}
+                        </template>
+                      </div>
+                      <div v-if="getPreviewForIntent(msg.actionIntent)" class="upload-preview-row">
+                        <img :src="getPreviewForIntent(msg.actionIntent)" alt="Preview" class="upload-preview-thumb" />
+                        <span class="upload-badge"><i class="bi bi-check2-circle me-1"></i> {{ isSellerEditStep(msg) ? 'Ảnh đang chọn (Bấm để đổi ảnh khác)' : 'Đã tải ảnh lên thành công' }}</span>
                       </div>
                     </div>
                     <button
@@ -2217,8 +2824,68 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
                     </button>
                   </template>
 
+                  <!-- SELLER & SHIPPER REVIEW SUMMARY (BẢNG TỔNG KẾT: 2 NÚT [SỬA HỒ SƠ] VÀ [GỬI HỒ SƠ]) -->
+                  <template v-else-if="msg.actionIntent === 'SELLER_REVIEW_SUMMARY' || msg.actionIntent === 'SHIPPER_REVIEW_SUMMARY'">
+                    <div class="review-summary-actions">
+                      <button class="btn-review-action btn-review-edit" @click="sendMessage('Sửa hồ sơ')">
+                        <i class="bi bi-pencil-square me-1"></i> Sửa hồ sơ
+                      </button>
+                      <button class="btn-review-action btn-review-submit" @click="sendMessage('Gửi hồ sơ đăng ký')">
+                        <i class="bi bi-send-check-fill me-1"></i> Gửi hồ sơ đăng ký
+                      </button>
+                    </div>
+                  </template>
+
+                  <!-- SELLER MENU CHỈNH SỬA 16 MỤC HỒ SƠ -->
+                  <template v-else-if="msg.actionIntent === 'SELLER_EDIT_MENU'">
+                    <div class="edit-menu-wrapper">
+                      <div class="edit-menu-grid">
+                        <button
+                          v-for="(item, idx) in sellerEditOptions"
+                          :key="idx"
+                          class="btn-edit-option"
+                          @click="sendMessage((idx + 1).toString())"
+                        >
+                          <span class="edit-opt-num">{{ idx + 1 }}.</span> {{ item }}
+                        </button>
+                      </div>
+                      <button class="btn-back-to-summary" @click="sendMessage('Quay lại')">
+                        <i class="bi bi-arrow-left-circle-fill me-1"></i> Quay lại bảng tổng kết
+                      </button>
+                    </div>
+                  </template>
+
+                  <!-- SHIPPER MENU CHỈNH SỬA 15 MỤC HỒ SƠ -->
+                  <template v-else-if="msg.actionIntent === 'SHIPPER_EDIT_MENU'">
+                    <div class="edit-menu-wrapper">
+                      <div class="edit-menu-grid">
+                        <button
+                          v-for="(item, idx) in shipperEditOptions"
+                          :key="idx"
+                          class="btn-edit-option"
+                          @click="sendMessage((idx + 1).toString())"
+                        >
+                          <span class="edit-opt-num">{{ idx + 1 }}.</span> {{ item }}
+                        </button>
+                      </div>
+                      <button class="btn-back-to-summary" @click="sendMessage('Quay lại')">
+                        <i class="bi bi-arrow-left-circle-fill me-1"></i> Quay lại bảng tổng kết
+                      </button>
+                    </div>
+                  </template>
+
+                  <!-- NÚT QUAY LẠI VÀ NÚT LƯU TRONG CÁC BƯỚC ĐANG CHỈNH SỬA TỪNG MỤC -->
+                  <div v-if="isSellerEditStep(msg)" class="edit-back-wrapper">
+                    <button class="btn-back-to-summary" @click="handleCancelEditBackToSummary">
+                      <i class="bi bi-arrow-left-circle me-1"></i> Quay lại bảng tổng kết
+                    </button>
+                    <button class="btn-save-and-back-summary" @click="handleSaveAndBackToSummary">
+                      <i class="bi bi-check2-circle me-1"></i> Lưu và quay lại bảng tổng kết
+                    </button>
+                  </div>
+
                   <!-- ĐĂNG KÝ KHÁCH HÀNG THÀNH CÔNG: DÒNG NHỎ HỎI VÀ NÚT ĐĂNG NHẬP NGAY -->
-                  <template v-else-if="msg.actionIntent === 'BUYER_REGISTER_SUCCESS'">
+                  <template v-if="msg.actionIntent === 'BUYER_REGISTER_SUCCESS'">
                     <div class="reg-success-actions">
                       <button class="btn-intent btn-intent-ai" @click="handleAction('buyer_login')">
                         <i class="bi bi-box-arrow-in-right me-1"></i> 🔑 Đăng Nhập Ngay
@@ -2259,7 +2926,7 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
           <div v-if="isLoading" class="message-row row-ai">
             <div class="ai-avatar-mini">
               <div class="avatar-crop-box">
-                <img src="/images/anhchattuvanAI_full_clean.png" alt="AI" />
+                <img src="/images/anhlogoAItuvan.png" alt="AI" />
               </div>
             </div>
             <div class="message-bubble typing-bubble">
@@ -2295,7 +2962,7 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
             v-else
             ref="textareaRef"
             v-model="userMessage"
-            :placeholder="isRecordingVoice ? '🎙️ Đang lắng nghe giọng nói của bạn...' : 'Hỏi AI về món ăn, quán ngon, cách đăng ký...'"
+            :placeholder="chatPlaceholderText"
             class="chat-textarea"
             rows="1"
             @input="adjustTextareaHeight"
@@ -2525,6 +3192,8 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
   object-fit: cover;
   border-radius: 50%;
   transition: transform 0.3s ease;
+  backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 .ai-trigger-btn:hover .ai-avatar-img {
@@ -2594,6 +3263,8 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
   height: 100%;
   object-fit: cover;
   border-radius: 50%;
+  backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 .status-pulse {
@@ -2710,6 +3381,8 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
   height: 100%;
   object-fit: cover;
   border-radius: 50%;
+  backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 .message-bubble-wrap {
@@ -2981,6 +3654,36 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
   box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);
 }
 
+.btn-intent-buyer {
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+}
+
+.btn-intent-buyer:hover {
+  background: linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+}
+
+.btn-intent-seller {
+  background: linear-gradient(135deg, #EA580C 0%, #C2410C 100%);
+}
+
+.btn-intent-seller:hover {
+  background: linear-gradient(135deg, #C2410C 0%, #9A3412 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.35);
+}
+
+.btn-intent-shipper {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+}
+
+.btn-intent-shipper:hover {
+  background: linear-gradient(135deg, #047857 0%, #065F46 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(5, 150, 105, 0.35);
+}
+
 .btn-capability {
   background: #FFFFFF;
   color: #1E293B;
@@ -3004,6 +3707,227 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
   border-color: #D94E15;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(217, 78, 21, 0.15);
+}
+
+/* BẢNG TÍCH CHỌN MÓN GIỎ HÀNG CÓ SẴN (CONFIRM_EXISTING_CART) */
+.existing-cart-card {
+  width: 100%;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1.5px solid #dcfce7;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.08);
+  padding: 10px;
+  margin: 6px 0;
+}
+
+.existing-cart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed #e2e8f0;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.existing-cart-header .header-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.badge-selected-count {
+  font-size: 10.5px;
+  color: #059669;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  padding: 2px 6px;
+  border-radius: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.existing-cart-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.existing-cart-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.existing-cart-item:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.existing-cart-item.item-checked {
+  background: #f0fdf4;
+  border-color: #86efac;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.08);
+}
+
+.item-checkbox-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.item-checkbox {
+  width: 17px;
+  height: 17px;
+  cursor: pointer;
+  accent-color: #10b981;
+}
+
+.item-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.item-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.item-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  margin-bottom: 2px;
+}
+
+.item-store {
+  font-size: 10.5px;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.item-price {
+  font-size: 12px;
+  font-weight: 800;
+  color: #ea580c;
+}
+
+.item-qty-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 20px;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+
+.btn-qty {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: #f1f5f9;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-qty:hover:not(:disabled) {
+  background: #10b981;
+  color: #fff;
+}
+
+.btn-qty:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.qty-number {
+  min-width: 18px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.existing-cart-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.btn-order-existing {
+  background: linear-gradient(135deg, #10b981, #059669) !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25) !important;
+  border: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.btn-order-existing:hover {
+  filter: brightness(1.08) !important;
+  transform: translateY(-1px) !important;
+}
+
+.btn-order-new {
+  background: linear-gradient(135deg, #3b82f6, #2563eb) !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  padding: 7px 12px !important;
+  border-radius: 8px !important;
+  border: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.btn-order-new:hover {
+  filter: brightness(1.08) !important;
+  transform: translateY(-1px) !important;
 }
 
 /* Typing indicator */
@@ -3493,6 +4417,409 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
   background: linear-gradient(135deg, #0369A1 0%, #075985 100%);
   color: #FFFFFF;
   transform: translateY(-1px);
+}
+
+/* ==================== SELLER 16-STEP FLOW STYLES ==================== */
+.seller-types-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.btn-seller-type-card {
+  background: #FFFFFF;
+  border: 1.5px solid #FED7AA;
+  border-radius: 12px;
+  padding: 10px 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 2px 5px rgba(217, 78, 21, 0.05);
+}
+
+.btn-seller-type-card:hover {
+  background: #FFF7ED;
+  border-color: #F97316;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.15);
+}
+
+.st-card-header {
+  display: flex;
+  align-items: center;
+}
+
+.st-label {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #9A3412;
+}
+
+.st-desc {
+  font-size: 11.5px;
+  color: #64748B;
+  line-height: 1.35;
+}
+
+.gps-locator-wrapper {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.btn-gps-locate {
+  width: 100%;
+  background: #FFF1F2;
+  border: 1.5px solid #FECDD3;
+  color: #E11D48;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(225, 29, 72, 0.1);
+}
+
+.btn-gps-locate:hover:not(:disabled) {
+  background: #FFE4E6;
+  border-color: #FB7185;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(225, 29, 72, 0.2);
+}
+
+.btn-gps-locate:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.spin {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+.chat-upload-box.is-disabled-uploaded {
+  opacity: 0.65;
+  background-color: #F8FAFC !important;
+  border-color: #94A3B8 !important;
+  border-style: solid !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+}
+
+.chat-upload-box.is-disabled-uploaded .upload-icon-circle {
+  background-color: #E2E8F0;
+  color: #10B981;
+}
+
+.review-summary-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.btn-review-action {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+}
+
+.btn-review-edit {
+  background: #FFF7ED;
+  border: 1.5px solid #FDBA74;
+  color: #C2410C;
+  box-shadow: 0 2px 6px rgba(249, 115, 22, 0.1);
+}
+
+.btn-review-edit:hover {
+  background: #FFEDD5;
+  border-color: #FB923C;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2);
+}
+
+.btn-review-submit {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  color: #FFFFFF;
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.3);
+}
+
+.btn-review-submit:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(16, 185, 129, 0.4);
+}
+
+.edit-menu-wrapper {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.edit-menu-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 2px;
+  margin-bottom: 8px;
+}
+
+.btn-edit-option {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #334155;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+}
+
+.btn-edit-option:hover {
+  background: #FFF7ED;
+  border-color: #FDBA74;
+  color: #C2410C;
+  transform: translateY(-1px);
+}
+
+.edit-opt-num {
+  font-weight: 800;
+  color: #F97316;
+  margin-right: 4px;
+}
+
+.btn-back-to-summary {
+  width: 100%;
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-back-to-summary:hover {
+  background: #E2E8F0;
+  color: #1E293B;
+  transform: translateY(-1px);
+}
+
+.edit-back-wrapper {
+  margin-top: 8px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.btn-save-and-back-summary {
+  width: 100%;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  border: 1px solid #059669;
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+}
+
+.btn-save-and-back-summary:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.35);
+}
+
+/* Seller Fee Card */
+:deep(.seller-fee-card) {
+  background: #FFF7ED;
+  border: 1.5px solid #FED7AA;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+}
+:deep(.fee-row) {
+  font-size: 12.5px;
+  color: #9A3412;
+  margin-bottom: 3px;
+}
+:deep(.fee-sub) {
+  font-size: 11px;
+  color: #7C2D12;
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+:deep(.fee-status-line) {
+  font-size: 11px;
+  color: #166534;
+}
+:deep(.badge-bql) {
+  display: inline-flex;
+  align-items: center;
+  background: #DCFCE7;
+  color: #15803D;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10.5px;
+}
+
+/* Seller Review Summary List & Rows (Bố trí toàn bộ 16 mục trên 1 hàng phẳng) */
+:deep(.seller-summary-title) {
+  font-size: 12.5px;
+  color: #D94E15;
+  font-weight: 800;
+  margin: 6px 0 8px 0;
+  letter-spacing: -0.2px;
+}
+:deep(.seller-summary-list) {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  margin: 6px 0 !important;
+  width: 100% !important;
+}
+:deep(.seller-summary-row) {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+  padding: 3px 0 !important;
+  border-bottom: 1px dashed #F1F5F9 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+:deep(.seller-summary-row:last-child) {
+  border-bottom: none !important;
+}
+:deep(.seller-row-label) {
+  display: inline-flex !important;
+  align-items: center !important;
+  font-weight: 600 !important;
+  color: #475569 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  font-size: 11.5px !important;
+}
+:deep(.seller-row-value) {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  text-align: right !important;
+  color: #0F172A !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 60% !important;
+  font-size: 11.5px !important;
+}
+:deep(.seller-row-value.seller-code-val) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  color: #2563EB !important;
+  font-weight: 700 !important;
+}
+:deep(.seller-row-value.badge-uploaded) {
+  color: #10B981 !important;
+  font-weight: 700 !important;
+  background: #ECFDF5;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+:deep(.seller-summary-hint) {
+  font-size: 11px;
+  color: #64748B;
+  margin-top: 6px;
+}
+
+/* Password Row Masked Dots & Eye */
+:deep(.inline-password-tag) {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  white-space: nowrap !important;
+}
+:deep(.inline-password-tag code) {
+  letter-spacing: 1px !important;
+  font-size: 11px !important;
+  background: #F1F5F9;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+:deep(.btn-eye-toggle-inline) {
+  padding: 0 !important;
+  margin-left: 2px !important;
+  border: none !important;
+  background: transparent !important;
+  color: #64748B !important;
+  cursor: pointer !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+}
+:deep(.btn-eye-toggle-inline:hover) {
+  color: #D94E15 !important;
+}
+
+/* Edit Upload Box Customization */
+.is-edit-upload-box {
+  border-color: #3B82F6 !important;
+  background: #F8FAFC !important;
+  cursor: pointer !important;
+}
+.is-edit-upload-box:hover {
+  border-color: #2563EB !important;
+  background: #EFF6FF !important;
+}
+.upload-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #10B981;
+  background: #ECFDF5;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-top: 3px;
+  display: inline-block;
 }
 
 /* Animations */

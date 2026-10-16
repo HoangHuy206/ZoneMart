@@ -31,7 +31,7 @@ public class ProductsController : ControllerBase
             {
                 _initialSeedChecked = true;
                 var count = await _mongoService.Products.CountDocumentsAsync(new BsonDocument());
-                if (count == 0)
+                if (count < 25)
                 {
                     await SeedInitialProductsAsync();
                 }
@@ -313,172 +313,35 @@ public class ProductsController : ControllerBase
             }
         };
 
-        await _mongoService.Stores.InsertManyAsync(stores);
+        foreach (var s in stores)
+        {
+            var existing = await _mongoService.Stores.Find(x => x.Id == s.Id).FirstOrDefaultAsync();
+            if (existing == null)
+            {
+                await _mongoService.Stores.InsertOneAsync(s);
+            }
+        }
+    }
+
+    [HttpPost("sync-full-catalog")]
+    public async Task<IActionResult> SyncFullCatalog()
+    {
+        await SeedInitialProductsAsync();
+        var all = await _mongoService.Products.Find(_ => true).ToListAsync();
+        return Ok(new { success = true, totalProducts = all.Count, message = "Đã đồng bộ đầy đủ toàn bộ sản phẩm sàn ZoneMart vào MongoDB Atlas!" });
     }
 
     private async Task SeedInitialProductsAsync()
     {
         await SeedInitialStoresAsync();
-
-        var products = new List<Product>
-        {
-            new()
-            {
-                Id = "65f099887766554433221101",
-                StoreId = "65f01234567890abcdef0001",
-                ProductName = "Thịt Bò Mỹ Nhập Khẩu Thượng Hạng (Khay 500g)",
-                Category = "Thực phẩm tươi",
-                Description = "Thịt ba chỉ bò Mỹ thái lát mỏng chuẩn vị lẩu nướng, thịt mềm ngọt thơm.",
-                Price = 185000,
-                Weight = 0.5,
-                StockQuantity = 50,
-                StockStatus = "in_stock",
-                AiStatus = "approved",
-                ImageUrl = "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=600&q=80",
-                CreatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = "65f099887766554433221102",
-                StoreId = "65f01234567890abcdef0001",
-                ProductName = "Gạo ST25 Ông Cua Túi 5kg Chuẩn Vị Thơm Dẻo",
-                Category = "Nhu yếu phẩm",
-                Description = "Gạo ngon nhất thế giới, hạt thon dài trắng trong, cơm dẻo mềm thơm mùi lá dứa.",
-                Price = 190000,
-                Weight = 5.0,
-                StockQuantity = 80,
-                StockStatus = "in_stock",
-                AiStatus = "approved",
-                ImageUrl = "https://images.unsplash.com/photo-1586201375761-83865001e31c?auto=format&fit=crop&w=600&q=80",
-                CreatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = "65f099887766554433221103",
-                StoreId = "65f01234567890abcdef0002",
-                ProductName = "Hộp Dâu Tây Đà Lạt Tươi Ngọt Chuẩn VietGAP (500g)",
-                Category = "Trái cây & Nông sản",
-                Description = "Dâu tây tươi hái tại vườn Đà Lạt buổi sớm, quả mọng đỏ ngọt mát giàu vitamin C.",
-                Price = 95000,
-                Weight = 0.5,
-                StockQuantity = 40,
-                StockStatus = "in_stock",
-                AiStatus = "approved",
-                ImageUrl = "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=600&q=80",
-                CreatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = "65f099887766554433221104",
-                StoreId = "65f01234567890abcdef0003",
-                ProductName = "Combo Bánh Mì Chảo Nóng Hổi Kèm Pate Đặc Biệt",
-                Category = "Món ăn nóng",
-                Description = "Bánh mì giòn rụm ăn kèm pate gia truyền, trứng ốp la lòng đào và xúc xích rán xém cạnh.",
-                Price = 45000,
-                Weight = 0.4,
-                StockQuantity = 30,
-                StockStatus = "in_stock",
-                AiStatus = "approved",
-                ImageUrl = "https://images.unsplash.com/photo-1509722747041-616f39b57569?auto=format&fit=crop&w=600&q=80",
-                CreatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = "65f099887766554433221105",
-                StoreId = "65f01234567890abcdef0002",
-                ProductName = "Sữa Tươi Tiệt Trùng Vinamilk 100% Nguyên Chất (Hộp 1L)",
-                Category = "Đồ uống & Sữa",
-                Description = "Sữa tươi tiệt trùng từ 100% sữa bò tươi nguyên chất giàu canxi và dinh dưỡng.",
-                Price = 38000,
-                Weight = 1.0,
-                StockQuantity = 100,
-                StockStatus = "in_stock",
-                ImageUrl = "https://images.unsplash.com/photo-1550583724-b2692b85b150?auto=format&fit=crop&w=600&q=80",
-                CreatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = "65f099887766554433221106",
-                StoreId = "65f01234567890abcdef0002",
-                ProductName = "Sữa Đặc Có Đường Ông Thọ Đỏ Giàu Dinh Dưỡng (Hộp 380g)",
-                Category = "Đồ uống & Sữa",
-                Description = "Sữa đặc sánh mịn ngậy thơm, cực kỳ phù hợp pha cà phê, sinh tố hoặc ăn cùng bánh mì.",
-                Price = 25000,
-                Weight = 0.38,
-                StockQuantity = 60,
-                StockStatus = "in_stock",
-                ImageUrl = "https://images.unsplash.com/photo-1563636619-e9143da7973b?auto=format&fit=crop&w=600&q=80",
-                CreatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = "65f099887766554433221107",
-                StoreId = "65f01234567890abcdef0003",
-                ProductName = "Cơm Gà Xối Mỡ Da Giòn Nóng Hổi Giòn Tan",
-                Category = "Món ăn nóng",
-                Description = "Đùi gà xối mỡ chiên giòn rụm kẹp cơm chiên dẻo thơm hạt ngọc, ăn kèm dưa góp chua ngọt.",
-                Price = 55000,
-                Weight = 0.5,
-                StockQuantity = 45,
-                StockStatus = "in_stock",
-                ImageUrl = "https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?auto=format&fit=crop&w=600&q=80",
-                CreatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = "65f099887766554433221108",
-                StoreId = "65f01234567890abcdef0003",
-                ProductName = "Phở Bò Tái Nạm Hà Nội Nóng Hổi Đậm Đàm",
-                Category = "Món ăn nóng",
-                Description = "Phở bò truyền thống nước dùng ninh xương ngọt thanh đậm đà, thịt bò tái nạm tươi ngon.",
-                Price = 50000,
-                Weight = 0.6,
-                StockQuantity = 50,
-                StockStatus = "in_stock",
-                ImageUrl = "https://images.unsplash.com/photo-1582878826629-29b7ad1cdc43?auto=format&fit=crop&w=600&q=80",
-                CreatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = "65f099887766554433221109",
-                StoreId = "65f01234567890abcdef0001",
-                StoreName = "Nông Sản & Đặc Sản Vùng Cao",
-                SellerEmail = "dovanbinh487@gmail.com",
-                ProductName = "Thịt Heo Rừng Tự Nhiên Đóng Khay",
-                Category = "Thịt cá tươi",
-                Description = "Thịt heo rừng tự nhiên nuôi thả vùng cao đóng khay sạch sẽ, thịt chắc thơm ngọt đậm đà.",
-                Price = 130000,
-                Weight = 1.0,
-                StockQuantity = 10,
-                StockStatus = "in_stock",
-                AiStatus = "pending",
-                AiCheckNote = "Nghi ngờ nguồn gốc: Mặt hàng thịt rừng cần Ban Quản Trị đối chiếu giấy kiểm dịch thú y trước khi mở bán.",
-                ImageUrl = "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80",
-                CreatedAt = DateTime.UtcNow
-            },
-            new()
-            {
-                Id = "65f099887766554433221110",
-                StoreId = "65f01234567890abcdef0002",
-                StoreName = "Siêu Thị Trái Cây Xanh VietGAP",
-                SellerEmail = "seller@zonemart.vn",
-                ProductName = "Nho Mẫu Đơn Shine Muscat Nhập Khẩu",
-                Category = "Trái cây & Nông sản",
-                Description = "Nho mẫu đơn nhập khẩu tươi giòn ngọt lịm thơm mùi sữa, chùm quả đều đẹp.",
-                Price = 350000,
-                Weight = 0.6,
-                StockQuantity = 15,
-                StockStatus = "in_stock",
-                AiStatus = "pending",
-                AiCheckNote = "AI Vision Cảnh báo: Hình ảnh đăng tải có độ lệch với mẫu chuẩn quả nho mẫu đơn Nhật Bản (độ khớp 48%).",
-                ImageUrl = "https://images.unsplash.com/photo-1596363505729-4190a9506133?auto=format&fit=crop&w=600&q=80",
-                CreatedAt = DateTime.UtcNow
-            }
-        };
+        var products = CatalogSeedData.GetCatalogProducts();
 
         foreach (var p in products)
         {
-            var existing = await _mongoService.Products.Find(x => x.Id == p.Id).FirstOrDefaultAsync();
+            var existing = await _mongoService.Products
+                .Find(x => x.ProductName == p.ProductName || x.Id == p.Id)
+                .FirstOrDefaultAsync();
+
             if (existing == null)
             {
                 await _mongoService.Products.InsertOneAsync(p);

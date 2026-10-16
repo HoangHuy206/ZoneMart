@@ -150,7 +150,14 @@ export function useAuth() {
     localStorage.setItem('isLoggedIn', 'true');
     localStorage.setItem('userRole', freshUser.role);
     try {
-      sessionStorage.removeItem('zonemart_ai_chat_history');
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k && k.startsWith('zonemart_ai_chat_history')) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach((k) => sessionStorage.removeItem(k));
     } catch {}
     if (typeof window !== 'undefined') {
       window.dispatchEvent(

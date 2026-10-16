@@ -4,6 +4,7 @@
     <!-- Tự động chọn TargetFramework: SDK >= 9.0 dùng net9.0, SDK 8.0 tự động fallback net8.0 -->
     <TargetFramework Condition="'$(NETCoreSdkVersion)' != '' and $([System.Version]::Parse($([System.Text.RegularExpressions.Regex]::Match($(NETCoreSdkVersion), '^\d+\.\d+').Value))) >= $([System.Version]::Parse('9.0'))">net9.0</TargetFramework>
     <TargetFramework Condition="'$(TargetFramework)' == ''">net8.0</TargetFramework>
+    <RootNamespace>ZoneMart.Server</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <NoWarn>$(NoWarn);CS8600;CS8601;CS8602;CS8603;CS8604;CS8618;CS8625;CS0219</NoWarn>

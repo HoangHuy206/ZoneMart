@@ -68,20 +68,12 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
 #if NET9_0_OR_GREATER
-    app.MapOpenApi();
+app.MapOpenApi();
 #else
-    app.UseSwagger();
-    app.UseSwaggerUI();
+app.UseSwagger();
+app.UseSwaggerUI();
 #endif
-}
-else
-{
-    app.UseHttpsRedirection();
-}
 
 app.UseCors("AllowVueClient");
 

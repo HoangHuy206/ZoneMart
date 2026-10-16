@@ -1,0 +1,18 @@
+# EditorConfig for ZoneMart Server C#
+root = true
+
+[*.cs]
+# Indentation and formatting
+indent_size = 4
+indent_style = space
+end_of_line = crlf
+insert_final_newline = true
+
+# Suppress informational IDE hints that cause blue squiggly underlines in IDE
+dotnet_diagnostic.IDE0130.severity = none
+dotnet_diagnostic.IDE0290.severity = none
+dotnet_diagnostic.IDE0090.severity = none
+dotnet_diagnostic.IDE0005.severity = none
+dotnet_diagnostic.IDE0028.severity = none
+dotnet_diagnostic.IDE0300.severity = none
+dotnet_diagnostic.CS1591.severity = none
