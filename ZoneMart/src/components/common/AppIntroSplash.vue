@@ -6,7 +6,9 @@ const emit = defineEmits<{
   (e: 'complete'): void;
 }>();
 
-const isVisible = ref(true);
+const hasShown = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('zonemart_intro_shown') === 'true';
+
+const isVisible = ref(!hasShown);
 const isFadingOut = ref(false);
 const animationStage = ref<'stage-hidden' | 'stage-emerge' | 'stage-straighten' | 'stage-shine'>('stage-hidden');
 
@@ -18,6 +20,9 @@ let dismissTimer: any = null;
 const dismiss = () => {
   if (isFadingOut.value) return;
   isFadingOut.value = true;
+  try {
+    sessionStorage.setItem('zonemart_intro_shown', 'true');
+  } catch (e) {}
   emit('complete');
 
   setTimeout(() => {
@@ -25,7 +30,12 @@ const dismiss = () => {
   }, 450);
 };
 
-const startAnimation = () => {
+const startAnimation = (force = false) => {
+  if (sessionStorage.getItem('zonemart_intro_shown') === 'true' && !force) {
+    isVisible.value = false;
+    emit('complete');
+    return;
+  }
   isVisible.value = true;
   isFadingOut.value = false;
   animationStage.value = 'stage-hidden';
@@ -62,10 +72,18 @@ const onKeydown = (e: KeyboardEvent) => {
   }
 };
 
+const handleReplayIntro = () => {
+  startAnimation(true);
+};
+
 onMounted(() => {
-  startAnimation();
+  if (hasShown) {
+    emit('complete');
+  } else {
+    startAnimation(false);
+  }
   window.addEventListener('keydown', onKeydown);
-  window.addEventListener('zonemart:replay-intro', startAnimation);
+  window.addEventListener('zonemart:replay-intro', handleReplayIntro);
 });
 
 onUnmounted(() => {
@@ -75,7 +93,7 @@ onUnmounted(() => {
   if (shineTimer) clearTimeout(shineTimer);
   if (dismissTimer) clearTimeout(dismissTimer);
   window.removeEventListener('keydown', onKeydown);
-  window.removeEventListener('zonemart:replay-intro', startAnimation);
+  window.removeEventListener('zonemart:replay-intro', handleReplayIntro);
 });
 </script>
 

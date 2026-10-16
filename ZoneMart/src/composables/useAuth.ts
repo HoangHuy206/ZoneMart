@@ -182,8 +182,18 @@ export function useAuth() {
     localStorage.removeItem('zonemart_user');
     localStorage.removeItem('isLoggedIn');
     localStorage.removeItem('userRole');
+    localStorage.removeItem('role');
+    localStorage.removeItem('sellerRegisteredEmail');
+    localStorage.removeItem('sellerRegisteredPassword');
     try {
-      sessionStorage.removeItem('zonemart_ai_chat_history');
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k && k.startsWith('zonemart_ai_chat_history')) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach((k) => sessionStorage.removeItem(k));
     } catch {}
     try {
       const keysToRemove: string[] = [];
@@ -205,6 +215,15 @@ export function useAuth() {
         new CustomEvent('zonemart:user-updated', { detail: null }),
       );
       window.dispatchEvent(new CustomEvent('zonemart:ai-chat-reset'));
+      window.dispatchEvent(
+        new CustomEvent('zonemart:toast', {
+          detail: {
+            type: 'info',
+            title: 'Đăng Xuất',
+            message: 'Đã đăng xuất tài khoản an toàn khỏi ZoneMart!',
+          },
+        }),
+      );
     }
   };
 

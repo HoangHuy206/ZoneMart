@@ -291,13 +291,13 @@ const triggerRealTimeToast = (msg: string) => {
 
 let unsubscribeRealTimeStatus: (() => void) | null = null;
 
-// Hiệu ứng Loading mô phỏng tải dữ liệu chân thực và mượt mà
-const fetchOrdersWithLoading = (delayMs: number = 650) => {
+// Tải dữ liệu đơn hàng ngay lập tức và hiệu ứng mượt mà
+const fetchOrdersWithLoading = (delayMs: number = 220) => {
+  loadBuyerOrders();
   isLoading.value = true;
   if (loadingTimer) clearTimeout(loadingTimer);
 
   loadingTimer = setTimeout(() => {
-    loadBuyerOrders();
     isLoading.value = false;
   }, delayMs);
 };

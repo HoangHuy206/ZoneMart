@@ -32,12 +32,28 @@ router.beforeEach((to, _from, next) => {
   // Xác thực trạng thái đăng nhập từ localStorage
   let isLoggedIn = false;
   let userRole = 'guest';
+  let currentUserObj: any = null;
+
+  // Ưu tiên cao nhất: Khi có tín hiệu đăng xuất, dọn sạch triệt để và cho phép vào trang Login
+  if (to.path === '/login' && (to.query.logout === 'success' || to.query.logout === 'true')) {
+    try {
+      localStorage.removeItem('currentUser');
+      localStorage.removeItem('zonemart_user');
+      localStorage.removeItem('isLoggedIn');
+      localStorage.removeItem('userRole');
+      localStorage.removeItem('role');
+      localStorage.removeItem('sellerRegisteredEmail');
+      localStorage.removeItem('sellerRegisteredPassword');
+    } catch {}
+    return next();
+  }
 
   try {
-    const savedUser = localStorage.getItem('currentUser');
+    const savedUser = localStorage.getItem('currentUser') || localStorage.getItem('zonemart_user');
     if (savedUser) {
       const parsed = JSON.parse(savedUser);
       if (parsed) {
+        currentUserObj = parsed;
         isLoggedIn = true;
         const pRole = (parsed.role || parsed.primaryRole || '').toLowerCase().trim();
         const pEmail = (parsed.phoneEmail || parsed.email || '').toLowerCase().trim();
@@ -85,10 +101,52 @@ router.beforeEach((to, _from, next) => {
       });
     }
 
+    // Danh sách các vai trò hợp lệ mà người dùng đang sở hữu (hỗ trợ tài khoản nâng cấp đa vai trò)
+    const effectiveRoles = [normalizedUserRole];
+    if (['khách hàng', 'khach hang', 'customer', 'user', 'buyer', 'khach_hang'].includes(normalizedUserRole)) {
+      effectiveRoles.push('buyer');
+    }
+    // Mọi tài khoản đã đăng nhập đều có tư cách người mua hàng trên ZoneMart
+    if (isLoggedIn) {
+      effectiveRoles.push('buyer');
+    }
+    if (currentUserObj?.isSeller === true || currentUserObj?.sellerStatus === 'Approved') {
+      effectiveRoles.push('seller');
+    }
+    if (currentUserObj?.isShipper === true || currentUserObj?.shipperStatus === 'Approved') {
+      effectiveRoles.push('shipper');
+    }
+    if (normalizedUserRole === 'admin') {
+      effectiveRoles.push('seller', 'shipper', 'buyer');
+    }
+
+    const hasAccess = allowedRoles.some((r) => effectiveRoles.includes(r));
+
     // Nếu đã đăng nhập nhưng SAI QUYỀN VAI TRÒ -> BÁO LỖI LUÔN, CHUYỂN ĐẾN TRANG 403
-    if (!allowedRoles.includes(normalizedUserRole)) {
-      console.warn(`[RBAC] Truy cập bị từ chối vào ${to.path}. Vai trò hiện tại: [${normalizedUserRole}], yêu cầu: [${allowedRoles.join(', ')}]`);
+    if (!hasAccess) {
+      console.warn(`[RBAC] Truy cập bị từ chối vào ${to.path}. Vai trò hiện tại: [${effectiveRoles.join(', ')}], yêu cầu: [${allowedRoles.join(', ')}]`);
       return next({ path: '/403' });
+    }
+
+    // Nếu người dùng có quyền Seller và đang vào route Seller, tự động đồng bộ vai trò phiên làm việc sang seller
+    if (allowedRoles.includes('seller') && normalizedUserRole !== 'seller' && normalizedUserRole !== 'admin') {
+      if (currentUserObj) {
+        currentUserObj.role = 'seller';
+        currentUserObj.isSeller = true;
+        localStorage.setItem('currentUser', JSON.stringify(currentUserObj));
+        localStorage.setItem('zonemart_user', JSON.stringify(currentUserObj));
+        localStorage.setItem('userRole', 'seller');
+      }
+    }
+    // Tương tự cho shipper
+    if (allowedRoles.includes('shipper') && normalizedUserRole !== 'shipper' && normalizedUserRole !== 'admin') {
+      if (currentUserObj) {
+        currentUserObj.role = 'shipper';
+        currentUserObj.isShipper = true;
+        localStorage.setItem('currentUser', JSON.stringify(currentUserObj));
+        localStorage.setItem('zonemart_user', JSON.stringify(currentUserObj));
+        localStorage.setItem('userRole', 'shipper');
+      }
     }
   }
 

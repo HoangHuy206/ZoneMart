@@ -74,6 +74,7 @@ export const binhRoutes: RouteRecordRaw[] = [
   {
     path: '/shipper',
     name: 'Shipper',
+    alias: ['/shipper-dashboard'],
     component: () => import('../../views/binh/ShipperView.vue'),
     meta: {
       title: 'Cổng Tài Xế Shipper - ZoneMart',
@@ -84,8 +85,14 @@ export const binhRoutes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/shipper-dashboard',
+    name: 'ShipperDashboardRedirect',
+    redirect: '/shipper',
+  },
+  {
     path: '/seller',
     name: 'SellerDashboard',
+    alias: ['/seller-dashboard'],
     component: () => import('../../views/binh/SellerDashboardView.vue'),
     meta: {
       title: 'Kênh Quản Lý Bán Hàng - ZoneMart Seller',
@@ -94,6 +101,11 @@ export const binhRoutes: RouteRecordRaw[] = [
       hideHeader: true,
       hideFooter: true,
     },
+  },
+  {
+    path: '/seller-dashboard',
+    name: 'SellerDashboardRedirect',
+    redirect: '/seller',
   },
   {
     path: '/admin',

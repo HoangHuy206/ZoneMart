@@ -167,11 +167,9 @@ const categories = computed(() => {
       !q ||
       p.name.toLowerCase().includes(q) ||
       p.categoryName.toLowerCase().includes(q) ||
-      p.storeName.toLowerCase().includes(q) ||
       (p.description && p.description.toLowerCase().includes(q)) ||
       removeVietnameseTones(p.name).includes(qNoTone) ||
       removeVietnameseTones(p.categoryName).includes(qNoTone) ||
-      removeVietnameseTones(p.storeName).includes(qNoTone) ||
       (p.description && removeVietnameseTones(p.description).includes(qNoTone));
 
     const matchDistance = p.distanceKm <= maxRadiusKm.value;
@@ -204,11 +202,9 @@ const totalMatchesWithoutCategory = computed(() => {
       !q ||
       p.name.toLowerCase().includes(q) ||
       p.categoryName.toLowerCase().includes(q) ||
-      p.storeName.toLowerCase().includes(q) ||
       (p.description && p.description.toLowerCase().includes(q)) ||
       removeVietnameseTones(p.name).includes(qNoTone) ||
       removeVietnameseTones(p.categoryName).includes(qNoTone) ||
-      removeVietnameseTones(p.storeName).includes(qNoTone) ||
       (p.description && removeVietnameseTones(p.description).includes(qNoTone));
 
     const matchDistance = p.distanceKm <= maxRadiusKm.value;
@@ -232,11 +228,9 @@ const filteredProducts = computed(() => {
       !q ||
       p.name.toLowerCase().includes(q) ||
       p.categoryName.toLowerCase().includes(q) ||
-      p.storeName.toLowerCase().includes(q) ||
       (p.description && p.description.toLowerCase().includes(q)) ||
       removeVietnameseTones(p.name).includes(qNoTone) ||
       removeVietnameseTones(p.categoryName).includes(qNoTone) ||
-      removeVietnameseTones(p.storeName).includes(qNoTone) ||
       (p.description && removeVietnameseTones(p.description).includes(qNoTone));
 
     const matchDistance = p.distanceKm <= maxRadiusKm.value;
@@ -282,13 +276,7 @@ const filteredStores = computed<CatalogStore[]>(() => {
         ? s.categoryName.toLowerCase().includes(q) ||
           removeVietnameseTones(s.categoryName).includes(qNoTone)
         : false;
-      const matchProduct = s.products.some(
-        (p) =>
-          p.name.toLowerCase().includes(q) ||
-          p.categoryName.toLowerCase().includes(q) ||
-          removeVietnameseTones(p.name).includes(qNoTone)
-      );
-      return matchName || matchAddress || matchCategory || matchProduct;
+      return matchName || matchAddress || matchCategory;
     });
   }
 
@@ -413,20 +401,6 @@ const resetFilters = () => {
             </p>
 
             <div class="spotlight-search-bar">
-              <!-- Nút chuyển đổi nhanh chế độ tìm ngay trên banner -->
-              <button
-                type="button"
-                class="spotlight-mode-pill"
-                :title="activeSearchTab === 'store' ? 'Đang tìm: Gian hàng. Bấm để đổi sang Sản phẩm' : 'Đang tìm: Sản phẩm. Bấm để đổi sang Gian hàng'"
-                @click="setSearchTab(activeSearchTab === 'product' ? 'store' : 'product')"
-              >
-                <i :class="activeSearchTab === 'store' ? 'bi bi-shop' : 'bi bi-box-seam-fill'"></i>
-                <span>{{ activeSearchTab === 'store' ? 'Gian hàng' : 'Sản phẩm' }}</span>
-                <i class="bi bi-arrow-left-right switch-icon"></i>
-              </button>
-
-              <div class="spotlight-search-divider"></div>
-
               <i class="bi bi-search lens-icon" aria-hidden="true"></i>
               <input
                 v-model="searchQuery"
@@ -443,7 +417,7 @@ const resetFilters = () => {
                 @click="searchQuery = ''"
                 title="Xóa tìm kiếm"
               >
-                <i class="bi bi-x-lg" aria-hidden="true"></i>
+                <i class="bi bi-x-circle-fill" aria-hidden="true"></i>
               </button>
             </div>
           </div>
@@ -730,18 +704,6 @@ const resetFilters = () => {
             </button>
           </div>
 
-          <!-- Gợi ý xem gian hàng nếu có gian hàng khớp -->
-          <div v-if="filteredStores.length > 0" class="empty-cross-action-box">
-            <p class="cross-hint-msg">
-              <i class="bi bi-info-circle-fill text-orange me-1"></i> Có <strong>{{ filteredStores.length }}</strong> gian hàng liên quan đến từ khóa này!
-            </p>
-            <button class="btn-switch-cross-tab" @click="setSearchTab('store')">
-              <i class="bi bi-shop me-1"></i>
-              <span>Xem các gian hàng ngay</span>
-              <i class="bi bi-arrow-right ms-1"></i>
-            </button>
-          </div>
-
           <div v-if="selectedCategory === 'all' || totalMatchesWithoutCategory === 0" class="mt-3">
             <button class="btn-restore-filters" @click="resetFilters">
               <i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i>
@@ -882,15 +844,17 @@ const resetFilters = () => {
    ========================================================================== */
 .product-catalog-page {
   width: 100%;
-  min-height: 100%;
-  background-color: #f8fafc;
-  color: #0f172a;
-  padding: 32px 24px 80px 24px;
+  min-height: calc(100vh - 70px);
+  background-color: #faf7f2;
+  color: #2b1b14;
+  padding: 16px clamp(16px, 3.5vw, 48px) 80px clamp(16px, 3.5vw, 48px);
+  box-sizing: border-box;
 }
 
 .catalog-container {
-  max-width: 1340px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
 }
 
 /* Toast Notification */
@@ -924,45 +888,47 @@ const resetFilters = () => {
 }
 
 /* ==========================================================================
-   1. BENTO SPOTLIGHT (ASYMMETRICAL 65/35)
+   1. BENTO SPOTLIGHT
    ========================================================================== */
 .bento-spotlight-section {
   display: grid;
-  grid-template-columns: 1.6fr 1fr;
-  gap: 24px;
-  margin-bottom: 36px;
+  grid-template-columns: 1.45fr 1fr;
+  gap: 20px;
+  margin-bottom: 28px;
+  align-items: stretch;
 }
 
 .bento-card-main {
   background: #ffffff;
-  border: none;
-  border-radius: 28px;
-  padding: 36px;
+  border: 1.5px solid #ebdcd3;
+  border-radius: 20px;
+  padding: 28px 32px;
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr;
+  grid-template-columns: 1.25fr 0.95fr;
   gap: 24px;
   align-items: center;
-  box-shadow: 0 4px 25px -3px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 4px 18px rgba(43, 27, 20, 0.04);
 }
 
 .live-gps-pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: #eff6ff;
-  color: #2563eb;
-  padding: 5px 14px;
+  background: #fff8f3;
+  color: #d85a2a;
+  border: 1px solid #fed7aa;
+  padding: 4px 12px;
   border-radius: 20px;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.5px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .gps-dot {
   width: 8px;
   height: 8px;
-  background-color: #2563eb;
+  background-color: #d85a2a;
   border-radius: 50%;
   animation: pulse-ring 1.8s infinite;
 }
@@ -974,16 +940,16 @@ const resetFilters = () => {
 }
 
 .spotlight-title {
-  margin: 0 0 12px 0;
-  font-size: 32px;
+  margin: 0 0 10px 0;
+  font-size: 30px;
   font-weight: 900;
   line-height: 1.2;
-  letter-spacing: -0.6px;
-  color: #0f172a;
+  letter-spacing: -0.5px;
+  color: #2b1b14;
 }
 
 .text-gradient-warm {
-  background: linear-gradient(90deg, #ea580c 0%, #f97316 100%);
+  background: linear-gradient(90deg, #d85a2a 0%, #ea580c 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -992,63 +958,29 @@ const resetFilters = () => {
   font-size: 13px;
   line-height: 1.6;
   color: #64748b;
-  margin: 0 0 22px 0;
+  margin: 0 0 18px 0;
 }
 
 .spotlight-search-bar {
   display: flex;
   align-items: center;
   background: #ffffff;
-  border-radius: 18px;
-  padding: 6px 16px 6px 8px;
-  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 8px 14px;
+  border: 1.5px solid #ebdcd3;
   position: relative;
   transition: all 0.25s ease;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 2px 10px rgba(43, 27, 20, 0.03);
 }
 
 .spotlight-search-bar:focus-within {
-  border-color: #ea580c;
-  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
-}
-
-.spotlight-mode-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
-  border-radius: 12px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 800;
-  color: #ea580c;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.spotlight-mode-pill:hover {
-  background: #ffedd5;
-  transform: translateY(-1px);
-}
-
-.spotlight-mode-pill .switch-icon {
-  font-size: 10px;
-  opacity: 0.6;
-}
-
-.spotlight-search-divider {
-  width: 1px;
-  height: 20px;
-  background: #cbd5e1;
-  margin: 0 10px 0 8px;
-  flex-shrink: 0;
+  border-color: #d85a2a;
+  box-shadow: 0 0 0 3px rgba(216, 90, 42, 0.12);
 }
 
 .lens-icon {
   font-size: 16px;
-  color: #64748b;
+  color: #8c776c;
   margin-right: 10px;
 }
 
@@ -1057,68 +989,80 @@ const resetFilters = () => {
   border: none;
   background: transparent;
   outline: none;
-  font-size: 13px;
-  color: #0f172a;
+  font-size: 13.5px;
+  color: #2b1b14;
 }
 
 .spotlight-input::placeholder {
-  color: #94a3b8;
+  color: #a49187;
 }
 
 .btn-clear-search {
   background: none;
   border: none;
   font-size: 14px;
-  color: #94a3b8;
+  color: #a49187;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+}
+.btn-clear-search:hover {
+  color: #d85a2a;
 }
 
 .bento-visual-side {
   position: relative;
-  height: 220px;
+  height: 100%;
+  min-height: 200px;
+  max-height: 250px;
+  border-radius: 16px;
+  overflow: hidden;
 }
 
 .bento-photo {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 20px;
+  border-radius: 16px;
   border: none;
 }
 
 .store-floating-tag {
   position: absolute;
-  bottom: 14px;
-  left: 14px;
-  background: rgba(15, 23, 42, 0.9);
+  bottom: 12px;
+  left: 12px;
+  background: rgba(43, 27, 20, 0.88);
   backdrop-filter: blur(10px);
   color: #ffffff;
-  padding: 8px 14px;
-  border-radius: 14px;
+  padding: 6px 12px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 12px;
+  gap: 8px;
+  font-size: 11.5px;
 }
 .store-floating-tag .icon {
-  font-size: 18px;
+  font-size: 16px;
 }
 .store-floating-tag strong {
   display: block;
 }
 .store-floating-tag small {
-  color: #94a3b8;
+  color: #cbd5e1;
 }
 
 /* Sub bento card */
 .bento-card-sub {
-  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
-  border: none;
-  border-radius: 28px;
-  padding: 32px;
+  background: linear-gradient(135deg, #fffaf5 0%, #ffeedd 100%);
+  border: 1.5px solid #eed8cb;
+  border-radius: 20px;
+  padding: 26px 28px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  box-shadow: 0 4px 18px rgba(43, 27, 20, 0.04);
 }
 
 .sub-badge-speed {
@@ -1126,8 +1070,9 @@ const resetFilters = () => {
   align-self: flex-start;
   font-size: 11px;
   font-weight: 800;
-  color: #ea580c;
+  color: #d85a2a;
   background: #ffffff;
+  border: 1px solid #fed7aa;
   padding: 4px 12px;
   border-radius: 12px;
   margin-bottom: 12px;
@@ -1137,22 +1082,22 @@ const resetFilters = () => {
   margin: 0 0 8px 0;
   font-size: 20px;
   font-weight: 800;
-  color: #0f172a;
+  color: #2b1b14;
 }
 
 .sub-card-desc {
   font-size: 13px;
   line-height: 1.5;
-  color: #475569;
-  margin: 0 0 20px 0;
+  color: #5d4a40;
+  margin: 0 0 16px 0;
 }
 
 /* Radius Slider Box */
 .radius-slider-box {
   background: #ffffff;
   padding: 16px;
-  border-radius: 18px;
-  border: none;
+  border-radius: 16px;
+  border: 1px solid #eed8cb;
 }
 
 .radius-slider-header {
@@ -1195,17 +1140,17 @@ const resetFilters = () => {
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 24px;
+  gap: 14px;
+  margin-bottom: 18px;
 }
 
 .search-mode-tabs-wrap {
   display: inline-flex;
   background: #ffffff;
-  padding: 6px;
-  border-radius: 20px;
-  border: 1.5px solid #e2e8f0;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+  padding: 5px;
+  border-radius: 16px;
+  border: 1.5px solid #ebdcd3;
+  box-shadow: 0 2px 10px rgba(43, 27, 20, 0.03);
   gap: 6px;
 }
 
@@ -1215,9 +1160,9 @@ const resetFilters = () => {
   gap: 8px;
   border: none;
   background: transparent;
-  padding: 10px 22px;
-  border-radius: 14px;
-  font-size: 14px;
+  padding: 8px 20px;
+  border-radius: 12px;
+  font-size: 13.5px;
   font-weight: 700;
   color: #64748b;
   cursor: pointer;
@@ -1225,19 +1170,19 @@ const resetFilters = () => {
 }
 
 .search-mode-tab-btn:hover {
-  color: #ea580c;
-  background: #fff7ed;
+  color: #d85a2a;
+  background: #fff8f3;
 }
 
 .search-mode-tab-btn.active {
-  background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+  background: #d85a2a;
   color: #ffffff;
-  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.3);
+  box-shadow: 0 4px 12px rgba(216, 90, 42, 0.25);
 }
 
 .tab-count-pill {
   font-size: 11px;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 20px;
   background: #f1f5f9;
   color: #64748b;
@@ -1260,9 +1205,9 @@ const resetFilters = () => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: #fff7ed;
-  color: #c2410c;
-  border: 1px solid #ffedd5;
+  background: #fff8f3;
+  color: #d85a2a;
+  border: 1px solid #fed7aa;
   padding: 6px 14px;
   border-radius: 50px;
   font-size: 12.5px;
@@ -1412,8 +1357,8 @@ const resetFilters = () => {
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: 14px;
+  margin-bottom: 18px;
 }
 
 .category-pills-row {
@@ -1424,35 +1369,37 @@ const resetFilters = () => {
 
 .cat-pill-btn {
   background: #ffffff;
-  border: none;
-  border-radius: 14px;
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #475569;
+  border: 1px solid #ebdcd3;
+  border-radius: 12px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #4a3830;
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  gap: 7px;
+  box-shadow: 0 2px 6px rgba(43, 27, 20, 0.02);
   transition: all 0.2s ease;
 }
 
 .cat-pill-btn:hover {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: #fff8f3;
+  color: #d85a2a;
+  border-color: #f08c5c;
 }
 
 .cat-pill-btn.active {
-  background: #ea580c;
+  background: #d85a2a;
   color: #ffffff;
-  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.25);
+  border-color: #d85a2a;
+  box-shadow: 0 4px 12px rgba(216, 90, 42, 0.22);
 }
 
 .cat-pill-count {
-  font-size: 11px;
-  background: rgba(0, 0, 0, 0.08);
-  padding: 2px 6px;
+  font-size: 10.5px;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 6px;
   border-radius: 10px;
 }
 
@@ -1470,20 +1417,22 @@ const resetFilters = () => {
 .sort-label {
   font-size: 13px;
   font-weight: 600;
-  color: #64748b;
+  color: #7b6960;
 }
 
 .sort-dropdown-select {
   background: #ffffff;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 12px;
+  border: 1px solid #ebdcd3;
+  padding: 7px 14px;
+  border-radius: 10px;
   font-size: 13px;
   font-weight: 700;
-  color: #0f172a;
+  color: #2b1b14;
   outline: none;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+.sort-dropdown-select:focus {
+  border-color: #d85a2a;
 }
 
 /* Meta status line */
@@ -2100,24 +2049,109 @@ const resetFilters = () => {
   }
 }
 
-@media (max-width: 600px) {
-  .bento-card-main {
-    grid-template-columns: 1fr;
-    padding: 24px;
+@media (max-width: 768px) {
+  .product-catalog-page {
+    padding: 12px 14px 60px 14px;
   }
-  .bento-visual-side {
-    height: 160px;
+  .search-mode-tabs-wrap {
+    width: 100%;
+    display: flex;
   }
-  .products-tactile-grid,
-  .stores-tactile-grid {
-    grid-template-columns: 1fr;
+  .search-mode-tab-btn {
+    flex: 1;
+    justify-content: center;
+    padding: 9px 12px;
   }
   .filter-controls-bar {
     flex-direction: column;
     align-items: stretch;
+    gap: 12px;
   }
   .sort-action-group {
     justify-content: space-between;
+    width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .bento-card-main {
+    grid-template-columns: 1fr;
+    padding: 18px 16px;
+    gap: 16px;
+  }
+  .bento-visual-side {
+    height: 150px;
+    min-height: 150px;
+  }
+  .bento-card-sub {
+    padding: 18px 16px;
+  }
+  .spotlight-title {
+    font-size: 22px;
+    line-height: 1.25;
+  }
+  .spotlight-desc {
+    font-size: 12.5px;
+    margin-bottom: 12px;
+  }
+  .category-pills-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .category-pills-row::-webkit-scrollbar {
+    display: none;
+  }
+  .cat-pill-btn {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  .products-tactile-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .stores-tactile-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .product-card-media {
+    height: 120px;
+  }
+  .product-card-body {
+    padding: 10px 8px 8px 8px;
+  }
+  .product-item-title {
+    font-size: 12px;
+    line-height: 1.35;
+    min-height: 32px;
+    margin-bottom: 3px;
+    -webkit-line-clamp: 2;
+  }
+  .product-rating-meta {
+    margin-bottom: 6px;
+    font-size: 10px;
+    gap: 4px;
+  }
+  .product-price-bottom-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .price-val {
+    font-size: 13.5px;
+  }
+  .old-price-val {
+    font-size: 10px;
+  }
+  .btn-add-tactile {
+    width: 100%;
+    justify-content: center;
+    padding: 6px 8px;
+    font-size: 11px;
+    border-radius: 8px;
   }
   .store-spotlight-card {
     flex-direction: column;

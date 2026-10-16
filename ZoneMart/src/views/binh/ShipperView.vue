@@ -68,6 +68,7 @@ const switchTab = (tab: 'map' | 'earnings' | 'trips' | 'profile') => {
   currentTab.value = tab;
   if (tab === 'map') {
     nextTick(() => {
+      window.scrollTo(0, 0);
       map?.invalidateSize();
     });
   }
@@ -99,19 +100,21 @@ const loadDriverProfile = async () => {
   if (savedUserStr) {
     try {
       const u = JSON.parse(savedUserStr);
-      if (u.fullName) driverProfile.fullName = u.fullName;
+      const resolvedName = u.fullName || u.name || u.displayName || (u.shipperDetails && (u.shipperDetails.fullName || u.shipperDetails.name));
+      if (resolvedName) driverProfile.fullName = resolvedName;
       if (u.phoneEmail) driverProfile.phoneEmail = u.phoneEmail;
-      if (u.avatarUrl) driverProfile.avatarUrl = u.avatarUrl;
+      const resolvedAvatar = u.avatarUrl || u.avatar || (u.shipperDetails && (u.shipperDetails.avatarUrl || u.shipperDetails.avatar));
+      if (resolvedAvatar) driverProfile.avatarUrl = resolvedAvatar;
 
       if (u.shipperDetails) {
-        if (u.shipperDetails.fullName) driverProfile.fullName = u.shipperDetails.fullName;
+        if (u.shipperDetails.fullName || u.shipperDetails.name) driverProfile.fullName = u.shipperDetails.fullName || u.shipperDetails.name;
         if (u.shipperDetails.licensePlate) driverProfile.licensePlate = u.shipperDetails.licensePlate;
         if (u.shipperDetails.vehicleModel) driverProfile.vehicleModel = u.shipperDetails.vehicleModel;
         if (u.shipperDetails.vehicleType) driverProfile.vehicleType = u.shipperDetails.vehicleType;
         if (u.shipperDetails.operatingArea) driverProfile.operatingArea = u.shipperDetails.operatingArea;
         if (u.shipperDetails.shipperCode) driverProfile.shipperCode = u.shipperDetails.shipperCode;
         if (u.shipperDetails.status) driverProfile.status = u.shipperDetails.status;
-        if (u.shipperDetails.avatarUrl) driverProfile.avatarUrl = u.shipperDetails.avatarUrl;
+        if (u.shipperDetails.avatarUrl || u.shipperDetails.avatar) driverProfile.avatarUrl = u.shipperDetails.avatarUrl || u.shipperDetails.avatar;
       }
 
       // Query API endpoint để đồng bộ thông tin mới nhất từ CSDL MongoDB Atlas
@@ -359,22 +362,27 @@ const initMap = () => {
 
   map = L.map("shipperMap", {
     center: [driverLocation.value.lat, driverLocation.value.lng],
-    zoom: 15,
+    zoom: 13.8,
     zoomControl: false,
     attributionControl: false
   });
 
   updateMapLayers();
 
-  // Vòng bán kính quét đơn Google Style
+  // Vòng bán kính quét đơn 3km Google Style
   radiusCircle = L.circle([driverLocation.value.lat, driverLocation.value.lng], {
-    radius: 5000,
-    color: isOnline.value ? "#1a73e8" : "#94a3b8",
-    fillColor: isOnline.value ? "#4285f4" : "#94a3b8",
-    fillOpacity: 0.08,
-    weight: 2,
-    dashArray: "6, 6"
+    radius: 3000,
+    color: isOnline.value ? "#2563eb" : "#94a3b8",
+    fillColor: isOnline.value ? "#3b82f6" : "#94a3b8",
+    fillOpacity: isOnline.value ? 0.12 : 0.05,
+    weight: 2.5,
+    dashArray: isOnline.value ? "8, 6" : "6, 6"
   }).addTo(map);
+
+  radiusCircle.bindTooltip("", {
+    permanent: false,
+    direction: "top"
+  });
 
   // Ghim vị trí tài xế
   driverMarker = L.marker([driverLocation.value.lat, driverLocation.value.lng], {
@@ -546,7 +554,7 @@ const locateAndTrackDriver = (isSilent = false) => {
         `);
       }
 
-      // Cập nhật vòng bán kính 3km quanh tài xế
+      // Cập nhật vòng bán kính 5km quanh tài xế
       if (radiusCircle) {
         radiusCircle.setLatLng([lat, lng]);
       }
@@ -556,14 +564,15 @@ const locateAndTrackDriver = (isSilent = false) => {
         if (accuracyCircle) map.removeLayer(accuracyCircle);
         accuracyCircle = L.circle([lat, lng], {
           radius: Math.max(accuracy, 20),
-          color: "#1a73e8",
-          fillColor: "#4285f4",
-          fillOpacity: 0.12,
-          weight: 1
+          color: "#60a5fa",
+          fillColor: "#93c5fd",
+          fillOpacity: 0.25,
+          weight: 1.5
         }).addTo(map);
 
-        // Di chuyển camera mượt mà đến vị trí thực tế
-        map.flyTo([lat, lng], 16, {
+        // Di chuyển camera mượt mà đến vị trí thực tế, zoom 13.8 để bao quát trọn vẹn vòng quét 3km
+        const targetZoom = (activeOrder.value && activeOrder.value.status !== 'delivered') ? 15 : 13.8;
+        map.flyTo([lat, lng], targetZoom, {
           animate: true,
           duration: 1.2
         });
@@ -593,7 +602,7 @@ const locateAndTrackDriver = (isSilent = false) => {
       triggerToast(errorMsg);
 
       if (map) {
-        map.setView([driverLocation.value.lat, driverLocation.value.lng], 15);
+        map.setView([driverLocation.value.lat, driverLocation.value.lng], 13.8);
         driverMarker?.openPopup();
       }
     },
@@ -690,16 +699,16 @@ const triggerIncomingOrderCheck = (order: RealtimeOrder) => {
 
   incomingDistance.value = dist;
 
-  // QUY TẮC: Trong vòng bán kính 5km thì LẬP TỨC NỔ ĐƠN, ngược lại nếu > 5km thì KHÔNG NỔ ĐƠN
-  if (dist <= 5.0) {
-    console.log(`[ShipperView] Đơn #${order.id} nằm trong bán kính 5km (${dist} km) -> NỔ ĐƠN!`);
+  // QUY TẮC: Trong vòng bán kính 3km thì LẬP TỨC NỔ ĐƠN, ngược lại nếu > 3km thì KHÔNG NỔ ĐƠN
+  if (dist <= 3.0) {
+    console.log(`[ShipperView] Đơn #${order.id} nằm trong bán kính 3km (${dist} km) -> NỔ ĐƠN!`);
     incomingOrder.value = order;
     showIncomingModal.value = true;
     incomingCountdown.value = 30;
 
     // Phát chuông báo nổ đơn
     orderRealtimeService.playOrderAlertSound();
-    triggerToast(`🚨 NỔ ĐƠN HỎA TỐC! Quán cách bạn ${dist} km (Bán kính <= 5km)`);
+    triggerToast(`🚨 NỔ ĐƠN HỎA TỐC! Quán cách bạn ${dist} km (Bán kính <= 3km)`);
 
     if (incomingTimer) clearInterval(incomingTimer);
     incomingTimer = setInterval(() => {
@@ -711,21 +720,8 @@ const triggerIncomingOrderCheck = (order: RealtimeOrder) => {
       }
     }, 1000);
   } else {
-    console.log(`[ShipperView] Đơn nằm ngoài bán kính 5km (${dist} km) -> Bỏ qua, không nổ đơn.`);
-    triggerToast(`ℹ️ Có đơn mới ngoài bán kính 5km (${dist} km) - Không nổ đơn.`);
-  }
-};
-
-// Kiểm tra danh sách đơn hàng đã được quán xác nhận đang chờ tài xế
-const checkForPendingConfirmedOrders = () => {
-  if (!isOnline.value) return;
-  if (currentStep.value !== "idle" && currentStep.value !== "delivered") return;
-  const allOrders = orderRealtimeService.getAllOrders();
-  const pendingOrd = allOrders.find(
-    (o) => o.status === "confirmed" && !ignoredOrderIds.has(o.id)
-  );
-  if (pendingOrd) {
-    triggerIncomingOrderCheck(pendingOrd);
+    console.log(`[ShipperView] Đơn nằm ngoài bán kính 3km (${dist} km) -> Bỏ qua, không nổ đơn.`);
+    triggerToast(`ℹ️ Có đơn mới ngoài bán kính 3km (${dist} km) - Không nổ đơn.`);
   }
 };
 
@@ -734,21 +730,31 @@ const toggleOnline = () => {
   isOnline.value = !isOnline.value;
   if (isOnline.value) {
     currentTab.value = 'map';
-    triggerToast("🟢 Đã BẬT nhận đơn! Đang quét GPS định vị vị trí của bạn...");
+    triggerToast("🟢 Đã BẬT nhận đơn! Đang quét radar trong bán kính 3km...");
     if (radiusCircle) {
-      radiusCircle.setStyle({ color: "#1a73e8", fillColor: "#4285f4" });
+      radiusCircle.setStyle({
+        color: "#2563eb",
+        fillColor: "#3b82f6",
+        fillOpacity: 0.12,
+        weight: 2.5,
+        dashArray: "8, 6"
+      });
+      radiusCircle.bringToBack();
     }
     // Tự động định vị ngay lập tức vị trí thực tế của người dùng
     locateAndTrackDriver(false);
     startLocationWatch();
-    setTimeout(() => {
-      checkForPendingConfirmedOrders();
-    }, 500);
   } else {
     stopLocationWatch();
     triggerToast("🔴 Đã TẮT nhận đơn. Bạn đang ở trạng thái tạm nghỉ.");
     if (radiusCircle) {
-      radiusCircle.setStyle({ color: "#94a3b8", fillColor: "#94a3b8" });
+      radiusCircle.setStyle({
+        color: "#94a3b8",
+        fillColor: "#94a3b8",
+        fillOpacity: 0.05,
+        weight: 1.5,
+        dashArray: "6, 6"
+      });
     }
     if (accuracyCircle && map) {
       map.removeLayer(accuracyCircle);
@@ -853,11 +859,27 @@ watch(isOnline, () => {
   renderOrderOnMap();
 });
 
+// Xử lý Đăng Xuất An Toàn cho Tài Xế
+const handleLogout = () => {
+  if (isOnline.value) {
+    isOnline.value = false;
+  }
+  auth.logout();
+  toast.success("Đã đăng xuất tài khoản tài xế an toàn!", "Đăng Xuất");
+  router.push({ path: "/login", query: { logout: "success" } });
+};
+
 onMounted(() => {
   const role = auth.currentRole.value;
-  if (role !== "shipper" && role !== "admin") {
+  const rawUser = auth.currentUser.value as any;
+  const hasShipperAccess = role === "shipper" || role === "admin" || rawUser?.isShipper === true || rawUser?.shipperStatus === "Approved";
+  if (!hasShipperAccess) {
     router.replace("/403");
     return;
+  }
+  if (role !== "shipper" && role !== "admin" && (rawUser?.isShipper || rawUser?.shipperStatus === "Approved")) {
+    auth.updateUser({ role: 'shipper' });
+    localStorage.setItem('userRole', 'shipper');
   }
 
   // Kiểm tra tính hợp lệ của tài khoản với backend (nếu tài khoản đã bị Admin xóa)
@@ -891,17 +913,20 @@ onMounted(() => {
     }
   });
 
+  // Khóa cuộn trang toàn cục để thanh menu và nút công tắc trên di động không bao giờ bị trôi/mất
+  document.documentElement.style.overflow = 'hidden';
+  document.body.style.overflow = 'hidden';
+
   // Nếu đang mở hoạt động sẵn, tự động định vị vị trí người dùng & kiểm tra đơn chờ
   if (isOnline.value) {
     locateAndTrackDriver(true);
     startLocationWatch();
-    setTimeout(() => {
-      checkForPendingConfirmedOrders();
-    }, 600);
   }
 });
 
 onUnmounted(() => {
+  document.documentElement.style.overflow = '';
+  document.body.style.overflow = '';
   if (incomingTimer) clearInterval(incomingTimer);
   if (unsubscribeOrderDispatch) unsubscribeOrderDispatch();
   if (unsubscribeStatusChanged) unsubscribeStatusChanged();
@@ -931,8 +956,8 @@ onUnmounted(() => {
               <i class="bi bi-bell-fill"></i>
             </div>
             <div class="incoming-title-box">
-              <h3>🚨 NỔ ĐƠN HỎA TỐC BÁN KÍNH 5KM!</h3>
-              <p>Quán cách bạn <strong>{{ incomingDistance }} km</strong> (Trong vòng bán kính 5km)</p>
+              <h3>🚨 NỔ ĐƠN HỎA TỐC BÁN KÍNH 3KM!</h3>
+              <p>Quán cách bạn <strong>{{ incomingDistance }} km</strong> (Trong vòng bán kính 3km)</p>
             </div>
             <div class="countdown-badge">
               <i class="bi bi-stopwatch"></i> {{ incomingCountdown }}s
@@ -1010,7 +1035,7 @@ onUnmounted(() => {
             <i class="bi bi-power"></i>
           </div>
           <h3>Bạn Đang Tạm Nghỉ</h3>
-          <p>Nhấn nút <strong>"BẬT HOẠT ĐỘNG"</strong> ở phía dưới để kích hoạt định vị GPS và nhận đơn hỏa tốc 5km.</p>
+          <p>Nhấn nút <strong>"BẬT HOẠT ĐỘNG"</strong> ở phía dưới để kích hoạt định vị GPS và nhận đơn hỏa tốc 3km.</p>
           <button class="btn btn-primary btn-turn-online" @click="toggleOnline">
             <i class="bi bi-lightning-charge-fill"></i> Bật Hoạt Động Ngay
           </button>
@@ -1019,7 +1044,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 2. TOP FLOATING BAR (TRÊN CÙNG BẢN ĐỒ) -->
-    <header class="top-floating-bar" v-show="currentTab === 'map'">
+    <header class="top-floating-bar" v-if="currentTab === 'map'">
       <!-- Left: Driver Mini Pill -->
       <div class="driver-mini-pill" @click="switchTab('profile')" title="Xem chi tiết hồ sơ tài xế">
         <div class="driver-pill-avatar">
@@ -1033,7 +1058,7 @@ onUnmounted(() => {
             <span class="pill-rating"><i class="bi bi-star-fill text-warning"></i> 5.0</span>
           </div>
           <span class="pill-status-text">
-            {{ isOnline ? "Trực tuyến • Bán kính 5km" : "Ngoại tuyến • Tạm nghỉ" }}
+            {{ isOnline ? "Trực tuyến • 3km" : "Ngoại tuyến • Nghỉ" }}
           </span>
         </div>
       </div>
@@ -1082,16 +1107,26 @@ onUnmounted(() => {
         >
           <i class="bi bi-crosshair"></i>
         </button>
+
+        <!-- Nút Đăng Xuất Tài Xế -->
+        <button
+          class="map-action-btn btn-logout"
+          @click="handleLogout"
+          title="Đăng xuất khỏi tài khoản tài xế"
+        >
+          <i class="bi bi-box-arrow-right"></i>
+          <span class="action-label">Đăng xuất</span>
+        </button>
       </div>
     </header>
 
     <!-- 3. FLOATING ORDER / RADAR SCANNING CARD (NỔI TRÊN BẢN ĐỒ) -->
-    <div v-show="currentTab === 'map'" class="floating-mission-container">
+    <div v-if="currentTab === 'map'" class="floating-mission-container">
       <!-- Case A: Đang có đơn hàng hoạt động -->
       <div v-if="isOnline && currentStep !== 'idle' && currentStep !== 'delivered' && activeOrder" class="floating-order-card">
         <div class="f-order-header">
           <span class="f-order-badge">
-            <i class="bi bi-lightning-charge-fill"></i> HỎA TỐC 5KM
+            <i class="bi bi-lightning-charge-fill"></i> HỎA TỐC 3KM
           </span>
           <span class="f-order-fee">Thù lao: <strong>{{ activeOrder.shippingFee.toLocaleString('vi-VN') }} ₫</strong></span>
         </div>
@@ -1171,18 +1206,18 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- Case C: Đang trực tuyến quét đơn trong bán kính 3km -->
-      <div v-else-if="isOnline && currentStep === 'idle'" class="floating-radar-chip">
-        <span class="radar-dot-pulse"></span>
+      <!-- Case C: Đang tìm đơn (Radar quét đơn hỏa tốc 3km) -->
+      <div v-else-if="isOnline" class="floating-radar-chip">
+        <div class="radar-dot-pulse"></div>
         <div class="radar-info">
-          <strong>Đang quét đơn hàng trong bán kính 5km...</strong>
-          <small>Hệ thống tự động điều phối khi có khách đặt hỏa tốc</small>
+          <strong>Đang Quét Đơn Hỏa Tốc (3km)...</strong>
+          <small>Hệ thống tự động nổ chuông khi có quán xác nhận</small>
         </div>
       </div>
     </div>
 
     <!-- 4. NÚT CÔNG TẮC BẬT / TẮT HOẠT ĐỘNG (MASTER TOGGLE BUTTON) -->
-    <div v-show="currentTab === 'map'" class="floating-toggle-bar">
+    <div v-if="currentTab === 'map'" class="floating-toggle-bar">
       <button 
         type="button" 
         class="master-toggle-btn" 
@@ -1201,24 +1236,6 @@ onUnmounted(() => {
 
     <!-- 5. SLIDING OVERLAY PANEL CHO CÁC PHẦN: THU NHẬP / CUỐC XE / HỒ SƠ -->
     <div v-if="currentTab !== 'map'" class="sub-tab-panel-overlay">
-      <header class="panel-header">
-        <div class="panel-sub-tabs">
-          <button class="sub-tab-btn" :class="{ 'active': currentTab === 'earnings' }" @click="switchTab('earnings')">
-            <i class="bi bi-wallet2"></i> Thu Nhập
-          </button>
-          <button class="sub-tab-btn" :class="{ 'active': currentTab === 'trips' }" @click="switchTab('trips')">
-            <i class="bi bi-box-seam-fill"></i> Cuốc Xe <span class="tab-count-badge" v-if="tripHistory.length > 0">({{ tripHistory.length }})</span>
-          </button>
-          <button class="sub-tab-btn" :class="{ 'active': currentTab === 'profile' }" @click="switchTab('profile')">
-            <i class="bi bi-person-badge-fill"></i> Hồ Sơ & Cài Đặt
-          </button>
-        </div>
-        <button class="btn-close-panel" @click="switchTab('map')" title="Quay lại Bản đồ">
-          <i class="bi bi-x-lg"></i>
-          <span>Về Bản Đồ</span>
-        </button>
-      </header>
-
       <div class="panel-body-content">
         <!-- TAB 1: THU NHẬP -->
         <div v-if="currentTab === 'earnings'" class="tab-earnings-wrapper">
@@ -1330,6 +1347,7 @@ onUnmounted(() => {
         <!-- TAB 3: HỒ SƠ TÀI XẾ -->
         <div v-else-if="currentTab === 'profile'" class="tab-profile-wrapper">
           <div class="profile-card">
+            <!-- 1. Hàng thông tin đại diện -->
             <div class="profile-avatar-row">
               <div class="p-avatar">
                 <img v-if="driverProfile.avatarUrl" :src="driverProfile.avatarUrl" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />
@@ -1337,94 +1355,80 @@ onUnmounted(() => {
               </div>
               <div class="p-info">
                 <h3>{{ driverProfile.fullName }}</h3>
-                <p>Tài xế Hỏa Tốc ZoneMart • Mã ID: <b style="color: #0284C7;">#{{ driverProfile.shipperCode }}</b> • <i class="bi bi-star-fill text-warning"></i> 5.0</p>
+                <p>Tài xế Hỏa Tốc • Mã ID: <b style="color: #0284C7;">#{{ driverProfile.shipperCode }}</b> • <i class="bi bi-star-fill text-warning"></i> 5.0</p>
                 <span class="verified-badge"><i class="bi bi-patch-check-fill text-primary me-1"></i> Đã xác thực CCCD & Bằng lái</span>
               </div>
             </div>
 
+            <!-- 2. Lưới thông tin phương tiện & khu vực (Gọn gàng 2x2) -->
             <div class="profile-details-grid">
               <div class="detail-item">
-                <span class="dt-label">Phương tiện:</span>
+                <span class="dt-label">Phương tiện</span>
                 <strong>{{ driverProfile.vehicleModel || driverProfile.vehicleType || "Xe máy" }}</strong>
               </div>
               <div class="detail-item">
-                <span class="dt-label">Biển kiểm soát:</span>
+                <span class="dt-label">Biển số</span>
                 <strong>{{ driverProfile.licensePlate || "Chưa cập nhật" }}</strong>
               </div>
               <div class="detail-item">
-                <span class="dt-label">Khu vực hoạt động:</span>
-                <strong>{{ driverProfile.operatingArea || "Quận Cầu Giấy, Hà Nội (Bán kính 5km)" }}</strong>
+                <span class="dt-label">Khu vực</span>
+                <strong :title="driverProfile.operatingArea">{{ driverProfile.operatingArea ? (driverProfile.operatingArea.length > 28 ? driverProfile.operatingArea.slice(0, 25) + '...' : driverProfile.operatingArea) : "Quận Cầu Giấy (5km)" }}</strong>
               </div>
               <div class="detail-item">
-                <span class="dt-label">Trạng thái tài xế:</span>
-                <strong class="text-green">{{ driverProfile.status === "Approved" ? "Đã duyệt chính thức" : "Đang chờ Ban quản lý thẩm định (24h)" }}</strong>
+                <span class="dt-label">Trạng thái</span>
+                <strong class="text-green">{{ driverProfile.status === "Approved" ? "Đã duyệt" : "Chờ thẩm định" }}</strong>
               </div>
             </div>
 
-            <!-- Cài Đặt Sinh Trắc Học Face-ID cho Tài Xế -->
-            <div class="shipper-face-card">
-              <div class="face-card-header">
-                <div class="face-header-info">
-                  <div class="face-symbol-badge" :class="{ 'is-active': isFaceAuthEnabled }">
-                    <i class="bi bi-person-bounding-box"></i>
-                  </div>
-                  <div>
-                    <h4 class="face-section-title">Thiết Lập Face-ID Tài Xế</h4>
-                    <p class="face-section-desc">Bảo mật tài khoản tài xế bằng AI Face ID UniFace. Đăng nhập 1-chạm không cần mật khẩu.</p>
+            <!-- 3. Cài Đặt Sinh Trắc Học Face-ID (gọn gàng 1 khối duy nhất) -->
+            <div class="shipper-face-card-compact">
+              <div class="face-compact-left">
+                <div class="face-symbol-badge-sm" :class="{ 'is-active': isFaceAuthEnabled }">
+                  <i class="bi bi-person-bounding-box"></i>
+                </div>
+                <div class="face-text-group">
+                  <div class="face-title-sm">Bảo Mật AI Face-ID UniFace</div>
+                  <div class="face-desc-sm">
+                    <span v-if="isFaceAuthEnabled" class="text-success fw-bold">
+                      <i class="bi bi-shield-check"></i> Đã kích hoạt 1-chạm
+                    </span>
+                    <span v-else class="text-muted">
+                      Đăng nhập 1-chạm không mật khẩu
+                    </span>
                   </div>
                 </div>
-                <span v-if="isFaceAuthEnabled" class="face-status-chip active">
-                  <i class="bi bi-shield-check"></i> Đã kích hoạt
-                </span>
-                <span v-else class="face-status-chip inactive">
-                  <i class="bi bi-shield-slash"></i> Chưa kích hoạt
-                </span>
               </div>
-
-              <div class="face-auth-box" :class="{ 'is-active': isFaceAuthEnabled }">
-                <div class="face-info-left">
-                  <div class="face-symbol-icon" :class="{ 'symbol-active': isFaceAuthEnabled }">
-                    <i class="bi bi-camera-video-fill"></i>
-                  </div>
-                  <div>
-                    <div class="face-title-text">
-                      {{ isFaceAuthEnabled ? 'Đã liên kết khuôn mặt tài xế' : 'Chưa kích hoạt nhận diện khuôn mặt' }}
-                    </div>
-                    <div class="face-helper-text">
-                      <span v-if="isFaceAuthEnabled" class="text-success fw-bold">
-                        ✓ Sinh trắc học đã sẵn sàng (Kích hoạt: {{ faceRegisteredAt || 'Gần đây' }})
-                      </span>
-                      <span v-else class="text-muted">
-                        Quét 3D nhận diện khuôn mặt để bảo vệ tài khoản tài xế {{ driverProfile.fullName }}.
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="face-actions-right">
-                  <template v-if="isFaceAuthEnabled">
-                    <button type="button" class="btn-face-rescan" @click="openFaceRegisterModal" title="Quét cập nhật lại khuôn mặt">
-                      <i class="bi bi-arrow-clockwise me-1"></i> Quét Lại
-                    </button>
-                    <button type="button" class="btn-face-disable" :disabled="isDisablingFace" @click="handleDisableFace" title="Hủy kích hoạt Face ID">
-                      <i class="bi bi-x-circle me-1"></i> Tắt Face ID
-                    </button>
-                  </template>
-                  <template v-else>
-                    <button type="button" class="btn-face-activate" @click="openFaceRegisterModal">
-                      <i class="bi bi-camera-fill me-1"></i> Bật Face ID
-                    </button>
-                  </template>
-                </div>
+              <div class="face-compact-actions">
+                <template v-if="isFaceAuthEnabled">
+                  <button type="button" class="btn-face-rescan-sm" @click="openFaceRegisterModal" title="Quét cập nhật lại khuôn mặt">
+                    <i class="bi bi-arrow-clockwise"></i> Quét lại
+                  </button>
+                  <button type="button" class="btn-face-disable-sm" :disabled="isDisablingFace" @click="handleDisableFace" title="Hủy kích hoạt Face ID">
+                    <i class="bi bi-x-circle"></i> Tắt
+                  </button>
+                </template>
+                <template v-else>
+                  <button type="button" class="btn-face-activate-sm" @click="openFaceRegisterModal">
+                    <i class="bi bi-camera-fill me-1"></i> Bật Face ID
+                  </button>
+                </template>
               </div>
             </div>
 
-            <div class="profile-support-box">
-              <h4>Tổng Đài Hỗ Trợ Tài Xế 24/7</h4>
-              <p>Mọi sự cố giao hàng, khách không nhận, tai nạn trên đường hãy liên hệ ngay:</p>
-              <a href="tel:19006868" class="btn btn-call-support">
-                <i class="bi bi-telephone-fill"></i> Hotline: 1900 6868 (Miễn phí)
-              </a>
+            <!-- 4. Tổng đài hỗ trợ 24/7 (gọn gàng 1 dòng) -->
+            <a href="tel:19006868" class="compact-hotline-bar" title="Gọi tổng đài hỗ trợ tài xế">
+              <div class="hotline-left">
+                <i class="bi bi-headset hotline-icon"></i>
+                <span>Tổng đài hỗ trợ sự cố 24/7: <strong>1900 6868</strong></span>
+              </div>
+              <span class="hotline-badge-call"><i class="bi bi-telephone-outbound-fill me-1"></i> Gọi ngay</span>
+            </a>
+
+            <!-- 5. Nút Đăng Xuất Tài Xế Nổi Bật Dễ Thấy -->
+            <div class="profile-logout-box">
+              <button type="button" class="btn btn-shipper-logout" @click="handleLogout">
+                <i class="bi bi-box-arrow-right me-2"></i> ĐĂNG XUẤT TÀI KHOẢN TÀI XẾ
+              </button>
             </div>
           </div>
         </div>
@@ -1439,6 +1443,59 @@ onUnmounted(() => {
       :user-name="driverProfile.fullName || 'Tài Xế ZoneMart'"
       @success="handleFaceRegisterSuccess"
     />
+
+    <!-- 6. THANH ĐIỀU HƯỚNG ĐÁY MÀN HÌNH TRÊN ĐIỆN THOẠI (MOBILE BOTTOM NAVIGATION BAR) -->
+    <nav class="shipper-bottom-nav">
+      <button
+        type="button"
+        class="bottom-nav-item"
+        :class="{ active: currentTab === 'map' }"
+        @click="switchTab('map')"
+      >
+        <div class="bottom-nav-icon-wrap">
+          <i class="bi bi-map-fill"></i>
+        </div>
+        <span>Bản đồ</span>
+      </button>
+
+      <button
+        type="button"
+        class="bottom-nav-item"
+        :class="{ active: currentTab === 'trips' }"
+        @click="switchTab('trips')"
+      >
+        <div class="bottom-nav-icon-wrap">
+          <i class="bi bi-box-seam-fill"></i>
+          <span class="bottom-nav-badge" v-if="activeOrder">1</span>
+          <span class="bottom-nav-badge" v-else-if="tripHistory.length > 0">{{ tripHistory.length }}</span>
+        </div>
+        <span>Cuốc xe</span>
+      </button>
+
+      <button
+        type="button"
+        class="bottom-nav-item"
+        :class="{ active: currentTab === 'earnings' }"
+        @click="switchTab('earnings')"
+      >
+        <div class="bottom-nav-icon-wrap">
+          <i class="bi bi-wallet2"></i>
+        </div>
+        <span>Thu nhập</span>
+      </button>
+
+      <button
+        type="button"
+        class="bottom-nav-item"
+        :class="{ active: currentTab === 'profile' }"
+        @click="switchTab('profile')"
+      >
+        <div class="bottom-nav-icon-wrap">
+          <i class="bi bi-person-circle"></i>
+        </div>
+        <span>Tài khoản</span>
+      </button>
+    </nav>
   </div>
 </template>
 
@@ -1448,15 +1505,186 @@ onUnmounted(() => {
    ========================================================================== */
 .shipper-app-screen {
   position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100vh;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   background: #e5e3df;
   font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: #0f172a;
   user-select: none;
   z-index: 100;
+}
+
+/* Bottom Navigation Bar (Hiện ở cả máy tính & điện thoại) */
+.shipper-bottom-nav {
+  display: flex;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 58px;
+  background: #ffffff;
+  border-top: 1.5px solid #e2e8f0;
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.08);
+  z-index: 999;
+  align-items: center;
+  justify-content: space-around;
+  padding: 0 4px;
+}
+
+@media (min-width: 769px) {
+  /* 1. NÂNG CẤP THANH MENU TRÊN MÁY TÍNH TO, RÕ NÉT, DẠNG DOCK NỔI HIỆN ĐẠI */
+  .shipper-bottom-nav {
+    max-width: 560px;
+    height: 64px;
+    bottom: 16px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    border-radius: 20px;
+    border: 1.5px solid rgba(203, 213, 225, 0.9);
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 16px 40px -8px rgba(15, 23, 42, 0.18), 0 4px 12px rgba(0, 0, 0, 0.05);
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  .bottom-nav-item {
+    flex: 1;
+    max-width: 120px !important;
+    height: 48px !important;
+    margin: 0 auto !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    gap: 2px !important;
+    padding: 4px 8px !important;
+    border-radius: 12px !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .bottom-nav-item:hover {
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
+  }
+
+  .bottom-nav-item.active {
+    background: #eff6ff !important;
+    color: #2563eb !important;
+  }
+
+  .bottom-nav-item i {
+    font-size: 20px !important;
+    line-height: 1 !important;
+  }
+
+  /* 2. TÁCH NÚT BẬT/TẮT HOẠT ĐỘNG TRÊN MÁY TÍNH LÊN TRÊN THANH MENU, KHÔNG ĐÈ LÊN NHAU */
+  .floating-toggle-bar {
+    position: fixed !important;
+    bottom: 96px !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 1002 !important;
+    display: flex !important;
+    justify-content: center !important;
+    pointer-events: none !important;
+  }
+
+  .master-toggle-btn {
+    width: 250px !important;
+    height: 52px !important;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.3) !important;
+  }
+
+  .master-toggle-btn .toggle-text {
+    font-size: 14px !important;
+  }
+
+  /* CÁC TAB PHỤ PHỦ TOÀN BỘ MÀN HÌNH - KHÔNG BỊ LỘ BẢN ĐỒ DƯỚI */
+  .sub-tab-panel-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 100 !important;
+    background: #f8fafc !important;
+  }
+
+  /* Mission card nổi trên máy tính */
+  .floating-mission-container {
+    bottom: 165px !important;
+  }
+}
+
+.bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 2px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bottom-nav-item i {
+  font-size: 19px;
+  line-height: 1;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bottom-nav-item.active {
+  color: #2563eb;
+  font-weight: 800;
+}
+
+.bottom-nav-item.active i {
+  color: #2563eb;
+  transform: scale(1.15);
+}
+
+.bottom-nav-icon-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.bottom-nav-badge {
+  position: absolute;
+  top: -5px;
+  right: -10px;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 800;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+  box-shadow: 0 2px 5px rgba(239, 68, 68, 0.4);
 }
 
 /* Toast Bar */
@@ -2018,11 +2246,11 @@ onUnmounted(() => {
    4. NÚT CÔNG TẮC BẬT / TẮT HOẠT ĐỘNG (MASTER TOGGLE BUTTON)
    ========================================================================== */
 .floating-toggle-bar {
-  position: absolute;
-  bottom: 24px;
+  position: fixed;
+  bottom: 72px;
   left: 0;
   right: 0;
-  z-index: 55;
+  z-index: 1002;
   display: flex;
   justify-content: center;
   padding: 0 16px;
@@ -2108,102 +2336,30 @@ onUnmounted(() => {
    6. SUB-TAB SLIDING OVERLAY (THU NHẬP / CUỐC XE / HỒ SƠ)
    ========================================================================== */
 .sub-tab-panel-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
   bottom: 0;
-  z-index: 58;
+  z-index: 100;
   background: #f8fafc;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.panel-header {
-  position: sticky;
-  top: 0;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid #e2e8f0;
-  padding: 12px 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  z-index: 10;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.panel-sub-tabs {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #f1f5f9;
-  padding: 4px;
-  border-radius: 12px;
-}
-
-.sub-tab-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 9px;
-  border: none;
-  background: transparent;
-  font-size: 13px;
-  font-weight: 700;
-  color: #64748b;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.sub-tab-btn:hover {
-  color: #0f172a;
-}
-
-.sub-tab-btn.active {
-  background: #ffffff;
-  color: #2563eb;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-}
-
-.tab-count-badge {
-  font-size: 11px;
-  background: #eff6ff;
-  color: #2563eb;
-  padding: 1px 6px;
-  border-radius: 999px;
-}
-
-.btn-close-panel {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  color: #475569;
-  font-size: 12.5px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-close-panel:hover {
-  background: #f1f5f9;
-  color: #0f172a;
+  -webkit-overflow-scrolling: touch;
 }
 
 .panel-body-content {
-  padding: 20px;
-  max-width: 900px;
+  padding: 24px 16px;
+  padding-bottom: 120px !important; /* Đảm bảo cuộn hết cỡ vẫn thoáng 120px, không bị dock che */
+  max-width: 680px;
   margin: 0 auto;
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .tab-earnings-wrapper,
@@ -2211,341 +2367,292 @@ onUnmounted(() => {
 .tab-profile-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
 }
 
-/* Profile Card */
+/* ==================== HỒ SƠ TÀI XẾ (PROFILE CARD) TINH GỌN ==================== */
 .profile-card {
   background: #ffffff;
-  border-radius: 20px;
-  padding: 24px;
+  border-radius: 18px;
+  padding: 16px;
   border: 1px solid #e2e8f0;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
 }
 
+/* 1. Hàng Avatar & Tên Tài Xế */
 .profile-avatar-row {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding-bottom: 18px;
+  gap: 12px;
+  padding-bottom: 12px;
   border-bottom: 1px solid #f1f5f9;
 }
 
 .p-avatar {
-  width: 58px;
-  height: 58px;
-  border-radius: 18px;
-  background: #eff6ff;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: #fff7ed;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 30px;
+  font-size: 24px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 2px solid #ffffff;
 }
 
 .p-info h3 {
-  font-size: 18px;
-  font-weight: 900;
-  margin: 0 0 4px 0;
+  font-size: 16px;
+  font-weight: 800;
+  margin: 0 0 2px 0;
   color: #0f172a;
 }
 
 .p-info p {
-  font-size: 13px;
+  font-size: 11.5px;
   color: #64748b;
-  margin: 0 0 6px 0;
+  margin: 0 0 4px 0;
 }
 
 .verified-badge {
-  font-size: 11px;
-  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 700;
   color: #16a34a;
   background: #dcfce7;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 2px 7px;
+  border-radius: 5px;
 }
 
+/* 2. Lưới thông tin phương tiện & khu vực (Gọn 2x2) */
 .profile-details-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .detail-item {
   background: #f8fafc;
-  padding: 12px 14px;
-  border-radius: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
   border: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .dt-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: #64748b;
   text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .detail-item strong {
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 800;
   color: #0f172a;
-}
-
-/* ==================== FACE-ID BIOMETRICS CHO TÀI XẾ ==================== */
-.shipper-face-card {
-  background: #ffffff;
-  border-radius: 16px;
-  border: 1px solid #e2e8f0;
-  padding: 18px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.face-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
-.face-header-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.face-symbol-badge {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: #f1f5f9;
-  color: #64748b;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  flex-shrink: 0;
-  transition: all 0.2s ease;
-}
-
-.face-symbol-badge.is-active {
-  background: linear-gradient(135deg, #059669, #10b981);
-  color: #ffffff;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
-}
-
-.face-section-title {
-  font-size: 15px;
-  font-weight: 800;
-  color: #0f172a;
-  margin: 0 0 2px 0;
-}
-
-.face-section-desc {
-  font-size: 12px;
-  color: #64748b;
-  margin: 0;
-  line-height: 1.4;
-}
-
-.face-status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  font-weight: 700;
-  padding: 4px 12px;
-  border-radius: 999px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.face-status-chip.active {
-  background: #ecfdf5;
-  color: #059669;
-  border: 1px solid #a7f3d0;
-}
-
-.face-status-chip.inactive {
-  background: #f1f5f9;
-  color: #64748b;
-  border: 1px solid #e2e8f0;
-}
-
-.face-auth-box {
+/* 3. Khối Face-ID UniFace tinh gọn */
+.shipper-face-card-compact {
   background: #f8fafc;
+  border-radius: 12px;
   border: 1.5px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 14px 18px;
+  padding: 10px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  transition: all 0.2s ease;
-  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.face-auth-box.is-active {
-  background: linear-gradient(to right, #f0fdf4, #ffffff);
-  border-color: #10b981;
-}
-
-.face-auth-box:hover {
-  border-color: #0284c7;
-  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.08);
-}
-
-.face-info-left {
+.face-compact-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
 }
 
-.face-symbol-icon {
-  width: 40px;
-  height: 40px;
-  background: #ffffff;
-  color: #64748b;
+.face-symbol-badge-sm {
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
-  border: 1px solid #e2e8f0;
+  background: #e2e8f0;
+  color: #64748b;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
   flex-shrink: 0;
-  transition: all 0.2s ease;
 }
 
-.face-symbol-icon.symbol-active {
+.face-symbol-badge-sm.is-active {
   background: linear-gradient(135deg, #059669, #10b981);
   color: #ffffff;
-  border-color: transparent;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
 }
 
-.face-title-text {
-  font-size: 14px;
-  font-weight: 700;
+.face-text-group {
+  min-width: 0;
+}
+
+.face-title-sm {
+  font-size: 12.5px;
+  font-weight: 800;
   color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.face-helper-text {
-  font-size: 12px;
-  margin-top: 2px;
-  line-height: 1.4;
+.face-desc-sm {
+  font-size: 11px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.face-actions-right {
+.face-compact-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
-.btn-face-activate {
+.btn-face-activate-sm {
   background: linear-gradient(135deg, #0284c7, #2563eb);
   color: #ffffff;
   border: none;
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 700;
-  padding: 8px 16px;
-  border-radius: 9px;
+  padding: 6px 12px;
+  border-radius: 8px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
 }
 
-.btn-face-activate:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+.btn-face-activate-sm:hover {
+  filter: brightness(1.08);
 }
 
-.btn-face-rescan {
+.btn-face-rescan-sm {
   background: #ffffff;
   color: #334155;
   border: 1px solid #cbd5e1;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  padding: 7px 12px;
-  border-radius: 8px;
+  padding: 5px 10px;
+  border-radius: 7px;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  transition: all 0.2s ease;
 }
 
-.btn-face-rescan:hover {
-  background: #f1f5f9;
-  color: #0f172a;
-}
-
-.btn-face-disable {
-  background: #fee2e2;
-  color: #b91c1c;
-  border: 1px solid #fca5a5;
-  font-size: 12px;
+.btn-face-disable-sm {
+  background: #fff1f2;
+  color: #e11d48;
+  border: 1px solid #fecdd3;
+  font-size: 11px;
   font-weight: 700;
-  padding: 7px 12px;
-  border-radius: 8px;
+  padding: 5px 10px;
+  border-radius: 7px;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  transition: all 0.2s ease;
 }
 
-.btn-face-disable:hover:not(:disabled) {
-  background: #fecaca;
-}
-
-.btn-face-disable:disabled {
-  opacity: 0.6;
+.btn-face-disable-sm:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.profile-support-box {
+/* 4. Thanh Hotline hỗ trợ 24/7 tinh gọn */
+.compact-hotline-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   background: #eff6ff;
-  border-radius: 16px;
-  padding: 18px;
   border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 9px 12px;
+  color: #1e40af;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s;
+  gap: 8px;
 }
 
-.profile-support-box h4 {
-  font-size: 15px;
-  font-weight: 800;
-  color: #1e3a8a;
-  margin: 0 0 6px 0;
+.compact-hotline-bar:hover {
+  background: #dbeafe;
 }
 
-.profile-support-box p {
-  font-size: 12.5px;
-  color: #3b82f6;
-  margin: 0 0 12px 0;
-  line-height: 1.5;
-}
-
-.btn-call-support {
-  display: inline-flex;
+.hotline-left {
+  display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hotline-icon {
+  font-size: 17px;
+  color: #2563eb;
+  flex-shrink: 0;
+}
+
+.hotline-badge-call {
   background: #2563eb;
   color: #ffffff;
-  padding: 10px 18px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* 5. Nút Đăng Xuất Tài Xế Nổi Bật */
+.profile-logout-box {
+  margin-top: 2px;
+}
+
+.btn-shipper-logout {
+  width: 100%;
+  padding: 12px 18px;
+  background: #fff1f2;
+  color: #e11d48;
+  border: 1.5px solid #fecdd3;
   border-radius: 12px;
   font-size: 13.5px;
   font-weight: 800;
-  text-decoration: none;
-  transition: background 0.2s;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+  letter-spacing: 0.3px;
+  box-shadow: 0 2px 8px rgba(225, 29, 72, 0.08);
 }
 
-.btn-call-support:hover {
-  background: #1d4ed8;
+.btn-shipper-logout:hover {
+  background: #e11d48;
+  color: #ffffff;
+  border-color: #e11d48;
+  box-shadow: 0 4px 14px rgba(225, 29, 72, 0.25);
 }
 
 /* ==========================================================================
@@ -3841,70 +3948,7 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
-/* ==========================================================================
-   RESPONSIVE
-   ========================================================================== */
-@media (max-width: 768px) {
-  .top-floating-bar {
-    top: 10px;
-    left: 10px;
-    right: 10px;
-  }
 
-  .driver-mini-pill {
-    padding: 4px 10px 4px 6px;
-  }
-
-  .pill-name {
-    font-size: 12.5px;
-  }
-
-  .pill-status-text {
-    display: none;
-  }
-
-  .map-action-btn .action-label {
-    display: none;
-  }
-
-  .map-action-btn {
-    padding: 0 10px;
-  }
-
-  .floating-mission-container {
-    bottom: 155px;
-    left: 10px;
-    right: 10px;
-  }
-
-  .floating-toggle-bar {
-    bottom: 78px;
-    padding: 0 12px;
-  }
-
-  .shift-stats-row {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .profile-details-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 480px) {
-  .shift-stats-row {
-    grid-template-columns: 1fr;
-  }
-
-  .trip-log-item {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .trip-meta-col {
-    align-items: flex-start;
-  }
-}
 
 /* ================================================================
    MODAL NỔ ĐƠN HỎA TỐC BÁN KÍNH 3KM STYLING
@@ -4207,6 +4251,594 @@ onUnmounted(() => {
 @keyframes scaleInModal {
   from { transform: scale(0.85); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
+}
+
+/* ==========================================================================
+   NÚT ĐĂNG XUẤT TÀI XẾ (MAP FLOATING & PROFILE TAB)
+   ========================================================================== */
+.map-action-btn.btn-logout {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #e11d48;
+}
+.map-action-btn.btn-logout:hover {
+  background: #ffe4e6;
+  border-color: #fda4af;
+  color: #be123c;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(225, 29, 72, 0.25);
+}
+
+.profile-logout-box {
+  margin-top: 16px;
+  padding: 12px 0 4px;
+}
+
+.btn-shipper-logout {
+  width: 100%;
+  padding: 14px 20px;
+  background: #fff1f2;
+  color: #e11d48;
+  border: 1.5px solid #fecdd3;
+  border-radius: 14px;
+  font-size: 14.5px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 12px rgba(225, 29, 72, 0.08);
+}
+.btn-shipper-logout:hover {
+  background: #e11d48;
+  color: #ffffff;
+  border-color: #e11d48;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(225, 29, 72, 0.28);
+}
+
+/* ==========================================================================
+   RESPONSIVE CHO ỨNG DỤNG TÀI XẾ TRÊN CÁC THIẾT BỊ (MOBILE, TABLET)
+   ========================================================================== */
+@media (max-width: 768px) {
+  .shipper-app-screen {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    touch-action: none !important;
+  }
+
+  /* 1. TOP FLOATING BAR (TRÊN CÙNG BẢN ĐỒ) */
+  .top-floating-bar {
+    top: 10px !important;
+    left: 10px !important;
+    right: 10px !important;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    z-index: 1003 !important;
+  }
+
+  .driver-mini-pill {
+    padding: 5px 12px 5px 5px !important;
+    height: 48px !important;
+    gap: 9px !important;
+    max-width: none !important;
+    border-radius: 999px !important;
+    background: rgba(255, 255, 255, 0.98) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12) !important;
+    border: 1.5px solid rgba(226, 232, 240, 0.9) !important;
+    flex-shrink: 0 !important;
+    min-width: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+
+  .driver-pill-avatar {
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 50% !important;
+    font-size: 18px !important;
+    flex-shrink: 0 !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12) !important;
+    border: 2px solid #ffffff !important;
+    background: #fff7ed !important;
+    position: relative !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .pill-dot {
+    width: 11px !important;
+    height: 11px !important;
+    border: 2px solid #ffffff !important;
+    bottom: -1px !important;
+    right: -1px !important;
+  }
+
+  .driver-pill-info {
+    min-width: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+  }
+
+  .pill-name-row {
+    display: flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+    white-space: nowrap !important;
+    min-width: 0 !important;
+  }
+
+  .pill-name {
+    font-size: 13.5px !important;
+    font-weight: 800 !important;
+    color: #0f172a !important;
+    max-width: 130px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    min-width: 0 !important;
+    line-height: 1.2 !important;
+  }
+
+  .pill-rating {
+    font-size: 9.5px !important;
+    font-weight: 800 !important;
+    color: #d97706 !important;
+    background: #fefce8 !important;
+    padding: 1px 5px !important;
+    border-radius: 5px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    border: 1px solid #fef08a !important;
+  }
+
+  .pill-status-text {
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    color: #64748b !important;
+    line-height: 1.2 !important;
+  }
+
+  /* 2. MAP FLOATING ACTIONS (TOP RIGHT) */
+  .map-floating-actions {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* Ẩn các nút phụ trên top mobile vì đã có Bottom Navigation */
+  .map-floating-actions .btn-wallet,
+  .map-floating-actions .btn-logout {
+    display: none !important;
+  }
+
+  /* Nút chức năng bản đồ: rõ nét, to vừa vặn ngón tay, hiển thị cả icon và chữ */
+  .map-action-btn {
+    height: 40px !important;
+    width: auto !important;
+    padding: 0 11px !important;
+    border-radius: 999px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 5px !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    color: #334155 !important;
+    background: rgba(255, 255, 255, 0.98) !important;
+    border: 1.5px solid rgba(226, 232, 240, 0.9) !important;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1) !important;
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+  }
+
+  .map-action-btn i {
+    font-size: 15px !important;
+  }
+
+  .map-action-btn .action-label {
+    display: inline-block !important;
+    font-size: 11.5px !important;
+    font-weight: 700 !important;
+  }
+
+  .map-action-btn.btn-active {
+    background: #eff6ff !important;
+    color: #2563eb !important;
+    border-color: #93c5fd !important;
+    font-weight: 800 !important;
+  }
+
+  /* GPS RECENTER BUTTON: CHUYỂN XUỐNG GÓC DƯỚI PHẢI VỪA TẦM TAY */
+  .map-action-btn.btn-gps {
+    position: fixed !important;
+    right: 14px !important;
+    bottom: 152px !important;
+    bottom: calc(142px + env(safe-area-inset-bottom, 12px)) !important;
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 50% !important;
+    background: #ffffff !important;
+    color: #2563eb !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18) !important;
+    border: 1.5px solid #e2e8f0 !important;
+    z-index: 1001 !important;
+    font-size: 18px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  /* 3. NÚT BẬT / TẮT HOẠT ĐỘNG (MASTER TOGGLE) TRÊN ĐIỆN THOẠI */
+  .floating-toggle-bar {
+    position: fixed !important;
+    bottom: 94px !important;
+    bottom: calc(84px + env(safe-area-inset-bottom, 12px)) !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%) translateZ(0) !important;
+    -webkit-transform: translateX(-50%) translateZ(0) !important;
+    width: max-content !important;
+    max-width: calc(100vw - 32px) !important;
+    z-index: 1002 !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    padding: 0 !important;
+    pointer-events: none !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  .master-toggle-btn {
+    pointer-events: auto !important;
+    position: relative !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 220px !important;
+    height: 48px !important;
+    border-radius: 999px !important;
+    background: #1e293b !important;
+    color: #ffffff !important;
+    border: 2px solid rgba(255, 255, 255, 0.3) !important;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.4) !important;
+    cursor: pointer !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  .master-toggle-btn.is-online {
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
+    border-color: #86efac !important;
+    box-shadow: 0 8px 24px rgba(34, 197, 94, 0.45) !important;
+  }
+
+  .master-toggle-btn .toggle-knob {
+    position: absolute !important;
+    width: 36px !important;
+    height: 36px !important;
+    top: 4px !important;
+    left: 6px !important;
+    border-radius: 50% !important;
+    background: #ffffff !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 16px !important;
+    color: #64748b !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), color 0.3s !important;
+    z-index: 2 !important;
+  }
+
+  .master-toggle-btn.is-online .toggle-knob {
+    transform: translateX(172px) !important;
+    color: #16a34a !important;
+  }
+
+  .master-toggle-btn .toggle-text {
+    width: 100% !important;
+    text-align: center !important;
+    font-size: 13.5px !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.5px !important;
+    color: #ffffff !important;
+    transition: padding 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    z-index: 1 !important;
+    padding-left: 32px !important;
+    padding-right: 0 !important;
+  }
+
+  .master-toggle-btn.is-online .toggle-text {
+    padding-left: 0 !important;
+    padding-right: 32px !important;
+  }
+
+  /* 4. FLOATING MISSION / RADAR SCANNING CHIP */
+  .floating-mission-container {
+    position: fixed !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: 152px !important;
+    bottom: calc(142px + env(safe-area-inset-bottom, 12px)) !important;
+    max-width: 440px !important;
+    margin: 0 auto !important;
+    z-index: 1001 !important;
+    pointer-events: none !important;
+  }
+
+  .floating-order-card {
+    padding: 12px 14px !important;
+    border-radius: 16px !important;
+    gap: 8px !important;
+  }
+
+  .floating-radar-chip {
+    padding: 8px 12px !important;
+    gap: 8px !important;
+  }
+
+  .radar-info strong {
+    font-size: 11.5px !important;
+  }
+
+  .radar-info small {
+    font-size: 9.5px !important;
+  }
+
+  /* 5. OFFLINE PROMPT CARD */
+  .offline-prompt-box {
+    padding: 22px 18px !important;
+    max-width: 320px !important;
+    width: 90% !important;
+    border-radius: 20px !important;
+  }
+
+  .offline-icon-pulse {
+    width: 48px !important;
+    height: 48px !important;
+    font-size: 20px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .offline-prompt-box h3 {
+    font-size: 16px !important;
+    margin: 0 0 6px 0 !important;
+  }
+
+  .offline-prompt-box p {
+    font-size: 12px !important;
+    margin: 0 0 14px 0 !important;
+    line-height: 1.4 !important;
+  }
+
+  .btn-turn-online {
+    padding: 10px 16px !important;
+    font-size: 13px !important;
+    border-radius: 10px !important;
+  }
+
+  /* 6. SUB-TABS OVERLAY */
+  .slide-panel-container {
+    width: 100vw !important;
+    max-width: 100vw !important;
+  }
+
+  /* 6. SUB-TABS OVERLAY */
+  .sub-tab-panel-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 900 !important;
+    background: #f8fafc !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+  }
+
+  .panel-body-content {
+    padding: 12px 10px !important;
+    padding-bottom: 96px !important;
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 12px)) !important;
+  }
+
+  .shift-stats-row {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .stat-card {
+    padding: 10px 12px !important;
+  }
+
+  .stat-figure {
+    font-size: 15px !important;
+  }
+
+  .profile-details-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  .incoming-order-modal {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    margin: 10px !important;
+    border-radius: 16px !important;
+  }
+
+  /* 7. THANH ĐIỀU HƯỚNG ĐÁY MÀN HÌNH (MOBILE BOTTOM NAV) - DẠNG DOCK NỔI NÂNG CAO TRÁNH THANH ĐỊA CHỈ & VIỀN ĐT */
+  .shipper-bottom-nav {
+    display: flex !important;
+    position: fixed !important;
+    bottom: 24px !important;
+    bottom: calc(16px + env(safe-area-inset-bottom, 12px)) !important;
+    left: 12px !important;
+    right: 12px !important;
+    width: auto !important;
+    height: 58px !important;
+    background: #FFFFFF !important;
+    border: 1.5px solid #E2E8F0 !important;
+    border-radius: 20px !important;
+    box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.16), 0 4px 10px rgba(0, 0, 0, 0.06) !important;
+    z-index: 1000 !important;
+    transform: translateZ(0) !important;
+    -webkit-transform: translateZ(0) !important;
+    will-change: transform !important;
+    align-items: center !important;
+    justify-content: space-around !important;
+    padding: 3px 6px !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  .bottom-nav-item {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 2px !important;
+    height: 100% !important;
+    background: transparent !important;
+    border: none !important;
+    color: #64748B !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    padding: 3px 2px !important;
+    cursor: pointer !important;
+    text-decoration: none !important;
+    border-radius: 14px !important;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  .bottom-nav-item i {
+    font-size: 19px !important;
+    line-height: 1 !important;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  .bottom-nav-item.active {
+    color: #2563EB !important;
+    font-weight: 800 !important;
+    background: #EFF6FF !important;
+  }
+
+  .bottom-nav-item.active i {
+    color: #2563EB !important;
+    transform: scale(1.1) !important;
+  }
+
+  .bottom-nav-icon-wrap {
+    position: relative !important;
+    display: inline-flex !important;
+  }
+
+  .bottom-nav-badge {
+    position: absolute !important;
+    top: -5px !important;
+    right: -10px !important;
+    background: #EF4444 !important;
+    color: #FFFFFF !important;
+    font-size: 9px !important;
+    font-weight: 800 !important;
+    min-width: 16px !important;
+    height: 16px !important;
+    border-radius: 8px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 3px !important;
+    box-shadow: 0 2px 5px rgba(239, 68, 68, 0.4) !important;
+  }
+
+  .panel-body-content {
+    padding-bottom: 74px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .top-floating-bar {
+    gap: 4px !important;
+    left: 6px !important;
+    right: 6px !important;
+  }
+
+  .driver-mini-pill {
+    padding: 4px 8px 4px 4px !important;
+    height: 44px !important;
+    gap: 6px !important;
+  }
+
+  .driver-pill-avatar {
+    width: 34px !important;
+    height: 34px !important;
+  }
+
+  .pill-name {
+    font-size: 12.5px !important;
+    max-width: 105px !important;
+  }
+
+  .map-action-btn {
+    height: 38px !important;
+    padding: 0 8px !important;
+    font-size: 11px !important;
+    gap: 4px !important;
+  }
+
+  .map-action-btn .action-label {
+    font-size: 10.5px !important;
+  }
+}
+
+@media (max-width: 480px) {
+
+  .shift-stats-row {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .trip-log-item {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .trip-meta-col {
+    align-items: flex-start !important;
+  }
+
+  .incoming-modal-actions {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .btn-decline,
+  .btn-accept {
+    width: 100% !important;
+  }
 }
 </style>
 

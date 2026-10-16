@@ -24,9 +24,11 @@ import {
 } from "../../composables/useProductModeration";
 import FaceScanModal from "../../components/auth/FaceScanModal.vue";
 import { apiFetch } from "../../utils/apiConfig";
+import { useAuth } from "../../composables/useAuth";
 
 const router = useRouter();
 const toast = useToast();
+const auth = useAuth();
 
 // Điều hướng Tab chính trong Sidebar
 type NavKey =
@@ -41,6 +43,33 @@ type NavKey =
   | "support";
 
 const activeNav = ref<NavKey>("overview");
+const isMobileSidebarOpen = ref(false);
+
+const toggleMobileSidebar = () => {
+  isMobileSidebarOpen.value = !isMobileSidebarOpen.value;
+};
+
+const closeMobileSidebar = () => {
+  isMobileSidebarOpen.value = false;
+};
+
+const selectNav = (key: NavKey) => {
+  activeNav.value = key;
+  isMobileSidebarOpen.value = false;
+  if (typeof window !== "undefined") {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+};
+
+watch(isMobileSidebarOpen, (open) => {
+  if (typeof document !== "undefined") {
+    if (open) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+  }
+});
 
 // Thông tin người dùng đăng nhập
 const currentUser = reactive({
@@ -76,9 +105,16 @@ onMounted(async () => {
   }
   try {
     const parsed = JSON.parse(savedUser);
-    if (!parsed || (parsed.role !== 'seller' && parsed.role !== 'admin')) {
+    const hasSellerAccess = parsed && (parsed.role === 'seller' || parsed.role === 'admin' || parsed.isSeller === true || parsed.sellerStatus === 'Approved');
+    if (!parsed || !hasSellerAccess) {
       router.replace('/403');
       return;
+    }
+    if (parsed.role !== 'seller' && parsed.role !== 'admin' && (parsed.isSeller || parsed.sellerStatus === 'Approved')) {
+      parsed.role = 'seller';
+      localStorage.setItem('currentUser', JSON.stringify(parsed));
+      localStorage.setItem('zonemart_user', JSON.stringify(parsed));
+      localStorage.setItem('userRole', 'seller');
     }
     if (parsed.fullName) currentUser.name = parsed.fullName;
     if (parsed.phoneEmail) currentUser.email = parsed.phoneEmail;
@@ -328,12 +364,14 @@ const switchToBuyerMode = () => {
   router.push("/");
 };
 
-// Đăng xuất
+// Đăng xuất an toàn khỏi Kênh Bán Hàng
 const handleLogout = () => {
+  auth.logout();
   localStorage.removeItem("isLoggedIn");
   localStorage.removeItem("userRole");
   localStorage.removeItem("currentUser");
-  router.push("/login");
+  localStorage.removeItem("zonemart_user");
+  router.push({ path: "/login", query: { logout: "success" } });
 };
 
 // Dữ liệu gian hàng
@@ -1792,11 +1830,18 @@ const getItemImage = (it: OrderItem) => {
       </div>
     </transition>
 
+    <!-- LỚP PHỦ MỜ KHI MỞ MENU TRÊN ĐIỆN THOẠI -->
+    <div
+      v-if="isMobileSidebarOpen"
+      class="mobile-sidebar-backdrop"
+      @click="closeMobileSidebar"
+    ></div>
+
     <!-- ==================== 1. SIDEBAR TRÁI HIỆN ĐẠI ==================== -->
-    <aside class="seller-sidebar">
-      <!-- Logo thương hiệu -->
+    <aside class="seller-sidebar" :class="{ 'mobile-sidebar-open': isMobileSidebarOpen }">
+      <!-- Logo thương hiệu & nút đóng mobile -->
       <div class="sidebar-brand-container">
-        <router-link to="/seller" class="brand-link">
+        <router-link to="/seller" class="brand-link" @click="closeMobileSidebar">
           <div class="brand-logo-badge">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D94E15" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
               <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
@@ -1809,6 +1854,14 @@ const getItemImage = (it: OrderItem) => {
             <span class="brand-role-tag">Kênh Người Bán</span>
           </div>
         </router-link>
+        <button
+          type="button"
+          class="btn-close-mobile-sidebar"
+          @click="closeMobileSidebar"
+          aria-label="Đóng menu"
+        >
+          <i class="bi bi-x-lg"></i>
+        </button>
       </div>
 
       <!-- Navigation Menu -->
@@ -1818,7 +1871,7 @@ const getItemImage = (it: OrderItem) => {
           type="button"
           class="nav-item-btn"
           :class="{ active: activeNav === 'overview' }"
-          @click="activeNav = 'overview'"
+          @click="selectNav('overview')"
         >
           <i class="bi bi-grid-fill nav-icon"></i>
           <span class="nav-label">Tổng quan</span>
@@ -1829,19 +1882,18 @@ const getItemImage = (it: OrderItem) => {
           type="button"
           class="nav-item-btn"
           :class="{ active: activeNav === 'products' }"
-          @click="activeNav = 'products'"
+          @click="selectNav('products')"
         >
           <i class="bi bi-box-seam nav-icon"></i>
           <span class="nav-label">Sản phẩm</span>
         </button>
-
 
         <!-- 3. Customer -->
         <button
           type="button"
           class="nav-item-btn"
           :class="{ active: activeNav === 'customers' }"
-          @click="activeNav = 'customers'"
+          @click="selectNav('customers')"
         >
           <i class="bi bi-people nav-icon"></i>
           <span class="nav-label">Khách hàng</span>
@@ -1852,7 +1904,7 @@ const getItemImage = (it: OrderItem) => {
           type="button"
           class="nav-item-btn"
           :class="{ active: activeNav === 'orders' }"
-          @click="activeNav = 'orders'"
+          @click="selectNav('orders')"
         >
           <i class="bi bi-bag-check nav-icon"></i>
           <span class="nav-label">Đơn hàng</span>
@@ -1864,7 +1916,7 @@ const getItemImage = (it: OrderItem) => {
           type="button"
           class="nav-item-btn"
           :class="{ active: activeNav === 'shipment' }"
-          @click="activeNav = 'shipment'"
+          @click="selectNav('shipment')"
         >
           <i class="bi bi-truck nav-icon"></i>
           <span class="nav-label">Vận chuyển</span>
@@ -1875,7 +1927,7 @@ const getItemImage = (it: OrderItem) => {
           type="button"
           class="nav-item-btn"
           :class="{ active: activeNav === 'settings' }"
-          @click="activeNav = 'settings'"
+          @click="selectNav('settings')"
         >
           <i class="bi bi-shop nav-icon"></i>
           <span class="nav-label">Cài đặt gian hàng</span>
@@ -1886,7 +1938,7 @@ const getItemImage = (it: OrderItem) => {
           type="button"
           class="nav-item-btn"
           :class="{ active: activeNav === 'partner' }"
-          @click="activeNav = 'partner'"
+          @click="selectNav('partner')"
         >
           <i class="bi bi-share nav-icon"></i>
           <span class="nav-label">Đối tác nền tảng</span>
@@ -1897,7 +1949,7 @@ const getItemImage = (it: OrderItem) => {
           type="button"
           class="nav-item-btn"
           :class="{ active: activeNav === 'feedback' }"
-          @click="activeNav = 'feedback'"
+          @click="selectNav('feedback')"
         >
           <i class="bi bi-chat-square-text nav-icon"></i>
           <span class="nav-label">Đánh giá & Phản hồi</span>
@@ -1908,21 +1960,85 @@ const getItemImage = (it: OrderItem) => {
           type="button"
           class="nav-item-btn"
           :class="{ active: activeNav === 'support' }"
-          @click="activeNav = 'support'"
+          @click="selectNav('support')"
         >
           <i class="bi bi-question-circle nav-icon"></i>
           <span class="nav-label">Trợ giúp & Hỗ trợ</span>
         </button>
-      </nav>
 
-    
+        <!-- Nút Đăng Xuất ở chân Sidebar Người Bán -->
+        <div class="sidebar-bottom-action">
+          <button type="button" class="nav-item-btn btn-nav-logout" @click="handleLogout">
+            <i class="bi bi-box-arrow-right nav-icon text-danger"></i>
+            <span class="nav-label text-danger">Đăng Xuất</span>
+          </button>
+        </div>
+      </nav>
     </aside>
 
     <!-- ==================== 2. MAIN CONTAINER ==================== -->
     <div class="seller-main-wrapper">
       <!-- TOP NAVIGATION BAR -->
       <header class="seller-top-bar">
-        <!-- Search Input tròn với Mic -->
+        <!-- HÀNG HIỂN THỊ ĐỘC QUYỀN TRÊN ĐIỆN THOẠI (MOBILE TOPBAR) -->
+        <div class="mobile-topbar-header">
+          <button
+            type="button"
+            class="btn-toggle-mobile-sidebar"
+            @click="toggleMobileSidebar"
+            aria-label="Mở menu quản trị"
+          >
+            <i class="bi bi-list"></i>
+          </button>
+          <div class="mobile-topbar-brand">
+            <span class="mobile-title">Kênh Người Bán</span>
+            <span class="mobile-shop-name">{{ storeInfo.name || 'Gian Hàng ZoneMart' }}</span>
+          </div>
+          <div class="mobile-topbar-actions">
+            <!-- Toggle mở/đóng cửa hàng trên mobile -->
+            <div
+              class="store-status-toggle mobile-store-toggle"
+              :class="{ 'is-open': isStoreOpen }"
+              @click="toggleStoreOpen"
+              title="Đổi trạng thái nhận đơn"
+            >
+              <span class="status-indicator-dot"></span>
+              <span class="status-text">{{ isStoreOpen ? "Mở" : "Đóng" }}</span>
+            </div>
+            <!-- Chuyển chế độ người mua -->
+            <button
+              type="button"
+              class="btn-buyer-switch mobile-buyer-switch"
+              @click="switchToBuyerMode"
+              title="Chuyển sang mua hàng"
+            >
+              <i class="bi bi-bag-check"></i>
+            </button>
+            <!-- Avatar người bán -->
+            <div class="user-profile-capsule mobile-avatar-capsule" @click="isUserMenuOpen = !isUserMenuOpen">
+              <img :src="currentUser.avatar" alt="Avatar" class="profile-avatar-img" />
+              <!-- Dropdown Menu -->
+              <div v-if="isUserMenuOpen" class="user-dropdown-popup" @click.stop>
+                <div class="dropdown-header">
+                  <b>{{ currentUser.name }}</b>
+                  <small>{{ storeInfo.name }}</small>
+                </div>
+                <button type="button" class="dropdown-link" @click="selectNav('settings'); isUserMenuOpen = false">
+                  <i class="bi bi-gear me-2"></i> Cài đặt gian hàng
+                </button>
+                <button type="button" class="dropdown-link" @click="switchToBuyerMode">
+                  <i class="bi bi-cart3 me-2"></i> Vào trang mua sắm
+                </button>
+                <div class="dropdown-divider"></div>
+                <button type="button" class="dropdown-link text-danger" @click="handleLogout">
+                  <i class="bi bi-box-arrow-right me-2"></i> Đăng xuất
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Search Input tròn với Mic (Tự co giãn toàn chiều ngang trên điện thoại) -->
         <div class="search-box-pill">
           <i class="bi bi-search search-icon"></i>
           <input
@@ -1936,8 +2052,8 @@ const getItemImage = (it: OrderItem) => {
           </button>
         </div>
 
-        <!-- Right action cluster -->
-        <div class="top-bar-right">
+        <!-- Right action cluster (Hiển thị trên Desktop) -->
+        <div class="top-bar-right desktop-top-bar-right">
           <!-- Chuyển sang chế độ mua hàng -->
           <button
             type="button"
@@ -1947,6 +2063,17 @@ const getItemImage = (it: OrderItem) => {
           >
             <i class="bi bi-bag-check me-1"></i>
             <span>Chế độ Người Mua</span>
+          </button>
+
+          <!-- Nút Đăng Xuất Kênh Người Bán -->
+          <button
+            type="button"
+            class="btn-seller-logout"
+            @click="handleLogout"
+            title="Đăng xuất khỏi kênh người bán"
+          >
+            <i class="bi bi-box-arrow-right"></i>
+            <span class="logout-label">Đăng Xuất</span>
           </button>
 
           <!-- Toggle mở/đóng cửa hàng -->
@@ -1970,7 +2097,7 @@ const getItemImage = (it: OrderItem) => {
                 <b>{{ currentUser.name }}</b>
                 <small>{{ storeInfo.name }}</small>
               </div>
-              <button type="button" class="dropdown-link" @click="activeNav = 'settings'; isUserMenuOpen = false">
+              <button type="button" class="dropdown-link" @click="selectNav('settings'); isUserMenuOpen = false">
                 <i class="bi bi-gear me-2"></i> Cài đặt gian hàng
               </button>
               <button type="button" class="dropdown-link" @click="switchToBuyerMode">
@@ -2866,19 +2993,19 @@ const getItemImage = (it: OrderItem) => {
           <!-- CHỌN LOẠI NIÊM YẾT: SẢN PHẨM HOẶC DỊCH VỤ ĐỊA PHƯƠNG -->
           <div class="field-item">
             <label>Hình thức niêm yết trên Chợ Số <span class="text-danger">*</span></label>
-            <div style="display: flex; gap: 8px; margin-top: 4px;">
+            <div class="item-type-toggle-group">
               <button
                 type="button"
-                style="flex: 1; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;"
-                :style="newProductForm.itemType === 'product' ? 'background: #EA580C; color: #fff; border: 1.5px solid #EA580C;' : 'background: #fff; color: #475569; border: 1.5px solid #CBD5E1;'"
+                class="item-type-toggle-btn"
+                :class="{ active: newProductForm.itemType === 'product' }"
                 @click="newProductForm.itemType = 'product'"
               >
                 📦 Sản Phẩm Vật Lý
               </button>
               <button
                 type="button"
-                style="flex: 1; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;"
-                :style="newProductForm.itemType === 'service' ? 'background: #EA580C; color: #fff; border: 1.5px solid #EA580C;' : 'background: #fff; color: #475569; border: 1.5px solid #CBD5E1;'"
+                class="item-type-toggle-btn"
+                :class="{ active: newProductForm.itemType === 'service' }"
                 @click="newProductForm.itemType = 'service'; if (newProductForm.category === 'Rau củ quả') newProductForm.category = 'Dịch vụ địa phương';"
               >
                 🛠️ Dịch Vụ Địa Phương
@@ -3232,6 +3359,62 @@ const getItemImage = (it: OrderItem) => {
       :user-name="currentUser.name || storeInfo.name || 'Chủ Gian Hàng'"
       @success="handleFaceRegisterSuccess"
     />
+
+    <!-- ==================== MOBILE BOTTOM NAV BAR ==================== -->
+    <nav class="seller-bottom-nav">
+      <button
+        type="button"
+        class="bottom-nav-item"
+        :class="{ active: activeNav === 'overview' }"
+        @click="selectNav('overview')"
+      >
+        <i class="bi bi-grid-fill"></i>
+        <span>Tổng quan</span>
+      </button>
+
+      <button
+        type="button"
+        class="bottom-nav-item"
+        :class="{ active: activeNav === 'products' }"
+        @click="selectNav('products')"
+      >
+        <i class="bi bi-box-seam"></i>
+        <span>Sản phẩm</span>
+      </button>
+
+      <button
+        type="button"
+        class="bottom-nav-item"
+        :class="{ active: activeNav === 'orders' }"
+        @click="selectNav('orders')"
+      >
+        <div class="bottom-nav-icon-wrap">
+          <i class="bi bi-bag-check"></i>
+          <span v-if="orders.length" class="bottom-nav-badge">{{ orders.length }}</span>
+        </div>
+        <span>Đơn hàng</span>
+      </button>
+
+      <button
+        type="button"
+        class="bottom-nav-item"
+        :class="{ active: activeNav === 'shipment' }"
+        @click="selectNav('shipment')"
+      >
+        <i class="bi bi-truck"></i>
+        <span>Vận chuyển</span>
+      </button>
+
+      <button
+        type="button"
+        class="bottom-nav-item"
+        :class="{ active: isMobileSidebarOpen }"
+        @click="toggleMobileSidebar"
+      >
+        <i class="bi bi-three-dots"></i>
+        <span>Thêm</span>
+      </button>
+    </nav>
   </div>
 </template>
 
@@ -5424,54 +5607,56 @@ h1, h2, h3, h4, h5, h6 {
 
 /* ==================== UPGRADED MODERN PRODUCT MODAL ==================== */
 .modal-card-box.modal-lg.modern-product-modal {
-  max-width: 660px;
+  max-width: 580px;
   width: 95%;
-  max-height: 90vh;
+  max-height: 85vh;
+  max-height: 85dvh;
   display: flex;
   flex-direction: column;
   padding: 0;
   overflow: hidden;
   background: #FFFFFF;
-  border-radius: 20px;
-  box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.4), 0 0 0 1px rgba(226, 232, 240, 0.8);
-  border: none;
+  border-radius: 16px;
+  border: 1.5px solid #CBD5E1;
+  box-shadow: 0 20px 50px -10px rgba(15, 23, 42, 0.35);
 }
 
 .modern-product-modal .modal-header-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px 16px;
-  border-bottom: 1px solid #F1F5F9;
+  padding: 12px 18px;
+  border-bottom: 1.5px solid #E2E8F0;
   background: #FFFFFF;
+  flex-shrink: 0;
   margin-bottom: 0;
 }
 
 .modern-product-modal .modal-title-with-badge {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
 }
 
 .modern-product-modal .modal-header-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #FFEDD5 0%, #FED7AA 100%);
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #FFEDD5;
   color: #EA580C;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 17px;
   flex-shrink: 0;
-  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.15);
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.15);
 }
 
 .modern-product-modal .modal-header-row h4 {
-  font-size: 17.5px;
+  font-size: 16px;
   font-weight: 800;
   color: #0F172A !important;
-  margin: 0 0 2px 0;
+  margin: 0;
   letter-spacing: -0.2px;
 }
 
@@ -5482,18 +5667,18 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .modern-product-modal .btn-close-modal {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
-  background: #F8FAFC;
-  border: 1px solid #E2E8F0;
-  color: #64748B;
+  background: #F1F5F9;
+  border: 1.5px solid #CBD5E1;
+  color: #475569;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .modern-product-modal .btn-close-modal:hover {
@@ -5504,51 +5689,113 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .modern-product-modal .modal-body-fields {
-  padding: 20px 24px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
-  max-height: calc(90vh - 150px);
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 18px;
   margin-bottom: 0;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
 }
 
 .modern-product-modal .modal-body-fields::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 
 .modern-product-modal .modal-body-fields::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: #94A3B8;
   border-radius: 4px;
 }
 
+.modern-product-modal .field-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
 .modern-product-modal .field-item label {
-  font-size: 13px;
-  font-weight: 700;
-  color: #334155 !important;
-  margin-bottom: 6px;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  color: #0F172A !important;
+  margin-bottom: 3px !important;
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
 .modern-product-modal .field-input {
-  background: #F8FAFC !important;
-  border: 1.5px solid #E2E8F0;
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-size: 13.5px;
+  background: #FFFFFF !important;
+  border: 1.5px solid #94A3B8 !important;
+  border-radius: 8px !important;
+  padding: 7px 11px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
   color: #0F172A !important;
+  height: 38px;
+  box-sizing: border-box;
   transition: all 0.2s ease;
+}
+
+.modern-product-modal .field-input:hover {
+  border-color: #64748B !important;
 }
 
 .modern-product-modal .field-input:focus {
   background: #FFFFFF !important;
-  border-color: #EA580C;
-  box-shadow: 0 0 0 3.5px rgba(234, 88, 12, 0.12);
+  border-color: #EA580C !important;
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15) !important;
+  outline: none;
+}
+
+.modern-product-modal .field-input::placeholder {
+  color: #64748B !important;
+  font-weight: 500 !important;
+  opacity: 1 !important;
 }
 
 .modern-product-modal .field-select {
   cursor: pointer;
   appearance: auto;
+  background: #FFFFFF !important;
+}
+
+/* Item type toggle buttons (Sản Phẩm Vật Lý / Dịch Vụ Địa Phương) */
+.item-type-toggle-group {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.item-type-toggle-btn {
+  flex: 1;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #F8FAFC;
+  color: #1E293B;
+  border: 1.5px solid #94A3B8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.item-type-toggle-btn:hover {
+  background: #F1F5F9;
+  border-color: #64748B;
+  color: #0F172A;
+}
+
+.item-type-toggle-btn.active {
+  background: #EA580C !important;
+  color: #FFFFFF !important;
+  border-color: #EA580C !important;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.25);
 }
 
 /* Suffix wrapper for Currency & Quantity */
@@ -5560,16 +5807,17 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .input-suffix-wrapper .field-input.with-suffix {
-  padding-right: 70px;
+  padding-right: 76px !important;
 }
 
 .input-suffix-text {
   position: absolute;
-  right: 10px;
-  font-size: 11.5px;
-  font-weight: 700;
-  color: #64748B;
-  background: #E2E8F0;
+  right: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #0F172A !important;
+  background: #E2E8F0 !important;
+  border: 1px solid #CBD5E1;
   padding: 3px 8px;
   border-radius: 6px;
   pointer-events: none;
@@ -5581,28 +5829,28 @@ h1, h2, h3, h4, h5, h6 {
   align-items: flex-start;
   gap: 10px;
   background: #F0FDF4;
-  border: 1px solid #BBF7D0;
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin-top: 10px;
+  border: 1.5px solid #86EFAC;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 8px;
 }
 
 .modern-product-modal .ai-note-icon {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: #DCFCE7;
   color: #16A34A;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 13px;
   flex-shrink: 0;
 }
 
 .modern-product-modal .ai-note-text {
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.4;
   color: #166534;
 }
 
@@ -5615,31 +5863,53 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 24px;
+  gap: 10px;
+  padding: 11px 18px;
+  background: #FFFFFF;
+  border-top: 1.5px solid #E2E8F0;
+  flex-shrink: 0;
+}
+
+.modern-product-modal .btn-cancel-gray {
+  padding: 8px 16px;
   background: #F8FAFC;
-  border-top: 1px solid #E2E8F0;
+  border: 1.5px solid #CBD5E1;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1E293B !important;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.modern-product-modal .btn-cancel-gray:hover {
+  background: #E2E8F0;
+  border-color: #94A3B8;
+  color: #0F172A !important;
 }
 
 .btn-save-product-primary {
-  background: linear-gradient(135deg, #EA580C 0%, #D94E15 100%);
+  background: linear-gradient(135deg, #EA580C 0%, #C2410C 100%);
   color: #FFFFFF !important;
   border: none;
-  border-radius: 12px;
-  padding: 11px 22px;
-  font-size: 13.5px;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 13px;
   font-weight: 700;
   display: flex;
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.28);
-  transition: all 0.25s ease;
+  box-shadow: 0 3px 10px rgba(234, 88, 12, 0.28);
+  transition: all 0.2s ease;
 }
 
 .btn-save-product-primary:hover {
   background: linear-gradient(135deg, #F97316 0%, #EA580C 100%);
-  box-shadow: 0 6px 18px rgba(234, 88, 12, 0.38);
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.38);
   transform: translateY(-1px);
 }
 
@@ -6099,77 +6369,82 @@ h1, h2, h3, h4, h5, h6 {
 
 /* ==================== UPLOAD TỆP HÌNH ẢNH ==================== */
 .upload-dropzone {
-  margin-top: 8px;
-  border: 2px dashed #CBD5E1;
-  border-radius: 14px;
-  padding: 24px 16px;
+  margin-top: 4px;
+  border: 1.5px dashed #94A3B8;
+  border-radius: 10px;
+  padding: 10px 14px;
   text-align: center;
   background: #F8FAFC;
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition: all 0.2s ease;
 }
 
 .upload-dropzone:hover,
 .upload-dropzone.is-dragging {
-  border-color: #2563EB;
-  background: #EFF6FF;
+  border-color: #EA580C;
+  background: #FFF7ED;
 }
 
 .dropzone-content {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  gap: 12px;
 }
 
 .dropzone-icon-circle {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  background: #E0E7FF;
-  color: #4F46E5;
+  background: #FFEDD5;
+  color: #EA580C;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 18px;
+  flex-shrink: 0;
 }
 
 .dropzone-text {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+  text-align: left;
 }
 
 .dropzone-main-text {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: #334155;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0F172A;
   margin: 0;
 }
 
 .text-primary-link {
-  color: #2563EB;
+  color: #EA580C;
   text-decoration: underline;
   cursor: pointer;
+  font-weight: 700;
 }
 
 .dropzone-sub-text {
-  font-size: 12px;
-  color: #94A3B8;
+  font-size: 11px;
+  color: #475569;
+  font-weight: 600;
   margin: 0;
 }
 
 /* Card hiển thị ảnh đã upload */
 .image-uploaded-card {
-  margin-top: 8px;
+  margin-top: 4px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
+  gap: 12px;
   background: #FFFFFF;
-  border: 1.5px solid #E2E8F0;
-  border-radius: 12px;
-  padding: 10px 14px;
+  border: 1.5px solid #CBD5E1;
+  border-radius: 10px;
+  padding: 8px 12px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
@@ -7167,5 +7442,547 @@ h1, h2, h3, h4, h5, h6 {
   background: #dc2626;
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(239, 68, 68, 0.35);
+}
+
+/* ==========================================================================
+   NÚT ĐĂNG XUẤT KÊNH NGƯỜI BÁN (TOPBAR & SIDEBAR)
+   ========================================================================== */
+.btn-seller-logout {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #e11d48;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-seller-logout:hover {
+  background: #ffe4e6;
+  border-color: #fda4af;
+  color: #be123c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(225, 29, 72, 0.15);
+}
+
+.sidebar-bottom-action {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid #f1f5f9;
+}
+.btn-nav-logout:hover {
+  background: #fff1f2 !important;
+}
+
+/* ==========================================================================
+   MOBILE RESPONSIVE STYLES & OFF-CANVAS DRAWER
+   ========================================================================== */
+.mobile-sidebar-backdrop {
+  display: none;
+}
+.btn-close-mobile-sidebar {
+  display: none;
+}
+.mobile-topbar-header {
+  display: none;
+}
+.seller-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 991px) {
+  /* Layout tổng thể trên điện thoại */
+  .seller-app-layout {
+    display: block;
+    width: 100%;
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+    background-color: #F8F9FA;
+  }
+
+  /* Main wrapper chiếm trọn 100% màn hình, không bị trừ 250px */
+  .seller-main-wrapper {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    padding-bottom: 80px; /* Chừa khoảng trống cho thanh Menu đáy */
+    overflow-x: hidden;
+  }
+
+  /* Sidebar chuyển thành Drawer trượt ra từ bên trái */
+  .seller-sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    height: 100vh !important;
+    width: 290px !important;
+    max-width: 85vw !important;
+    z-index: 10000 !important;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 8px 0 30px rgba(0, 0, 0, 0.22);
+    overflow-y: auto;
+  }
+
+  .seller-sidebar.mobile-sidebar-open {
+    transform: translateX(0) !important;
+  }
+
+  /* Lớp phủ mờ nền khi mở sidebar */
+  .mobile-sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(4px);
+    z-index: 9999;
+    animation: sellerFadeIn 0.25s ease-out;
+  }
+
+  .sidebar-brand-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-right: 4px;
+    margin-bottom: 18px;
+  }
+
+  .btn-close-mobile-sidebar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #F1F5F9;
+    border: none;
+    color: #475569;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-close-mobile-sidebar:hover {
+    background: #E2E8F0;
+    color: #0F172A;
+  }
+
+  /* Thanh tiêu đề Top Bar trên điện thoại */
+  .seller-top-bar {
+    height: auto !important;
+    padding: 10px 14px !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    background: #FFFFFF !important;
+    border-bottom: 1px solid #F1F5F9 !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 90 !important;
+  }
+
+  .mobile-topbar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 10px;
+  }
+
+  .btn-toggle-mobile-sidebar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: #F8FAFC;
+    border: 1.5px solid #E2E8F0;
+    color: #0F172A;
+    font-size: 20px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+  .btn-toggle-mobile-sidebar:active {
+    background: #E2E8F0;
+    transform: scale(0.95);
+  }
+
+  .mobile-topbar-brand {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mobile-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: #D94E15;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    line-height: 1.1;
+  }
+
+  .mobile-shop-name {
+    font-size: 14px;
+    font-weight: 800;
+    color: #0F172A;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.25;
+  }
+
+  .mobile-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .mobile-store-toggle {
+    padding: 5px 10px !important;
+    font-size: 11px !important;
+    border-radius: 14px !important;
+  }
+
+  .mobile-buyer-switch {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 34px !important;
+    height: 34px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    font-size: 14px !important;
+  }
+
+  .mobile-avatar-capsule {
+    padding: 0 !important;
+  }
+
+  .mobile-avatar-capsule .profile-avatar-img {
+    width: 34px !important;
+    height: 34px !important;
+  }
+
+  .desktop-top-bar-right {
+    display: none !important;
+  }
+
+  .seller-top-bar .search-box-pill {
+    width: 100% !important;
+    height: 38px !important;
+    margin: 0 !important;
+    border-radius: 20px !important;
+    padding: 0 12px !important;
+  }
+
+  .seller-top-bar .search-box-pill .search-input-field {
+    font-size: 12.5px !important;
+  }
+
+  /* Nội dung Body */
+  .seller-content-body {
+    padding: 14px 12px 85px 12px !important;
+  }
+
+  /* Header chào mừng */
+  .welcome-heading-section {
+    margin-top: 0 !important;
+    margin-bottom: 2px !important;
+  }
+
+  .welcome-title {
+    font-size: 18px !important;
+    letter-spacing: -0.2px !important;
+    line-height: 1.35 !important;
+  }
+
+  .welcome-subtitle {
+    font-size: 12px !important;
+    margin-top: 2px !important;
+  }
+
+  /* 3 thẻ KPI trên điện thoại: Stack 1 cột gọn gàng và số to dễ đọc */
+  .kpi-cards-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .kpi-card {
+    padding: 14px 16px !important;
+    border-radius: 14px !important;
+  }
+
+  .kpi-card-header {
+    margin-bottom: 8px !important;
+  }
+
+  .kpi-number {
+    font-size: 21px !important;
+  }
+
+  /* Khối lưới biểu đồ & sản phẩm bán chạy */
+  .middle-dashboard-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .dashboard-panel-card {
+    padding: 14px 12px !important;
+    border-radius: 14px !important;
+  }
+
+  .panel-header-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+
+  .panel-title {
+    font-size: 15px !important;
+  }
+
+  .chart-canvas-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+  }
+
+  .smooth-line-svg {
+    min-width: 480px;
+    height: 180px;
+  }
+
+  .x-axis-row {
+    min-width: 480px;
+    padding: 4px 10px 0 40px;
+  }
+
+  .table-actions-group {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .table-tool-btn {
+    padding: 6px 10px !important;
+    font-size: 11.5px !important;
+  }
+
+  /* Bảng dữ liệu sản phẩm & đơn hàng: Cho phép vuốt ngang mượt mà */
+  .table-responsive-box {
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 8px !important;
+  }
+
+  .modern-data-table {
+    min-width: 660px !important;
+  }
+
+  .modern-data-table th,
+  .modern-data-table td {
+    padding: 10px 12px !important;
+    font-size: 12.5px !important;
+  }
+
+  /* Tiêu đề các Tab chức năng */
+  .tab-header-flex {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .tab-heading {
+    font-size: 19px !important;
+  }
+
+  .tab-subheading {
+    font-size: 12px !important;
+  }
+
+  .btn-brand-primary {
+    width: 100% !important;
+    justify-content: center !important;
+    text-align: center !important;
+    padding: 12px !important;
+    font-size: 14px !important;
+    border-radius: 10px !important;
+  }
+
+  /* Thanh Menu Đáy Điện Thoại (Mobile Bottom Navigation Bar) */
+  .seller-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: #FFFFFF;
+    border-top: 1px solid #E2E8F0;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+    z-index: 999;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 4px;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .bottom-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    background: transparent;
+    border: none;
+    color: #64748B;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 6px 2px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s;
+  }
+
+  .bottom-nav-item i {
+    font-size: 18px;
+    line-height: 1;
+    transition: transform 0.15s;
+  }
+
+  .bottom-nav-item.active {
+    color: #D94E15 !important;
+    font-weight: 800;
+  }
+
+  .bottom-nav-item.active i {
+    color: #D94E15;
+    transform: scale(1.12);
+  }
+
+  .bottom-nav-icon-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .bottom-nav-badge {
+    position: absolute;
+    top: -5px;
+    right: -9px;
+    background: #EF4444;
+    color: #FFFFFF;
+    font-size: 9px;
+    font-weight: 800;
+    min-width: 15px;
+    height: 15px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 2px;
+  }
+
+  /* ==================== TỐI ƯU MODAL THÊM / SỬA SẢN PHẨM TRÊN ĐIỆN THOẠI ==================== */
+  .modal-backdrop-overlay {
+    padding: 8px 10px !important;
+  }
+
+  .modal-card-box.modal-lg.modern-product-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: calc(100dvh - 16px) !important;
+    border-radius: 14px !important;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3) !important;
+  }
+
+  .modern-product-modal .modal-header-row {
+    padding: 10px 12px !important;
+  }
+
+  .modern-product-modal .modal-header-row h4 {
+    font-size: 15px !important;
+  }
+
+  .modern-product-modal .modal-header-icon {
+    width: 30px !important;
+    height: 30px !important;
+    font-size: 15px !important;
+    border-radius: 6px !important;
+  }
+
+  .modern-product-modal .btn-close-modal {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 11px !important;
+  }
+
+  .modern-product-modal .modal-body-fields {
+    padding: 10px 12px !important;
+    gap: 9px !important;
+  }
+
+  .modern-product-modal .field-item label {
+    font-size: 12px !important;
+    margin-bottom: 2px !important;
+  }
+
+  .modern-product-modal .field-input {
+    height: 36px !important;
+    padding: 6px 10px !important;
+    font-size: 12.5px !important;
+  }
+
+  .item-type-toggle-btn {
+    padding: 6px 8px !important;
+    font-size: 12px !important;
+  }
+
+  .modern-product-modal .upload-dropzone {
+    padding: 8px 10px !important;
+  }
+
+  .modern-product-modal .dropzone-icon-circle {
+    width: 30px !important;
+    height: 30px !important;
+    font-size: 15px !important;
+  }
+
+  .modern-product-modal .dropzone-main-text {
+    font-size: 11.5px !important;
+  }
+
+  .modern-product-modal .dropzone-sub-text {
+    font-size: 10px !important;
+  }
+
+  .modern-product-modal .modal-footer-row {
+    padding: 9px 12px !important;
+    gap: 8px !important;
+    position: sticky !important;
+    bottom: 0 !important;
+    z-index: 10 !important;
+    background: #FFFFFF !important;
+    box-shadow: 0 -3px 10px rgba(0, 0, 0, 0.05) !important;
+  }
+
+  .modern-product-modal .modal-footer-row button {
+    flex: 1 !important;
+    justify-content: center !important;
+    padding: 9px 8px !important;
+    font-size: 12.5px !important;
+    border-radius: 8px !important;
+  }
 }
 </style>

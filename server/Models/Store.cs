@@ -55,8 +55,17 @@ public class Store
     [BsonElement("cccd_number")]
     public string CccdNumber { get; set; } = string.Empty; // Số CCCD
 
+    [BsonElement("date_of_birth")]
+    public string DateOfBirth { get; set; } = string.Empty; // Ngày tháng năm sinh (lấy từ CCCD)
+
+    [BsonElement("gender")]
+    public string Gender { get; set; } = string.Empty; // Giới tính
+
     [BsonElement("nguyen_quan")]
     public string NguyenQuan { get; set; } = string.Empty; // Nguyên quán (lấy từ CCCD)
+
+    [BsonElement("permanent_address")]
+    public string PermanentAddress { get; set; } = string.Empty; // Nơi thường trú (lấy từ CCCD)
 
     [BsonElement("cccd_front_image")]
     public string CccdFrontImage { get; set; } = string.Empty; // Link / data ảnh CCCD mặt trước

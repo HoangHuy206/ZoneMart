@@ -503,7 +503,24 @@ const resolveStoreDispatchLocation = (shopName: string) => {
 const onPaymentConfirmed = (paidAmount?: number) => {
   if (paymentState.value === "SUCCESS") return;
   paymentState.value = "SUCCESS";
-  if (pollTimer) clearInterval(pollTimer);
+
+  // Giải phóng tức thì toàn bộ kết nối mạng SSE, Polling, WebSocket để không làm nghẽn luồng tải trang
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  if (sseSource) {
+    try { sseSource.close(); } catch (e) {}
+    sseSource = null;
+  }
+  if (vietQrSocket) {
+    try { vietQrSocket.close(); } catch (e) {}
+    vietQrSocket = null;
+  }
+  if (broadcastChannel) {
+    try { broadcastChannel.close(); } catch (e) {}
+    broadcastChannel = null;
+  }
 
   const finalAmount = paidAmount || finalTotal.value;
   const orderId = orderPaymentCode.value;
@@ -603,12 +620,15 @@ const onPaymentConfirmed = (paidAmount?: number) => {
   playPaymentSuccessChime();
   triggerToast("🎉 Tiền đã vào tài khoản TPBank! Thanh toán thành công.");
 
-  autoRedirectTimer.value = 2;
+  autoRedirectTimer.value = 1;
   if (redirectInterval) clearInterval(redirectInterval);
   redirectInterval = setInterval(() => {
     autoRedirectTimer.value--;
     if (autoRedirectTimer.value <= 0) {
-      clearInterval(redirectInterval);
+      if (redirectInterval) {
+        clearInterval(redirectInterval);
+        redirectInterval = null;
+      }
       goToBuyerOrders();
     }
   }, 1000);
@@ -616,14 +636,42 @@ const onPaymentConfirmed = (paidAmount?: number) => {
 
 // Chuyển tới trang Đơn hàng của tôi
 const goToBuyerOrders = () => {
-  if (redirectInterval) clearInterval(redirectInterval);
-  if (pollTimer) clearInterval(pollTimer);
-  try {
-    vietQrSocket?.close();
-  } catch (e) {}
-  router.push("/buyer-orders").catch(() => {
-    window.location.href = "/buyer-orders";
-  });
+  if (redirectInterval) {
+    clearInterval(redirectInterval);
+    redirectInterval = null;
+  }
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+  if (sseSource) {
+    try { sseSource.close(); } catch (e) {}
+    sseSource = null;
+  }
+  if (vietQrSocket) {
+    try { vietQrSocket.close(); } catch (e) {}
+    vietQrSocket = null;
+  }
+  if (broadcastChannel) {
+    try { broadcastChannel.close(); } catch (e) {}
+    broadcastChannel = null;
+  }
+
+  // Chuyển hướng ngay tức thì và dự phòng tự động
+  const safetyFallback = setTimeout(() => {
+    if (window.location.pathname !== "/buyer-orders") {
+      window.location.replace("/buyer-orders");
+    }
+  }, 350);
+
+  router.replace("/buyer-orders")
+    .then(() => {
+      clearTimeout(safetyFallback);
+    })
+    .catch(() => {
+      clearTimeout(safetyFallback);
+      window.location.replace("/buyer-orders");
+    });
 };
 
 // Tự động kết nối WebSocket VietQR trực tiếp từ trình duyệt
@@ -813,6 +861,9 @@ onMounted(() => {
   loadAddressForCurrentAccount();
   initVietQrSocket();
   startPaymentListener();
+
+  // Tải trước (Prefetch) trang Đơn Hàng để chuyển trang tức thì khi thanh toán thành công
+  import("../../views/thang/BuyerOrdersView.vue").catch(() => {});
 });
 
 onUnmounted(() => {

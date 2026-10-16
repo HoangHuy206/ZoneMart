@@ -9,7 +9,7 @@
  * ================================================================
  */
 import { ref, reactive, computed, watch, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import {
   useAuth,
   type UserProfile,
@@ -19,12 +19,12 @@ import FaceScanModal from '../../components/auth/FaceScanModal.vue';
 import { apiFetch } from '../../utils/apiConfig';
 
 const router = useRouter();
+const route = useRoute();
 const auth = useAuth();
 
 // Tab state
-const currentTab = ref<'profile' | 'orders' | 'addresses' | 'wallet'>(
-  'profile',
-);
+type ProfileTab = 'profile' | 'orders' | 'addresses' | 'seller-reg' | 'shipper-reg';
+const currentTab = ref<ProfileTab>('profile');
 
 // 1. Xác định tài khoản hiện tại từ useAuth hoặc LocalStorage
 const currentAccount = computed<UserProfile>(() => {
@@ -817,41 +817,6 @@ const handleSaveAddressForm = () => {
   isAddressModalOpen.value = false;
 };
 
-// 7. Wallet Top-up (Nạp tiền vào Ví ZonePay)
-const quickTopUp = async (amount: number) => {
-  user.zonePayBalance += amount;
-
-  // Cập nhật useAuth Singleton để Header và Dropdown nhận số dư mới ngay tức thì
-  auth.updateUser({ walletBalance: user.zonePayBalance });
-
-  const savedKey = PROFILE_STORAGE_PREFIX + accountKey.value;
-  localStorage.setItem(savedKey, JSON.stringify(user));
-
-  // Gửi API lên Backend C#
-  try {
-    const res = await fetch('/api/auth/topup-wallet', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: currentAccount.value.id,
-        phoneEmail: user.email || currentAccount.value.phoneEmail,
-        amount,
-      }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      triggerToast(
-        data.message ||
-          `Nạp thành công +${amount.toLocaleString('vi-VN')} ₫ vào Ví ZonePay!`,
-      );
-      return;
-    }
-  } catch {}
-
-  triggerToast(
-    `Nạp thành công +${amount.toLocaleString('vi-VN')} ₫ vào Ví ZonePay!`,
-  );
-};
 
 // 8. Modal Đổi Mật Khẩu
 const isPasswordModalOpen = ref(false);
@@ -1107,6 +1072,7 @@ watch(
   () => {
     loadUserProfile();
     checkFaceStatus();
+    fetchPartnerStatus();
   },
 );
 
@@ -1119,9 +1085,397 @@ watch(
   },
 );
 
+const handleLogout = () => {
+  auth.logout();
+  router.push({ path: "/login", query: { logout: "success" } });
+};
+
+// ================================================================
+// ĐĂNG KÝ NÂNG CẤP NGƯỜI BÁN & SHIPPER (TH2 DÀNH CHO KHÁCH HÀNG)
+// ================================================================
+const partnerData = ref<{
+  sellerStatus: string;
+  shipperStatus: string;
+  store: any;
+  shipper: any;
+}>({
+  sellerStatus: 'None',
+  shipperStatus: 'None',
+  store: null,
+  shipper: null,
+});
+const isPartnerLoading = ref(false);
+
+const fetchPartnerStatus = async () => {
+  const acc = accountKey.value;
+  if (!acc || acc === 'default_user' || acc === 'guest@zonemart.vn') return;
+  isPartnerLoading.value = true;
+  try {
+    const res = await apiFetch(`/api/auth/partner-status?account=${encodeURIComponent(acc)}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) {
+        partnerData.value = {
+          sellerStatus: data.sellerStatus || 'None',
+          shipperStatus: data.shipperStatus || 'None',
+          store: data.store || null,
+          shipper: data.shipper || null,
+        };
+
+        // Tự động đồng bộ cờ isSeller / isShipper vào session tài khoản nếu đã được Admin phê duyệt
+        if (data.sellerStatus === 'Approved' || data.sellerStatus === 'Active') {
+          try {
+            const raw = localStorage.getItem('currentUser') || localStorage.getItem('zonemart_user');
+            if (raw) {
+              const u = JSON.parse(raw);
+              u.isSeller = true;
+              if (data.store?.storeName) u.storeName = data.store.storeName;
+              localStorage.setItem('currentUser', JSON.stringify(u));
+              localStorage.setItem('zonemart_user', JSON.stringify(u));
+              auth.updateUser(u);
+            }
+          } catch {}
+        }
+        if (data.shipperStatus === 'Approved') {
+          try {
+            const raw = localStorage.getItem('currentUser') || localStorage.getItem('zonemart_user');
+            if (raw) {
+              const u = JSON.parse(raw);
+              u.isShipper = true;
+              if (data.shipper?.licensePlate) u.vehiclePlate = data.shipper.licensePlate;
+              localStorage.setItem('currentUser', JSON.stringify(u));
+              localStorage.setItem('zonemart_user', JSON.stringify(u));
+              auth.updateUser(u);
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Lỗi khi tải trạng thái đối tác:', e);
+  } finally {
+    isPartnerLoading.value = false;
+  }
+};
+
+// Chuyển sang Kênh Quản Lý Bán Hàng (Seller Portal) cho tài khoản đã được duyệt
+const enterSellerPortal = () => {
+  try {
+    const rawSaved = localStorage.getItem('currentUser') || localStorage.getItem('zonemart_user');
+    let u: any = rawSaved ? JSON.parse(rawSaved) : (auth.currentUser.value || {});
+    u.role = 'seller';
+    u.isSeller = true;
+    if (partnerData.value.store?.storeName) {
+      u.storeName = partnerData.value.store.storeName;
+    }
+    localStorage.setItem('currentUser', JSON.stringify(u));
+    localStorage.setItem('zonemart_user', JSON.stringify(u));
+    localStorage.setItem('userRole', 'seller');
+    localStorage.setItem('isLoggedIn', 'true');
+    auth.updateUser(u);
+  } catch (e) {
+    console.error('Lỗi chuyển kênh Người Bán:', e);
+  }
+  router.push('/seller');
+};
+
+// Chuyển sang Cổng Tài Xế Shipper cho tài khoản đã được duyệt
+const enterShipperPortal = () => {
+  try {
+    const rawSaved = localStorage.getItem('currentUser') || localStorage.getItem('zonemart_user');
+    let u: any = rawSaved ? JSON.parse(rawSaved) : (auth.currentUser.value || {});
+    u.role = 'shipper';
+    u.isShipper = true;
+    if (partnerData.value.shipper?.licensePlate) {
+      u.vehiclePlate = partnerData.value.shipper.licensePlate;
+    }
+    localStorage.setItem('currentUser', JSON.stringify(u));
+    localStorage.setItem('zonemart_user', JSON.stringify(u));
+    localStorage.setItem('userRole', 'shipper');
+    localStorage.setItem('isLoggedIn', 'true');
+    auth.updateUser(u);
+  } catch (e) {
+    console.error('Lỗi chuyển cổng Tài Xế:', e);
+  }
+  router.push('/shipper');
+};
+
+// Trạng thái khóa chéo: nếu đã đăng ký Người Bán thì khóa form Shipper, ngược lại nếu đã đăng ký Shipper thì khóa form Người Bán
+const isShipperFormLocked = computed(() => {
+  const s = partnerData.value.sellerStatus;
+  return s === 'Pending' || s === 'Approved' || s === 'Active';
+});
+
+const isSellerFormLocked = computed(() => {
+  const sh = partnerData.value.shipperStatus;
+  return sh === 'Pending' || sh === 'Approved' || sh === 'Active';
+});
+
+// Form Người Bán (Gian hàng) - KHÔNG CÓ EMAIL & MẬT KHẨU (Tất cả đều để trống cho người dùng tự điền)
+const sellerForm = reactive({
+  storeName: '',
+  sellerType: '',
+  category: '',
+  address: '',
+  ward: '',
+  district: '',
+  marketName: '',
+  openHours: '',
+  ownerFullName: '',
+  dateOfBirth: '',
+  cccdNumber: '',
+  gender: '',
+  nguyenQuan: '',
+  permanentAddress: '',
+  cccdFrontImage: '',
+  cccdBackImage: '',
+  foodSafetyCertImage: '',
+  bankName: '',
+  bankAccountNumber: '',
+});
+const isSubmittingSeller = ref(false);
+const sellerFormError = ref('');
+
+const handleSellerFileChange = (
+  field: 'cccdFrontImage' | 'cccdBackImage' | 'foodSafetyCertImage',
+  e: Event,
+) => {
+  const target = e.target as HTMLInputElement;
+  if (target.files && target.files[0]) {
+    const file = target.files[0];
+    if (file.size > 5 * 1024 * 1024) {
+      triggerToast('Ảnh không được vượt quá 5MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      sellerForm[field] = (ev.target?.result as string) || '';
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
+const submitSellerUpgrade = async () => {
+  if (isSellerFormLocked.value) {
+    triggerToast('Bạn đã đăng ký vai trò Shipper, không thể nộp thêm hồ sơ Người Bán.');
+    return;
+  }
+  sellerFormError.value = '';
+  if (!sellerForm.storeName.trim()) {
+    sellerFormError.value = 'Vui lòng nhập tên cửa hàng / gian hàng!';
+    return;
+  }
+  if (!sellerForm.sellerType) {
+    sellerFormError.value = 'Vui lòng chọn mô hình hoạt động!';
+    return;
+  }
+  if (!sellerForm.category) {
+    sellerFormError.value = 'Vui lòng chọn ngành hàng kinh doanh!';
+    return;
+  }
+  if (!sellerForm.address.trim()) {
+    sellerFormError.value = 'Vui lòng nhập địa chỉ cụ thể của gian hàng!';
+    return;
+  }
+  if (!sellerForm.ownerFullName.trim()) {
+    sellerFormError.value = 'Vui lòng nhập họ tên chủ tiệm theo CCCD!';
+    return;
+  }
+  if (!sellerForm.cccdNumber.trim()) {
+    sellerFormError.value = 'Vui lòng nhập số CCCD / Mã định danh cá nhân (12 chữ số)!';
+    return;
+  }
+  if (!sellerForm.cccdFrontImage) {
+    sellerFormError.value = 'Bắt buộc phải tải lên ảnh CCCD mặt trước!';
+    return;
+  }
+  if (!sellerForm.cccdBackImage) {
+    sellerFormError.value = 'Bắt buộc phải tải lên ảnh CCCD mặt sau!';
+    return;
+  }
+  if (!sellerForm.foodSafetyCertImage) {
+    sellerFormError.value = 'Bắt buộc phải tải lên Giấy chứng nhận Vệ sinh An toàn thực phẩm (hoặc VietGAP)!';
+    return;
+  }
+  if (!sellerForm.bankName) {
+    sellerFormError.value = 'Vui lòng chọn ngân hàng thụ hưởng!';
+    return;
+  }
+  if (!sellerForm.bankAccountNumber.trim()) {
+    sellerFormError.value = 'Vui lòng nhập số tài khoản ngân hàng để nhận doanh thu!';
+    return;
+  }
+
+  isSubmittingSeller.value = true;
+  try {
+    const res = await apiFetch('/api/auth/register-seller', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        isUpgrade: true,
+        userId: currentAccount.value.id,
+        phoneEmail: currentAccount.value.phoneEmail,
+        storeName: sellerForm.storeName.trim(),
+        sellerType: sellerForm.sellerType,
+        category: sellerForm.category,
+        address: sellerForm.address.trim(),
+        ward: sellerForm.ward.trim(),
+        district: sellerForm.district.trim(),
+        marketName: sellerForm.marketName.trim(),
+        openHours: sellerForm.openHours.trim(),
+        ownerFullName: sellerForm.ownerFullName.trim(),
+        dateOfBirth: sellerForm.dateOfBirth,
+        cccdNumber: sellerForm.cccdNumber.trim(),
+        gender: sellerForm.gender,
+        nguyenQuan: sellerForm.nguyenQuan.trim(),
+        permanentAddress: sellerForm.permanentAddress.trim(),
+        cccdFrontImage: sellerForm.cccdFrontImage,
+        cccdBackImage: sellerForm.cccdBackImage,
+        foodSafetyCertImage: sellerForm.foodSafetyCertImage,
+        bankName: sellerForm.bankName,
+        bankAccountNumber: sellerForm.bankAccountNumber.trim(),
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      triggerToast('Đã nộp hồ sơ mở gian hàng thành công! Đang chờ Ban Quản Trị xét duyệt.');
+      await fetchPartnerStatus();
+    } else {
+      sellerFormError.value = data.message || 'Không thể gửi hồ sơ. Vui lòng thử lại!';
+      triggerToast(sellerFormError.value);
+    }
+  } catch (err: any) {
+    sellerFormError.value = err.message || 'Lỗi kết nối khi gửi hồ sơ.';
+    triggerToast(sellerFormError.value);
+  } finally {
+    isSubmittingSeller.value = false;
+  }
+};
+
+// Form Shipper (Tài xế) - KHÔNG CÓ EMAIL & MẬT KHẨU (Tất cả đều để trống cho người dùng tự điền)
+const shipperForm = reactive({
+  fullName: '',
+  cccdNumber: '',
+  cccdFrontImage: '',
+  cccdBackImage: '',
+  avatarUrl: '',
+  licensePlate: '',
+  vehicleType: '',
+  vehicleModel: '',
+  drivingLicenseImage: '',
+  operatingArea: '',
+  bankName: '',
+  bankAccountNumber: '',
+});
+const isSubmittingShipper = ref(false);
+const shipperFormError = ref('');
+
+const handleShipperFileChange = (
+  field: 'cccdFrontImage' | 'cccdBackImage' | 'avatarUrl' | 'drivingLicenseImage',
+  e: Event,
+) => {
+  const target = e.target as HTMLInputElement;
+  if (target.files && target.files[0]) {
+    const file = target.files[0];
+    if (file.size > 5 * 1024 * 1024) {
+      triggerToast('Ảnh không được vượt quá 5MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      shipperForm[field] = (ev.target?.result as string) || '';
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
+const submitShipperUpgrade = async () => {
+  if (isShipperFormLocked.value) {
+    triggerToast('Bạn đã đăng ký mở Gian Hàng, không thể nộp thêm hồ sơ Shipper.');
+    return;
+  }
+  shipperFormError.value = '';
+  if (!shipperForm.fullName.trim()) {
+    shipperFormError.value = 'Vui lòng nhập họ và tên tài xế!';
+    return;
+  }
+  if (!shipperForm.cccdNumber.trim()) {
+    shipperFormError.value = 'Vui lòng nhập số CCCD / Định danh cá nhân!';
+    return;
+  }
+  if (!shipperForm.licensePlate.trim()) {
+    shipperFormError.value = 'Vui lòng nhập biển số xe!';
+    return;
+  }
+  if (!shipperForm.vehicleType) {
+    shipperFormError.value = 'Vui lòng chọn loại phương tiện!';
+    return;
+  }
+  if (!shipperForm.bankName) {
+    shipperFormError.value = 'Vui lòng chọn ngân hàng thụ hưởng!';
+    return;
+  }
+  if (!shipperForm.bankAccountNumber.trim()) {
+    shipperFormError.value = 'Vui lòng nhập số tài khoản ngân hàng để nhận cước phí!';
+    return;
+  }
+
+  isSubmittingShipper.value = true;
+  try {
+    const res = await apiFetch('/api/auth/register-shipper', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        isUpgrade: true,
+        userId: currentAccount.value.id,
+        phoneNumber: currentAccount.value.phoneEmail,
+        fullName: shipperForm.fullName.trim(),
+        cccdNumber: shipperForm.cccdNumber.trim(),
+        cccdFrontImage: shipperForm.cccdFrontImage,
+        cccdBackImage: shipperForm.cccdBackImage,
+        avatarUrl: shipperForm.avatarUrl,
+        licensePlate: shipperForm.licensePlate.trim().toUpperCase(),
+        vehicleType: shipperForm.vehicleType,
+        vehicleModel: shipperForm.vehicleModel,
+        drivingLicenseImage: shipperForm.drivingLicenseImage,
+        operatingArea: shipperForm.operatingArea,
+        bankName: shipperForm.bankName,
+        bankAccountNumber: shipperForm.bankAccountNumber.trim(),
+      }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      triggerToast('Đã nộp hồ sơ đăng ký tài xế thành công! Đang chờ Ban Quản Trị xét duyệt.');
+      await fetchPartnerStatus();
+    } else {
+      shipperFormError.value = data.message || 'Không thể gửi hồ sơ. Vui lòng thử lại!';
+      triggerToast(shipperFormError.value);
+    }
+  } catch (err: any) {
+    shipperFormError.value = err.message || 'Lỗi kết nối khi gửi hồ sơ.';
+    triggerToast(shipperFormError.value);
+  } finally {
+    isSubmittingShipper.value = false;
+  }
+};
+
+// Lắng nghe tab trên URL query
+watch(
+  () => route.query.tab,
+  (tab) => {
+    if (tab && ['profile', 'orders', 'addresses', 'seller-reg', 'shipper-reg'].includes(tab as string)) {
+      currentTab.value = tab as ProfileTab;
+    }
+  },
+);
+
 onMounted(() => {
+  if (route.query.tab && ['profile', 'orders', 'addresses', 'seller-reg', 'shipper-reg'].includes(route.query.tab as string)) {
+    currentTab.value = route.query.tab as ProfileTab;
+  }
   loadUserProfile();
   checkFaceStatus();
+  fetchPartnerStatus();
 });
 </script>
 
@@ -1209,16 +1563,16 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Right Quick Stat Chips (Wallet, Vouchers, Points) -->
+        <!-- Right Quick Stat Chips (Orders, Vouchers, Points) -->
         <div class="hero-stats-grid">
-          <div class="stat-box wallet-box" @click="currentTab = 'wallet'">
-            <div class="stat-icon-wrap bg-orange">
-              <i class="bi bi-wallet2"></i>
+          <div class="stat-box" @click="currentTab = 'orders'">
+            <div class="stat-icon-wrap bg-emerald">
+              <i class="bi bi-bag-check-fill"></i>
             </div>
             <div class="stat-content">
-              <span class="stat-label">Số dư Ví ZonePay</span>
-              <strong class="stat-value text-orange"
-                >{{ user.zonePayBalance.toLocaleString('vi-VN') }} ₫</strong
+              <span class="stat-label">Đơn Hàng Gần Đây</span>
+              <strong class="stat-value text-emerald"
+                >{{ user.ordersCount }} Đơn hàng</strong
               >
             </div>
           </div>
@@ -1291,13 +1645,72 @@ onMounted(() => {
           <span>Sổ Địa Chỉ (Bán Kính 10km)</span>
         </button>
 
+
         <button
           class="tab-btn"
-          :class="{ active: currentTab === 'wallet' }"
-          @click="currentTab = 'wallet'"
+          :class="{ active: currentTab === 'seller-reg', 'tab-btn-locked': isSellerFormLocked }"
+          @click="currentTab = 'seller-reg'"
         >
-          <i class="bi bi-credit-card-2-front-fill"></i>
-          <span>Ví ZonePay & Thanh Toán</span>
+          <i class="bi bi-shop"></i>
+          <span>Đăng Ký Người Bán</span>
+          <span
+            v-if="partnerData.sellerStatus === 'Pending'"
+            class="badge-tab-status badge-tab-pending"
+          >
+            Chờ duyệt
+          </span>
+          <span
+            v-else-if="partnerData.sellerStatus === 'Approved' || partnerData.sellerStatus === 'Active'"
+            class="badge-tab-status badge-tab-approved"
+          >
+            Đối tác
+          </span>
+          <span
+            v-else-if="isSellerFormLocked"
+            class="badge-tab-status badge-tab-locked"
+            title="Đang có hồ sơ Tài Xế Shipper"
+          >
+            <i class="bi bi-lock-fill"></i> Khóa
+          </span>
+        </button>
+
+        <button
+          class="tab-btn"
+          :class="{ active: currentTab === 'shipper-reg', 'tab-btn-locked': isShipperFormLocked }"
+          @click="currentTab = 'shipper-reg'"
+        >
+          <i class="bi bi-bicycle"></i>
+          <span>Đăng Ký Shipper</span>
+          <span
+            v-if="partnerData.shipperStatus === 'Pending'"
+            class="badge-tab-status badge-tab-pending"
+          >
+            Chờ duyệt
+          </span>
+          <span
+            v-else-if="partnerData.shipperStatus === 'Approved'"
+            class="badge-tab-status badge-tab-approved"
+          >
+            Đối tác
+          </span>
+          <span
+            v-else-if="isShipperFormLocked"
+            class="badge-tab-status badge-tab-locked"
+            title="Đang có hồ sơ Mở Gian Hàng"
+          >
+            <i class="bi bi-lock-fill"></i> Khóa
+          </span>
+        </button>
+
+        <!-- Nút Đăng Xuất Tài Khoản -->
+        <button
+          type="button"
+          class="tab-btn tab-btn-logout text-danger"
+          @click="handleLogout"
+          title="Đăng xuất khỏi tài khoản"
+        >
+          <i class="bi bi-box-arrow-right"></i>
+          <span>Đăng Xuất</span>
         </button>
       </nav>
 
@@ -1804,75 +2217,777 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- TAB 4: VÍ ZONEPAY & THANH TOÁN -->
-        <div v-else-if="currentTab === 'wallet'" class="tab-pane">
+
+        <!-- TAB 5: ĐĂNG KÝ NGƯỜI BÁN (SELLER) -->
+        <div v-else-if="currentTab === 'seller-reg'" class="tab-pane partner-reg-pane">
           <div class="pane-header">
             <div>
-              <h2 class="pane-title">Ví Điện Tử ZonePay</h2>
+              <h2 class="pane-title">
+                <i class="bi bi-shop text-orange me-2"></i>Đăng Ký Làm Người Bán (Gian Hàng)
+              </h2>
               <p class="pane-subtitle">
-                Thanh toán không tiền mặt siêu tốc, hoàn tiền tức thì khi mua
-                thực phẩm tươi.
+                Đưa nông sản & đặc sản địa phương lên sàn ZoneMart, tiếp cận hàng nghìn khách hàng lân cận bán kính 10km.
               </p>
             </div>
           </div>
 
-          <div class="wallet-bento-layout">
-            <!-- ZonePay Virtual Card -->
-            <div class="virtual-card">
-              <div class="card-top-row">
-                <span class="card-brand">Zone<span>Pay</span></span>
-                <i class="bi bi-wifi contactless-icon"></i>
+          <!-- TH: HỒ SƠ ĐANG CHỜ DUYỆT (PENDING) -->
+          <div v-if="partnerData.sellerStatus === 'Pending'" class="partner-status-card pending-card">
+            <div class="status-card-header">
+              <div class="status-icon-wrapper pending-icon">
+                <i class="bi bi-hourglass-split"></i>
               </div>
-              <div class="card-chip-sim"></div>
-              <div class="card-balance-box">
-                <span class="card-balance-label">Số dư khả dụng</span>
-                <div class="card-balance-number">
-                  {{ user.zonePayBalance.toLocaleString('vi-VN') }} ₫
+              <div class="status-title-box">
+                <div class="status-badge-row">
+                  <span class="status-pill status-pill-pending">
+                    <i class="bi bi-clock-history me-1"></i>ĐANG CHỜ BAN QUẢN TRỊ DUYỆT
+                  </span>
+                  <span class="status-date" v-if="partnerData.store?.createdAt">
+                    Nộp ngày: {{ new Date(partnerData.store.createdAt).toLocaleDateString('vi-VN') }}
+                  </span>
                 </div>
-              </div>
-              <div class="card-bottom-row">
-                <span class="card-holder-name">{{
-                  user.fullName.toUpperCase()
-                }}</span>
-                <span class="card-network">FAST 10KM PAY</span>
+                <h3 class="status-main-title">Hồ sơ của bạn đang chờ duyệt</h3>
+                <p class="status-desc">
+                  Hồ sơ mở gian hàng của bạn đã được gửi thành công đến Ban Quản Trị ZoneMart và đang trong quá trình thẩm định.
+                  <strong>Bạn vẫn có thể sử dụng tài khoản Khách Hàng này để mua sắm bình thường!</strong>
+                </p>
               </div>
             </div>
 
-            <!-- Quick Top-up Action Box -->
-            <div class="topup-box">
-              <h3 class="topup-title">Nạp Tiền Nhanh Vào Ví</h3>
-              <p class="topup-desc">
-                Miễn phí nạp qua VNPay, MoMo, Vietcombank và Techcombank.
-              </p>
+            <!-- Bảng chi tiết hồ sơ gian hàng đã nộp -->
+            <div class="submitted-details-grid" v-if="partnerData.store">
+              <div class="detail-item">
+                <span class="detail-label">Tên gian hàng</span>
+                <span class="detail-val font-semibold">{{ partnerData.store.storeName || 'Chưa đặt' }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Mã gian hàng</span>
+                <span class="detail-val code-val">{{ partnerData.store.storeCode || 'Đang cấp mã' }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Chủ tiệm</span>
+                <span class="detail-val">{{ partnerData.store.ownerFullName || currentAccount.fullName }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Danh mục kinh doanh</span>
+                <span class="detail-val">{{ partnerData.store.category || 'Nông sản & Thực phẩm' }}</span>
+              </div>
+              <div class="detail-item full-width">
+                <span class="detail-label">Địa chỉ gian hàng</span>
+                <span class="detail-val"><i class="bi bi-geo-alt text-orange me-1"></i>{{ partnerData.store.address || 'Chưa cập nhật' }}</span>
+              </div>
+              <div class="detail-item" v-if="partnerData.store.bankName">
+                <span class="detail-label">Ngân hàng thụ hưởng</span>
+                <span class="detail-val">{{ partnerData.store.bankName }} - {{ partnerData.store.bankAccountNumber }}</span>
+              </div>
+            </div>
 
-              <div class="amount-pills">
-                <button class="amount-btn" @click="quickTopUp(100000)">
-                  +100.000 ₫
-                </button>
-                <button class="amount-btn" @click="quickTopUp(200000)">
-                  +200.000 ₫
-                </button>
+            <div class="status-card-footer">
+              <button class="btn-refresh-status" @click="fetchPartnerStatus" :disabled="isPartnerLoading">
+                <i class="bi bi-arrow-clockwise me-1" :class="{ 'spin-anim': isPartnerLoading }"></i>
+                {{ isPartnerLoading ? 'Đang kiểm tra...' : 'Kiểm Tra Lại Trạng Thái' }}
+              </button>
+              <button class="btn-continue-shopping" @click="router.push('/')">
+                <i class="bi bi-cart3 me-1"></i>Tiếp Tục Mua Sắm
+              </button>
+            </div>
+          </div>
+
+          <!-- TH: HỒ SƠ ĐÃ ĐƯỢC DUYỆT (APPROVED / ACTIVE) -->
+          <div v-else-if="partnerData.sellerStatus === 'Approved' || partnerData.sellerStatus === 'Active'" class="partner-status-card approved-card">
+            <div class="status-card-header">
+              <div class="status-icon-wrapper approved-icon">
+                <i class="bi bi-patch-check-fill"></i>
+              </div>
+              <div class="status-title-box">
+                <span class="status-pill status-pill-approved">
+                  <i class="bi bi-check-circle-fill me-1"></i>ĐÃ PHÊ DUYỆT CHÍNH THỨC
+                </span>
+                <h3 class="status-main-title">Chúc mừng! Bạn đã là Đối Tác Gian Hàng ZoneMart</h3>
+                <p class="status-desc">
+                  Gian hàng <strong>{{ partnerData.store?.storeName || 'của bạn' }}</strong> đã được kích hoạt thành công trên hệ thống. Hãy truy cập Kênh Người Bán để đăng tải sản phẩm và quản lý đơn hàng!
+                </p>
+              </div>
+            </div>
+            <div class="status-card-footer">
+              <button class="btn-portal-action" @click="enterSellerPortal">
+                <i class="bi bi-shop me-2"></i>Truy Cập Kênh Người Bán (Seller Portal)
+              </button>
+            </div>
+          </div>
+
+          <!-- TH: CHƯA ĐĂNG KÝ HOẶC BỊ TỪ CHỐI (NONE / REJECTED) -> HIỂN THỊ FORM KHÔNG CÓ EMAIL & MẬT KHẨU -->
+          <div v-else class="partner-form-card">
+            <!-- Banner giải thích kế thừa tài khoản -->
+            <div class="account-inheritance-banner">
+              <div class="inheritance-icon">
+                <i class="bi bi-shield-lock-fill"></i>
+              </div>
+              <div class="inheritance-info">
+                <div class="inheritance-badge-row">
+                  <span class="inheritance-tag">LIÊN KẾT TỰ ĐỘNG</span>
+                  <span class="user-email-pill">
+                    <i class="bi bi-person-check-fill me-1"></i>{{ currentAccount.phoneEmail }}
+                  </span>
+                </div>
+                <h4 class="inheritance-title">Đăng ký mở gian hàng từ tài khoản Khách Hàng hiện có</h4>
+                <p class="inheritance-text">
+                  Hệ thống tự động liên kết gian hàng với tài khoản <strong>{{ currentAccount.phoneEmail }}</strong> và mật khẩu hiện tại của bạn.
+                 
+                </p>
+              </div>
+            </div>
+
+            <!-- Cảnh báo nếu bị từ chối trước đó -->
+            <div v-if="partnerData.sellerStatus === 'Rejected'" class="reject-alert-banner">
+              <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+              <div>
+                <strong>Hồ sơ trước đó bị từ chối:</strong> {{ partnerData.store?.rejectReason || 'Thông tin giấy tờ chưa hợp lệ. Vui lòng cập nhật lại.' }}
+              </div>
+            </div>
+
+            <!-- Banner Tạm Khóa do đã đăng ký đối tác Shipper -->
+            <div v-if="isSellerFormLocked" class="partner-locked-banner">
+              <div class="lock-icon-wrap">
+                <i class="bi bi-lock-fill"></i>
+              </div>
+              <div class="lock-content">
+                <div class="lock-badge-row">
+                  <span class="lock-tag">MỤC ĐĂNG KÝ TẠM KHÓA</span>
+                  <span class="lock-reason-pill">
+                    <i class="bi bi-bicycle me-1"></i>Đã nộp hồ sơ Tài Xế ({{ partnerData.shipperStatus === 'Pending' ? 'Đang chờ duyệt' : 'Đã duyệt' }})
+                  </span>
+                </div>
+                <h4 class="lock-title">Biểu Mẫu Đăng Ký Chỉ Xem (Không Thể Nhập)</h4>
+                <p class="lock-desc">
+                  Mỗi tài khoản chỉ được kích hoạt 1 vai trò đối tác tại một thời điểm. Bạn đang có hồ sơ Tài Xế Shipper trên hệ thống nên biểu mẫu mở gian hàng này tạm thời bị khóa. Bạn vẫn có thể xem các thông tin yêu cầu của biểu mẫu bên dưới.
+                </p>
+              </div>
+            </div>
+
+            <form
+              @submit.prevent="submitSellerUpgrade"
+              class="upgrade-form seller-upgrade-form"
+              :class="{ 'form-disabled-locked': isSellerFormLocked }"
+            >
+              <fieldset :disabled="isSellerFormLocked" class="form-fieldset-reset">
+              <!-- MỤC 1: THÔNG TIN GIAN HÀNG -->
+              <div class="form-section-card">
+                <div class="form-section-header">
+                  <span class="sec-step-badge">1</span>
+                  <h3 class="sec-step-title">Thông Tin Cửa Hàng / Gian Hàng</h3>
+                </div>
+
+                <div class="form-grid-2">
+                  <div class="form-group-item">
+                    <label class="form-label">Tên Cửa Hàng / Tiệm <span class="text-danger">*</span></label>
+                    <input
+                      v-model="sellerForm.storeName"
+                      type="text"
+                      class="form-input"
+                      placeholder="VD: Nông Sản Sạch Ba Vì, Vườn Rau Chị Mai..."
+                      required
+                    />
+                  </div>
+
+                  <div class="form-group-item">
+                    <label class="form-label">Mô Hình Hoạt Động <span class="text-danger">*</span></label>
+                    <select v-model="sellerForm.sellerType" class="form-select">
+                      <option value="" disabled selected>-- Chọn mô hình hoạt động --</option>
+                      <option value="traditional_market">Chợ truyền thống địa phương</option>
+                      <option value="home_business">Hộ kinh doanh cá thể tại nhà</option>
+                      <option value="store_facility">Cửa hàng thực phẩm / Siêu thị mini</option>
+                      <option value="other_local_seller">Nông trại / Hợp tác xã địa phương</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-grid-2">
+                  <div class="form-group-item">
+                    <label class="form-label">Ngành Hàng Kinh Doanh <span class="text-danger">*</span></label>
+                    <select v-model="sellerForm.category" class="form-select">
+                      <option value="" disabled selected>-- Chọn ngành hàng kinh doanh --</option>
+                      <option value="Thực phẩm & Nhu yếu phẩm">Thực phẩm & Nhu yếu phẩm</option>
+                      <option value="Rau củ quả tươi sạch">Rau củ quả tươi sạch</option>
+                      <option value="Thịt, Cá & Thủy hải sản tươi">Thịt, Cá & Thủy hải sản tươi</option>
+                      <option value="Trái cây đặc sản nhiệt đới">Trái cây đặc sản nhiệt đới</option>
+                      <option value="Đồ khô & Gia vị truyền thống">Đồ khô & Gia vị truyền thống</option>
+                      <option value="Món ăn nóng & Đồ uống chế biến">Món ăn nóng & Đồ uống chế biến</option>
+                    </select>
+                  </div>
+
+                  <div class="form-group-item">
+                    <label class="form-label">Khung Giờ Mở Cửa</label>
+                    <input
+                      v-model="sellerForm.openHours"
+                      type="text"
+                      class="form-input"
+                      placeholder="07:00 - 22:00"
+                    />
+                  </div>
+                </div>
+
+                <div class="form-group-full">
+                  <label class="form-label">Địa Chỉ Gian Hàng Cụ Thể <span class="text-danger">*</span></label>
+                  <input
+                    v-model="sellerForm.address"
+                    type="text"
+                    class="form-input"
+                    placeholder="Số nhà, tên đường, ngõ ngách, tên chợ (VD: Ki-ốt 12, Chợ Cầu Giấy, Hà Nội)"
+                    required
+                  />
+                </div>
+
+                <div class="form-grid-3">
+                  <div class="form-group-item">
+                    <label class="form-label">Xã / Phường</label>
+                    <input
+                      v-model="sellerForm.ward"
+                      type="text"
+                      class="form-input"
+                      placeholder="VD: Phường Dịch Vọng"
+                    />
+                  </div>
+                  <div class="form-group-item">
+                    <label class="form-label">Quận / Huyện</label>
+                    <input
+                      v-model="sellerForm.district"
+                      type="text"
+                      class="form-input"
+                      placeholder="VD: Quận Cầu Giấy"
+                    />
+                  </div>
+                  <div class="form-group-item">
+                    <label class="form-label">Tên Chợ (nếu có)</label>
+                    <input
+                      v-model="sellerForm.marketName"
+                      type="text"
+                      class="form-input"
+                      placeholder="VD: Chợ Nhà Xanh, Chợ Cầu Giấy"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- MỤC 2: XÁC THỰC CHỦ TIỆM -->
+              <div class="form-section-card">
+                <div class="form-section-header">
+                  <span class="sec-step-badge">2</span>
+                  <h3 class="sec-step-title">Thông Tin Chủ Tiệm & Giấy Tờ Xác Thực</h3>
+                </div>
+
+                <div class="form-grid-2">
+                  <div class="form-group-item">
+                    <label class="form-label">Họ và Tên Chủ Tiệm <span class="text-danger">*</span></label>
+                    <input
+                      v-model="sellerForm.ownerFullName"
+                      type="text"
+                      class="form-input"
+                      placeholder="Họ tên đầy đủ theo CCCD"
+                      required
+                    />
+                  </div>
+                  <div class="form-group-item">
+                    <label class="form-label">Số CCCD / Mã Định Danh <span class="text-danger">*</span></label>
+                    <input
+                      v-model="sellerForm.cccdNumber"
+                      type="text"
+                      maxlength="12"
+                      class="form-input font-mono"
+                      placeholder="12 chữ số CCCD theo thẻ"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <!-- Upload Ảnh Giấy Tờ Bắt Buộc -->
+                <div class="form-grid-3">
+                  <div class="form-group-item">
+                    <label class="form-label">Ảnh CCCD Mặt Trước <span class="text-danger">*</span></label>
+                    <div class="upload-box-wrapper">
+                      <input type="file" accept="image/*" @change="handleSellerFileChange('cccdFrontImage', $event)" class="file-hidden-input" id="seller-cccd-front" />
+                      <label for="seller-cccd-front" class="upload-dropzone">
+                        <img v-if="sellerForm.cccdFrontImage" :src="sellerForm.cccdFrontImage" class="preview-thumb" alt="CCCD trước" />
+                        <div v-else class="upload-placeholder">
+                          <div class="upload-icon-circle">
+                            <i class="bi bi-camera"></i>
+                          </div>
+                          <span class="upload-main-text">Chọn ảnh mặt trước</span>
+                          <span class="upload-sub-text text-danger font-semibold">Bắt buộc ảnh CCCD rõ nét</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="form-group-item">
+                    <label class="form-label">Ảnh CCCD Mặt Sau <span class="text-danger">*</span></label>
+                    <div class="upload-box-wrapper">
+                      <input type="file" accept="image/*" @change="handleSellerFileChange('cccdBackImage', $event)" class="file-hidden-input" id="seller-cccd-back" />
+                      <label for="seller-cccd-back" class="upload-dropzone">
+                        <img v-if="sellerForm.cccdBackImage" :src="sellerForm.cccdBackImage" class="preview-thumb" alt="CCCD sau" />
+                        <div v-else class="upload-placeholder">
+                          <div class="upload-icon-circle">
+                            <i class="bi bi-camera"></i>
+                          </div>
+                          <span class="upload-main-text">Chọn ảnh mặt sau</span>
+                          <span class="upload-sub-text text-danger font-semibold">Bắt buộc có vân tay</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="form-group-item">
+                    <label class="form-label">Giấy Phép An Toàn Thực Phẩm <span class="text-danger">*</span></label>
+                    <div class="upload-box-wrapper">
+                      <input type="file" accept="image/*" @change="handleSellerFileChange('foodSafetyCertImage', $event)" class="file-hidden-input" id="seller-cert" />
+                      <label for="seller-cert" class="upload-dropzone">
+                        <img v-if="sellerForm.foodSafetyCertImage" :src="sellerForm.foodSafetyCertImage" class="preview-thumb" alt="Chứng nhận ATTP" />
+                        <div v-else class="upload-placeholder">
+                          <div class="upload-icon-circle">
+                            <i class="bi bi-file-earmark-medical"></i>
+                          </div>
+                          <span class="upload-main-text">Tải lên giấy phép ATTP</span>
+                          <span class="upload-sub-text text-danger font-semibold">Bắt buộc có giấy phép / VietGAP</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- MỤC 3: TÀI KHOẢN NGÂN HÀNG -->
+              <div class="form-section-card">
+                <div class="form-section-header">
+                  <span class="sec-step-badge">3</span>
+                  <h3 class="sec-step-title">Thông Tin Nhận Doanh Thu</h3>
+                </div>
+
+                <div class="form-grid-2">
+                  <div class="form-group-item">
+                    <label class="form-label">Ngân Hàng Thụ Hưởng <span class="text-danger">*</span></label>
+                    <select v-model="sellerForm.bankName" class="form-select">
+                      <option value="" disabled selected>-- Chọn ngân hàng thụ hưởng --</option>
+                      <option value="Vietcombank (VCB)">Vietcombank (VCB)</option>
+                      <option value="MB Bank (Quân Đội)">MB Bank (Quân Đội)</option>
+                      <option value="Techcombank (TCB)">Techcombank (TCB)</option>
+                      <option value="BIDV (Đầu Tư & Phát Triển)">BIDV (Đầu Tư & Phát Triển)</option>
+                      <option value="VietinBank (Công Thương)">VietinBank (Công Thương)</option>
+                      <option value="Agribank (Nông Nghiệp)">Agribank (Nông Nghiệp)</option>
+                      <option value="VPBank (Thịnh Vượng)">VPBank (Thịnh Vượng)</option>
+                      <option value="ACB (Á Châu)">ACB (Á Châu)</option>
+                    </select>
+                  </div>
+                  <div class="form-group-item">
+                    <label class="form-label">Số Tài Khoản Ngân Hàng <span class="text-danger">*</span></label>
+                    <input
+                      v-model="sellerForm.bankAccountNumber"
+                      type="text"
+                      class="form-input"
+                      placeholder="Nhập số tài khoản ngân hàng chính chủ"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+              </fieldset>
+
+              <div v-if="sellerFormError" class="alert alert-danger mt-3">
+                <i class="bi bi-exclamation-circle-fill me-2"></i>{{ sellerFormError }}
+              </div>
+
+              <div class="form-submit-row">
                 <button
-                  class="amount-btn active-pill"
-                  @click="quickTopUp(500000)"
+                  type="submit"
+                  class="btn-submit-upgrade btn-submit-seller"
+                  :class="{ 'btn-submit-locked': isSellerFormLocked }"
+                  :disabled="isSubmittingSeller || isSellerFormLocked"
                 >
-                  +500.000 ₫
-                </button>
-                <button class="amount-btn" @click="quickTopUp(1000000)">
-                  +1.000.000 ₫
+                  <i v-if="isSubmittingSeller" class="spinner-border spinner-border-sm me-2"></i>
+                  <i v-else-if="isSellerFormLocked" class="bi bi-lock-fill me-2"></i>
+                  <i v-else class="bi bi-shop me-2"></i>
+                  {{
+                    isSubmittingSeller
+                      ? 'Đang gửi hồ sơ...'
+                      : isSellerFormLocked
+                        ? 'Mục Đăng Ký Đã Tạm Khóa'
+                        : 'Nộp Hồ Sơ Đăng Ký Mở Gian Hàng'
+                  }}
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
 
-              <div class="payment-partners">
-                <span class="partner-label">Liên kết bảo mật:</span>
-                <div class="partner-badges">
-                  <span class="p-badge">MoMo</span>
-                  <span class="p-badge">VNPay QR</span>
-                  <span class="p-badge">ZaloPay</span>
-                  <span class="p-badge">Visa/Mastercard</span>
+        <!-- TAB 6: ĐĂNG KÝ SHIPPER (TÀI XẾ) -->
+        <div v-else-if="currentTab === 'shipper-reg'" class="tab-pane partner-reg-pane">
+          <div class="pane-header">
+            <div>
+              <h2 class="pane-title">
+                <i class="bi bi-bicycle text-blue me-2"></i>Đăng Ký Làm Shipper (Tài Xế)
+              </h2>
+              <p class="pane-subtitle">
+                Giao hàng hỏa tốc trong bán kính 10km, nhận đơn tiện lợi gần nhà, thu nhập minh bạch nhận liền tay.
+              </p>
+            </div>
+          </div>
+
+          <!-- TH: HỒ SƠ ĐANG CHỜ DUYỆT (PENDING) -->
+          <div v-if="partnerData.shipperStatus === 'Pending'" class="partner-status-card pending-card">
+            <div class="status-card-header">
+              <div class="status-icon-wrapper pending-icon">
+                <i class="bi bi-hourglass-split"></i>
+              </div>
+              <div class="status-title-box">
+                <div class="status-badge-row">
+                  <span class="status-pill status-pill-pending">
+                    <i class="bi bi-clock-history me-1"></i>ĐANG CHỜ BAN QUẢN TRỊ DUYỆT
+                  </span>
+                  <span class="status-date" v-if="partnerData.shipper?.createdAt">
+                    Nộp ngày: {{ new Date(partnerData.shipper.createdAt).toLocaleDateString('vi-VN') }}
+                  </span>
                 </div>
+                <h3 class="status-main-title">Hồ sơ của bạn đang chờ duyệt</h3>
+                <p class="status-desc">
+                  Hồ sơ tài xế của bạn đã được gửi thành công đến Ban Quản Trị ZoneMart Express và đang trong quá trình xét duyệt bằng lái và phương tiện.
+                  <strong>Bạn vẫn có thể sử dụng tài khoản Khách Hàng này để mua sắm bình thường!</strong>
+                </p>
               </div>
             </div>
+
+            <!-- Bảng chi tiết hồ sơ tài xế đã nộp -->
+            <div class="submitted-details-grid" v-if="partnerData.shipper">
+              <div class="detail-item">
+                <span class="detail-label">Họ tên tài xế</span>
+                <span class="detail-val font-semibold">{{ partnerData.shipper.fullName || currentAccount.fullName }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Mã tài xế</span>
+                <span class="detail-val code-val">{{ partnerData.shipper.shipperCode || 'Đang cấp mã' }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Biển số xe</span>
+                <span class="detail-val font-bold text-dark">{{ partnerData.shipper.licensePlate || 'Chưa cập nhật' }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Phương tiện</span>
+                <span class="detail-val">{{ partnerData.shipper.vehicleType }} - {{ partnerData.shipper.vehicleModel }}</span>
+              </div>
+              <div class="detail-item full-width">
+                <span class="detail-label">Khu vực chạy chính</span>
+                <span class="detail-val"><i class="bi bi-geo-alt text-blue me-1"></i>{{ partnerData.shipper.operatingArea || 'Khu vực nội thành' }}</span>
+              </div>
+              <div class="detail-item" v-if="partnerData.shipper.bankName">
+                <span class="detail-label">Ngân hàng nhận cước phí</span>
+                <span class="detail-val">{{ partnerData.shipper.bankName }} - {{ partnerData.shipper.bankAccountNumber }}</span>
+              </div>
+            </div>
+
+            <div class="status-card-footer">
+              <button class="btn-refresh-status" @click="fetchPartnerStatus" :disabled="isPartnerLoading">
+                <i class="bi bi-arrow-clockwise me-1" :class="{ 'spin-anim': isPartnerLoading }"></i>
+                {{ isPartnerLoading ? 'Đang kiểm tra...' : 'Kiểm Tra Lại Trạng Thái' }}
+              </button>
+              <button class="btn-continue-shopping" @click="router.push('/')">
+                <i class="bi bi-cart3 me-1"></i>Tiếp Tục Mua Sắm
+              </button>
+            </div>
+          </div>
+
+          <!-- TH: HỒ SƠ ĐÃ ĐƯỢC DUYỆT (APPROVED) -->
+          <div v-else-if="partnerData.shipperStatus === 'Approved'" class="partner-status-card approved-card">
+            <div class="status-card-header">
+              <div class="status-icon-wrapper approved-icon">
+                <i class="bi bi-patch-check-fill"></i>
+              </div>
+              <div class="status-title-box">
+                <span class="status-pill status-pill-approved">
+                  <i class="bi bi-check-circle-fill me-1"></i>ĐÃ PHÊ DUYỆT CHÍNH THỨC
+                </span>
+                <h3 class="status-main-title">Chúc mừng! Bạn đã là Tài Xế ZoneMart Express</h3>
+                <p class="status-desc">
+                  Tài khoản tài xế của bạn (Biển số: <strong>{{ partnerData.shipper?.licensePlate }}</strong>) đã sẵn sàng nhận đơn hàng giao nhanh 10km.
+                </p>
+              </div>
+            </div>
+            <div class="status-card-footer">
+              <button class="btn-portal-action btn-portal-shipper" @click="enterShipperPortal">
+                <i class="bi bi-bicycle me-2"></i>Truy Cập Cổng Tài Xế (ZoneMart Driver)
+              </button>
+            </div>
+          </div>
+
+          <!-- TH: CHƯA ĐĂNG KÝ HOẶC BỊ TỪ CHỐI (NONE / REJECTED) -> HIỂN THỊ FORM KHÔNG CÓ EMAIL & MẬT KHẨU -->
+          <div v-else class="partner-form-card">
+            <!-- Banner giải thích kế thừa tài khoản -->
+            <div class="account-inheritance-banner shipper-theme-banner">
+              <div class="inheritance-icon shipper-icon">
+                <i class="bi bi-shield-check"></i>
+              </div>
+              <div class="inheritance-info">
+                <div class="inheritance-badge-row">
+                  <span class="inheritance-tag shipper-tag">LIÊN KẾT TỰ ĐỘNG</span>
+                  <span class="user-email-pill">
+                    <i class="bi bi-person-check-fill me-1"></i>{{ currentAccount.phoneEmail }}
+                  </span>
+                </div>
+                <h4 class="inheritance-title">Đăng ký làm tài xế từ tài khoản Khách Hàng hiện có</h4>
+                <p class="inheritance-text">
+                  Hệ thống tự động liên kết hồ sơ tài xế với tài khoản <strong>{{ currentAccount.phoneEmail }}</strong> và mật khẩu hiện tại của bạn.
+                  <strong>Bạn không cần nhập lại Gmail và mật khẩu mới!</strong>
+                </p>
+              </div>
+            </div>
+
+            <!-- Cảnh báo nếu bị từ chối trước đó -->
+            <div v-if="partnerData.shipperStatus === 'Rejected'" class="reject-alert-banner">
+              <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+              <div>
+                <strong>Hồ sơ trước đó bị từ chối:</strong> {{ partnerData.shipper?.rejectReason || 'Thông tin giấy tờ chưa hợp lệ. Vui lòng cập nhật lại.' }}
+              </div>
+            </div>
+
+            <!-- Banner Tạm Khóa do đã đăng ký đối tác Gian Hàng -->
+            <div v-if="isShipperFormLocked" class="partner-locked-banner shipper-locked-theme">
+              <div class="lock-icon-wrap">
+                <i class="bi bi-lock-fill"></i>
+              </div>
+              <div class="lock-content">
+                <div class="lock-badge-row">
+                  <span class="lock-tag">MỤC ĐĂNG KÝ TẠM KHÓA</span>
+                  <span class="lock-reason-pill">
+                    <i class="bi bi-shop me-1"></i>Đã nộp hồ sơ Gian Hàng ({{ partnerData.sellerStatus === 'Pending' ? 'Đang chờ duyệt' : 'Đã duyệt' }})
+                  </span>
+                </div>
+                <h4 class="lock-title">Biểu Mẫu Đăng Ký Chỉ Xem (Không Thể Nhập)</h4>
+                <p class="lock-desc">
+                  Mỗi tài khoản chỉ được kích hoạt 1 vai trò đối tác tại một thời điểm. Bạn đang có hồ sơ Mở Gian Hàng trên hệ thống nên biểu mẫu đăng ký tài xế này tạm thời bị khóa. Bạn vẫn có thể xem các thông tin yêu cầu của biểu mẫu bên dưới.
+                </p>
+              </div>
+            </div>
+
+            <form
+              @submit.prevent="submitShipperUpgrade"
+              class="upgrade-form shipper-upgrade-form"
+              :class="{ 'form-disabled-locked': isShipperFormLocked }"
+            >
+              <fieldset :disabled="isShipperFormLocked" class="form-fieldset-reset">
+              <!-- MỤC 1: THÔNG TIN CÁ NHÂN -->
+              <div class="form-section-card">
+                <div class="form-section-header">
+                  <span class="sec-step-badge shipper-badge">1</span>
+                  <h3 class="sec-step-title">Thông Tin Cá Nhân & Giấy Tờ</h3>
+                </div>
+
+                <div class="form-grid-2">
+                  <div class="form-group-item">
+                    <label class="form-label">Họ và Tên Tài Xế <span class="text-danger">*</span></label>
+                    <input
+                      v-model="shipperForm.fullName"
+                      type="text"
+                      class="form-input"
+                      placeholder="Họ tên đầy đủ theo CCCD"
+                      required
+                    />
+                  </div>
+                  <div class="form-group-item">
+                    <label class="form-label">Số CCCD / Định Danh <span class="text-danger">*</span></label>
+                    <input
+                      v-model="shipperForm.cccdNumber"
+                      type="text"
+                      class="form-input"
+                      placeholder="12 chữ số CCCD"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <!-- Upload Ảnh Giấy Tờ -->
+                <div class="form-grid-3">
+                  <div class="form-group-item">
+                    <label class="form-label">Ảnh Chân Dung Đại Diện</label>
+                    <div class="upload-box-wrapper">
+                      <input type="file" accept="image/*" @change="handleShipperFileChange('avatarUrl', $event)" class="file-hidden-input" id="shipper-avatar" />
+                      <label for="shipper-avatar" class="upload-dropzone">
+                        <img v-if="shipperForm.avatarUrl" :src="shipperForm.avatarUrl" class="preview-thumb" alt="Chân dung" />
+                        <div v-else class="upload-placeholder">
+                          <div class="upload-icon-circle shipper-circle">
+                            <i class="bi bi-person-bounding-box"></i>
+                          </div>
+                          <span class="upload-main-text">Ảnh khuôn mặt</span>
+                          <span class="upload-sub-text">Chính diện, rõ nét</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="form-group-item">
+                    <label class="form-label">Ảnh CCCD Mặt Trước</label>
+                    <div class="upload-box-wrapper">
+                      <input type="file" accept="image/*" @change="handleShipperFileChange('cccdFrontImage', $event)" class="file-hidden-input" id="shipper-cccd-front" />
+                      <label for="shipper-cccd-front" class="upload-dropzone">
+                        <img v-if="shipperForm.cccdFrontImage" :src="shipperForm.cccdFrontImage" class="preview-thumb" alt="CCCD trước" />
+                        <div v-else class="upload-placeholder">
+                          <div class="upload-icon-circle shipper-circle">
+                            <i class="bi bi-camera"></i>
+                          </div>
+                          <span class="upload-main-text">Chọn ảnh mặt trước</span>
+                          <span class="upload-sub-text">Mặt trước CCCD</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="form-group-item">
+                    <label class="form-label">Ảnh CCCD Mặt Sau</label>
+                    <div class="upload-box-wrapper">
+                      <input type="file" accept="image/*" @change="handleShipperFileChange('cccdBackImage', $event)" class="file-hidden-input" id="shipper-cccd-back" />
+                      <label for="shipper-cccd-back" class="upload-dropzone">
+                        <img v-if="shipperForm.cccdBackImage" :src="shipperForm.cccdBackImage" class="preview-thumb" alt="CCCD sau" />
+                        <div v-else class="upload-placeholder">
+                          <div class="upload-icon-circle shipper-circle">
+                            <i class="bi bi-camera"></i>
+                          </div>
+                          <span class="upload-main-text">Chọn ảnh mặt sau</span>
+                          <span class="upload-sub-text">Mặt sau có vân tay</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- MỤC 2: PHƯƠNG TIỆN & BẰNG LÁI -->
+              <div class="form-section-card">
+                <div class="form-section-header">
+                  <span class="sec-step-badge shipper-badge">2</span>
+                  <h3 class="sec-step-title">Phương Tiện & Bằng Lái Xe</h3>
+                </div>
+
+                <div class="form-grid-3">
+                  <div class="form-group-item">
+                    <label class="form-label">Biển Số Xe <span class="text-danger">*</span></label>
+                    <input
+                      v-model="shipperForm.licensePlate"
+                      type="text"
+                      class="form-input text-uppercase font-semibold"
+                      placeholder="VD: 29A1-12345"
+                      required
+                    />
+                  </div>
+                  <div class="form-group-item">
+                    <label class="form-label">Loại Phương Tiện</label>
+                    <select v-model="shipperForm.vehicleType" class="form-select">
+                      <option value="" disabled selected>-- Chọn loại phương tiện --</option>
+                      <option value="Xe máy xăng">Xe máy xăng</option>
+                      <option value="Xe máy điện">Xe máy điện</option>
+                    </select>
+                  </div>
+                  <div class="form-group-item">
+                    <label class="form-label">Dòng Xe / Mẫu Xe</label>
+                    <input
+                      v-model="shipperForm.vehicleModel"
+                      type="text"
+                      class="form-input"
+                      placeholder="VD: Wave Alpha, Vision..."
+                    />
+                  </div>
+                </div>
+
+                <div class="form-group-full">
+                  <label class="form-label">Ảnh Giấy Phép Lái Xe (Bằng Lái A1 / A2)</label>
+                  <div class="upload-box-wrapper upload-license-wrap">
+                    <input type="file" accept="image/*" @change="handleShipperFileChange('drivingLicenseImage', $event)" class="file-hidden-input" id="shipper-license" />
+                    <label for="shipper-license" class="upload-dropzone upload-dropzone-license">
+                      <img v-if="shipperForm.drivingLicenseImage" :src="shipperForm.drivingLicenseImage" class="preview-thumb" alt="Bằng lái" />
+                      <div v-else class="upload-placeholder horizontal-placeholder">
+                        <div class="upload-icon-circle shipper-circle">
+                          <i class="bi bi-card-heading"></i>
+                        </div>
+                        <div class="upload-text-group">
+                          <span class="upload-main-text">Chọn ảnh Giấy phép lái xe rõ nét</span>
+                          <span class="upload-sub-text">Hỗ trợ bằng lái xe máy hạng A1 hoặc A2 (Mặt trước)</span>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- MỤC 3: KHU VỰC & NGÂN HÀNG -->
+              <div class="form-section-card">
+                <div class="form-section-header">
+                  <span class="sec-step-badge shipper-badge">3</span>
+                  <h3 class="sec-step-title">Khu Vực Chạy Chính & Tài Khoản Nhận Cước</h3>
+                </div>
+
+                <div class="form-group-full">
+                  <label class="form-label">Khu Vực Hoạt Động Ưu Tiên</label>
+                  <select v-model="shipperForm.operatingArea" class="form-select">
+                    <option value="" disabled selected>-- Chọn khu vực hoạt động --</option>
+                    <option value="Quận Cầu Giấy, Hà Nội">Quận Cầu Giấy, Hà Nội</option>
+                    <option value="Quận Nam Từ Liêm, Hà Nội">Quận Nam Từ Liêm, Hà Nội</option>
+                    <option value="Quận Bắc Từ Liêm, Hà Nội">Quận Bắc Từ Liêm, Hà Nội</option>
+                    <option value="Quận Đống Đa, Hà Nội">Quận Đống Đa, Hà Nội</option>
+                    <option value="Quận Thanh Xuân, Hà Nội">Quận Thanh Xuân, Hà Nội</option>
+                    <option value="Quận Ba Đình, Hà Nội">Quận Ba Đình, Hà Nội</option>
+                    <option value="Quận Tây Hồ, Hà Nội">Quận Tây Hồ, Hà Nội</option>
+                    <option value="Toàn khu vực nội thành Hà Nội">Toàn khu vực nội thành Hà Nội</option>
+                  </select>
+                </div>
+
+                <div class="form-grid-2">
+                  <div class="form-group-item">
+                    <label class="form-label">Ngân Hàng Thụ Hưởng <span class="text-danger">*</span></label>
+                    <select v-model="shipperForm.bankName" class="form-select">
+                      <option value="" disabled selected>-- Chọn ngân hàng thụ hưởng --</option>
+                      <option value="Vietcombank (VCB)">Vietcombank (VCB)</option>
+                      <option value="MB Bank (Quân Đội)">MB Bank (Quân Đội)</option>
+                      <option value="Techcombank (TCB)">Techcombank (TCB)</option>
+                      <option value="BIDV (Đầu Tư & Phát Triển)">BIDV (Đầu Tư & Phát Triển)</option>
+                      <option value="VietinBank (Công Thương)">VietinBank (Công Thương)</option>
+                      <option value="Agribank (Nông Nghiệp)">Agribank (Nông Nghiệp)</option>
+                      <option value="VPBank (Thịnh Vượng)">VPBank (Thịnh Vượng)</option>
+                      <option value="ACB (Á Châu)">ACB (Á Châu)</option>
+                    </select>
+                  </div>
+                  <div class="form-group-item">
+                    <label class="form-label">Số Tài Khoản Ngân Hàng <span class="text-danger">*</span></label>
+                    <input
+                      v-model="shipperForm.bankAccountNumber"
+                      type="text"
+                      class="form-input"
+                      placeholder="Nhập số tài khoản ngân hàng chính chủ"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+              </fieldset>
+
+              <div v-if="shipperFormError" class="alert alert-danger mt-3">
+                <i class="bi bi-exclamation-circle-fill me-2"></i>{{ shipperFormError }}
+              </div>
+
+              <div class="form-submit-row">
+                <button
+                  type="submit"
+                  class="btn-submit-upgrade btn-submit-shipper"
+                  :class="{ 'btn-submit-locked': isShipperFormLocked }"
+                  :disabled="isSubmittingShipper || isShipperFormLocked"
+                >
+                  <i v-if="isSubmittingShipper" class="spinner-border spinner-border-sm me-2"></i>
+                  <i v-else-if="isShipperFormLocked" class="bi bi-lock-fill me-2"></i>
+                  <i v-else class="bi bi-bicycle me-2"></i>
+                  {{
+                    isSubmittingShipper
+                      ? 'Đang gửi hồ sơ...'
+                      : isShipperFormLocked
+                        ? 'Mục Đăng Ký Đã Tạm Khóa'
+                        : 'Nộp Hồ Sơ Đăng Ký Tài Xế'
+                  }}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </main>
@@ -2498,6 +3613,10 @@ onMounted(() => {
   background: #fefce8;
   color: #d97706;
 }
+.bg-emerald {
+  background: #ecfdf5;
+  color: #059669;
+}
 
 .stat-content {
   display: flex;
@@ -2520,6 +3639,9 @@ onMounted(() => {
 
 .text-orange {
   color: #ea580c !important;
+}
+.text-emerald {
+  color: #059669 !important;
 }
 
 /* ==========================================================================
@@ -2579,6 +3701,15 @@ onMounted(() => {
   font-weight: 800;
   padding: 2px 7px;
   border-radius: 12px;
+}
+
+.tab-btn-logout {
+  margin-left: auto;
+  color: #dc2626 !important;
+}
+.tab-btn-logout:hover {
+  color: #b91c1c !important;
+  background-color: #fef2f2 !important;
 }
 
 /* ==========================================================================
@@ -3541,6 +4672,20 @@ onMounted(() => {
     align-items: flex-start;
   }
 
+  .profile-nav-tabs {
+    gap: 4px;
+    padding-bottom: 2px;
+  }
+
+  .tab-btn {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .tab-btn-logout {
+    margin-left: 0;
+  }
+
   .order-actions {
     width: 100%;
     flex-wrap: wrap;
@@ -4301,5 +5446,831 @@ onMounted(() => {
   color: #9a3412;
   display: flex;
   align-items: center;
+}
+
+/* ==========================================================================
+   TH2: PARTNER REGISTRATION & STATUS CARDS (SELLER & SHIPPER)
+   ========================================================================== */
+.badge-tab-status {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  line-height: 1.4;
+}
+
+.badge-tab-pending {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.badge-tab-approved {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.partner-reg-pane {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.partner-status-card {
+  padding: 28px;
+  border-radius: 20px;
+  margin-bottom: 24px;
+  position: relative;
+  transition: all 0.25s ease;
+}
+
+.pending-card {
+  background: linear-gradient(180deg, #fffcf6 0%, #ffffff 100%);
+  border: 1.5px solid #fde68a;
+  box-shadow: 0 10px 25px -5px rgba(245, 158, 11, 0.08);
+}
+
+.approved-card {
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+  border: 1.5px solid #bbf7d0;
+  box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.08);
+}
+
+.status-card-header {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.status-icon-wrapper {
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.pending-icon {
+  background: #fef3c7;
+  color: #d97706;
+  box-shadow: 0 0 0 6px rgba(254, 243, 199, 0.6);
+  animation: pulseAmber 2.5s infinite;
+}
+
+@keyframes pulseAmber {
+  0%, 100% {
+    box-shadow: 0 0 0 4px rgba(254, 243, 199, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(254, 243, 199, 0.2);
+  }
+}
+
+.approved-icon {
+  background: #dcfce7;
+  color: #16a34a;
+  box-shadow: 0 0 0 6px rgba(220, 252, 231, 0.6);
+}
+
+.status-title-box {
+  flex: 1;
+}
+
+.status-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.status-pill {
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 4px 12px;
+  border-radius: 20px;
+  letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.status-pill-pending {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.status-pill-approved {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.status-date {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.status-main-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 6px 0 8px 0;
+}
+
+.status-desc {
+  font-size: 14.5px;
+  color: #475569;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.submitted-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 24px;
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1.5px solid #f1f5f9;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-item.full-width {
+  grid-column: 1 / -1;
+}
+
+.detail-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.detail-val {
+  font-size: 14.5px;
+  color: #0f172a;
+}
+
+.code-val {
+  font-family: monospace;
+  font-weight: 700;
+  color: #ea580c;
+  background: #fff7ed;
+  padding: 2px 8px;
+  border-radius: 6px;
+  width: fit-content;
+}
+
+.status-card-footer {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn-refresh-status {
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  color: #334155;
+  font-weight: 700;
+  padding: 10px 18px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-refresh-status:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.btn-continue-shopping {
+  background: #ea580c;
+  border: none;
+  color: #ffffff;
+  font-weight: 700;
+  padding: 10px 20px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-continue-shopping:hover {
+  background: #c2410c;
+}
+
+.btn-portal-action {
+  background: #16a34a;
+  border: none;
+  color: #ffffff;
+  font-weight: 700;
+  padding: 12px 24px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 15px;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-portal-action:hover {
+  background: #15803d;
+}
+
+.btn-portal-shipper {
+  background: #2563eb;
+}
+
+.btn-portal-shipper:hover {
+  background: #1d4ed8;
+}
+
+/* ==========================================================================
+   PARTNER REGISTRATION FORM STYLING (SELLER & SHIPPER)
+   ========================================================================== */
+.account-inheritance-banner {
+  background: linear-gradient(135deg, #fff7ed 0%, #fefce8 100%);
+  border: 1.5px solid #fed7aa;
+  border-radius: 16px;
+  padding: 18px 22px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.account-inheritance-banner.shipper-theme-banner {
+  background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
+  border-color: #bfdbfe;
+}
+
+.inheritance-icon {
+  font-size: 32px;
+  color: #ea580c;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.inheritance-icon.shipper-icon {
+  color: #2563eb;
+}
+
+.inheritance-info {
+  flex: 1;
+}
+
+.inheritance-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.inheritance-tag {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: #ea580c;
+  color: #ffffff;
+}
+
+.inheritance-tag.shipper-tag {
+  background: #2563eb;
+}
+
+.user-email-pill {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #1e293b;
+  background: #ffffff;
+  padding: 3px 12px;
+  border-radius: 20px;
+  border: 1px solid #cbd5e1;
+  display: inline-flex;
+  align-items: center;
+}
+
+.inheritance-title {
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+
+.inheritance-text {
+  font-size: 13.5px;
+  color: #475569;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.reject-alert-banner {
+  background: #fef2f2;
+  border: 1.5px solid #fecaca;
+  border-radius: 14px;
+  padding: 14px 18px;
+  color: #991b1b;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  margin-bottom: 22px;
+}
+
+.partner-form-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+}
+
+/* Form Section Cards */
+.form-section-card {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 22px 24px;
+  margin-bottom: 22px;
+  transition: all 0.2s ease;
+}
+
+.form-section-card:hover {
+  border-color: #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+}
+
+.form-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1.5px solid #e2e8f0;
+}
+
+.sec-step-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 3px 8px rgba(234, 88, 12, 0.3);
+  flex-shrink: 0;
+}
+
+.sec-step-badge.shipper-badge {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.3);
+}
+
+.sec-step-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+/* Grid System */
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.form-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.form-group-full {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 16px;
+  width: 100%;
+}
+
+.form-group-item {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .form-grid-2,
+  .form-grid-3 {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}
+
+/* Form Controls */
+.form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 7px;
+  letter-spacing: 0.1px;
+}
+
+.form-label .text-danger {
+  color: #ef4444 !important;
+  font-weight: 700;
+}
+
+.form-input {
+  width: 100%;
+  height: 46px;
+  padding: 10px 16px;
+  background-color: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 12px;
+  font-size: 14px;
+  color: #0f172a;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.form-input:hover {
+  border-color: #94a3b8;
+}
+
+.form-input:focus {
+  outline: none;
+  background-color: #ffffff;
+  border-color: #ea580c;
+  box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.12);
+}
+
+.form-select {
+  width: 100%;
+  height: 46px;
+  padding: 10px 40px 10px 16px;
+  background-color: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 12px;
+  font-size: 14px;
+  color: #0f172a;
+  font-weight: 500;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 14px 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.form-select:hover {
+  border-color: #94a3b8;
+}
+
+.form-select:focus {
+  outline: none;
+  background-color: #ffffff;
+  border-color: #ea580c;
+  box-shadow: 0 0 0 4px rgba(234, 88, 12, 0.12);
+}
+
+/* Shipper theme input focus */
+.shipper-upgrade-form .form-input:focus,
+.shipper-upgrade-form .form-select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+/* Upload Dropzones */
+.upload-box-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.file-hidden-input {
+  display: none;
+}
+
+.upload-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 125px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 14px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.22s ease;
+  overflow: hidden;
+  padding: 10px;
+  text-align: center;
+  margin: 0;
+}
+
+.upload-dropzone:hover {
+  border-color: #ea580c;
+  background: #fff7ed;
+  transform: translateY(-1px);
+}
+
+.shipper-upgrade-form .upload-dropzone:hover {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.preview-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.upload-icon-circle {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #ea580c;
+  transition: all 0.2s;
+}
+
+.upload-icon-circle.shipper-circle {
+  color: #2563eb;
+}
+
+.upload-dropzone:hover .upload-icon-circle {
+  background: #ea580c;
+  color: #ffffff;
+}
+
+.shipper-upgrade-form .upload-dropzone:hover .upload-icon-circle {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.upload-main-text {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.upload-sub-text {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+/* Bằng lái xe ngang */
+.upload-license-wrap {
+  width: 100%;
+}
+
+.upload-dropzone-license {
+  height: 85px;
+  padding: 10px 20px;
+}
+
+.horizontal-placeholder {
+  flex-direction: row;
+  gap: 16px;
+  text-align: left;
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.upload-text-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Submit Buttons */
+.form-submit-row {
+  margin-top: 28px;
+  display: flex;
+  justify-content: center;
+}
+
+.btn-submit-upgrade {
+  width: 100%;
+  max-width: 520px;
+  height: 52px;
+  border: none;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 800;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  letter-spacing: 0.2px;
+}
+
+.btn-submit-seller {
+  background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+  box-shadow: 0 8px 24px rgba(234, 88, 12, 0.3);
+}
+
+.btn-submit-seller:hover:not(:disabled) {
+  background: linear-gradient(135deg, #c2410c 0%, #ea580c 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(234, 88, 12, 0.4);
+}
+
+.btn-submit-shipper {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.3);
+}
+
+.btn-submit-shipper:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.4);
+}
+
+.spin-anim {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ==========================================================================
+   LOCKED FORM & READ-ONLY MODE STYLING
+   ========================================================================== */
+.partner-locked-banner {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1.5px dashed #94a3b8;
+  border-radius: 16px;
+  padding: 18px 22px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.partner-locked-banner.shipper-locked-theme {
+  border-color: #94a3b8;
+}
+
+.lock-icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lock-content {
+  flex: 1;
+}
+
+.lock-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.lock-tag {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: #64748b;
+  color: #ffffff;
+}
+
+.lock-reason-pill {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+  background: #ffffff;
+  padding: 3px 12px;
+  border-radius: 20px;
+  border: 1px solid #cbd5e1;
+  display: inline-flex;
+  align-items: center;
+}
+
+.lock-title {
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0 0 4px 0;
+}
+
+.lock-desc {
+  font-size: 13.5px;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.form-fieldset-reset {
+  border: none;
+  padding: 0;
+  margin: 0;
+  min-inline-size: auto;
+}
+
+.form-disabled-locked {
+  opacity: 0.52;
+  filter: grayscale(0.35);
+  transition: all 0.25s ease;
+  position: relative;
+}
+
+.form-disabled-locked input,
+.form-disabled-locked select,
+.form-disabled-locked textarea,
+.form-disabled-locked .upload-dropzone,
+.form-disabled-locked .upload-box-wrapper {
+  pointer-events: none !important;
+  cursor: not-allowed !important;
+  background-color: #f1f5f9 !important;
+  color: #64748b !important;
+}
+
+.btn-submit-locked,
+.btn-submit-locked:disabled {
+  background: #94a3b8 !important;
+  color: #f1f5f9 !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.badge-tab-locked {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #cbd5e1;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.tab-btn-locked {
+  opacity: 0.85;
 }
 </style>

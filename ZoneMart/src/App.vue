@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import logoImg from './assets/logo.png';
-import { useAuth, type UserRole } from './composables/useAuth';
+import { useAuth } from './composables/useAuth';
 import { useCart } from './composables/useCart';
 import { useProductCatalog } from './composables/useProductCatalog';
 import ZoneToast from './components/common/ZoneToast.vue';
@@ -15,7 +15,8 @@ const route = useRoute();
 const auth = useAuth();
 const cart = useCart();
 const catalog = useProductCatalog();
-const introComplete = ref(false);
+const hasShownIntro = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('zonemart_intro_shown') === 'true';
+const introComplete = ref(hasShownIntro);
 const replayIntro = () => { introComplete.value = false; };
 onMounted(() => {
   window.addEventListener('zonemart:replay-intro', replayIntro);
@@ -42,11 +43,15 @@ if (typeof window !== 'undefined') {
   window.addEventListener('zonemart:user-updated', (e: any) => {
     if (e?.detail) {
       auth.currentUser.value = { ...e.detail };
+    } else {
+      auth.currentUser.value = null;
     }
   });
 }
 
 const isMobileMenuOpen = ref(false);
+const isMobileSearchOpen = ref(false);
+const mobileSearchInputRef = ref<HTMLInputElement | null>(null);
 const isUserDropdownOpen = ref(false);
 const searchQuery = ref('');
 const searchTarget = ref<'product' | 'store'>('product');
@@ -68,41 +73,58 @@ function removeVietnameseTones(str: string): string {
     .toLowerCase();
 }
 
-// Gợi ý tìm kiếm thời gian thực
+// Gợi ý tìm kiếm thời gian thực (phân tách rõ ràng Sản phẩm và Gian hàng)
 const searchSuggestions = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   if (!q) return { products: [], stores: [] };
   const qNoTone = removeVietnameseTones(q);
 
-  const products = catalog.allProducts.value
-    .filter(
-      (p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.categoryName.toLowerCase().includes(q) ||
-        p.store.name.toLowerCase().includes(q) ||
-        removeVietnameseTones(p.name).includes(qNoTone) ||
-        removeVietnameseTones(p.categoryName).includes(qNoTone) ||
-        removeVietnameseTones(p.store.name).includes(qNoTone)
-    )
-    .slice(0, 5);
+  let products: typeof catalog.allProducts.value = [];
+  let stores: typeof catalog.allStores.value = [];
 
-  const stores = catalog.allStores.value
-    .filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.address.toLowerCase().includes(q) ||
-        (s.categoryName && s.categoryName.toLowerCase().includes(q)) ||
-        removeVietnameseTones(s.name).includes(qNoTone) ||
-        removeVietnameseTones(s.address).includes(qNoTone) ||
-        (s.categoryName && removeVietnameseTones(s.categoryName).includes(qNoTone))
-    )
-    .slice(0, 4);
+  if (searchTarget.value === 'product') {
+    products = catalog.allProducts.value
+      .filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.categoryName.toLowerCase().includes(q) ||
+          (p.description && p.description.toLowerCase().includes(q)) ||
+          removeVietnameseTones(p.name).includes(qNoTone) ||
+          removeVietnameseTones(p.categoryName).includes(qNoTone)
+      )
+      .slice(0, 5);
+  } else {
+    stores = catalog.allStores.value
+      .filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.address.toLowerCase().includes(q) ||
+          (s.categoryName && s.categoryName.toLowerCase().includes(q)) ||
+          removeVietnameseTones(s.name).includes(qNoTone) ||
+          removeVietnameseTones(s.address).includes(qNoTone) ||
+          (s.categoryName && removeVietnameseTones(s.categoryName).includes(qNoTone))
+      )
+      .slice(0, 5);
+  }
 
   return { products, stores };
 });
 
 const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value;
+  if (isMobileMenuOpen.value) {
+    isMobileSearchOpen.value = false;
+  }
+};
+
+const toggleMobileSearch = () => {
+  isMobileSearchOpen.value = !isMobileSearchOpen.value;
+  if (isMobileSearchOpen.value) {
+    isMobileMenuOpen.value = false;
+    nextTick(() => {
+      mobileSearchInputRef.value?.focus();
+    });
+  }
 };
 
 const toggleUserDropdown = () => {
@@ -121,6 +143,7 @@ const setSearchTarget = (target: 'product' | 'store') => {
 const closeDropdowns = () => {
   isUserDropdownOpen.value = false;
   isMobileMenuOpen.value = false;
+  isMobileSearchOpen.value = false;
   isSearchTargetDropdownOpen.value = false;
   isSuggestionsOpen.value = false;
 };
@@ -129,6 +152,7 @@ const handleHeaderSearch = (forcedTarget?: 'product' | 'store') => {
   const target = forcedTarget || searchTarget.value;
   isSuggestionsOpen.value = false;
   isSearchTargetDropdownOpen.value = false;
+  isMobileSearchOpen.value = false;
   const q = searchQuery.value.trim();
   if (q) {
     router.push({
@@ -145,26 +169,23 @@ const handleHeaderSearch = (forcedTarget?: 'product' | 'store') => {
 
 const selectProductSuggestion = (productId: string) => {
   isSuggestionsOpen.value = false;
+  isMobileSearchOpen.value = false;
   router.push(`/products/${productId}`);
 };
 
 const selectStoreSuggestion = (storeName: string) => {
   isSuggestionsOpen.value = false;
+  isMobileSearchOpen.value = false;
   router.push({
     path: '/products',
-    query: { store: storeName, type: 'product' },
+    query: { store: storeName, type: 'store' },
   });
 };
 
 const handleLogout = () => {
   auth.logout();
   closeDropdowns();
-  router.push('/');
-};
-
-const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
-  auth.switchRole(role);
-  closeDropdowns();
+  router.push({ path: '/login', query: { logout: 'success' } });
 };
 </script>
 
@@ -175,8 +196,8 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
     <!-- Thanh tải tiến trình đỉnh trang & Toast thông báo hoạt họa toàn cục -->
     <TopProgressBar />
     <ZoneToast />
-    <!-- Trợ lý AI Chuyên Gia ZoneMart 24/7 (Khung chat góc dưới bên phải) -->
-    <AiAssistantWidget />
+    <!-- Trợ lý AI Chuyên Gia ZoneMart 24/7 (Khung chat góc dưới bên phải - chỉ hiển thị trên giao diện mua sắm) -->
+    <AiAssistantWidget v-if="!$route.meta.hideHeader && !$route.path.startsWith('/admin') && !$route.path.startsWith('/seller') && !$route.path.startsWith('/shipper')" />
 
     <!-- Header chuẩn theo hình Sample Mockup (Tự động ẩn ở trang 404 qua meta.hideHeader) -->
     <header v-if="!$route.meta.hideHeader" class="navbar">
@@ -323,25 +344,6 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                 </div>
               </div>
 
-              <!-- Gợi ý chéo linh hoạt -->
-              <div
-                v-if="searchTarget === 'product' && searchSuggestions.stores.length > 0"
-                class="sugg-cross-hint"
-                @click="handleHeaderSearch('store')"
-              >
-                <i class="bi bi-shop text-orange"></i>
-                <span>Tìm thấy <strong>{{ searchSuggestions.stores.length }}</strong> gian hàng liên quan. Bấm để xem gian hàng ➔</span>
-              </div>
-
-              <div
-                v-if="searchTarget === 'store' && searchSuggestions.products.length > 0"
-                class="sugg-cross-hint"
-                @click="handleHeaderSearch('product')"
-              >
-                <i class="bi bi-box-seam text-orange"></i>
-                <span>Tìm thấy <strong>{{ searchSuggestions.products.length }}</strong> sản phẩm liên quan. Bấm để xem sản phẩm ➔</span>
-              </div>
-
               <!-- Xem tất cả trên trang tìm kiếm -->
               <div class="sugg-footer-bar" @click="handleHeaderSearch()">
                 <span>Xem tất cả kết quả {{ searchTarget === 'store' ? 'gian hàng' : 'sản phẩm' }} cho "<strong>{{ searchQuery }}</strong>"</span>
@@ -394,14 +396,6 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
               >
                 <i class="bi bi-bag-check menu-mini-icon"></i>
                 <span>Đơn Mua</span>
-              </router-link>
-              <router-link
-                to="/profile"
-                class="quick-link"
-                active-class="active"
-              >
-                <i class="bi bi-wallet2 menu-mini-icon"></i>
-                <span>Ví Tiền</span>
               </router-link>
               <router-link
                 to="/contact"
@@ -654,7 +648,10 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                     >
                       🛵 {{ auth.currentUser.value.vehiclePlate }}
                     </span>
-                    <div class="dropdown-wallet-row">
+                    <div
+                      class="dropdown-wallet-row"
+                      v-if="auth.currentRole.value === 'seller' || auth.currentRole.value === 'shipper'"
+                    >
                       <span class="wallet-lbl">Số dư ví:</span>
                       <strong class="wallet-val">{{
                         auth.formatVND(auth.currentUser.value?.walletBalance)
@@ -673,7 +670,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                       @click="closeDropdowns"
                     >
                       <i class="bi bi-person-circle menu-icon"></i>
-                      <span>Hồ Sơ & Ví Cá Nhân</span>
+                      <span>Hồ Sơ Cá Nhân</span>
                     </router-link>
                     <router-link
                       to="/buyer-orders"
@@ -795,13 +792,24 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
                 </div>
 
                 <div class="dropdown-divider"></div>
-                <button class="dropdown-item logout-btn" @click="handleLogout">
+                <button type="button" class="dropdown-item logout-btn" @click.stop.prevent="handleLogout">
                   <i class="bi bi-box-arrow-right menu-icon"></i>
                   <span>Đăng Xuất</span>
                 </button>
               </div>
             </div>
           </div>
+
+          <!-- Nút Kính Lúp trên Header Mobile (Chạm để mở/đóng ô tìm kiếm) -->
+          <button
+            type="button"
+            class="icon-btn mobile-header-search-btn"
+            :class="{ active: isMobileSearchOpen }"
+            :aria-label="isMobileSearchOpen ? 'Đóng tìm kiếm' : 'Mở tìm kiếm'"
+            @click.stop="toggleMobileSearch"
+          >
+            <i class="bi" :class="isMobileSearchOpen ? 'bi-x-lg' : 'bi-search'"></i>
+          </button>
 
           <!-- Mobile Cart Button (luôn hiển thị trên header di động) -->
           <router-link
@@ -849,51 +857,86 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
         </div>
       </div>
 
+      <!-- Thanh tìm kiếm mở rộng trên Di Động (Chỉ hiển thị khi bấm icon kính lúp) -->
+      <transition name="mobile-search-slide">
+        <div v-if="isMobileSearchOpen" class="mobile-search-bar-outer" @click.stop>
+          <div class="mobile-search-container">
+            <div class="mobile-search-input-wrap">
+              <i class="bi bi-search mobile-search-icon" @click="handleHeaderSearch('product')"></i>
+              <input
+                ref="mobileSearchInputRef"
+                v-model="searchQuery"
+                type="text"
+                class="mobile-search-input"
+                placeholder="Tìm món ngon, nông sản sạch..."
+                aria-label="Tìm kiếm trên ZoneMart"
+                @focus="isSuggestionsOpen = true"
+                @keyup.enter="handleHeaderSearch('product')"
+              />
+              <button
+                v-if="searchQuery"
+                type="button"
+                class="mobile-clear-btn"
+                aria-label="Xóa từ khóa"
+                @click="searchQuery = ''"
+              >
+                <i class="bi bi-x-circle-fill"></i>
+              </button>
+              <button
+                type="button"
+                class="mobile-search-btn"
+                @click="handleHeaderSearch('product')"
+              >
+                Tìm
+              </button>
+            </div>
+          </div>
+
+        <!-- Popup gợi ý trực tiếp trên mobile (Chỉ gợi ý sản phẩm phù hợp) -->
+        <transition name="dropdown-fade">
+          <div
+            v-if="isSuggestionsOpen && searchQuery.trim() && searchSuggestions.products.length > 0"
+            class="search-suggestions-popup mobile-suggestions-popup"
+          >
+            <div class="sugg-group">
+              <div class="sugg-group-header">
+                <span><i class="bi bi-box-seam-fill me-1"></i> Sản phẩm phù hợp</span>
+                <span class="sugg-badge">{{ searchSuggestions.products.length }} món</span>
+              </div>
+              <div
+                v-for="p in searchSuggestions.products"
+                :key="p.id"
+                class="sugg-item product-sugg-item"
+                @click="selectProductSuggestion(p.id)"
+              >
+                <img :src="p.image" :alt="p.name" class="sugg-thumb" />
+                <div class="sugg-info">
+                  <div class="sugg-name">{{ p.name }}</div>
+                  <div class="sugg-meta">
+                    <span class="sugg-price">{{ p.price.toLocaleString('vi-VN') }} ₫</span>
+                    <span class="sugg-store"><i class="bi bi-shop"></i> {{ p.store.name }}</span>
+                  </div>
+                </div>
+                <i class="bi bi-chevron-right arrow-icon"></i>
+              </div>
+            </div>
+
+            <!-- Xem tất cả trên trang tìm kiếm -->
+            <div class="sugg-footer-bar" @click="handleHeaderSearch('product')">
+              <span>Xem tất cả kết quả cho "<strong>{{ searchQuery }}</strong>"</span>
+              <i class="bi bi-arrow-right-short arrow-big"></i>
+            </div>
+          </div>
+        </transition>
+      </div>
+    </transition>
+
       <!-- Menu trên điện thoại -->
       <nav
         v-if="isMobileMenuOpen"
         class="mobile-menu"
         aria-label="Menu điều hướng di động"
       >
-        <!-- Khung tìm kiếm trên di động -->
-        <div class="mobile-search-section">
-          <div class="mobile-search-target-tabs">
-            <button
-              type="button"
-              class="mobile-target-btn"
-              :class="{ active: searchTarget === 'product' }"
-              @click="setSearchTarget('product')"
-            >
-              <i class="bi bi-box-seam-fill"></i> Sản phẩm
-            </button>
-            <button
-              type="button"
-              class="mobile-target-btn"
-              :class="{ active: searchTarget === 'store' }"
-              @click="setSearchTarget('store')"
-            >
-              <i class="bi bi-shop"></i> Gian hàng
-            </button>
-          </div>
-          <div class="mobile-search-input-wrap">
-            <i class="bi bi-search mobile-search-icon"></i>
-            <input
-              v-model="searchQuery"
-              type="text"
-              class="mobile-search-input"
-              :placeholder="searchPlaceholder"
-              @keyup.enter="handleHeaderSearch(); closeDropdowns();"
-            />
-            <button
-              type="button"
-              class="mobile-search-btn"
-              @click="handleHeaderSearch(); closeDropdowns();"
-            >
-              Tìm
-            </button>
-          </div>
-        </div>
-        <div class="mobile-divider"></div>
         <!-- Guest Mobile Links -->
         <template v-if="!auth.isLoggedIn.value">
           <router-link
@@ -971,7 +1014,7 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
               @click="closeDropdowns"
             >
               <i class="bi bi-person-circle menu-icon"></i>
-              <span>Hồ Sơ & Ví</span>
+              <span>Hồ Sơ Cá Nhân</span>
             </router-link>
           </template>
 
@@ -1051,76 +1094,8 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             </router-link>
           </template>
 
-          <router-link
-            to="/buyer-orders"
-            class="mobile-link"
-            @click="navigateToBuyerOrders"
-          >
-            <i class="bi bi-bag-check menu-icon" aria-hidden="true"></i>
-            <span>Đơn Mua</span>
-          </router-link>
-          <router-link
-            to="/profile"
-            class="mobile-link"
-            @click="closeDropdowns"
-          >
-            <i class="bi bi-person-circle menu-icon" aria-hidden="true"></i>
-            <span>Hồ Sơ & Ví</span>
-          </router-link>
-          <router-link to="/seller" class="mobile-link" @click="closeDropdowns">
-            <i class="bi bi-shop menu-icon" aria-hidden="true"></i>
-            <span>Kênh Bán Hàng</span>
-          </router-link>
-          <router-link
-            to="/shipper"
-            class="mobile-link"
-            @click="closeDropdowns"
-          >
-            <i class="bi bi-bicycle menu-icon" aria-hidden="true"></i>
-            <span>Cổng Shipper</span>
-          </router-link>
-          <router-link to="/admin" class="mobile-link" @click="closeDropdowns">
-            <i class="bi bi-shield-check menu-icon" aria-hidden="true"></i>
-            <span>Admin</span>
-          </router-link>
-
-          <!-- Mobile Role Switcher -->
-          <div class="mobile-role-switcher">
-            <span class="switcher-lbl">Chuyển vai trò test:</span>
-            <div class="mobile-switch-btns">
-              <button
-                type="button"
-                :class="{ active: auth.currentRole.value === 'buyer' }"
-                @click="handleRoleSwitch('buyer')"
-              >
-                Buyer
-              </button>
-              <button
-                type="button"
-                :class="{ active: auth.currentRole.value === 'seller' }"
-                @click="handleRoleSwitch('seller')"
-              >
-                Seller
-              </button>
-              <button
-                type="button"
-                :class="{ active: auth.currentRole.value === 'shipper' }"
-                @click="handleRoleSwitch('shipper')"
-              >
-                Shipper
-              </button>
-              <button
-                type="button"
-                :class="{ active: auth.currentRole.value === 'admin' }"
-                @click="handleRoleSwitch('admin')"
-              >
-                Admin
-              </button>
-            </div>
-          </div>
-
           <div class="mobile-divider"></div>
-          <button class="mobile-link logout-link" @click="handleLogout">
+          <button type="button" class="mobile-link logout-link" @click.stop.prevent="handleLogout">
             <i class="bi bi-box-arrow-right menu-icon" aria-hidden="true"></i>
             <span>Đăng Xuất</span>
           </button>
@@ -1139,6 +1114,40 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
 
     <!-- Footer ZoneMart – Chuẩn sàn Thương Mại Điện Tử (Tự động ẩn ở trang 404 qua meta.hideFooter) -->
     <footer v-if="!$route.meta.hideFooter" class="app-footer">
+      <!-- Dải tiện ích cam kết chất lượng chuẩn sàn TMĐT -->
+      <div class="footer-trust-strip">
+        <div class="footer-trust-container">
+          <div class="trust-badge-card">
+            <div class="trust-icon-box"><i class="bi bi-lightning-charge-fill"></i></div>
+            <div class="trust-info">
+              <h6>Giao Siêu Tốc 5km</h6>
+              <p>Nông sản tươi đến tay trong 30-45 phút</p>
+            </div>
+          </div>
+          <div class="trust-badge-card">
+            <div class="trust-icon-box"><i class="bi bi-patch-check-fill"></i></div>
+            <div class="trust-info">
+              <h6>Nông Sản Chuẩn Sạch</h6>
+              <p>100% minh bạch nguồn gốc VietGAP</p>
+            </div>
+          </div>
+          <div class="trust-badge-card">
+            <div class="trust-icon-box"><i class="bi bi-shield-check"></i></div>
+            <div class="trust-info">
+              <h6>Bảo Vệ Người Mua</h6>
+              <p>Đổi trả dễ dàng & hoàn tiền minh bạch</p>
+            </div>
+          </div>
+          <div class="trust-badge-card">
+            <div class="trust-icon-box"><i class="bi bi-telephone-inbound-fill"></i></div>
+            <div class="trust-info">
+              <h6>Tổng Đài 1900 6868</h6>
+              <p>Hỗ trợ khách hàng chu đáo 8:00 - 21:00</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="footer-main-container">
         <!-- Cột 1: Thông tin thương hiệu, Liên hệ & Trụ sở -->
         <div class="footer-col col-brand">
@@ -1146,49 +1155,39 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
             <img :src="logoImg" alt="ZoneMart" class="footer-logo-img" />
             <div class="footer-brand-title">
               <h4>ZoneMart</h4>
-              <span>Giao Hàng Hỏa Tốc 5km</span>
+              <span class="brand-badge"><i class="bi bi-check-circle-fill"></i> Sàn Nông Sản Hỏa Tốc 5km</span>
             </div>
           </div>
           <p class="footer-tagline">
-            Sàn thương mại điện tử kết nối trực tiếp Nhà Vườn, Tiểu Thương với
-            Khách Hàng lân cận trong bán kính 5km.
+            Sàn thương mại điện tử kết nối trực tiếp Nhà Vườn, Tiểu Thương với Khách Hàng lân cận trong bán kính 5km. Nông sản tươi sống, giao nhanh chóng, minh bạch nguồn gốc.
           </p>
           <ul class="footer-contact-list">
             <li>
               <i class="bi bi-geo-alt-fill footer-info-icon"></i>
-              <span
-                ><strong>Trụ sở:</strong> Tòa nhà ZoneMart, Khu Công Nghệ Cao,
-                TP. Hà Nội</span
-              >
+              <span><strong>Trụ sở:</strong> Tòa nhà ZoneMart, Khu Công Nghệ Cao, TP. Hà Nội</span>
             </li>
             <li>
               <i class="bi bi-telephone-fill footer-info-icon"></i>
-              <span
-                ><strong>Tổng đài hỗ trợ:</strong> 1900 6868 (8:00 - 21:00 hàng
-                ngày)</span
-              >
+              <span><strong>Tổng đài hỗ trợ:</strong> <a href="tel:19006868" class="footer-tel-link">1900 6868</a> (8:00 - 21:00 hàng ngày)</span>
             </li>
             <li>
               <i class="bi bi-envelope-fill footer-info-icon"></i>
-              <span><strong>Email hỗ trợ:</strong> support@zonemart.vn</span>
+              <span><strong>Email hỗ trợ:</strong> <a href="mailto:support@zonemart.vn" class="footer-mail-link">support@zonemart.vn</a></span>
             </li>
             <li>
               <i class="bi bi-clock-fill footer-info-icon"></i>
-              <span
-                ><strong>Thời gian hoạt động:</strong> 06:00 - 22:00 (Cả Thứ 7,
-                CN)</span
-              >
+              <span><strong>Giờ hoạt động:</strong> 06:00 - 22:00 (Cả Thứ 7, CN & Ngày Lễ)</span>
             </li>
           </ul>
         </div>
 
         <!-- Cột 2: Về ZoneMart -->
-        <div class="footer-col">
-          <h5 class="footer-heading">VỀ ZONEMART</h5>
+        <div class="footer-col col-links">
+          <h5 class="footer-heading">
+            <i class="bi bi-info-circle-fill heading-ico"></i> VỀ ZONEMART
+          </h5>
           <ul class="footer-links">
-            <li>
-              <router-link to="/contact">Giới thiệu về ZoneMart</router-link>
-            </li>
+            <li><router-link to="/contact">Giới thiệu về ZoneMart</router-link></li>
             <li><a href="#rules">Quy chế hoạt động sàn TMĐT</a></li>
             <li><a href="#safety">Tiêu chuẩn nông sản VietGAP</a></li>
             <li><a href="#news">Tin tức & Mẹo tiêu dùng sạch</a></li>
@@ -1197,14 +1196,14 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
         </div>
 
         <!-- Cột 3: Hỗ Trợ Khách Hàng -->
-        <div class="footer-col">
-          <h5 class="footer-heading">HỖ TRỢ KHÁCH HÀNG</h5>
+        <div class="footer-col col-links">
+          <h5 class="footer-heading">
+            <i class="bi bi-headset heading-ico"></i> HỖ TRỢ KHÁCH HÀNG
+          </h5>
           <ul class="footer-links">
-            <li>
-              <router-link to="/contact">Trung tâm hỗ trợ 24/7</router-link>
-            </li>
-            <li><a href="#guide">Hướng dẫn đặt mua & Chọn nhà vườn</a></li>
-            <li><a href="#shipping">Chính sách giao hỏa tốc 10km</a></li>
+            <li><router-link to="/contact">Trung tâm hỗ trợ 24/7</router-link></li>
+            <li><a href="#guide">Hướng dẫn đặt mua & Chọn shop</a></li>
+            <li><a href="#shipping">Chính sách giao hỏa tốc 5km</a></li>
             <li><a href="#refund">Chính sách đổi trả & Hoàn tiền</a></li>
             <li><a href="#dispute">Giải quyết tranh chấp khiếu nại</a></li>
             <li><a href="#privacy">Chính sách bảo mật thông tin</a></li>
@@ -1212,36 +1211,49 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
         </div>
 
         <!-- Cột 4: Hợp Tác & Thanh Toán -->
-        <div class="footer-col">
-          <h5 class="footer-heading">HỢP TÁC & PHÁT TRIỂN</h5>
-          <ul class="footer-links">
-            <li>
-              <router-link to="/register-seller" target="_blank"
-                >Mở gian hàng Nông Dân / Shop</router-link
-              >
-            </li>
-            <li>
-              <router-link to="/register-shipper" target="_blank"
-                >Đăng ký làm Tài xế Shipper</router-link
-              >
-            </li>
-            <li>
-              <router-link to="/admin">Cổng quản trị viên Admin</router-link>
-            </li>
-          </ul>
-
-          <h5 class="footer-heading footer-subheading-mt">
-            PHƯƠNG THỨC THANH TOÁN
+        <div class="footer-col col-partner">
+          <h5 class="footer-heading">
+            <i class="bi bi-briefcase-fill heading-ico"></i> HỢP TÁC & PHÁT TRIỂN
           </h5>
-          <div class="payment-badges">
-            <span class="pay-tag">COD (Tiền mặt)</span>
-            <span class="pay-tag">Ví ZoneMart</span>
-            <span class="pay-tag">VNPAY QR</span>
-            <span class="pay-tag">MoMo</span>
+          
+          <div class="footer-partner-cards">
+            <router-link to="/register-seller" target="_blank" class="partner-cta-card seller-card">
+              <div class="partner-icon-circle"><i class="bi bi-shop"></i></div>
+              <div class="partner-card-texts">
+                <strong>Mở gian hàng Bán Nông Sản</strong>
+                <small>Tiếp cận hàng nghìn khách hàng lân cận</small>
+              </div>
+              <i class="bi bi-arrow-right partner-chevron"></i>
+            </router-link>
+
+            <router-link to="/register-shipper" target="_blank" class="partner-cta-card shipper-card">
+              <div class="partner-icon-circle"><i class="bi bi-bicycle"></i></div>
+              <div class="partner-card-texts">
+                <strong>Đăng ký làm Tài xế Shipper</strong>
+                <small>Nhận đơn khu vực 5km, thu nhập hấp dẫn</small>
+              </div>
+              <i class="bi bi-arrow-right partner-chevron"></i>
+            </router-link>
+          </div>
+
+          <div class="footer-admin-link-row">
+            <router-link to="/admin" class="footer-admin-link">
+              <i class="bi bi-shield-lock-fill"></i> Cổng quản trị viên Admin
+            </router-link>
           </div>
 
           <h5 class="footer-heading footer-subheading-mt">
-            KẾT NỐI VỚI CHÚNG TÔI
+            <i class="bi bi-credit-card-fill heading-ico"></i> PHƯƠNG THỨC THANH TOÁN
+          </h5>
+          <div class="payment-badges">
+            <span class="pay-tag"><i class="bi bi-cash-stack"></i> COD Tiền mặt</span>
+            <span class="pay-tag"><i class="bi bi-wallet2"></i> Ví ZoneMart</span>
+            <span class="pay-tag"><i class="bi bi-qr-code-scan"></i> VNPAY-QR</span>
+            <span class="pay-tag"><i class="bi bi-phone"></i> Ví MoMo</span>
+          </div>
+
+          <h5 class="footer-heading footer-subheading-mt">
+            <i class="bi bi-share-fill heading-ico"></i> KẾT NỐI VỚI CHÚNG TÔI
           </h5>
           <div class="social-links">
             <a
@@ -1284,14 +1296,21 @@ const handleRoleSwitch = (role: Exclude<UserRole, 'guest'>) => {
         </div>
       </div>
 
-      <!-- Dòng Bản quyền & Ghi chú thành viên dưới cùng -->
+      <!-- Dòng Bản quyền & Ghi chú bảo hộ dưới cùng -->
       <div class="footer-bottom-bar">
         <div class="footer-bottom-container">
-          <div class="member-credits"></div>
-          <p class="copyright">
-            © 2026 ZoneMart E-Commerce Platform. Nền tảng thương mại điện tử
-            giao hàng siêu tốc 10km.
-          </p>
+          <div class="copyright-section">
+            <p class="copyright">
+              © 2026 <strong>ZoneMart E-Commerce</strong>. Nền tảng kết nối trực tiếp Nhà Vườn - Tiểu Thương - Khách Hàng.
+            </p>
+            <p class="copyright-sub">
+              Bảo lưu mọi quyền. Tuân thủ tiêu chuẩn an toàn thực phẩm VietGAP & Giao hàng hỏa tốc trong bán kính 5km.
+            </p>
+          </div>
+          <div class="footer-safe-tags">
+            <span class="safe-tag"><i class="bi bi-shield-check"></i> An toàn 100%</span>
+            <span class="safe-tag"><i class="bi bi-award-fill"></i> Chất Lượng VietGAP</span>
+          </div>
         </div>
       </div>
     </footer>
@@ -2366,39 +2385,71 @@ body {
   border-color: #d85a2a;
 }
 
-/* Mobile Search Section */
-.mobile-search-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 4px 0 8px 0;
-}
-.mobile-search-target-tabs {
-  display: flex;
-  gap: 8px;
-}
-.mobile-target-btn {
-  flex: 1;
-  display: inline-flex;
+/* Mobile Header Search Button (Icon Kính lúp) */
+.mobile-header-search-btn {
+  display: none;
+  background: #fff8f3;
+  border: 1px solid #ebdcd3;
+  color: #d85a2a;
+  border-radius: 8px;
+  width: 42px;
+  height: 42px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1.5px solid #ebdcd3;
-  background: #faf7f2;
-  color: #4a3830;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 17px;
   cursor: pointer;
-  transition: all 0.2s;
-  min-height: 40px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-right: 6px;
 }
-.mobile-target-btn.active {
+.mobile-header-search-btn:hover,
+.mobile-header-search-btn.active {
   background: #d85a2a;
   border-color: #d85a2a;
   color: #ffffff;
 }
+
+/* Mobile Search Bar (Outer - trượt mở dưới header) */
+.mobile-search-bar-outer {
+  display: block;
+  width: 100%;
+  background: #ffffff;
+  padding: 8px clamp(14px, 3.5vw, 24px) 12px;
+  position: relative;
+  border-bottom: 1.5px solid #ebdcd3;
+  box-shadow: 0 4px 16px rgba(43, 27, 20, 0.08);
+}
+@media (min-width: 861px) {
+  .mobile-search-bar-outer {
+    display: none !important;
+  }
+}
+.mobile-search-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* Hiệu ứng trượt mở thanh tìm kiếm mobile */
+.mobile-search-slide-enter-active,
+.mobile-search-slide-leave-active {
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+.mobile-search-slide-enter-from,
+.mobile-search-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.mobile-search-slide-enter-to,
+.mobile-search-slide-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 100px;
+}
+
 .mobile-search-input-wrap {
   position: relative;
   display: flex;
@@ -2410,34 +2461,64 @@ body {
   left: 12px;
   color: #8c776c;
   font-size: 14px;
+  cursor: pointer;
 }
 .mobile-search-input {
   width: 100%;
   height: 42px;
-  padding: 0 60px 0 36px;
-  border-radius: 10px;
+  padding: 0 76px 0 36px;
+  border-radius: 50px;
   border: 1.5px solid #ebdcd3;
-  background: #ffffff;
-  font-size: 13.5px;
+  background: #fbf5ef;
+  font-size: 13px;
   color: #2b1b14;
   outline: none;
-  transition: border-color 0.2s;
+  transition: all 0.2s;
 }
 .mobile-search-input:focus {
+  background: #ffffff;
   border-color: #d85a2a;
+  box-shadow: 0 0 0 3px rgba(216, 90, 42, 0.12);
+}
+.mobile-clear-btn {
+  position: absolute;
+  right: 50px;
+  background: none;
+  border: none;
+  color: #a49187;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
 }
 .mobile-search-btn {
   position: absolute;
   right: 4px;
   height: 34px;
-  padding: 0 12px;
+  padding: 0 14px;
   border: none;
-  border-radius: 8px;
+  border-radius: 50px;
   background: #d85a2a;
   color: #ffffff;
   font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
+  transition: background 0.2s;
+}
+.mobile-search-btn:active {
+  background: #bf4a1f;
+}
+.mobile-suggestions-popup {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 12px;
+  right: 12px;
+  width: auto;
+  z-index: 1005;
+  max-height: 55vh;
+  overflow-y: auto;
 }
 
 /* Mobile Toggle */
@@ -2527,8 +2608,15 @@ body {
 
 /* Responsive */
 @media (max-width: 860px) {
+  .nav-container {
+    height: 56px;
+    padding: 0 14px;
+  }
   .header-search-wrap {
     display: none;
+  }
+  .mobile-search-bar-outer {
+    display: block;
   }
   .desktop-links {
     display: none;
@@ -2539,6 +2627,9 @@ body {
   .logged-in-actions {
     display: none;
   }
+  .mobile-header-search-btn {
+    display: inline-flex;
+  }
   .mobile-header-cart {
     display: inline-flex;
     margin-right: 8px;
@@ -2548,6 +2639,8 @@ body {
   }
   .mobile-menu {
     display: flex;
+    top: 100%;
+    max-height: calc(100dvh - 120px);
   }
   .nav-right-actions {
     display: flex;
@@ -2556,27 +2649,80 @@ body {
 }
 
 /* ==========================================================
-   FOOTER CHUẨN SÀN THƯƠNG MẠI ĐIỆN TỬ
+   FOOTER CHUẨN SÀN THƯƠNG MẠI ĐIỆN TỬ ZONEMART
    ========================================================== */
 .app-footer {
   position: relative;
   z-index: 20;
-  background: #0b0f19;
-  color: #a49187;
-  padding: 50px 0 0 0;
+  background: #090e1a;
+  color: #cbd5e1;
+  padding: 0;
   margin-top: 50px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 3px solid #ea580c;
   font-size: 13.5px;
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.35);
 }
 
+/* Dải tiện ích cam kết chất lượng */
+.footer-trust-strip {
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 24px 0;
+}
+.footer-trust-container {
+  width: 100%;
+  max-width: 100%;
+  padding: 0 clamp(16px, 3.5vw, 48px);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+.trust-badge-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.trust-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(234, 88, 12, 0.12);
+  border: 1px solid rgba(234, 88, 12, 0.28);
+  color: #ea580c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.trust-badge-card:hover .trust-icon-box {
+  transform: scale(1.08);
+  background: #ea580c;
+  color: #ffffff;
+}
+.trust-info h6 {
+  margin: 0 0 2px 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+}
+.trust-info p {
+  margin: 0;
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+/* Thân Footer 4 Cột */
 .footer-main-container {
   width: 100%;
   max-width: 100%;
   margin: 0;
-  padding: 0 clamp(16px, 3.5vw, 48px) 40px;
+  padding: 40px clamp(16px, 3.5vw, 48px) 36px;
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr 1.1fr;
-  gap: clamp(20px, 3vw, 40px);
+  grid-template-columns: 1.4fr 0.95fr 1.05fr 1.3fr;
+  gap: clamp(20px, 3vw, 44px);
 }
 
 .footer-col {
@@ -2584,6 +2730,7 @@ body {
   flex-direction: column;
 }
 
+/* Cột 1: Thương hiệu */
 .footer-logo-row {
   display: flex;
   align-items: center;
@@ -2593,27 +2740,32 @@ body {
 .footer-logo-img {
   height: 44px;
   width: auto;
-  border-radius: 6px;
+  border-radius: 8px;
   background: #ffffff;
   padding: 2px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
 }
 .footer-brand-title h4 {
   margin: 0;
-  color: #fff9f5;
-  font-size: 18px;
+  color: #ffffff;
+  font-size: 19px;
   font-weight: 800;
   letter-spacing: -0.2px;
 }
-.footer-brand-title span {
+.brand-badge {
   font-size: 11px;
-  color: #d85a2a;
+  color: #fb923c;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
 }
 
 .footer-tagline {
   font-size: 13px;
   line-height: 1.6;
-  color: #c7b5ab;
+  color: #94a3b8;
   margin: 0 0 16px 0;
 }
 
@@ -2623,38 +2775,71 @@ body {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 11px;
   font-size: 12.5px;
-  color: #b5a297;
+  color: #cbd5e1;
 }
 .footer-contact-list li {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
+  gap: 10px;
   line-height: 1.5;
 }
 .footer-info-icon {
   color: #ea580c;
-  font-size: 13.5px;
+  font-size: 14px;
   flex-shrink: 0;
   margin-top: 2px;
 }
 .footer-contact-list strong {
-  color: #f1dfd5;
+  color: #ffffff;
+}
+.footer-tel-link {
+  color: #ea580c;
+  font-weight: 700;
+  text-decoration: none;
+  padding: 2px 6px;
+  background: rgba(234, 88, 12, 0.12);
+  border-radius: 4px;
+  border: 1px solid rgba(234, 88, 12, 0.25);
+  transition: all 0.2s;
+}
+.footer-tel-link:hover {
+  background: #ea580c;
+  color: #ffffff;
+}
+.footer-mail-link {
+  color: #38bdf8;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.2s;
+}
+.footer-mail-link:hover {
+  color: #7dd3fc;
+  text-decoration: underline;
 }
 
+/* Headings */
 .footer-heading {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.8px;
-  color: #fff9f5;
+  letter-spacing: 0.6px;
+  color: #ffffff;
   margin: 0 0 16px 0;
   text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.heading-ico {
+  color: #ea580c;
+  font-size: 14px;
 }
 .footer-subheading-mt {
-  margin-top: 20px;
+  margin-top: 22px;
 }
 
+/* Danh sách liên kết */
 .footer-links {
   list-style: none;
   padding: 0;
@@ -2663,36 +2848,146 @@ body {
   flex-direction: column;
   gap: 10px;
 }
-.footer-links a {
-  color: #a49187;
+.footer-links li a {
+  color: #cbd5e1;
   text-decoration: none;
-  transition: all 0.2s;
+  font-size: 13px;
+  line-height: 1.5;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
 }
-.footer-links a:hover {
-  color: #d85a2a;
-  padding-left: 4px;
+.footer-links li a:hover {
+  color: #ea580c;
+  transform: translateX(4px);
 }
 
+/* Thẻ Đối tác CTA */
+.footer-partner-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.partner-cta-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  text-decoration: none;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.partner-cta-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(234, 88, 12, 0.45);
+  background: rgba(234, 88, 12, 0.08);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+.partner-icon-circle {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.seller-card .partner-icon-circle {
+  background: rgba(234, 88, 12, 0.16);
+  border: 1px solid rgba(234, 88, 12, 0.3);
+  color: #ea580c;
+}
+.shipper-card .partner-icon-circle {
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #10b981;
+}
+.partner-card-texts {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.partner-card-texts strong {
+  font-size: 12.5px;
+  color: #ffffff;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.partner-card-texts small {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.3;
+}
+.partner-chevron {
+  color: #64748b;
+  font-size: 13px;
+  transition: transform 0.2s;
+}
+.partner-cta-card:hover .partner-chevron {
+  color: #ea580c;
+  transform: translateX(3px);
+}
+
+.footer-admin-link-row {
+  margin-bottom: 8px;
+}
+.footer-admin-link {
+  font-size: 12px;
+  color: #94a3b8;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.2s;
+}
+.footer-admin-link:hover {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Huy hiệu Thanh Toán */
 .payment-badges {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 .pay-tag {
-  background: #2b1c14;
-  color: #e5d4cb;
-  border: 1px solid #4a3427;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11px;
+  background: #141c2c;
+  color: #f1f5f9;
+  border: 1px solid #233149;
+  padding: 5px 11px;
+  border-radius: 7px;
+  font-size: 11.5px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+.pay-tag i {
+  color: #ea580c;
+  font-size: 13px;
+}
+.pay-tag:hover {
+  border-color: #ea580c;
+  color: #ffffff;
 }
 
+/* Mạng Xã Hội */
 .social-links {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 .social-icon {
   width: 38px;
@@ -2701,8 +2996,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #2b1c14;
-  border: 1px solid #4a3427;
+  background: #141c2c;
+  border: 1px solid #233149;
   text-decoration: none;
   font-size: 18px;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -2789,9 +3084,9 @@ body {
 
 /* Bottom Bar */
 .footer-bottom-bar {
-  background: #110b07;
-  border-top: 1px solid #29180f;
-  padding: 16px 0;
+  background: #050810;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 18px 0;
 }
 .footer-bottom-container {
   width: 100%;
@@ -2801,37 +3096,223 @@ body {
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 14px;
 }
-.member-credits {
-  font-size: 12px;
-  color: #b5a297;
-  line-height: 1.6;
-}
-.member-credits strong {
-  color: #f28b5b;
+.copyright-section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 .copyright {
   margin: 0;
-  font-size: 12px;
-  color: #7b6960;
+  font-size: 12.5px;
+  color: #cbd5e1;
+}
+.copyright strong {
+  color: #ea580c;
+}
+.copyright-sub {
+  font-size: 11.5px;
+  color: #64748b;
+}
+.footer-safe-tags {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.safe-tag {
+  font-size: 11.5px;
+  color: #94a3b8;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.safe-tag i {
+  color: #10b981;
 }
 
 /* Footer Responsive */
 @media (max-width: 992px) {
+  .footer-trust-container {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
   .footer-main-container {
     grid-template-columns: repeat(2, 1fr);
-    gap: 30px;
+    gap: 32px 24px;
   }
 }
+
 @media (max-width: 600px) {
+  .app-footer {
+    padding: 0;
+    margin-top: 28px;
+    font-size: 12.5px;
+  }
+  .footer-trust-strip {
+    padding: 14px 12px;
+  }
+  .footer-trust-container {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    padding: 0;
+  }
+  .trust-badge-card {
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    gap: 8px;
+  }
+  .trust-icon-box {
+    width: 32px;
+    height: 32px;
+    font-size: 15px;
+    border-radius: 8px;
+  }
+  .trust-info h6 {
+    font-size: 11.5px;
+  }
+  .trust-info p {
+    font-size: 10px;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
   .footer-main-container {
-    grid-template-columns: 1fr;
-    gap: 28px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px 12px;
+    padding: 20px 14px 22px 14px;
+  }
+  .footer-col.col-brand {
+    grid-column: 1 / -1;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
+    padding-bottom: 16px;
+    margin-bottom: 2px;
+  }
+  .footer-logo-row {
+    margin-bottom: 8px;
+    gap: 10px;
+  }
+  .footer-logo-img {
+    height: 38px;
+  }
+  .footer-brand-title h4 {
+    font-size: 16.5px;
+  }
+  .brand-badge {
+    font-size: 10.5px;
+  }
+  .footer-col.col-brand .footer-tagline {
+    font-size: 12px;
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+  .footer-contact-list {
+    gap: 8px;
+    font-size: 12px;
+  }
+  .footer-contact-list li {
+    gap: 8px;
+  }
+  .footer-info-icon {
+    font-size: 12.5px;
+  }
+
+  .footer-heading {
+    font-size: 12px;
+    margin-bottom: 10px;
+    letter-spacing: 0.5px;
+  }
+  .heading-ico {
+    font-size: 12.5px;
+  }
+  .footer-links {
+    gap: 8px;
+  }
+  .footer-links li a {
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 2px 0;
+  }
+
+  .footer-col.col-partner {
+    grid-column: 1 / -1;
+    border-top: 1px dashed rgba(255, 255, 255, 0.12);
+    padding-top: 16px;
+    margin-top: 2px;
+  }
+  .footer-partner-cards {
+    gap: 8px;
+  }
+  .partner-cta-card {
+    padding: 9px 12px;
+  }
+  .partner-icon-circle {
+    width: 32px;
+    height: 32px;
+    font-size: 15px;
+  }
+  .partner-card-texts strong {
+    font-size: 12px;
+  }
+  .partner-card-texts small {
+    font-size: 10.5px;
+  }
+
+  .footer-subheading-mt {
+    margin-top: 14px;
+  }
+  .payment-badges {
+    gap: 6px;
+  }
+  .pay-tag {
+    font-size: 10.5px;
+    padding: 4px 9px;
+  }
+  .social-links {
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .social-icon {
+    width: 34px;
+    height: 34px;
+    font-size: 15px;
+    border-radius: 8px;
+  }
+
+  /* Chừa khoảng trống an toàn dưới cùng để nút AI Assistant Widget không đè lên bản quyền & thông tin */
+  .footer-bottom-bar {
+    padding: 14px 14px 95px 14px !important;
   }
   .footer-bottom-container {
     flex-direction: column;
     text-align: center;
+    gap: 8px;
+    padding: 0;
+  }
+  .copyright {
+    font-size: 11.5px;
+    line-height: 1.5;
+  }
+  .copyright-sub {
+    font-size: 10.5px;
+    line-height: 1.4;
+  }
+  .footer-safe-tags {
+    justify-content: center;
+    gap: 8px;
+  }
+  .safe-tag {
+    font-size: 10.5px;
+    padding: 3px 8px;
   }
 }
 

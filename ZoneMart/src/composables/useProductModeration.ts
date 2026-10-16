@@ -153,72 +153,7 @@ const NON_FOOD_MISC_KEYWORDS = [
   "quần áo", "giày dép", "túi xách", "đồng hồ", "son môi", "mỹ phẩm", "kem dưỡng", "tai nghe", "loa"
 ];
 
-const INITIAL_PRODUCTS: ModeratedProduct[] = [
-  {
-    id: "p-01",
-    name: "Rau muống hữu cơ Ba Vì VietGAP",
-    category: "Rau củ quả",
-    price: 18000,
-    unit: "Bó 500g",
-    stock: 45,
-    image: "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80",
-    status: "active",
-    isAvailable: true,
-    sellerEmail: "seller@zonemart.vn",
-    storeName: "Vườn Rau Ba Vì - Nông Sản Sạch",
-    createdAt: "08/09/2026",
-    aiScore: { safetyScore: 99, matchScore: 98 }
-  },
-  {
-    id: "p-02",
-    name: "Cà chua bi Đà Lạt mọng nước",
-    category: "Rau củ quả",
-    price: 35000,
-    unit: "Hộp 500g",
-    stock: 28,
-    image: "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=400&q=80",
-    status: "active",
-    isAvailable: true,
-    sellerEmail: "seller@zonemart.vn",
-    storeName: "Vườn Rau Ba Vì - Nông Sản Sạch",
-    createdAt: "08/09/2026",
-    aiScore: { safetyScore: 100, matchScore: 96 }
-  },
-  {
-    id: "p-03",
-    name: "Thịt ba chỉ heo sạch chuẩn CP",
-    category: "Thịt cá tươi",
-    price: 65000,
-    unit: "Khay 500g",
-    stock: 12,
-    image: "https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=400&q=80",
-    status: "active",
-    isAvailable: true,
-    sellerEmail: "seller@zonemart.vn",
-    storeName: "Vườn Rau Ba Vì - Nông Sản Sạch",
-    createdAt: "07/09/2026",
-    aiScore: { safetyScore: 98, matchScore: 95 }
-  },
-  {
-    id: "p-sp-01",
-    name: "Thịt Heo Rừng Tự Nhiên Đóng Khay",
-    category: "Thịt cá tươi",
-    price: 130000,
-    unit: "Khay 1kg",
-    stock: 10,
-    image: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400",
-    status: "pending_review",
-    isAvailable: false,
-    sellerEmail: "seller@zonemart.vn",
-    storeName: "Vườn Rau Ba Vì - Nông Sản Sạch",
-    createdAt: "09/09/2026",
-    aiScore: {
-      safetyScore: 82,
-      matchScore: 54,
-      flag: "Nghi ngờ: Ảnh chụp và tên gọi có độ chênh lệch tem nhãn chứng nhận nguồn gốc"
-    }
-  }
-];
+export const INITIAL_PRODUCTS: ModeratedProduct[] = [];
 
 const STORAGE_KEY_PRODUCTS = "zonemart_moderated_products";
 const STORAGE_KEY_PENALTIES = "zonemart_seller_penalties";
@@ -310,6 +245,15 @@ function loadProducts(): ModeratedProduct[] {
         }
       }
     }
+
+    // Lọc bỏ toàn bộ sản phẩm mẫu demo cũ nếu còn lưu trong cache
+    items = items.filter(item => {
+      if (item.id && (item.id.startsWith("p-sp-") || item.id === "p-01" || item.id === "p-02" || item.id === "p-03")) {
+        changed = true;
+        return false;
+      }
+      return true;
+    });
 
     if (changed) {
       try {
@@ -519,149 +463,99 @@ async function syncProductToBackend(p: ModeratedProduct) {
 
 let isRefreshingProducts = false;
 
-// Làm mới danh sách sản phẩm từ localStorage và backend
-function refreshProducts(): ModeratedProduct[] {
-  const loaded = loadProducts();
-  if (loaded && loaded.length > 0) {
-    loaded.forEach(lp => {
-      const idx = allProducts.value.findIndex(p => p.id === lp.id || (p.name.toLowerCase() === lp.name.toLowerCase() && p.sellerEmail === lp.sellerEmail));
-      if (idx !== -1) {
-        if (allProducts.value[idx].status !== lp.status) {
-          allProducts.value[idx] = { ...lp };
-        }
-      } else {
-        allProducts.value.push(lp);
-      }
-    });
-  }
+// Tải danh sách sản phẩm thật 100% từ CSDL MongoDB Backend
+export async function fetchRealProductsFromBackend(): Promise<ModeratedProduct[]> {
+  if (typeof window === "undefined") return allProducts.value;
+  if (isRefreshingProducts) return allProducts.value;
+  isRefreshingProducts = true;
 
-  if (isRefreshingProducts) {
-    return allProducts.value;
-  }
-
-  // Gọi đồng bộ thêm từ backend nếu có sản phẩm mới trên CSDL (chống cache với ?_t=timestamp)
-  if (typeof window !== "undefined") {
-    isRefreshingProducts = true;
-    fetch(`/api/products?_t=${Date.now()}`, {
+  try {
+    let res = await fetch(`/api/products?_t=${Date.now()}`, {
       cache: "no-store",
-      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.success && Array.isArray(data.data)) {
-          let updated = false;
-          data.data.forEach((bp: any) => {
-            const pName = (bp.productName || bp.name || "").trim();
-            if (!pName) return;
-            const normPName = stripAccents(pName).trim();
-            const lowerPName = pName.toLowerCase();
-            const deletedKeys = getDeletedProductKeys();
-            if (deletedKeys.has(bp.id) || deletedKeys.has(lowerPName) || deletedKeys.has(normPName)) {
-              const beforeLen = allProducts.value.length;
-              allProducts.value = allProducts.value.filter(ep => ep.id !== bp.id && ep.name.toLowerCase() !== lowerPName && stripAccents(ep.name).trim() !== normPName);
-              if (allProducts.value.length !== beforeLen) {
-                updated = true;
-              }
-              return;
-            }
+      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+      signal: AbortSignal.timeout(3500)
+    }).catch(() => null);
 
-            const realStoreName = bp.storeName || (bp.store && bp.store.name) || "";
-            const realSellerEmail = bp.sellerEmail || "";
-            const realImage = bp.imageUrl || bp.image || getCategoryFallbackImage(bp.category);
-            const isApproved = bp.aiStatus === "approved" || bp.status === "active";
-            const isRejected = bp.aiStatus === "rejected" || bp.status === "rejected_need_edit";
+    if (!res || !res.ok) {
+      res = await fetch(`http://localhost:5000/api/products?_t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
+        signal: AbortSignal.timeout(3500)
+      }).catch(() => null);
+    }
 
-            const existingIndex = allProducts.value.findIndex(ep => {
-              if (bp.id && ep.id === bp.id) return true;
-              const nameMatch = ep.name.toLowerCase() === pName.toLowerCase();
-              if (nameMatch) {
-                if (realSellerEmail && ep.sellerEmail && ep.sellerEmail.toLowerCase() === realSellerEmail.toLowerCase()) return true;
-                if (realStoreName && ep.storeName && ep.storeName.toLowerCase() === realStoreName.toLowerCase()) return true;
-                return true;
-              }
-              return false;
-            });
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data && data.success && Array.isArray(data.data)) {
+        const deletedKeys = getDeletedProductKeys();
+        const mappedList: ModeratedProduct[] = [];
 
-            if (existingIndex === -1) {
-              const mapped: ModeratedProduct = {
-                id: bp.id || `p-${Date.now()}`,
-                name: pName,
-                category: bp.category || "Rau củ quả",
-                price: bp.price || 25000,
-                unit: bp.weight ? `${bp.weight} kg` : "Bó 500g",
-                stock: bp.stockQuantity ?? 30,
-                image: realImage,
-                status: isApproved ? "active" : (isRejected ? "rejected_need_edit" : "pending_review"),
-                isAvailable: isApproved,
-                sellerEmail: realSellerEmail || "seller@zonemart.vn",
-                storeName: realStoreName || "Cửa hàng đối tác",
-                createdAt: bp.createdAt ? new Date(bp.createdAt).toLocaleDateString("vi-VN") : "Hôm nay",
-                aiScore: { safetyScore: 99, matchScore: 98 }
-              };
-              allProducts.value.unshift(mapped);
-              updated = true;
-            } else {
-              const existing = allProducts.value[existingIndex];
-              if (existing.status === "rejected_need_edit") {
-                return;
-              }
-              let itemUpdated = false;
+        data.data.forEach((bp: any) => {
+          const pName = (bp.productName || bp.name || "").trim();
+          if (!pName) return;
+          const normPName = stripAccents(pName).trim();
+          const lowerPName = pName.toLowerCase();
 
-              if (bp.id && existing.id !== bp.id) {
-                existing.id = bp.id;
-                itemUpdated = true;
-              }
-              if (isApproved && existing.status !== "active") {
-                existing.status = "active";
-                existing.isAvailable = true;
-                existing.managerNote = undefined;
-                itemUpdated = true;
-              } else if (isRejected && (existing.status as any) !== "rejected_need_edit") {
-                (existing.status as any) = "rejected_need_edit";
-                existing.isAvailable = false;
-                itemUpdated = true;
-              }
+          // Lọc bỏ nếu đã bị xóa khỏi hệ thống
+          if (deletedKeys.has(bp.id) || deletedKeys.has(lowerPName) || deletedKeys.has(normPName)) {
+            return;
+          }
 
-              if (realStoreName && existing.storeName !== realStoreName) {
-                existing.storeName = realStoreName;
-                itemUpdated = true;
-              }
-              if (realSellerEmail && existing.sellerEmail !== realSellerEmail) {
-                existing.sellerEmail = realSellerEmail;
-                itemUpdated = true;
-              }
-              if (realImage && existing.image !== realImage) {
-                existing.image = realImage;
-                itemUpdated = true;
-              }
-              if (bp.price && existing.price !== bp.price) {
-                existing.price = bp.price;
-                itemUpdated = true;
-              }
-              if (bp.stockQuantity !== undefined && existing.stock !== bp.stockQuantity) {
-                existing.stock = bp.stockQuantity;
-                itemUpdated = true;
-              }
+          const realStoreName = bp.storeName || (bp.store && bp.store.name) || "Gian hàng đối tác";
+          const realSellerEmail = bp.sellerEmail || "";
+          const realImage = bp.imageUrl || bp.image || getCategoryFallbackImage(bp.category);
 
-              if (itemUpdated) {
-                allProducts.value[existingIndex] = { ...existing };
-                updated = true;
-              }
+          const isPending = bp.aiStatus === "pending" || bp.aiStatus === "pending_review" || bp.aiStatus === "suspicious" || bp.status === "pending_review";
+          const isRejected = bp.aiStatus === "rejected" || bp.status === "rejected_need_edit";
+          const isApproved = (bp.aiStatus === "approved" || bp.status === "active") && !isPending && !isRejected;
+
+          const prodStatus: ProductStatus = isPending ? "pending_review" : (isRejected ? "rejected_need_edit" : "active");
+
+          let aiFlag = bp.aiCheckNote;
+          if (isPending && !aiFlag) {
+            aiFlag = "Sản phẩm thực tế từ gian hàng đang chờ Ban Quản Trị đối soát và thẩm định mở bán.";
+          }
+
+          mappedList.push({
+            id: bp.id || `p-${Date.now()}`,
+            name: pName,
+            category: bp.category || "Thực phẩm tươi",
+            price: bp.price || 0,
+            unit: bp.weight ? `${bp.weight} kg` : "Khay / Gói",
+            stock: bp.stockQuantity ?? 30,
+            image: realImage,
+            status: prodStatus,
+            isAvailable: isApproved,
+            sellerEmail: realSellerEmail,
+            storeName: realStoreName,
+            createdAt: bp.createdAt ? new Date(bp.createdAt).toLocaleDateString("vi-VN") : "Hôm nay",
+            aiScore: {
+              safetyScore: isPending ? 80 : 99,
+              matchScore: isPending ? 55 : 98,
+              flag: aiFlag
             }
           });
-          if (updated) {
-            allProducts.value = [...allProducts.value];
-            try {
-              localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(allProducts.value));
-            } catch {}
-          }
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        isRefreshingProducts = false;
-      });
+        });
+
+        // Cập nhật allProducts trực tiếp từ CSDL MongoDB thật
+        allProducts.value = mappedList;
+        try {
+          localStorage.setItem(STORAGE_KEY_PRODUCTS, JSON.stringify(mappedList));
+        } catch {}
+        return allProducts.value;
+      }
+    }
+  } catch (err) {
+    console.error("Lỗi fetchRealProductsFromBackend:", err);
+  } finally {
+    isRefreshingProducts = false;
   }
+  return allProducts.value;
+}
+
+// Làm mới danh sách sản phẩm từ backend MongoDB
+function refreshProducts(): ModeratedProduct[] {
+  fetchRealProductsFromBackend();
   return allProducts.value;
 }
 
@@ -1163,14 +1057,14 @@ export function useProductModeration() {
     return { scanResult, updatedProduct: currentProd };
   };
 
-  const approveProductByManager = (productId: string) => {
+  const approveProductByManager = async (productId: string) => {
     const prod = allProducts.value.find(p => p.id === productId);
     if (!prod) return false;
     prod.status = "active";
     prod.isAvailable = true;
     prod.managerNote = undefined;
     saveProducts();
-    syncProductToBackend(prod);
+    await syncProductToBackend(prod);
 
     const penalty = getSellerPenalty(prod.sellerEmail);
     penalty.notificationLogs.unshift({
@@ -1359,6 +1253,7 @@ export function useProductModeration() {
     reduceStockForPurchasedItems,
     saveProducts,
     refreshProducts,
-    compressImage
+    compressImage,
+    fetchRealProductsFromBackend
   };
 }

@@ -240,8 +240,8 @@ const showRejectProductModal = ref<boolean>(false);
 const selectedProductToReject = ref<any>(null);
 const productRejectReason = ref<string>("");
 
-const handleApproveProductItem = (prod: any) => {
-  const success = approveProductByManager(prod.id);
+const handleApproveProductItem = async (prod: any) => {
+  const success = await approveProductByManager(prod.id);
   if (success) {
     showToast(`🎉 Đã duyệt mở bán sản phẩm "${prod.name}" thành công!`, "success");
     fetchStats();
@@ -1778,15 +1778,7 @@ onUnmounted(() => {
               <ChevronRight :size="15" class="nav-arrow" />
             </li>
 
-            <li class="nav-item" @click="showToast('Đang theo dõi vị trí các Shipper trong bán kính chuẩn 3km!', 'success')">
-              <div class="nav-label-box">
-                <div class="nav-icon-wrapper">
-                  <MapPin :size="17" />
-                </div>
-                <span>Quét Bán Kính 3km</span>
-              </div>
-              <ChevronRight :size="15" class="nav-arrow" />
-            </li>
+           
 
             <li class="nav-item logout-item" @click="handleLogout">
               <div class="nav-label-box">
@@ -1832,10 +1824,6 @@ onUnmounted(() => {
 
                 <div class="hero-meta-row">
                   <span class="meta-item">
-                    <MapPin :size="14" class="meta-icon" />
-                    48 Cầu Giấy, Hà Nội
-                  </span>
-                  <span class="meta-item">
                     <Calendar :size="14" class="meta-icon" />
                     Tham gia: 14 Tháng 9, 2026
                   </span>
@@ -1849,13 +1837,7 @@ onUnmounted(() => {
                   </span>
                 </div>
 
-                <!-- Dải tags nhận diện theo phong cách hình demo -->
-                <div class="hero-tags-row">
-                  <span class="tag-pill"><Sparkles :size="11" class="tag-icon" /> Nông Sản Sạch</span>
-                  <span class="tag-pill"><Package :size="11" class="tag-icon" /> Hỏa Tốc 10km</span>
-                  <span class="tag-pill"><MapPin :size="11" class="tag-icon" /> Quét Bán Kính 3km</span>
-                  <span class="tag-pill"><ShieldCheck :size="11" class="tag-icon" /> MongoDB Atlas</span>
-                </div>
+               
               </div>
             </div>
 
@@ -2148,7 +2130,7 @@ onUnmounted(() => {
           <div class="content-header-card">
             <div class="header-title-box">
               <h2 class="content-heading">Quản Lý Người Dùng & Phân Quyền</h2>
-              <p class="content-sub">Tìm kiếm, kiểm tra trạng thái và áp dụng chế tài kỷ luật tài khoản trên CSDL MongoDB</p>
+              <p class="content-sub">Tìm kiếm, kiểm tra trạng thái và áp dụng chế tài kỷ luật tài khoản </p>
             </div>
 
             <div class="filter-controls-row">

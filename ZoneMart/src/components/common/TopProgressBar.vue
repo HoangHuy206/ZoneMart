@@ -46,6 +46,10 @@ onMounted(() => {
     finish();
   });
 
+  router.onError(() => {
+    finish();
+  });
+
   // Cho phép gọi thủ công từ bất kỳ đâu qua sự kiện window
   window.addEventListener('zonemart:loading-start', start);
   window.addEventListener('zonemart:loading-finish', finish);

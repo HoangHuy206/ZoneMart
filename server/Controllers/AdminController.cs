@@ -21,26 +21,119 @@ public class AdminController : ControllerBase
         _mongoService = mongoService;
     }
 
-    /// <summary>
-    /// Thống kê chỉ số hành động nóng (Actionable Stats từ MongoDB Atlas)
-    /// </summary>
+    private static (object Stats, DateTime Expiry)? _statsCache = null;
+    private static (object Data, DateTime Expiry)? _usersCache = null;
+    public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, object> PartnerDetailsCache = new(StringComparer.OrdinalIgnoreCase);
+
+    public static void CacheStorePartner(Store store)
+    {
+        if (store == null) return;
+        var partnerData = new
+        {
+            id = store.Id,
+            type = "seller",
+            name = store.StoreName,
+            applicant = store.OwnerFullName,
+            cccd = store.CccdNumber ?? "",
+            cccdNumber = store.CccdNumber ?? "",
+            nguyenQuan = store.NguyenQuan ?? "",
+            address = store.Address,
+            category = store.Category,
+            date = store.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+            status = store.Status,
+            rejectReason = store.RejectReason,
+            bankName = store.BankName,
+            bankAccountNumber = store.BankAccountNumber,
+            cccdFrontImage = store.CccdFrontImage ?? "",
+            cccdBackImage = store.CccdBackImage ?? "",
+            foodSafetyCertImage = store.FoodSafetyCertImage ?? ""
+        };
+
+        if (!string.IsNullOrEmpty(store.Id)) PartnerDetailsCache[store.Id] = partnerData;
+        if (!string.IsNullOrEmpty(store.StoreCode)) PartnerDetailsCache[store.StoreCode] = partnerData;
+        if (!string.IsNullOrEmpty(store.UserId)) PartnerDetailsCache[store.UserId] = partnerData;
+        if (!string.IsNullOrEmpty(store.PhoneEmail)) PartnerDetailsCache[store.PhoneEmail] = partnerData;
+    }
+
+    public static void CacheShipperPartner(Shipper shipper)
+    {
+        if (shipper == null) return;
+        var shipperData = new
+        {
+            id = shipper.Id,
+            type = "shipper",
+            name = $"Tài Xế: {shipper.FullName}",
+            applicant = shipper.FullName,
+            cccd = shipper.CccdNumber ?? "",
+            cccdNumber = shipper.CccdNumber ?? "",
+            nguyenQuan = shipper.NguyenQuan ?? "",
+            address = $"{shipper.VehicleModel} - {shipper.LicensePlate}",
+            category = shipper.VehicleType,
+            date = shipper.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+            status = shipper.Status,
+            rejectReason = shipper.RejectReason,
+            bankName = shipper.BankName,
+            bankAccountNumber = shipper.BankAccountNumber,
+            cccdFrontImage = shipper.CccdFrontImage ?? "",
+            cccdBackImage = shipper.CccdBackImage ?? "",
+            drivingLicenseImage = shipper.DrivingLicenseImage ?? "",
+            avatarUrl = shipper.AvatarUrl ?? ""
+        };
+
+        if (!string.IsNullOrEmpty(shipper.Id)) PartnerDetailsCache[shipper.Id] = shipperData;
+        if (!string.IsNullOrEmpty(shipper.ShipperCode)) PartnerDetailsCache[shipper.ShipperCode] = shipperData;
+        if (!string.IsNullOrEmpty(shipper.UserId)) PartnerDetailsCache[shipper.UserId] = shipperData;
+        if (!string.IsNullOrEmpty(shipper.PhoneNumber)) PartnerDetailsCache[shipper.PhoneNumber] = shipperData;
+    }
+
+    public static void InvalidateAdminCache()
+    {
+        _statsCache = null;
+        _usersCache = null;
+    }
+
     [HttpGet("stats")]
     public async Task<IActionResult> GetStats()
     {
         try
         {
-            await EnsureDataSeededAsync();
-            var totalUsers = await _mongoService.Users.CountDocumentsAsync(u => !u.IsDeleted);
-            var pendingShops = await _mongoService.Stores.CountDocumentsAsync(s => s.Status == "Pending");
-            var pendingShippers = await _mongoService.Shippers.CountDocumentsAsync(s => s.Status == "Pending");
-            var lockedUsers = await _mongoService.Users.CountDocumentsAsync(u => !u.IsDeleted && (u.AccountStatus == "locked_10_days" || u.AccountStatus == "banned" || u.AccountStatus == "suspended"));
+            if (_statsCache.HasValue && DateTime.UtcNow < _statsCache.Value.Expiry)
+            {
+                return Ok(_statsCache.Value.Stats);
+            }
 
-            var totalOrders = await _mongoService.ParentOrders.CountDocumentsAsync(_ => true);
-            var shippers = await _mongoService.Shippers.Find(_ => true).ToListAsync();
+            var totalUsersTask = _mongoService.Users.CountDocumentsAsync(u => !u.IsDeleted);
+            var pendingShopsTask = _mongoService.Stores.CountDocumentsAsync(s => s.Status == "Pending");
+            var pendingShippersTask = _mongoService.Shippers.CountDocumentsAsync(s => s.Status == "Pending");
+            var lockedUsersTask = _mongoService.Users.CountDocumentsAsync(u => !u.IsDeleted && (u.AccountStatus == "locked_10_days" || u.AccountStatus == "banned" || u.AccountStatus == "suspended"));
+            var totalOrdersTask = _mongoService.ParentOrders.CountDocumentsAsync(_ => true);
+
+            var shipperProj = Builders<Shipper>.Projection
+                .Include(s => s.FullName)
+                .Include(s => s.LicensePlate)
+                .Include(s => s.VehicleModel)
+                .Include(s => s.IsOnline)
+                .Include(s => s.Status);
+            var shippersTask = _mongoService.Shippers.Find(_ => true).Project<Shipper>(shipperProj).ToListAsync();
+
+            var orderProj = Builders<ParentOrder>.Projection
+                .Include(o => o.TotalAmount)
+                .Include(o => o.CreatedAt);
+            var ordersTask = _mongoService.ParentOrders.Find(_ => true).Project<ParentOrder>(orderProj).ToListAsync();
+
+            await Task.WhenAll(totalUsersTask, pendingShopsTask, pendingShippersTask, lockedUsersTask, totalOrdersTask, shippersTask, ordersTask);
+
+            var totalUsers = await totalUsersTask;
+            var pendingShops = await pendingShopsTask;
+            var pendingShippers = await pendingShippersTask;
+            var lockedUsers = await lockedUsersTask;
+            var totalOrders = await totalOrdersTask;
+            var shippers = await shippersTask;
+            var orders = await ordersTask;
+
             var onlineShippers = shippers.Count(s => s.IsOnline || s.Status == "Approved");
             var deliveringShippers = Math.Max(1, shippers.Count(s => s.IsOnline));
 
-            var orders = await _mongoService.ParentOrders.Find(_ => true).ToListAsync();
             decimal totalRevenue = orders.Sum(o => o.TotalAmount);
             if (totalRevenue == 0) totalRevenue = 145280000;
             decimal shopCommission = totalRevenue * 0.05m;
@@ -92,7 +185,7 @@ public class AdminController : ControllerBase
                 });
             }
 
-            return Ok(new
+            var resultObj = new
             {
                 success = true,
                 stats = new
@@ -110,7 +203,9 @@ public class AdminController : ControllerBase
                     chartWeekly,
                     activeShipperFeed
                 }
-            });
+            };
+            _statsCache = (resultObj, DateTime.UtcNow.AddSeconds(5));
+            return Ok(resultObj);
         }
         catch (Exception ex)
         {
@@ -126,91 +221,124 @@ public class AdminController : ControllerBase
     {
         try
         {
-            Store? store = null;
-            try
-            {
-                store = await _mongoService.Stores.Find(s => s.Id == id).FirstOrDefaultAsync();
-            }
-            catch { }
+            if (string.IsNullOrWhiteSpace(id)) return BadRequest(new { success = false, message = "ID đối tác không hợp lệ" });
+            string cleanId = id.Trim();
 
-            if (store == null && AuthController.InMemoryStores.TryGetValue(id, out var memStore))
+            // 1. Kiểm tra cache đối tác đã nạp trước đó (0ms siêu tốc)
+            if (PartnerDetailsCache.TryGetValue(cleanId, out var cachedData))
+            {
+                return Ok(new
+                {
+                    success = true,
+                    data = cachedData,
+                    partner = cachedData
+                });
+            }
+
+            // 2. Tìm trong AuthController InMemory
+            Store? store = null;
+            if (AuthController.InMemoryStores.TryGetValue(cleanId, out var memStore))
             {
                 store = memStore;
+            }
+            if (store == null)
+            {
+                store = AuthController.InMemoryStores.Values.FirstOrDefault(s =>
+                    (!string.IsNullOrEmpty(s.Id) && s.Id.Equals(cleanId, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(s.StoreCode) && s.StoreCode.Equals(cleanId, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(s.UserId) && s.UserId.Equals(cleanId, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(s.PhoneEmail) && s.PhoneEmail.Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+                );
+            }
+
+            // 3. Nếu chưa thấy, tìm trong MongoDB Atlas theo Id, StoreCode, UserId, PhoneEmail
+            if (store == null)
+            {
+                try
+                {
+                    var storeFilters = new List<FilterDefinition<Store>>();
+                    if (ObjectId.TryParse(cleanId, out _))
+                    {
+                        storeFilters.Add(Builders<Store>.Filter.Eq(s => s.Id, cleanId));
+                    }
+                    storeFilters.Add(Builders<Store>.Filter.Eq(s => s.StoreCode, cleanId));
+                    storeFilters.Add(Builders<Store>.Filter.Eq(s => s.UserId, cleanId));
+                    storeFilters.Add(Builders<Store>.Filter.Eq(s => s.PhoneEmail, cleanId));
+
+                    store = await _mongoService.Stores.Find(Builders<Store>.Filter.Or(storeFilters)).FirstOrDefaultAsync();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ [GetPartnerDetail Store Mongo Error] {ex.Message}");
+                }
             }
 
             if (store != null)
             {
-                var partnerData = new
+                CacheStorePartner(store);
+                if (PartnerDetailsCache.TryGetValue(cleanId, out var partnerData))
                 {
-                    id = store.Id,
-                    type = "seller",
-                    name = store.StoreName,
-                    applicant = store.OwnerFullName,
-                    cccd = store.CccdNumber ?? "",
-                    cccdNumber = store.CccdNumber ?? "",
-                    nguyenQuan = store.NguyenQuan ?? "",
-                    address = store.Address,
-                    category = store.Category,
-                    date = store.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
-                    status = store.Status,
-                    rejectReason = store.RejectReason,
-                    bankName = store.BankName,
-                    bankAccountNumber = store.BankAccountNumber,
-                    cccdFrontImage = store.CccdFrontImage,
-                    cccdBackImage = store.CccdBackImage,
-                    foodSafetyCertImage = store.FoodSafetyCertImage
-                };
-                return Ok(new
-                {
-                    success = true,
-                    data = partnerData,
-                    partner = partnerData
-                });
+                    return Ok(new
+                    {
+                        success = true,
+                        data = partnerData,
+                        partner = partnerData
+                    });
+                }
             }
-            else
+
+            // 4. Kiểm tra hồ sơ Shipper tương tự
+            Shipper? shipper = null;
+            if (AuthController.InMemoryShippers.TryGetValue(cleanId, out var memShip))
             {
-                Shipper? shipper = null;
+                shipper = memShip;
+            }
+            if (shipper == null)
+            {
+                shipper = AuthController.InMemoryShippers.Values.FirstOrDefault(sh =>
+                    (!string.IsNullOrEmpty(sh.Id) && sh.Id.Equals(cleanId, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(sh.ShipperCode) && sh.ShipperCode.Equals(cleanId, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(sh.UserId) && sh.UserId.Equals(cleanId, StringComparison.OrdinalIgnoreCase)) ||
+                    (!string.IsNullOrEmpty(sh.PhoneNumber) && sh.PhoneNumber.Equals(cleanId, StringComparison.OrdinalIgnoreCase))
+                );
+            }
+
+            if (shipper == null)
+            {
                 try
                 {
-                    shipper = await _mongoService.Shippers.Find(s => s.Id == id).FirstOrDefaultAsync();
+                    var shipperFilters = new List<FilterDefinition<Shipper>>();
+                    if (ObjectId.TryParse(cleanId, out _))
+                    {
+                        shipperFilters.Add(Builders<Shipper>.Filter.Eq(sh => sh.Id, cleanId));
+                    }
+                    shipperFilters.Add(Builders<Shipper>.Filter.Eq(sh => sh.ShipperCode, cleanId));
+                    shipperFilters.Add(Builders<Shipper>.Filter.Eq(sh => sh.UserId, cleanId));
+                    shipperFilters.Add(Builders<Shipper>.Filter.Eq(sh => sh.PhoneNumber, cleanId));
+
+                    shipper = await _mongoService.Shippers.Find(Builders<Shipper>.Filter.Or(shipperFilters)).FirstOrDefaultAsync();
                 }
-                catch { }
-
-                if (shipper == null && AuthController.InMemoryShippers.TryGetValue(id, out var memShip))
+                catch (Exception ex)
                 {
-                    shipper = memShip;
+                    Console.WriteLine($"⚠️ [GetPartnerDetail Shipper Mongo Error] {ex.Message}");
                 }
-
-                if (shipper == null) return NotFound(new { success = false, message = "Không tìm thấy hồ sơ đối tác" });
-
-                var shipperData = new
-                {
-                    id = shipper.Id,
-                    type = "shipper",
-                    name = $"Tài Xế: {shipper.FullName}",
-                    applicant = shipper.FullName,
-                    cccd = shipper.CccdNumber ?? "",
-                    cccdNumber = shipper.CccdNumber ?? "",
-                    nguyenQuan = shipper.NguyenQuan ?? "",
-                    address = $"{shipper.VehicleModel} - {shipper.LicensePlate}",
-                    category = shipper.VehicleType,
-                    date = shipper.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
-                    status = shipper.Status,
-                    rejectReason = shipper.RejectReason,
-                    bankName = shipper.BankName,
-                    bankAccountNumber = shipper.BankAccountNumber,
-                    cccdFrontImage = shipper.CccdFrontImage,
-                    cccdBackImage = shipper.CccdBackImage,
-                    drivingLicenseImage = shipper.DrivingLicenseImage,
-                    avatarUrl = shipper.AvatarUrl
-                };
-                return Ok(new
-                {
-                    success = true,
-                    data = shipperData,
-                    partner = shipperData
-                });
             }
+
+            if (shipper != null)
+            {
+                CacheShipperPartner(shipper);
+                if (PartnerDetailsCache.TryGetValue(cleanId, out var shipperData))
+                {
+                    return Ok(new
+                    {
+                        success = true,
+                        data = shipperData,
+                        partner = shipperData
+                    });
+                }
+            }
+
+            return NotFound(new { success = false, message = "Không tìm thấy hồ sơ đối tác" });
         }
         catch (Exception ex)
         {
@@ -220,86 +348,71 @@ public class AdminController : ControllerBase
 
     /// <summary>
     /// Tra cứu & lọc danh sách tài khoản từ MongoDB Atlas theo Smart Search (Tên người mua, Tên Cửa Hàng Shop, Shipper biển số xe, Quản lý, Gmail), Role, Status
-    /// </summary>
     [HttpGet("users")]
     public async Task<IActionResult> GetUsers([FromQuery] string? query, [FromQuery] string? role, [FromQuery] string? status)
     {
         try
         {
-            await EnsureDataSeededAsync();
-
-            // Dọn dẹp gian hàng thử nghiệm cũ 'Demobanhang1234' nếu có để hiển thị chính xác gian hàng thật 'Tạp Hóa Hoàng Huy'
-            try
+            if (string.IsNullOrWhiteSpace(query) && string.IsNullOrWhiteSpace(role) && string.IsNullOrWhiteSpace(status))
             {
-                await _mongoService.Stores.DeleteManyAsync(s => s.StoreName == "Demobanhang1234" || s.Id == "6aa116df481fb0a8422e859d");
-                await _mongoService.AdminNotifications.DeleteManyAsync(n => n.TargetName == "Demobanhang1234" || n.Message.Contains("Demobanhang1234"));
-
-                // Tự động chuẩn hóa các URL mẫu example.com sang ảnh giấy tờ thực tế
-                var brokenStores = await _mongoService.Stores.Find(s => 
-                    (s.CccdFrontImage != null && s.CccdFrontImage.Contains("example.com")) ||
-                    (s.CccdBackImage != null && s.CccdBackImage.Contains("example.com")) ||
-                    (s.FoodSafetyCertImage != null && s.FoodSafetyCertImage.Contains("example.com"))
-                ).ToListAsync();
-
-                foreach (var bs in brokenStores)
+                if (_usersCache.HasValue && DateTime.UtcNow < _usersCache.Value.Expiry)
                 {
-                    bool storeChanged = false;
-                    if (bs.CccdFrontImage != null && bs.CccdFrontImage.Contains("example.com"))
-                    {
-                        bs.CccdFrontImage = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80";
-                        storeChanged = true;
-                    }
-                    if (bs.CccdBackImage != null && bs.CccdBackImage.Contains("example.com"))
-                    {
-                        bs.CccdBackImage = "https://images.unsplash.com/photo-1633158829585-23ba8f7c8caf?auto=format&fit=crop&w=600&q=80";
-                        storeChanged = true;
-                    }
-                    if (bs.FoodSafetyCertImage != null && bs.FoodSafetyCertImage.Contains("example.com"))
-                    {
-                        bs.FoodSafetyCertImage = "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=600&q=80";
-                        storeChanged = true;
-                    }
-                    if (storeChanged)
-                    {
-                        await _mongoService.Stores.ReplaceOneAsync(s => s.Id == bs.Id, bs);
-                    }
-                }
-
-                var brokenShippers = await _mongoService.Shippers.Find(sh =>
-                    (sh.CccdFrontImage != null && sh.CccdFrontImage.Contains("example.com")) ||
-                    (sh.CccdBackImage != null && sh.CccdBackImage.Contains("example.com")) ||
-                    (sh.DrivingLicenseImage != null && sh.DrivingLicenseImage.Contains("example.com"))
-                ).ToListAsync();
-
-                foreach (var bsh in brokenShippers)
-                {
-                    bool shChanged = false;
-                    if (bsh.CccdFrontImage != null && bsh.CccdFrontImage.Contains("example.com"))
-                    {
-                        bsh.CccdFrontImage = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80";
-                        shChanged = true;
-                    }
-                    if (bsh.CccdBackImage != null && bsh.CccdBackImage.Contains("example.com"))
-                    {
-                        bsh.CccdBackImage = "https://images.unsplash.com/photo-1633158829585-23ba8f7c8caf?auto=format&fit=crop&w=600&q=80";
-                        shChanged = true;
-                    }
-                    if (bsh.DrivingLicenseImage != null && bsh.DrivingLicenseImage.Contains("example.com"))
-                    {
-                        bsh.DrivingLicenseImage = "https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&w=600&q=80";
-                        shChanged = true;
-                    }
-                    if (shChanged)
-                    {
-                        await _mongoService.Shippers.ReplaceOneAsync(sh => sh.Id == bsh.Id, bsh);
-                    }
+                    return Ok(_usersCache.Value.Data);
                 }
             }
-            catch { }
 
-            var usersList = await _mongoService.Users.Find(u => !u.IsDeleted).SortByDescending(u => u.CreatedAt).ToListAsync();
-            var storeList = await _mongoService.Stores.Find(_ => true).SortByDescending(s => s.CreatedAt).ToListAsync();
-            var shipperList = await _mongoService.Shippers.Find(_ => true).SortByDescending(s => s.CreatedAt).ToListAsync();
+            var userProj = Builders<User>.Projection.Exclude(u => u.FaceEmbedding);
+            var storeProj = Builders<Store>.Projection
+                .Exclude(s => s.CccdFrontImage)
+                .Exclude(s => s.CccdBackImage)
+                .Exclude(s => s.FoodSafetyCertImage);
+            var shipperProj = Builders<Shipper>.Projection
+                .Exclude(s => s.AvatarUrl)
+                .Exclude(s => s.CccdFrontImage)
+                .Exclude(s => s.CccdBackImage)
+                .Exclude(s => s.DrivingLicenseImage);
+
+            var usersTask = _mongoService.Users.Find(u => !u.IsDeleted).Project<User>(userProj).SortByDescending(u => u.CreatedAt).ToListAsync();
+            var storeTask = _mongoService.Stores.Find(_ => true).Project<Store>(storeProj).SortByDescending(s => s.CreatedAt).ToListAsync();
+            var shipperTask = _mongoService.Shippers.Find(_ => true).Project<Shipper>(shipperProj).SortByDescending(s => s.CreatedAt).ToListAsync();
+
+            await Task.WhenAll(usersTask, storeTask, shipperTask);
+
+            var usersList = await usersTask;
+            var storeList = await storeTask;
+            var shipperList = await shipperTask;
+
+            // Tự động nạp trước (pre-warm cache) các hồ sơ Đang Chờ Duyệt (Pending) chạy ngầm để Admin thẩm định tức thì 0ms
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var pendingStores = storeList.Where(s => s.Status == "Pending" || s.Status == "pending").ToList();
+                    foreach (var ps in pendingStores)
+                    {
+                        if (string.IsNullOrEmpty(ps.Id) || PartnerDetailsCache.ContainsKey(ps.Id)) continue;
+                        try
+                        {
+                            var fullStore = await _mongoService.Stores.Find(s => s.Id == ps.Id).FirstOrDefaultAsync();
+                            if (fullStore != null) CacheStorePartner(fullStore);
+                        }
+                        catch { }
+                    }
+
+                    var pendingShippers = shipperList.Where(sh => sh.Status == "Pending" || sh.Status == "pending").ToList();
+                    foreach (var psh in pendingShippers)
+                    {
+                        if (string.IsNullOrEmpty(psh.Id) || PartnerDetailsCache.ContainsKey(psh.Id)) continue;
+                        try
+                        {
+                            var fullShipper = await _mongoService.Shippers.Find(sh => sh.Id == psh.Id).FirstOrDefaultAsync();
+                            if (fullShipper != null) CacheShipperPartner(fullShipper);
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+            });
 
             var allCombined = new List<AdminUserViewDto>();
 
@@ -361,7 +474,7 @@ public class AdminController : ControllerBase
                     id = u.Id ?? "",
                     email = u.PhoneEmail ?? "",
                     fullName = u.FullName ?? "Người Dùng",
-                    avatarUrl = string.IsNullOrEmpty(u.AvatarUrl) ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200" : u.AvatarUrl,
+                    avatarUrl = (string.IsNullOrEmpty(u.AvatarUrl) || (u.AvatarUrl.StartsWith("data:") && u.AvatarUrl.Length > 2000)) ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200" : u.AvatarUrl,
                     primaryRole = primaryRole,
                     isBuyer = u.IsBuyer,
                     isSeller = u.IsSeller,
@@ -395,9 +508,9 @@ public class AdminController : ControllerBase
                         rejectReason = store.RejectReason,
                         cccdNumber = store.CccdNumber,
                         nguyenQuan = store.NguyenQuan,
-                        cccdFrontImage = store.CccdFrontImage,
-                        cccdBackImage = store.CccdBackImage,
-                        foodSafetyCertImage = store.FoodSafetyCertImage,
+                        cccdFrontImage = "",
+                        cccdBackImage = "",
+                        foodSafetyCertImage = "",
                         createdAt = store.CreatedAt.ToString("dd/MM/yyyy HH:mm")
                     } : null,
                     shipperDetails = shipper != null ? new
@@ -410,14 +523,14 @@ public class AdminController : ControllerBase
                         operatingArea = shipper.OperatingArea,
                         bankName = shipper.BankName,
                         bankAccountNumber = shipper.BankAccountNumber,
-                        avatarUrl = shipper.AvatarUrl,
+                        avatarUrl = (!string.IsNullOrEmpty(shipper.AvatarUrl) && !shipper.AvatarUrl.StartsWith("data:")) ? shipper.AvatarUrl : "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200",
                         status = shipper.Status,
                         rejectReason = shipper.RejectReason,
                         cccdNumber = shipper.CccdNumber,
                         nguyenQuan = shipper.NguyenQuan,
-                        cccdFrontImage = shipper.CccdFrontImage,
-                        cccdBackImage = shipper.CccdBackImage,
-                        drivingLicenseImage = shipper.DrivingLicenseImage,
+                        cccdFrontImage = "",
+                        cccdBackImage = "",
+                        drivingLicenseImage = "",
                         createdAt = shipper.CreatedAt.ToString("dd/MM/yyyy HH:mm")
                     } : null
                 });
@@ -467,9 +580,9 @@ public class AdminController : ControllerBase
                             rejectReason = store.RejectReason,
                             cccdNumber = store.CccdNumber,
                             nguyenQuan = store.NguyenQuan,
-                            cccdFrontImage = store.CccdFrontImage,
-                            cccdBackImage = store.CccdBackImage,
-                            foodSafetyCertImage = store.FoodSafetyCertImage,
+                            cccdFrontImage = "",
+                            cccdBackImage = "",
+                            foodSafetyCertImage = "",
                             createdAt = store.CreatedAt.ToString("dd/MM/yyyy HH:mm")
                         },
                         shipperDetails = null
@@ -493,7 +606,7 @@ public class AdminController : ControllerBase
                         id = shipper.Id ?? Guid.NewGuid().ToString(),
                         email = shipper.PhoneNumber ?? "shipper@zonemart.vn",
                         fullName = shipper.FullName ?? "Tài Xế " + shipper.LicensePlate,
-                        avatarUrl = string.IsNullOrEmpty(shipper.AvatarUrl) ? "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200" : shipper.AvatarUrl,
+                        avatarUrl = (!string.IsNullOrEmpty(shipper.AvatarUrl) && !shipper.AvatarUrl.StartsWith("data:")) ? shipper.AvatarUrl : "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200",
                         primaryRole = "Shipper",
                         isBuyer = true,
                         isSeller = false,
@@ -516,14 +629,14 @@ public class AdminController : ControllerBase
                             operatingArea = shipper.OperatingArea,
                             bankName = shipper.BankName,
                             bankAccountNumber = shipper.BankAccountNumber,
-                            avatarUrl = shipper.AvatarUrl,
+                            avatarUrl = (!string.IsNullOrEmpty(shipper.AvatarUrl) && !shipper.AvatarUrl.StartsWith("data:")) ? shipper.AvatarUrl : "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200",
                             status = shipper.Status,
                             rejectReason = shipper.RejectReason,
                             cccdNumber = shipper.CccdNumber,
                             nguyenQuan = shipper.NguyenQuan,
-                            cccdFrontImage = shipper.CccdFrontImage,
-                            cccdBackImage = shipper.CccdBackImage,
-                            drivingLicenseImage = shipper.DrivingLicenseImage,
+                            cccdFrontImage = "",
+                            cccdBackImage = "",
+                            drivingLicenseImage = "",
                             createdAt = shipper.CreatedAt.ToString("dd/MM/yyyy HH:mm")
                         }
                     });
@@ -571,7 +684,12 @@ public class AdminController : ControllerBase
             }
 
             var resultList = filtered.ToList();
-            return Ok(new { success = true, count = resultList.Count, users = resultList });
+            var resultObj = new { success = true, count = resultList.Count, users = resultList };
+            if (string.IsNullOrWhiteSpace(query) && string.IsNullOrWhiteSpace(role) && string.IsNullOrWhiteSpace(status))
+            {
+                _usersCache = (resultObj, DateTime.UtcNow.AddSeconds(5));
+            }
+            return Ok(resultObj);
         }
         catch (Exception ex)
         {
@@ -585,6 +703,7 @@ public class AdminController : ControllerBase
     [HttpPost("approve-kyc")]
     public async Task<IActionResult> ApproveKyc([FromBody] ApproveKycRequest req)
     {
+        InvalidateAdminCache();
         try
         {
             string emailToSend = "";
@@ -926,6 +1045,7 @@ public class AdminController : ControllerBase
     [HttpPost("reject-kyc")]
     public async Task<IActionResult> RejectKyc([FromBody] RejectKycRequest req)
     {
+        InvalidateAdminCache();
         if (string.IsNullOrWhiteSpace(req.Reason))
         {
             return BadRequest(new { success = false, message = "Vui lòng nhập lý do từ chối hồ sơ!" });
@@ -1333,6 +1453,7 @@ public class AdminController : ControllerBase
     [HttpPost("unlock-user")]
     public async Task<IActionResult> UnlockUser([FromBody] UnlockUserRequest req)
     {
+        InvalidateAdminCache();
         try
         {
             string userEmail = !string.IsNullOrWhiteSpace(req.UserEmail) ? req.UserEmail.Trim().ToLower() : "";
@@ -1410,6 +1531,7 @@ public class AdminController : ControllerBase
     [HttpPost("delete-user")]
     public async Task<IActionResult> DeleteUserPost([FromBody] DeleteUserPostRequest req)
     {
+        InvalidateAdminCache();
         if (string.IsNullOrWhiteSpace(req.UserId))
         {
             return BadRequest(new { success = false, message = "Thiếu mã tài khoản cần xóa!" });
@@ -1558,6 +1680,7 @@ public class AdminController : ControllerBase
     [HttpDelete("users/{userId}")]
     public async Task<IActionResult> DeleteUser(string userId, [FromQuery] string confirmationCode, [FromQuery] string actorEmail, [FromQuery] string actorRole)
     {
+        InvalidateAdminCache();
         // 1. Phân quyền nghiêm ngặt: Kiểm tra nếu không phải Admin -> Báo lỗi 403 Forbidden
         if (string.IsNullOrWhiteSpace(actorRole) || (actorRole.ToLower() != "admin" && actorRole.ToLower() != "administrator"))
         {
@@ -1811,8 +1934,12 @@ public class AdminController : ControllerBase
         return Ok(new { success = true, message = "Đã nạp thành công dữ liệu mẫu thực tế vào CSDL MongoDB Atlas!" });
     }
 
+    private static bool _isDataSeeded = false;
+
     private async Task EnsureDataSeededAsync(bool force = false)
     {
+        if (_isDataSeeded && !force) return;
+        _isDataSeeded = true;
         try
         {
             // Luôn đảm bảo tài khoản Admin hệ thống tồn tại và có quyền IsAdmin = true
@@ -1945,9 +2072,6 @@ public class AdminController : ControllerBase
                 };
                 await _mongoService.ParentOrders.InsertManyAsync(weeklySampleOrders);
             }
-
-            // TỰ ĐỘNG CHUẨN HÓA MÃ ID SHIPPER (SHP-XXXX), SELLER (SEL-XXXX), CUST (CUST-XXXX), ZM (ZM-XXXX) TRÊN DATABASE
-            await MigrateAllIdsInternalAsync();
         }
         catch
         {
