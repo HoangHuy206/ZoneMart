@@ -490,6 +490,81 @@ namespace ZoneMart.Server.Services
                 AiStatus = "approved",
                 CreatedAt = DateTime.UtcNow
             },
+            new()
+            {
+                Id = "65f000000000000000000021",
+                StoreId = "65f01234567890abcdef0001",
+                ProductName = "Đậu Phụ Non Tofu Mơ Tươi Mềm Mịn (Hộp 400g)",
+                Category = "Thực phẩm tươi sống",
+                Price = 16000m,
+                Description = "Đậu phụ non tươi ngon béo ngậy được làm từ đậu nành nguyên chất, thích hợp ăn lẩu, chiên giòn hoặc sốt cà chua.",
+                ImageUrl = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80",
+                StoreName = "Vườn Rau Hữu Cơ Bác Ba",
+                StockQuantity = 100,
+                StockStatus = "in_stock",
+                AiStatus = "approved",
+                CreatedAt = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = "65f000000000000000000022",
+                StoreId = "65f01234567890abcdef0001",
+                ProductName = "Bò Viên Gân Tươi Giòn Thơm Hảo Hạng (Gói 500g)",
+                Category = "Thịt tươi",
+                Price = 85000m,
+                Description = "Bò viên gân giòn sần sật, đậm vị thịt bò tươi 100%, không hàn the, cực kỳ ngon khi nhúng lẩu hoặc nấu phở.",
+                ImageUrl = "https://images.unsplash.com/photo-1529692236671-f1f6cf9683ba?auto=format&fit=crop&w=800&q=80",
+                StoreName = "Thực Phẩm Tươi Sống Hàng Bè",
+                StockQuantity = 100,
+                StockStatus = "in_stock",
+                AiStatus = "approved",
+                CreatedAt = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = "65f000000000000000000023",
+                StoreId = "65f01234567890abcdef0001",
+                ProductName = "Nước Cốt Nấu Lẩu Truyền Thống Đậm Đà (Gói 300g)",
+                Category = "Gia vị & Đồ khô",
+                Price = 32000m,
+                Description = "Nước cốt lẩu cô đặc ninh từ xương hầm và thảo mộc tự nhiên, chỉ cần pha với 1.5L nước là có ngay nồi nước dùng ngọt thanh chuẩn vị.",
+                ImageUrl = "https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=800&q=80",
+                StoreName = "Thực Phẩm Tươi Sống Hàng Bè",
+                StockQuantity = 100,
+                StockStatus = "in_stock",
+                AiStatus = "approved",
+                CreatedAt = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = "65f000000000000000000024",
+                StoreId = "65f01234567890abcdef0001",
+                ProductName = "Nấm Kim Châm Tươi Giòn Ngọt VietGAP (Gói 150g)",
+                Category = "Rau củ sạch",
+                Price = 14000m,
+                Description = "Nấm kim châm thân trắng giòn ngọt, giàu dinh dưỡng, nhúng lẩu thanh ngọt tự nhiên.",
+                ImageUrl = "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=800&q=80",
+                StoreName = "Vườn Rau Hữu Cơ Bác Ba",
+                StockQuantity = 100,
+                StockStatus = "in_stock",
+                AiStatus = "approved",
+                CreatedAt = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = "65f000000000000000000025",
+                StoreId = "65f01234567890abcdef0001",
+                ProductName = "Rau Cải Xanh Nhúng Lẩu Tươi Non Hữu Cơ (Túi 500g)",
+                Category = "Rau củ sạch",
+                Price = 22000m,
+                Description = "Rau cải xanh tươi non hữu cơ trồng tại Ba Vì, vị ngọt thanh cay nhẹ, cực hợp nhúng lẩu các loại.",
+                ImageUrl = "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80",
+                StoreName = "Vườn Rau Hữu Cơ Bác Ba",
+                StockQuantity = 100,
+                StockStatus = "in_stock",
+                AiStatus = "approved",
+                CreatedAt = DateTime.UtcNow
+            },
         };
 
             return catalogProducts;
