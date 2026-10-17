@@ -115,14 +115,20 @@ const handleProceedToCheckout = () => {
           <span class="node-label">1. Giỏ Hàng</span>
         </div>
         <div class="step-connector"></div>
-        <div class="step-node">
+        <div
+          class="step-node clickable"
+          @click="handleProceedToCheckout"
+          role="button"
+          tabindex="0"
+          title="Tiến hành thanh toán"
+        >
           <div class="node-circle"><i class="bi bi-credit-card"></i></div>
           <span class="node-label">2. Thanh Toán</span>
         </div>
         <div class="step-connector"></div>
         <div class="step-node">
           <div class="node-circle"><i class="bi bi-truck"></i></div>
-          <span class="node-label">3. Giao Hỏa Tốc</span>
+          <span class="node-label">3. Giao Hàng</span>
         </div>
       </div>
     </div>
@@ -612,30 +618,42 @@ const handleProceedToCheckout = () => {
 /* 1. STEPPER */
 .checkout-stepper-container {
   margin-bottom: 28px;
-  padding: 16px 24px;
+  padding: 16px 28px;
   background: #ffffff;
   border: 1px solid #ebdcd3;
-  border-radius: 16px;
-  box-shadow: 0 2px 10px rgba(43, 27, 20, 0.03);
+  border-radius: 18px;
+  box-shadow: 0 4px 16px rgba(43, 27, 20, 0.04);
 }
 .stepper-track {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  max-width: 600px;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 620px;
   margin: 0 auto;
+  position: relative;
 }
 .step-node {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  color: #9c887e;
-  font-size: 13px;
-  font-weight: 600;
+  gap: 8px;
+  flex-shrink: 0;
+  text-align: center;
+  cursor: default;
+  user-select: none;
+  transition: transform 0.2s ease;
 }
-.step-node.active {
+.step-node.clickable {
+  cursor: pointer;
+}
+.step-node.clickable:hover {
+  transform: translateY(-1px);
+}
+.step-node.clickable:hover .node-circle {
+  border-color: #d85a2a;
   color: #d85a2a;
+  background: #fff8f5;
 }
 .node-circle {
   width: 38px;
@@ -647,21 +665,42 @@ const handleProceedToCheckout = () => {
   align-items: center;
   justify-content: center;
   font-size: 15px;
-  color: #9c887e;
+  color: #78716c;
   transition: all 0.25s ease;
+  box-shadow: 0 2px 6px rgba(43, 27, 20, 0.03);
 }
 .step-node.active .node-circle {
-  background: #d85a2a;
+  background: linear-gradient(135deg, #d85a2a 0%, #c24b1f 100%);
   color: #ffffff;
-  border-color: #d85a2a;
-  box-shadow: 0 4px 12px rgba(216, 90, 42, 0.3);
+  border-color: #ffffff;
+  box-shadow:
+    0 0 0 2px #d85a2a,
+    0 4px 14px rgba(216, 90, 42, 0.35);
+}
+.node-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #78716c;
+  white-space: nowrap;
+  letter-spacing: -0.1px;
+  transition: color 0.25s ease;
+}
+.step-node.active .node-label {
+  color: #d85a2a;
+  font-weight: 700;
 }
 .step-connector {
-  flex: 1;
-  height: 2px;
+  flex: 1 1 0%;
+  min-width: 24px;
+  height: 3px;
   background: #ebdcd3;
-  margin: 0 16px;
-  transform: translateY(-10px);
+  border-radius: 3px;
+  margin: 18px 12px 0 12px;
+  position: relative;
+  transition: all 0.3s ease;
+}
+.step-connector:first-of-type {
+  background: linear-gradient(90deg, #d85a2a 0%, #e8865c 50%, #ebdcd3 100%);
 }
 
 /* 2. MAIN GRID */
@@ -1566,5 +1605,129 @@ const handleProceedToCheckout = () => {
 .fade-toast-leave-to {
   opacity: 0;
   transform: translateY(15px);
+}
+
+/* 10. RESPONSIVE FOR MOBILE STEPPER & EMPTY STATE */
+@media (max-width: 768px) {
+  .cart-page-wrapper {
+    margin: 12px auto 48px auto;
+    padding: 0 12px;
+  }
+
+  .checkout-stepper-container {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    box-shadow: 0 2px 10px rgba(43, 27, 20, 0.03);
+  }
+
+  .step-node {
+    gap: 6px;
+  }
+
+  .node-circle {
+    width: 34px;
+    height: 34px;
+    font-size: 14px;
+  }
+
+  .step-node.active .node-circle {
+    box-shadow:
+      0 0 0 2px #d85a2a,
+      0 3px 10px rgba(216, 90, 42, 0.3);
+  }
+
+  .node-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    letter-spacing: -0.2px;
+  }
+
+  .step-node.active .node-label {
+    font-size: 11.5px;
+    font-weight: 700;
+  }
+
+  .step-connector {
+    height: 2.5px;
+    min-width: 14px;
+    margin: 16px 8px 0 8px;
+    border-radius: 2px;
+  }
+
+  .empty-cart-container {
+    padding: 36px 16px;
+    border-radius: 20px;
+  }
+
+  .empty-art-circle {
+    width: 76px;
+    height: 76px;
+    font-size: 34px;
+    margin-bottom: 16px;
+  }
+
+  .empty-main-title {
+    font-size: 18px;
+  }
+
+  .empty-sub-text {
+    font-size: 13px;
+    margin-bottom: 22px;
+  }
+
+  .empty-actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .btn-shop-now,
+  .btn-back-home {
+    width: 100%;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+}
+
+@media (max-width: 400px) {
+  .cart-page-wrapper {
+    padding: 0 8px;
+  }
+
+  .checkout-stepper-container {
+    padding: 10px 8px;
+  }
+
+  .step-node {
+    gap: 5px;
+  }
+
+  .node-circle {
+    width: 30px;
+    height: 30px;
+    font-size: 12.5px;
+  }
+
+  .step-node.active .node-circle {
+    box-shadow:
+      0 0 0 1.5px #d85a2a,
+      0 2px 8px rgba(216, 90, 42, 0.25);
+  }
+
+  .node-label {
+    font-size: 10.5px;
+    letter-spacing: -0.3px;
+  }
+
+  .step-node.active .node-label {
+    font-size: 10.5px;
+  }
+
+  .step-connector {
+    height: 2px;
+    min-width: 10px;
+    margin: 14px 4px 0 4px;
+  }
 }
 </style>

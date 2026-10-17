@@ -998,7 +998,7 @@ public class AuthController : ControllerBase
                 {
                     isPendingAccount = true;
                     string shopName = !string.IsNullOrEmpty(userStore?.StoreName) ? userStore.StoreName : "Gian hàng của bạn";
-                    pendingMessage = $"Hồ sơ mở gian hàng '{shopName}' của bạn đang trong quá trình xét duyệt. Vui lòng chờ Ban Quản Trị phê duyệt trước khi đăng nhập!";
+                    pendingMessage = $"Hồ sơ mở gian hàng '{shopName}' của bạn đang trong quá trình xét duyệt. Bạn vẫn có thể đăng nhập tài khoản Khách Hàng để mua sắm!";
                 }
             }
             else if (reqRole == "shipper")
@@ -1007,24 +1007,22 @@ public class AuthController : ControllerBase
                 {
                     isPendingAccount = true;
                     string driverTag = shipperInfo?.LicensePlate ?? shipperInfo?.FullName ?? "Tài xế";
-                    pendingMessage = $"Hồ sơ đăng ký tài xế ZoneMart Driver ({driverTag}) đang trong quá trình xét duyệt. Vui lòng chờ thông báo!";
+                    pendingMessage = $"Hồ sơ đăng ký tài xế ZoneMart Driver ({driverTag}) đang trong quá trình xét duyệt. Bạn vẫn có thể đăng nhập tài khoản Khách Hàng để mua sắm!";
                 }
             }
             else
             {
-                // Đăng nhập chung hoặc buyer
-                if (existingUser != null && (existingUser.AccountStatus == "pending" || existingUser.AccountStatus == "Pending") && !isStoreApproved && !isShipperApproved)
+                // Đăng nhập chung hoặc buyer (Khách hàng)
+                // TH2 & TH1: Người dùng có tài khoản khách hàng vẫn đăng nhập vào tài khoản khách bình thường để mua sắm
+                // ngay cả khi hồ sơ Người Bán hoặc Shipper đang chờ duyệt (Pending)!
+                if (existingUser != null && (existingUser.AccountStatus == "banned" || existingUser.AccountStatus == "deleted"))
                 {
-                    isPendingAccount = true;
-                    if (userStore != null && !string.IsNullOrEmpty(userStore.StoreName))
+                    return BadRequest(new
                     {
-                        pendingMessage = $"Hồ sơ mở gian hàng '{userStore.StoreName}' của bạn đang trong quá trình xét duyệt. Vui lòng chờ Ban Quản Trị phê duyệt trước khi đăng nhập!";
-                    }
-                    else if (shipperInfo != null)
-                    {
-                        string driverTag = shipperInfo.LicensePlate ?? shipperInfo.FullName ?? "Tài xế";
-                        pendingMessage = $"Hồ sơ đăng ký tài xế ZoneMart Driver ({driverTag}) đang trong quá trình xét duyệt. Vui lòng chờ thông báo!";
-                    }
+                        success = false,
+                        errorType = "ACCOUNT_LOCKED",
+                        message = "Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động. Vui lòng liên hệ hỗ trợ ZoneMart!"
+                    });
                 }
             }
         }
@@ -1049,19 +1047,17 @@ public class AuthController : ControllerBase
         }
         else if (reqRole == "shipper")
         {
-            if ((existingUser == null || !existingUser.IsShipper) && shipperInfo == null)
-            if ((existingUser == null || (!existingUser.IsShipper && !isShipperApproved)) && shipperInfo == null)
+            if ((existingUser == null || (!existingUser.IsShipper && !isShipperApproved)) && (shipperInfo == null || !isShipperApproved))
             {
-                return BadRequest(new { success = false, message = "Tài khoản này chưa đăng ký làm Tài Xế Shipper! Vui lòng đăng ký hồ sơ tài xế trước khi đăng nhập." });
+                return BadRequest(new { success = false, message = "Tài khoản này chưa đăng ký làm Tài Xế Shipper hoặc chưa được duyệt! Vui lòng chờ Ban Quản Trị phê duyệt." });
             }
             determinedRole = "shipper";
         }
         else if (reqRole == "seller")
         {
-            if (existingUser == null || (!existingUser.IsSeller && !existingUser.IsAdmin))
             if (existingUser == null || (!existingUser.IsSeller && !existingUser.IsAdmin && !isStoreApproved))
             {
-                return BadRequest(new { success = false, message = "Tài khoản này chưa đăng ký mở Gian Hàng Seller! Vui lòng đăng ký mở shop trước khi đăng nhập." });
+                return BadRequest(new { success = false, message = "Tài khoản này chưa đăng ký mở Gian Hàng Seller hoặc chưa được duyệt! Vui lòng chờ Ban Quản Trị phê duyệt." });
             }
             determinedRole = "seller";
         }
@@ -1075,11 +1071,13 @@ public class AuthController : ControllerBase
         }
         else
         {
+            // Cổng Buyer (Khách hàng) hoặc đăng nhập chung:
+            // Chỉ nâng vai trò thành seller/shipper nếu hồ sơ đã ĐƯỢC DUYỆT (Approved).
+            // Nếu hồ sơ đang chờ duyệt (Pending), VẪN LÀ BUYER để mua sắm bình thường!
             if (existingUser != null && existingUser.IsAdmin) determinedRole = "admin";
-            else if (existingUser != null && existingUser.IsSeller) determinedRole = "seller";
-            else if ((existingUser != null && existingUser.IsShipper) || shipperInfo != null) determinedRole = "shipper";
-            else if (existingUser != null && (existingUser.IsSeller || isStoreApproved)) determinedRole = "seller";
-            else if ((existingUser != null && (existingUser.IsShipper || isShipperApproved)) || shipperInfo != null) determinedRole = "shipper";
+            else if (existingUser != null && existingUser.IsSeller && isStoreApproved) determinedRole = "seller";
+            else if ((existingUser != null && existingUser.IsShipper && isShipperApproved) || (shipperInfo != null && isShipperApproved)) determinedRole = "shipper";
+            else determinedRole = "buyer";
         }
 
         if (shipperInfo == null && existingUser != null && (existingUser.IsShipper || determinedRole == "shipper"))
@@ -1145,10 +1143,13 @@ public class AuthController : ControllerBase
                 avatarUrl = !string.IsNullOrEmpty(shipperInfo?.AvatarUrl) ? shipperInfo.AvatarUrl : (existingUser?.AvatarUrl ?? ""),
                 role = determinedRole,
                 isAdmin = determinedRole == "admin" || (existingUser?.IsAdmin ?? false),
+                isSeller = (existingUser?.IsSeller ?? false) || isStoreApproved || sellerStatus == "Approved",
+                isShipper = (existingUser?.IsShipper ?? false) || isShipperApproved || (shipperInfo?.Status == "Approved"),
                 isManager = (existingUser?.IsManager ?? false) || determinedRole == "admin",
                 walletBalance = existingUser?.WalletBalance ?? 0,
                 storeName = storeName,
                 sellerStatus = sellerStatus,
+                shipperStatus = shipperInfo?.Status ?? ((existingUser?.IsShipper ?? false) ? "Approved" : "None"),
                 rejectReason = rejectReason,
                 shipperDetails = shipperInfo != null ? new
                 {
@@ -1250,6 +1251,110 @@ public class AuthController : ControllerBase
         catch (Exception ex)
         {
             return Ok(new { success = false, message = ex.Message, store = (object?)null });
+        }
+    }
+
+    /// <summary>
+    /// API TRA CỨU TRẠNG THÁI ĐỐI TÁC (SELLER & SHIPPER) CHO TÀI KHOẢN KHÁCH HÀNG (TRANG PROFILE)
+    /// </summary>
+    [HttpGet("partner-status")]
+    public async Task<IActionResult> GetPartnerStatus([FromQuery] string account)
+    {
+        if (string.IsNullOrWhiteSpace(account)) return BadRequest(new { success = false, message = "Thiếu thông tin tài khoản" });
+        string clean = account.Trim();
+        try
+        {
+            var userFilters = new List<FilterDefinition<User>>
+            {
+                Builders<User>.Filter.Regex(u => u.PhoneEmail, new BsonRegularExpression($"^{Regex.Escape(clean)}$", "i")),
+                Builders<User>.Filter.Eq(u => u.Phone, clean),
+                Builders<User>.Filter.Eq(u => u.UserCode, clean)
+            };
+            if (ObjectId.TryParse(clean, out _))
+            {
+                userFilters.Add(Builders<User>.Filter.Eq(u => u.Id, clean));
+            }
+            var user = await _mongoService.Users.Find(Builders<User>.Filter.Or(userFilters)).FirstOrDefaultAsync();
+
+            string userEmail = user?.PhoneEmail ?? clean;
+            string userId = user?.Id ?? clean;
+            string userCode = user?.UserCode ?? "";
+
+            // Tìm Store liên kết
+            var storeFilter = Builders<Store>.Filter.Or(
+                Builders<Store>.Filter.Regex(s => s.PhoneEmail, new BsonRegularExpression($"^{Regex.Escape(userEmail)}$", "i")),
+                Builders<Store>.Filter.Eq(s => s.UserId, userId),
+                Builders<Store>.Filter.Eq(s => s.UserId, userCode)
+            );
+            if (ObjectId.TryParse(clean, out _))
+            {
+                storeFilter = Builders<Store>.Filter.Or(storeFilter, Builders<Store>.Filter.Eq(s => s.Id, clean));
+            }
+            var store = await _mongoService.Stores.Find(storeFilter).SortByDescending(s => s.CreatedAt).FirstOrDefaultAsync();
+
+            // Tìm Shipper liên kết
+            var shipperFilter = Builders<Shipper>.Filter.Or(
+                Builders<Shipper>.Filter.Regex(s => s.PhoneNumber, new BsonRegularExpression($"^{Regex.Escape(userEmail)}$", "i")),
+                Builders<Shipper>.Filter.Eq(s => s.UserId, userId),
+                Builders<Shipper>.Filter.Eq(s => s.UserId, userCode)
+            );
+            if (!string.IsNullOrEmpty(user?.Phone))
+            {
+                shipperFilter = Builders<Shipper>.Filter.Or(shipperFilter, Builders<Shipper>.Filter.Eq(s => s.PhoneNumber, user.Phone));
+            }
+            if (ObjectId.TryParse(clean, out _))
+            {
+                shipperFilter = Builders<Shipper>.Filter.Or(shipperFilter, Builders<Shipper>.Filter.Eq(s => s.Id, clean));
+            }
+            var shipper = await _mongoService.Shippers.Find(shipperFilter).SortByDescending(s => s.CreatedAt).FirstOrDefaultAsync();
+
+            string sellerStatus = store?.Status ?? (user?.IsSeller == true ? "Approved" : "None");
+            string shipperStatus = shipper?.Status ?? (user?.IsShipper == true ? "Approved" : "None");
+
+            return Ok(new
+            {
+                success = true,
+                sellerStatus,
+                shipperStatus,
+                store = store != null ? new
+                {
+                    id = store.Id,
+                    storeName = store.StoreName,
+                    storeCode = store.StoreCode,
+                    ownerFullName = store.OwnerFullName,
+                    category = store.Category,
+                    address = store.Address,
+                    openHours = store.OpenHours,
+                    sellerType = store.SellerType,
+                    ward = store.Ward,
+                    district = store.District,
+                    marketName = store.MarketName,
+                    bankName = store.BankName,
+                    bankAccountNumber = store.BankAccountNumber,
+                    status = store.Status,
+                    createdAt = store.CreatedAt,
+                    rejectReason = store.RejectReason
+                } : null,
+                shipper = shipper != null ? new
+                {
+                    id = shipper.Id,
+                    fullName = shipper.FullName,
+                    shipperCode = shipper.ShipperCode,
+                    licensePlate = shipper.LicensePlate,
+                    vehicleType = shipper.VehicleType,
+                    vehicleModel = shipper.VehicleModel,
+                    operatingArea = shipper.OperatingArea,
+                    bankName = shipper.BankName,
+                    bankAccountNumber = shipper.BankAccountNumber,
+                    status = shipper.Status,
+                    createdAt = shipper.CreatedAt,
+                    rejectReason = shipper.RejectReason
+                } : null
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
 
@@ -1552,25 +1657,95 @@ Email liên hệ: dobinh225599@gmail.com
             return BadRequest(new { success = false, message = "Vui lòng nhập đầy đủ tên cửa hàng và họ tên chủ tiệm!" });
         }
 
+        if (string.IsNullOrWhiteSpace(request.CccdFrontImage) || string.IsNullOrWhiteSpace(request.CccdBackImage))
+        {
+            return BadRequest(new { success = false, message = "Bắt buộc phải tải lên đầy đủ ảnh CCCD mặt trước và mặt sau!" });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.FoodSafetyCertImage))
+        {
+            return BadRequest(new { success = false, message = "Bắt buộc phải tải lên Giấy chứng nhận Vệ sinh An toàn thực phẩm (hoặc VietGAP)!" });
+        }
+
         string accountKey = !string.IsNullOrWhiteSpace(request.PhoneEmail) ? request.PhoneEmail.Trim().ToLower() : "";
-        string pwd = !string.IsNullOrWhiteSpace(request.Password) ? request.Password.Trim() : "123456";
+        string pwd = !string.IsNullOrWhiteSpace(request.Password) ? request.Password.Trim() : "";
 
         User? buyerUser = null;
-        if (!string.IsNullOrEmpty(accountKey))
+        if (request.IsUpgrade || !string.IsNullOrWhiteSpace(request.UserId))
         {
-            var (isEmailTaken, roleDetail) = await CheckEmailRegisteredAsync(_mongoService, accountKey);
-            if (isEmailTaken)
+            // TH2: Nâng cấp tài khoản Khách Hàng hiện có lên Người Bán
+            if (!string.IsNullOrEmpty(request.UserId))
             {
-                return BadRequest(new { success = false, message = $"Oh no! Gmail {accountKey} này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi! Vui lòng chọn Gmail khác nhé." });
+                var idFilters = new List<FilterDefinition<User>> { Builders<User>.Filter.Eq(u => u.UserCode, request.UserId) };
+                if (ObjectId.TryParse(request.UserId, out _)) idFilters.Add(Builders<User>.Filter.Eq(u => u.Id, request.UserId));
+                buyerUser = await _mongoService.Users.Find(Builders<User>.Filter.Or(idFilters)).FirstOrDefaultAsync();
             }
-
-            try
+            if (buyerUser == null && !string.IsNullOrEmpty(accountKey))
             {
                 buyerUser = await _mongoService.Users.Find(u => u.PhoneEmail == accountKey).FirstOrDefaultAsync();
             }
-            catch (Exception ex)
+
+            if (buyerUser == null)
             {
-                Console.WriteLine($"⚠️ [MongoDB Query User Warning] {ex.Message}");
+                return BadRequest(new { success = false, message = "Không tìm thấy thông tin tài khoản Khách Hàng để thực hiện nâng cấp!" });
+            }
+
+            // Kế thừa tài khoản và mật khẩu từ tài khoản hiện có
+            accountKey = buyerUser.PhoneEmail.Trim().ToLower();
+            pwd = !string.IsNullOrWhiteSpace(buyerUser.Password) ? buyerUser.Password : (!string.IsNullOrWhiteSpace(buyerUser.PasswordHash) ? buyerUser.PasswordHash : "123456");
+
+            // Kiểm tra xem User này đã gửi hồ sơ gian hàng trước đó chưa
+            var existingStore = await _mongoService.Stores.Find(s =>
+                s.PhoneEmail.ToLower() == accountKey ||
+                s.UserId == buyerUser.Id ||
+                (!string.IsNullOrEmpty(buyerUser.UserCode) && s.UserId == buyerUser.UserCode)
+            ).FirstOrDefaultAsync();
+
+            if (existingStore != null)
+            {
+                if (existingStore.Status == "Pending")
+                {
+                    return BadRequest(new { success = false, message = "Hồ sơ mở gian hàng của bạn đã được gửi và đang trong quá trình chờ Ban Quản Trị xét duyệt!" });
+                }
+                else if (existingStore.Status == "Approved" || existingStore.Status == "Active")
+                {
+                    return BadRequest(new { success = false, message = "Tài khoản của bạn đã được phê duyệt làm Người Bán (Gian Hàng) rồi!" });
+                }
+            }
+
+            // Kiểm tra xem User này đã gửi hồ sơ Shipper đang chờ duyệt hoặc đã duyệt chưa
+            var existingShipper = await _mongoService.Shippers.Find(s =>
+                s.PhoneNumber.ToLower() == accountKey ||
+                (!string.IsNullOrEmpty(buyerUser.Phone) && s.PhoneNumber == buyerUser.Phone) ||
+                s.UserId == buyerUser.Id ||
+                (!string.IsNullOrEmpty(buyerUser.UserCode) && s.UserId == buyerUser.UserCode)
+            ).FirstOrDefaultAsync();
+
+            if (existingShipper != null && (existingShipper.Status == "Pending" || existingShipper.Status == "Approved" || existingShipper.Status == "Active"))
+            {
+                return BadRequest(new { success = false, message = "Bạn đã có hồ sơ đăng ký Tài Xế Shipper đang chờ xét duyệt hoặc đã được duyệt! Mỗi tài khoản chỉ có thể đăng ký 1 vai trò đối tác." });
+            }
+        }
+        else
+        {
+            // TH1: Khách vãng lai chưa đăng nhập
+            if (string.IsNullOrWhiteSpace(pwd)) pwd = "123456";
+            if (!string.IsNullOrEmpty(accountKey))
+            {
+                var (isEmailTaken, roleDetail) = await CheckEmailRegisteredAsync(_mongoService, accountKey);
+                if (isEmailTaken)
+                {
+                    return BadRequest(new { success = false, message = $"Oh no! Gmail {accountKey} này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi! Vui lòng chọn Gmail khác hoặc đăng nhập tài khoản Khách Hàng để nâng cấp nhé." });
+                }
+
+                try
+                {
+                    buyerUser = await _mongoService.Users.Find(u => u.PhoneEmail == accountKey).FirstOrDefaultAsync();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ [MongoDB Query User Warning] {ex.Message}");
+                }
             }
         }
 
@@ -1583,18 +1758,23 @@ Email liên hệ: dobinh225599@gmail.com
 
         if (buyerUser != null)
         {
+            // Cập nhật User nhưng giữ nguyên AccountStatus = "active" cho khách hàng mua sắm
             var userUpdate = Builders<User>.Update
-                .Set(u => u.PasswordHash, pwd)
-                .Set(u => u.Password, pwd)
-                .Set(u => u.UserCode, userCode)
-                .Set(u => u.AccountStatus, "pending");
+                .Set(u => u.UserCode, userCode);
+            if (!string.IsNullOrWhiteSpace(request.CccdNumber))
+            {
+                userUpdate = userUpdate.Set(u => u.CccdNumber, request.CccdNumber.Trim());
+                buyerUser.CccdNumber = request.CccdNumber.Trim();
+            }
+            if (string.IsNullOrEmpty(buyerUser.AccountStatus) || buyerUser.AccountStatus == "pending")
+            {
+                userUpdate = userUpdate.Set(u => u.AccountStatus, "active");
+                buyerUser.AccountStatus = "active";
+            }
             try
             {
                 await _mongoService.Users.UpdateOneAsync(u => u.Id == buyerUser.Id, userUpdate);
-                buyerUser.PasswordHash = pwd;
-                buyerUser.Password = pwd;
                 buyerUser.UserCode = userCode;
-                buyerUser.AccountStatus = "pending";
                 InMemoryUsers[accountKey] = buyerUser;
             }
             catch (Exception ex)
@@ -1604,6 +1784,7 @@ Email liên hệ: dobinh225599@gmail.com
         }
         else if (!string.IsNullOrEmpty(accountKey))
         {
+            // TH1: Tạo tài khoản User mới với AccountStatus = "active" (đảm bảo vẫn vào được tài khoản khách hàng nếu chưa duyệt)
             buyerUser = new User
             {
                 Id = ObjectId.GenerateNewId().ToString(),
@@ -1618,7 +1799,7 @@ Email liên hệ: dobinh225599@gmail.com
                 IsShipper = false,
                 IsSeller = false,
                 IsAdmin = false,
-                AccountStatus = "pending",
+                AccountStatus = "active", // Đảm bảo đăng nhập khách hàng bình thường
                 CreatedAt = DateTime.UtcNow
             };
             InMemoryUsers[accountKey] = buyerUser;
@@ -1632,19 +1813,10 @@ Email liên hệ: dobinh225599@gmail.com
                 Console.WriteLine($"⚠️ [MongoDB User Insert Warning] {dbEx.Message}");
             }
         }
-        else if (buyerUser != null && !string.IsNullOrWhiteSpace(request.CccdNumber))
-        {
-            buyerUser.CccdNumber = request.CccdNumber.Trim();
-            try
-            {
-                await _mongoService.Users.UpdateOneAsync(u => u.Id == buyerUser.Id, Builders<User>.Update.Set(u => u.CccdNumber, request.CccdNumber.Trim()));
-            }
-            catch { }
-        }
 
         var newStore = new Store
         {
-            UserId = userCode,
+            UserId = buyerUser?.Id ?? userCode,
             StoreCode = sellerCode,
             Password = pwd,
             PhoneEmail = accountKey,
@@ -1655,7 +1827,10 @@ Email liên hệ: dobinh225599@gmail.com
             Location = new GeoPoint { Coordinates = [request.Longitude ?? 105.7983, request.Latitude ?? 21.0333] },
             OwnerFullName = request.OwnerFullName.Trim(),
             CccdNumber = !string.IsNullOrWhiteSpace(request.CccdNumber) ? request.CccdNumber.Trim() : "",
+            DateOfBirth = !string.IsNullOrWhiteSpace(request.DateOfBirth) ? request.DateOfBirth.Trim() : "",
+            Gender = !string.IsNullOrWhiteSpace(request.Gender) ? request.Gender.Trim() : "",
             NguyenQuan = !string.IsNullOrWhiteSpace(request.NguyenQuan) ? request.NguyenQuan.Trim() : "",
+            PermanentAddress = !string.IsNullOrWhiteSpace(request.PermanentAddress) ? request.PermanentAddress.Trim() : "",
             CccdFrontImage = request.CccdFrontImage ?? "",
             CccdBackImage = request.CccdBackImage ?? "",
             FoodSafetyCertImage = request.FoodSafetyCertImage ?? "",
@@ -1715,6 +1890,7 @@ Email liên hệ: dobinh225599@gmail.com
         {
             InMemoryStores[newStore.Id] = newStore;
         }
+        AdminController.CacheStorePartner(newStore);
 
         return Ok(new
         {
@@ -1746,24 +1922,84 @@ Email liên hệ: dobinh225599@gmail.com
         }
 
         string accountKey = !string.IsNullOrWhiteSpace(request.PhoneNumber) ? request.PhoneNumber.Trim().ToLower() : "";
-        string pwd = !string.IsNullOrWhiteSpace(request.Password) ? request.Password.Trim() : "123456";
+        string pwd = !string.IsNullOrWhiteSpace(request.Password) ? request.Password.Trim() : "";
 
         User? buyerUser = null;
-        if (!string.IsNullOrEmpty(accountKey))
+        if (request.IsUpgrade || !string.IsNullOrWhiteSpace(request.UserId))
         {
-            var (isEmailTaken, roleDetail) = await CheckEmailRegisteredAsync(_mongoService, accountKey);
-            if (isEmailTaken)
+            // TH2: Nâng cấp tài khoản Khách Hàng hiện có lên Tài Xế Shipper
+            if (!string.IsNullOrEmpty(request.UserId))
             {
-                return BadRequest(new { success = false, message = $"Oh no! Gmail {accountKey} này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi! Vui lòng chọn Gmail khác nhé." });
+                var idFilters = new List<FilterDefinition<User>> { Builders<User>.Filter.Eq(u => u.UserCode, request.UserId) };
+                if (ObjectId.TryParse(request.UserId, out _)) idFilters.Add(Builders<User>.Filter.Eq(u => u.Id, request.UserId));
+                buyerUser = await _mongoService.Users.Find(Builders<User>.Filter.Or(idFilters)).FirstOrDefaultAsync();
+            }
+            if (buyerUser == null && !string.IsNullOrEmpty(accountKey))
+            {
+                buyerUser = await _mongoService.Users.Find(u => u.PhoneEmail == accountKey || u.Phone == accountKey).FirstOrDefaultAsync();
             }
 
-            try
+            if (buyerUser == null)
             {
-                buyerUser = await _mongoService.Users.Find(u => u.PhoneEmail == accountKey).FirstOrDefaultAsync();
+                return BadRequest(new { success = false, message = "Không tìm thấy thông tin tài khoản Khách Hàng để thực hiện nâng cấp!" });
             }
-            catch (Exception ex)
+
+            // Kế thừa tài khoản và mật khẩu từ tài khoản khách hàng hiện có
+            accountKey = buyerUser.PhoneEmail.Trim().ToLower();
+            pwd = !string.IsNullOrWhiteSpace(buyerUser.Password) ? buyerUser.Password : (!string.IsNullOrWhiteSpace(buyerUser.PasswordHash) ? buyerUser.PasswordHash : "123456");
+
+            // Kiểm tra xem User này đã gửi hồ sơ tài xế trước đó chưa
+            var existingShipper = await _mongoService.Shippers.Find(s =>
+                s.PhoneNumber.ToLower() == accountKey ||
+                (!string.IsNullOrEmpty(buyerUser.Phone) && s.PhoneNumber == buyerUser.Phone) ||
+                s.UserId == buyerUser.Id ||
+                (!string.IsNullOrEmpty(buyerUser.UserCode) && s.UserId == buyerUser.UserCode)
+            ).FirstOrDefaultAsync();
+
+            if (existingShipper != null)
             {
-                Console.WriteLine($"⚠️ [MongoDB Query User Warning] {ex.Message}");
+                if (existingShipper.Status == "Pending")
+                {
+                    return BadRequest(new { success = false, message = "Hồ sơ đăng ký tài xế của bạn đã được gửi và đang trong quá trình chờ Ban Quản Trị xét duyệt!" });
+                }
+                else if (existingShipper.Status == "Approved" || existingShipper.Status == "Active")
+                {
+                    return BadRequest(new { success = false, message = "Tài khoản của bạn đã được phê duyệt làm Tài Xế Shipper rồi!" });
+                }
+            }
+
+            // Kiểm tra xem User này đã gửi hồ sơ gian hàng đang chờ duyệt hoặc đã duyệt chưa
+            var existingStore = await _mongoService.Stores.Find(s =>
+                (s.PhoneEmail != null && s.PhoneEmail.ToLower() == accountKey) ||
+                s.UserId == buyerUser.Id ||
+                (!string.IsNullOrEmpty(buyerUser.UserCode) && s.UserId == buyerUser.UserCode)
+            ).FirstOrDefaultAsync();
+
+            if (existingStore != null && (existingStore.Status == "Pending" || existingStore.Status == "Approved" || existingStore.Status == "Active"))
+            {
+                return BadRequest(new { success = false, message = "Bạn đã có hồ sơ mở Gian Hàng Người Bán đang chờ xét duyệt hoặc đã được duyệt! Mỗi tài khoản chỉ có thể đăng ký 1 vai trò đối tác." });
+            }
+        }
+        else
+        {
+            // TH1: Khách vãng lai chưa đăng nhập
+            if (string.IsNullOrWhiteSpace(pwd)) pwd = "123456";
+            if (!string.IsNullOrEmpty(accountKey))
+            {
+                var (isEmailTaken, roleDetail) = await CheckEmailRegisteredAsync(_mongoService, accountKey);
+                if (isEmailTaken)
+                {
+                    return BadRequest(new { success = false, message = $"Oh no! Gmail {accountKey} này đã được đăng ký tài khoản trên hệ thống ZoneMart rồi! Vui lòng chọn Gmail khác hoặc đăng nhập tài khoản Khách Hàng để nâng cấp nhé." });
+                }
+
+                try
+                {
+                    buyerUser = await _mongoService.Users.Find(u => u.PhoneEmail == accountKey).FirstOrDefaultAsync();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ [MongoDB Query User Warning] {ex.Message}");
+                }
             }
         }
 
@@ -1776,21 +2012,23 @@ Email liên hệ: dobinh225599@gmail.com
 
         if (buyerUser != null)
         {
-            // Cập nhật tài khoản User hiện có và đặt AccountStatus = pending chờ duyệt
+            // Cập nhật tài khoản User nhưng giữ nguyên AccountStatus = "active" cho khách hàng mua sắm
             var userUpdate = Builders<User>.Update
-                .Set(u => u.PasswordHash, pwd)
-                .Set(u => u.Password, pwd)
-                .Set(u => u.UserCode, userCode)
-                .Set(u => u.CccdNumber, request.CccdNumber?.Trim() ?? "")
-                .Set(u => u.AccountStatus, "pending");
+                .Set(u => u.UserCode, userCode);
+            if (!string.IsNullOrWhiteSpace(request.CccdNumber))
+            {
+                userUpdate = userUpdate.Set(u => u.CccdNumber, request.CccdNumber.Trim());
+                buyerUser.CccdNumber = request.CccdNumber.Trim();
+            }
+            if (string.IsNullOrEmpty(buyerUser.AccountStatus) || buyerUser.AccountStatus == "pending")
+            {
+                userUpdate = userUpdate.Set(u => u.AccountStatus, "active");
+                buyerUser.AccountStatus = "active";
+            }
             try
             {
                 await _mongoService.Users.UpdateOneAsync(u => u.Id == buyerUser.Id, userUpdate);
-                buyerUser.PasswordHash = pwd;
-                buyerUser.Password = pwd;
                 buyerUser.UserCode = userCode;
-                buyerUser.CccdNumber = request.CccdNumber?.Trim() ?? "";
-                buyerUser.AccountStatus = "pending";
                 InMemoryUsers[accountKey] = buyerUser;
             }
             catch (Exception ex)
@@ -1800,7 +2038,7 @@ Email liên hệ: dobinh225599@gmail.com
         }
         else if (!string.IsNullOrEmpty(accountKey))
         {
-            // Khởi tạo tài khoản User mới cho Shipper với trạng thái pending chờ duyệt
+            // TH1: Tạo tài khoản User mới với AccountStatus = "active" (đảm bảo vẫn vào được tài khoản khách hàng nếu chưa duyệt)
             buyerUser = new User
             {
                 Id = ObjectId.GenerateNewId().ToString(),
@@ -1815,7 +2053,7 @@ Email liên hệ: dobinh225599@gmail.com
                 IsShipper = false,
                 IsSeller = false,
                 IsAdmin = false,
-                AccountStatus = "pending",
+                AccountStatus = "active", // Cho phép đăng nhập tài khoản khách hàng mua sắm nếu chưa duyệt
                 CreatedAt = DateTime.UtcNow
             };
             InMemoryUsers[accountKey] = buyerUser;
@@ -1832,11 +2070,11 @@ Email liên hệ: dobinh225599@gmail.com
 
         var newShipper = new Shipper
         {
-            UserId = userCode,
+            UserId = buyerUser?.Id ?? userCode,
             ShipperCode = shipperCode,
             Password = pwd,
             FullName = request.FullName.Trim(),
-            PhoneNumber = request.PhoneNumber?.Trim() ?? "",
+            PhoneNumber = !string.IsNullOrWhiteSpace(buyerUser?.Phone) ? buyerUser.Phone : accountKey,
             AvatarUrl = request.AvatarUrl ?? "",
             CccdNumber = request.CccdNumber?.Trim() ?? "",
             CccdFrontImage = request.CccdFrontImage ?? "",
@@ -1860,6 +2098,7 @@ Email liên hệ: dobinh225599@gmail.com
         {
             await _mongoService.Shippers.InsertOneAsync(newShipper);
             Console.WriteLine($"🛵 [MongoDB Atlas] Đã lưu thành công Hồ sơ tài xế Shipper #{shipperCode} '{newShipper.FullName}' (Biển số: {newShipper.LicensePlate}, UserId: {newShipper.UserId}) vào CSDL MongoDB Atlas!");
+            AdminController.CacheShipperPartner(newShipper);
 
             // TẠO THÔNG BÁO THỜI GIAN THỰC CHO BAN QUẢN TRỊ ADMIN
             try
@@ -3322,7 +3561,10 @@ public class RegisterSellerRequest
     public string OpenHours { get; set; } = string.Empty;
     public string OwnerFullName { get; set; } = string.Empty;
     public string CccdNumber { get; set; } = string.Empty;
+    public string DateOfBirth { get; set; } = string.Empty;
+    public string Gender { get; set; } = string.Empty;
     public string NguyenQuan { get; set; } = string.Empty;
+    public string PermanentAddress { get; set; } = string.Empty;
     public string CccdFrontImage { get; set; } = string.Empty;
     public string CccdBackImage { get; set; } = string.Empty;
     public string FoodSafetyCertImage { get; set; } = string.Empty;
@@ -3336,6 +3578,8 @@ public class RegisterSellerRequest
     public string Password { get; set; } = string.Empty;
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
+    public bool IsUpgrade { get; set; } = false;
+    public string? UserId { get; set; }
 }
 
 public class RegisterShipperRequest
@@ -3354,6 +3598,8 @@ public class RegisterShipperRequest
     public string OperatingArea { get; set; } = string.Empty;
     public string BankName { get; set; } = string.Empty;
     public string BankAccountNumber { get; set; } = string.Empty;
+    public bool IsUpgrade { get; set; } = false;
+    public string? UserId { get; set; }
 }
 
 public class SendPhoneOtpRequest

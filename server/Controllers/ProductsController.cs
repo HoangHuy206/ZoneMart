@@ -20,17 +20,21 @@ public class ProductsController : ControllerBase
     /// <summary>
     /// API Lấy danh sách sản phẩm thực từ MongoDB (Tự động Seed dữ liệu chuẩn ban đầu nếu database trống)
     /// </summary>
+    private static bool _initialSeedChecked = false;
+
     [HttpGet]
     public async Task<IActionResult> GetProducts([FromQuery] string? category = null, [FromQuery] string? search = null)
     {
         try
         {
-            var count = await _mongoService.Products.CountDocumentsAsync(new BsonDocument());
-
-            // Tự động Seed đầy đủ nếu chưa đủ 25 sản phẩm trong MongoDB
-            if (count < 25)
+            if (!_initialSeedChecked)
             {
-                await SeedInitialProductsAsync();
+                _initialSeedChecked = true;
+                var count = await _mongoService.Products.CountDocumentsAsync(new BsonDocument());
+                if (count < 25)
+                {
+                    await SeedInitialProductsAsync();
+                }
             }
 
             var builder = Builders<Product>.Filter;
@@ -49,25 +53,43 @@ public class ProductsController : ControllerBase
                 );
             }
 
+            Console.WriteLine($">>> [ProductsController.GetProducts] Querying Products.Find filter...");
             var products = await _mongoService.Products.Find(filter).ToListAsync();
+            Console.WriteLine($">>> [ProductsController.GetProducts] Loaded {products.Count} products from MongoDB");
 
-            // Làm giàu dữ liệu tên cửa hàng và email người bán từ bảng Stores
+            // Làm giàu dữ liệu tên cửa hàng và email người bán từ bảng Stores (chỉ khi có sản phẩm thiếu)
             try
             {
-                var stores = await _mongoService.Stores.Find(_ => true).ToListAsync();
-                var storeDict = stores.ToDictionary(s => s.Id ?? "", s => s);
-
-                foreach (var p in products)
+                var missingStoreInfo = products.Any(p => (string.IsNullOrWhiteSpace(p.StoreName) || string.IsNullOrWhiteSpace(p.SellerEmail)) && !string.IsNullOrEmpty(p.StoreId));
+                if (missingStoreInfo)
                 {
-                    if (!string.IsNullOrEmpty(p.StoreId) && storeDict.TryGetValue(p.StoreId, out var st))
+                    var storeProjection = Builders<Store>.Projection
+                        .Include(s => s.Id)
+                        .Include(s => s.StoreName)
+                        .Include(s => s.PhoneEmail);
+
+                    var stores = await _mongoService.Stores
+                        .Find(_ => true)
+                        .Project<Store>(storeProjection)
+                        .ToListAsync();
+
+                    var storeDict = stores
+                        .Where(s => !string.IsNullOrEmpty(s.Id))
+                        .GroupBy(s => s.Id!)
+                        .ToDictionary(g => g.Key, g => g.First());
+
+                    foreach (var p in products)
                     {
-                        if (string.IsNullOrWhiteSpace(p.StoreName))
+                        if (!string.IsNullOrEmpty(p.StoreId) && storeDict.TryGetValue(p.StoreId, out var st))
                         {
-                            p.StoreName = st.StoreName;
-                        }
-                        if (string.IsNullOrWhiteSpace(p.SellerEmail))
-                        {
-                            p.SellerEmail = st.PhoneEmail;
+                            if (string.IsNullOrWhiteSpace(p.StoreName))
+                            {
+                                p.StoreName = st.StoreName;
+                            }
+                            if (string.IsNullOrWhiteSpace(p.SellerEmail))
+                            {
+                                p.SellerEmail = st.PhoneEmail;
+                            }
                         }
                     }
                 }
@@ -312,7 +334,6 @@ public class ProductsController : ControllerBase
     private async Task SeedInitialProductsAsync()
     {
         await SeedInitialStoresAsync();
-
         var products = CatalogSeedData.GetCatalogProducts();
 
         foreach (var p in products)

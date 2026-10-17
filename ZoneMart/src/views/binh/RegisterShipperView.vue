@@ -2044,12 +2044,74 @@ onMounted(() => {
   transition: all 0.2s ease;
 }
 
-.btn-banner-login:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 14px rgba(217, 78, 21, 0.35);
-}
-
 .btn-upload-box {
   cursor: pointer;
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN CHO FORM ĐĂNG KÝ TÀI XẾ TRÊN MỌI THIẾT BỊ
+   ========================================================================== */
+@media (max-width: 1024px) {
+  .login-page-container {
+    padding: 24px 20px;
+    height: auto;
+    min-height: 100vh;
+    max-height: none;
+    overflow-y: auto;
+    justify-content: center;
+    align-items: center;
+  }
+  .login-hero-layout {
+    flex-direction: column;
+    max-height: none;
+    height: auto;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    max-width: 520px;
+  }
+  .login-illustration-side {
+    display: none;
+  }
+  .login-card-floating {
+    max-width: 500px;
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .login-page-container {
+    padding: 16px 10px;
+  }
+  .login-card-floating {
+    padding: 18px 14px 16px;
+    border-radius: 18px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+  }
+  .form-main-heading {
+    font-size: 20px;
+  }
+  .form-sub-heading {
+    font-size: 12.5px;
+  }
+  .step-indicator-wrapper {
+    gap: 6px;
+  }
+  .step-number {
+    width: 24px;
+    height: 24px;
+    font-size: 11px;
+  }
+  .step-label {
+    font-size: 11px;
+  }
+  .upload-slots-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .modal-dialog-card {
+    width: 95vw;
+    margin: 10px;
+  }
 }
 </style>

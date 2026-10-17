@@ -1529,4 +1529,80 @@ label {
   padding: 2px 8px;
   border-radius: 6px;
 }
+
+/* ==========================================================================
+   RESPONSIVE DESIGN CHO FORM ĐĂNG NHẬP NGƯỜI BÁN TRÊN MỌI THIẾT BỊ
+   ========================================================================== */
+@media (max-width: 1024px) {
+  .login-page-container {
+    padding: 24px 20px;
+    height: auto;
+    min-height: 100vh;
+    max-height: none;
+    overflow-y: auto;
+    justify-content: center;
+    align-items: center;
+  }
+  .login-hero-layout {
+    flex-direction: column;
+    max-height: none;
+    height: auto;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    max-width: 500px;
+  }
+  .login-illustration-side {
+    display: none;
+  }
+  .login-card-floating {
+    max-width: 480px;
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .login-page-container {
+    padding: 16px 12px;
+  }
+  .login-card-floating {
+    padding: 20px 18px 18px 18px;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  }
+  .form-main-heading {
+    font-size: 22px;
+  }
+  .form-sub-heading {
+    font-size: 13px;
+  }
+  .field-input {
+    font-size: 15px;
+    padding: 11px 14px;
+  }
+  .login-action-row {
+    flex-direction: row;
+    gap: 10px;
+  }
+  .btn-submit-orange {
+    font-size: 14px;
+    padding: 12px;
+  }
+  .modal-pop-card {
+    width: 92%;
+    padding: 20px 16px;
+  }
+}
+
+@media (max-height: 680px) {
+  .login-page-container {
+    height: auto;
+    min-height: 100vh;
+    max-height: none;
+    overflow-y: auto;
+    align-items: flex-start;
+    padding-top: 16px;
+    padding-bottom: 24px;
+  }
+}
 </style>

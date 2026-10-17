@@ -697,5 +697,42 @@ const executeFinalSubmit = async () => {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ==========================================================================
+   RESPONSIVE DESIGN CHO FORM ĐĂNG SẢN PHẨM TRÊN MOBILE
+   ========================================================================== */
+@media (max-width: 640px) {
+  .product-post-container {
+    padding: 12px 8px;
+  }
+  .form-card {
+    padding: 16px 14px;
+    border-radius: 12px;
+  }
+  .form-row {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .form-input {
+    font-size: 15px;
+    padding: 0.65rem 0.85rem;
+  }
+  .image-upload-zone {
+    padding: 1rem;
+    min-height: 150px;
+  }
+  .modal-card {
+    width: 95vw;
+    padding: 1.25rem 1rem;
+  }
+  .modal-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .btn-secondary,
+  .btn-warning-submit {
+    width: 100%;
+  }
+}
 </style>
 

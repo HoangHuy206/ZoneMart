@@ -113,6 +113,8 @@ const handleFaceLoginSuccess = (data: any) => {
     phone: loggedUser.phone || undefined,
     role: detectedRole,
     isAdmin: isAdminUser,
+    isSeller: loggedUser.isSeller || loggedUser.sellerStatus === 'Approved',
+    isShipper: loggedUser.isShipper || loggedUser.shipperStatus === 'Approved',
     avatarUrl: loggedUser.avatarUrl,
     walletBalance: loggedUser.walletBalance,
     storeName: loggedUser.storeName,
@@ -215,6 +217,8 @@ const handleLogin = async () => {
           phone: data.user?.phone || (!form.account.includes('@') ? form.account.trim() : undefined),
           role: detectedRole,
           isAdmin: isAdminUser,
+          isSeller: data.user?.isSeller || data.user?.sellerStatus === 'Approved',
+          isShipper: data.user?.isShipper || data.user?.shipperStatus === 'Approved',
           avatarUrl: data.user?.avatarUrl,
           walletBalance: data.user?.walletBalance,
           storeName: data.user?.storeName,
@@ -291,9 +295,9 @@ const handleLogin = async () => {
     <AntigravityCanvas
       theme="market"
       :full-screen="true"
-      :particle-count="12"
-      :speed="0.28"
-      :opacity="0.24"
+      :particle-count="45"
+      :speed="0.75"
+      :opacity="0.82"
       :z-index="1"
     />
 
@@ -1528,5 +1532,81 @@ label {
   border: 1px solid #c7e0ff;
   padding: 2px 8px;
   border-radius: 6px;
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN CHO FORM ĐĂNG NHẬP TRÊN MỌI THIẾT BỊ
+   ========================================================================== */
+@media (max-width: 1024px) {
+  .login-page-container {
+    padding: 24px 20px;
+    height: auto;
+    min-height: 100vh;
+    max-height: none;
+    overflow-y: auto;
+    justify-content: center;
+    align-items: center;
+  }
+  .login-hero-layout {
+    flex-direction: column;
+    max-height: none;
+    height: auto;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    max-width: 500px;
+  }
+  .login-illustration-side {
+    display: none; /* Ẩn ảnh xe trên tablet/mobile để form hiển thị ưu tiên ngay giữa */
+  }
+  .login-card-floating {
+    max-width: 480px;
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .login-page-container {
+    padding: 16px 12px;
+  }
+  .login-card-floating {
+    padding: 20px 18px 18px 18px;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  }
+  .form-main-heading {
+    font-size: 22px;
+  }
+  .form-sub-heading {
+    font-size: 13px;
+  }
+  .field-input {
+    font-size: 15px;
+    padding: 11px 14px;
+  }
+  .login-action-row {
+    flex-direction: row;
+    gap: 10px;
+  }
+  .btn-submit-orange {
+    font-size: 14px;
+    padding: 12px;
+  }
+  .modal-pop-card {
+    width: 92%;
+    padding: 20px 16px;
+  }
+}
+
+@media (max-height: 680px) {
+  .login-page-container {
+    height: auto;
+    min-height: 100vh;
+    max-height: none;
+    overflow-y: auto;
+    align-items: flex-start;
+    padding-top: 16px;
+    padding-bottom: 24px;
+  }
 }
 </style>

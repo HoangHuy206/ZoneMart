@@ -565,6 +565,42 @@ namespace ZoneMart.Server.Services
                 AiStatus = "approved",
                 CreatedAt = DateTime.UtcNow
             },
+            new()
+            {
+                Id = "65f099887766554433221109",
+                StoreId = "65f01234567890abcdef0001",
+                StoreName = "Nông Sản & Đặc Sản Vùng Cao",
+                SellerEmail = "dovanbinh487@gmail.com",
+                ProductName = "Thịt Heo Rừng Tự Nhiên Đóng Khay",
+                Category = "Thịt cá tươi",
+                Description = "Thịt heo rừng tự nhiên nuôi thả vùng cao đóng khay sạch sẽ, thịt chắc thơm ngọt đậm đà.",
+                Price = 130000m,
+                Weight = 1.0,
+                StockQuantity = 10,
+                StockStatus = "in_stock",
+                AiStatus = "pending",
+                AiCheckNote = "Nghi ngờ nguồn gốc: Mặt hàng thịt rừng cần Ban Quản Trị đối chiếu giấy kiểm dịch thú y trước khi mở bán.",
+                ImageUrl = "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=600&q=80",
+                CreatedAt = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = "65f099887766554433221110",
+                StoreId = "65f01234567890abcdef0002",
+                StoreName = "Siêu Thị Trái Cây Xanh VietGAP",
+                SellerEmail = "seller@zonemart.vn",
+                ProductName = "Nho Mẫu Đơn Shine Muscat Nhập Khẩu",
+                Category = "Trái cây & Nông sản",
+                Description = "Nho mẫu đơn nhập khẩu tươi giòn ngọt lịm thơm mùi sữa, chùm quả đều đẹp.",
+                Price = 350000m,
+                Weight = 0.6,
+                StockQuantity = 15,
+                StockStatus = "in_stock",
+                AiStatus = "pending",
+                AiCheckNote = "AI Vision Cảnh báo: Hình ảnh đăng tải có độ lệch với mẫu chuẩn quả nho mẫu đơn Nhật Bản (độ khớp 48%).",
+                ImageUrl = "https://images.unsplash.com/photo-1596363505729-4190a9506133?auto=format&fit=crop&w=600&q=80",
+                CreatedAt = DateTime.UtcNow
+            }
         };
 
             return catalogProducts;

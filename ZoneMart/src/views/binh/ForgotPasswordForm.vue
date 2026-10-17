@@ -837,4 +837,23 @@ const handleResetPassword = async () => {
   opacity: 0.65;
   cursor: not-allowed;
 }
+
+/* ==========================================================================
+   RESPONSIVE DESIGN CHO FORM QUÊN MẬT KHẨU TRÊN MOBILE
+   ========================================================================== */
+@media (max-width: 640px) {
+  .field-input {
+    font-size: 15px;
+    padding: 11px 14px;
+  }
+  .otp-countdown-badge {
+    font-size: 11.5px;
+  }
+  .btn-submit-orange,
+  .btn-submit-cyan,
+  .btn-submit-emerald {
+    font-size: 13px;
+    padding: 11px;
+  }
+}
 </style>

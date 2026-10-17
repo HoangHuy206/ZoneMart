@@ -60,6 +60,7 @@ class OrderRealtimeService {
   private audioCtx: AudioContext | null = null;
   private readonly CHANNEL_NAME = "zonemart_order_realtime_channel";
   private readonly STORAGE_KEY = "zonemart_active_delivery_order";
+  private isSyncing = false;
 
   constructor() {
     this.initChannel();
@@ -89,10 +90,11 @@ class OrderRealtimeService {
       } catch (e) {}
     }
 
-    // 2. Định kỳ kéo danh sách đơn từ Server (Fall-safe Polling mỗi 1.5s)
+    // 2. Định kỳ kéo danh sách đơn từ Server (Fall-safe Polling mỗi 10s, chỉ khi tab hiển thị để tiết kiệm socket mạng)
     setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       this.syncOrdersFromServer();
-    }, 1500);
+    }, 10000);
 
     // Kéo ngay lần đầu
     setTimeout(() => {
@@ -104,6 +106,8 @@ class OrderRealtimeService {
    * Đồng bộ dữ liệu đơn hàng từ server về bộ nhớ và localStorage
    */
   public async syncOrdersFromServer() {
+    if (this.isSyncing) return;
+    this.isSyncing = true;
     try {
       const res = await fetch("/api/realtime/orders");
       if (res.ok) {
@@ -135,6 +139,9 @@ class OrderRealtimeService {
         }
       }
     } catch (e) {}
+    finally {
+      this.isSyncing = false;
+    }
   }
 
   /**

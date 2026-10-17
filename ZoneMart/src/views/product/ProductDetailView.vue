@@ -314,29 +314,48 @@ const relatedProducts = computed(() => {
 
           <!-- Hyper-local Store Vendor Card -->
           <div class="vendor-store-card">
-            <div class="store-avatar-box">
-              <i class="bi bi-shop"></i>
-            </div>
-            <div class="store-details">
-              <div class="store-name-line">
-                <strong>{{ product.store.name }}</strong>
-                <span class="verified-badge"><i class="bi bi-check-circle-fill"></i> Chính hãng</span>
+            <!-- Top Header: Avatar + Store Info + Chat Button -->
+            <div class="store-top-row">
+              <div class="store-avatar-box">
+                <i class="bi bi-shop"></i>
               </div>
-              <p class="store-address-text">
-                <i class="bi bi-geo-alt-fill text-danger"></i> {{ product.store.address }}
-              </p>
-              <div class="store-micro-metrics">
+              <div class="store-identity">
+                <div class="store-name-line">
+                  <strong class="store-name">{{ product.store.name }}</strong>
+                  <span class="verified-badge"><i class="bi bi-check-circle-fill"></i> Chính hãng</span>
+                </div>
+                <p class="store-address-text">
+                  <i class="bi bi-geo-alt-fill text-danger"></i> {{ product.store.address }}
+                </p>
+              </div>
+              <div class="store-actions-wrap">
+                <button
+                  class="btn-store-chat"
+                  title="Chat hỏi về sản phẩm"
+                  @click="showToastMessage('Hộp thoại tư vấn với Shop đang được kết nối...')"
+                >
+                  <i class="bi bi-chat-dots-fill"></i>
+                  <span>Chat</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Bottom Stats / Metrics Strip -->
+            <div class="store-micro-metrics">
+              <div class="metric-pill">
+                <i class="bi bi-geo-alt-fill text-danger"></i>
                 <span>Cách bạn <strong>{{ product.store.distanceKm }}km</strong></span>
-                <span class="dot-sep">•</span>
-                <span>Giao khoảng <strong>{{ product.store.deliveryTime }}</strong></span>
-                <span class="dot-sep">•</span>
+              </div>
+              <span class="dot-sep">•</span>
+              <div class="metric-pill">
+                <i class="bi bi-lightning-charge-fill text-warning"></i>
+                <span>Giao <strong>{{ product.store.deliveryTime }}</strong></span>
+              </div>
+              <span class="dot-sep">•</span>
+              <div class="metric-pill">
+                <i class="bi bi-star-fill text-warning"></i>
                 <span>Đánh giá <strong>{{ product.store.rating }}★</strong></span>
               </div>
-            </div>
-            <div class="store-actions-wrap">
-              <button class="btn-store-chat" title="Chat hỏi về sản phẩm" @click="showToastMessage('Hộp thoại tư vấn với Shop đang được kết nối...')">
-                <i class="bi bi-chat-dots-fill"></i> Chat
-              </button>
             </div>
           </div>
 
@@ -397,7 +416,7 @@ const relatedProducts = computed(() => {
 
               <button class="btn-buy-now-tactile" @click="handleBuyNow">
                 <i class="bi bi-lightning-charge-fill"></i>
-                <span>Mua Ngay Hỏa Tốc</span>
+                <span>Mua Ngay </span>
               </button>
             </div>
           </div>
@@ -803,7 +822,7 @@ const relatedProducts = computed(() => {
           <i class="bi bi-bag-plus"></i>
         </button>
         <button class="btn-sticky-buy" @click="handleBuyNow">
-          <span>Mua Ngay Hỏa Tốc</span>
+          <span>Mua Ngay </span>
         </button>
       </div>
     </div>
@@ -1226,8 +1245,8 @@ const relatedProducts = computed(() => {
 /* Hyper-local Vendor Card */
 .vendor-store-card {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  gap: 12px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 16px;
@@ -1235,10 +1254,17 @@ const relatedProducts = computed(() => {
   margin-bottom: 20px;
 }
 
+.store-top-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
 .store-avatar-box {
   width: 44px;
   height: 44px;
-  background: #ea580c;
+  background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
   color: #ffffff;
   border-radius: 12px;
   display: flex;
@@ -1246,10 +1272,12 @@ const relatedProducts = computed(() => {
   justify-content: center;
   font-size: 20px;
   flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.2);
 }
 
-.store-details {
+.store-identity {
   flex-grow: 1;
+  min-width: 0;
 }
 
 .store-name-line {
@@ -1258,33 +1286,37 @@ const relatedProducts = computed(() => {
   gap: 8px;
   font-size: 14px;
   color: #0f172a;
+  flex-wrap: wrap;
+}
+
+.store-name {
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .verified-badge {
   font-size: 11px;
   color: #16a34a;
   background: #ecfdf5;
-  padding: 2px 6px;
-  border-radius: 4px;
+  border: 1px solid #d1fae5;
+  padding: 2px 7px;
+  border-radius: 6px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .store-address-text {
-  margin: 3px 0 4px 0;
+  margin: 3px 0 0 0;
   font-size: 12px;
   color: #64748b;
+  line-height: 1.4;
 }
 
-.store-micro-metrics {
-  font-size: 12px;
-  color: #475569;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.dot-sep {
-  color: #cbd5e1;
+.store-actions-wrap {
+  flex-shrink: 0;
 }
 
 .btn-store-chat {
@@ -1293,19 +1325,48 @@ const relatedProducts = computed(() => {
   color: #334155;
   font-weight: 600;
   font-size: 12px;
-  padding: 6px 12px;
+  padding: 6px 14px;
   border-radius: 8px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .btn-store-chat:hover {
   background: #ea580c;
   color: #ffffff;
   border-color: #ea580c;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.25);
+  transform: translateY(-1px);
+}
+
+.store-micro-metrics {
+  font-size: 12px;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.metric-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.metric-pill strong {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.dot-sep {
+  color: #cbd5e1;
 }
 
 /* Packaging Variant selector */
@@ -2263,32 +2324,321 @@ const relatedProducts = computed(() => {
 
 @media (max-width: 768px) {
   .product-detail-page {
-    padding: 12px 12px 80px 12px;
+    padding: 10px 10px 84px 10px;
   }
   .main-showcase-bento {
-    padding: 18px;
-    border-radius: 18px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    gap: 16px;
   }
   .hero-image-wrap {
-    height: 300px;
+    height: 280px;
+  }
+  .meta-headline-row {
+    margin-bottom: 6px;
+    gap: 8px;
+  }
+  .category-chip {
+    font-size: 11px;
+    padding: 3px 8px;
+  }
+  .farm-origin-tag {
+    font-size: 12px;
   }
   .product-main-title {
-    font-size: 22px;
+    font-size: 20px;
+    margin-bottom: 6px;
+  }
+  .rating-sold-row {
+    margin-bottom: 10px;
+    gap: 8px;
+    font-size: 11.5px;
+    flex-wrap: wrap;
+  }
+  .stars-wrap,
+  .sold-stat-badge,
+  .stock-status-pill {
+    font-size: 11.5px;
+  }
+
+  /* 1. Cam kết chất lượng gọn gàng */
+  .zonemart-guarantee-card {
+    padding: 8px 12px;
+    border-radius: 10px;
+    gap: 10px;
+    margin-top: 10px;
+    margin-bottom: 8px;
+  }
+  .guarantee-icon {
+    font-size: 18px;
+  }
+  .guarantee-body strong {
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  .guarantee-body p {
+    font-size: 10.5px;
+    line-height: 1.35;
+    margin-top: 2px;
+  }
+
+  /* 2. Bento giá bán gọn gàng, thanh thoát */
+  .pricing-bento-card {
+    padding: 10px 14px;
+    border-radius: 12px;
+    margin-bottom: 12px;
+  }
+  .price-digits-row {
+    gap: 8px;
+    align-items: baseline;
+  }
+  .currency-symbol {
+    font-size: 16px;
   }
   .price-highlight {
-    font-size: 28px;
+    font-size: 24px;
+    font-weight: 800;
+  }
+  .old-price-strike {
+    font-size: 13px;
+  }
+  .discount-pill {
+    font-size: 10.5px;
+    padding: 2px 6px;
+  }
+  .pricing-subtext {
+    font-size: 11px;
+    margin-top: 3px;
+    line-height: 1.35;
+    color: #9a3412;
+  }
+
+  /* 3. Thẻ gian hàng cân đối */
+  .vendor-store-card {
+    padding: 11px 12px;
+    border-radius: 12px;
+    gap: 9px;
+    margin-bottom: 12px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  }
+  .store-top-row {
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .store-avatar-box {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    font-size: 17px;
+  }
+  .store-name-line {
+    gap: 5px;
+    margin-bottom: 2px;
+  }
+  .store-name {
+    font-size: 13px;
+    line-height: 1.3;
+  }
+  .verified-badge {
+    font-size: 10px;
+    padding: 1px 5px;
+  }
+  .store-address-text {
+    font-size: 11px;
+    line-height: 1.35;
+    color: #64748b;
+  }
+  .btn-store-chat {
+    padding: 5px 10px;
+    font-size: 11.5px;
+    border-radius: 8px;
+    gap: 4px;
+  }
+  .store-micro-metrics {
+    padding: 7px 10px;
+    background: #f8fafc;
+    border-radius: 9px;
+    border: 1px solid #edf2f7;
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    font-size: 11px;
+  }
+  .metric-pill {
+    font-size: 11px;
+    gap: 4px;
+  }
+  .metric-pill strong {
+    font-size: 11.5px;
+  }
+
+  /* 4. Quy cách đóng gói - 2 hàng bằng nhau, không bị chỗ dài chỗ ngắn */
+  .unit-selector-section {
+    margin-bottom: 12px;
+  }
+  .section-micro-label {
+    font-size: 12.5px;
+    margin-bottom: 6px;
+  }
+  .variant-chips-grid {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+  .variant-chip-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 12px;
+    border-radius: 10px;
+  }
+  .variant-chip-label {
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .variant-chip-desc {
+    margin-top: 0;
+    font-size: 11px;
+    color: #64748b;
+  }
+  .variant-chip-btn.active .variant-chip-desc {
+    color: #c2410c;
+    font-weight: 600;
+  }
+
+  /* 5. Cụm mua hàng & Số lượng: Nút Thêm vào giỏ và Mua ngay cân đối, không bị kéo dài */
+  .purchase-action-group {
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .quantity-controller {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2px;
+  }
+  .quantity-controller .section-micro-label {
+    margin-bottom: 0;
+  }
+  .stepper-box {
+    border-radius: 8px;
+  }
+  .btn-step {
+    width: 32px;
+    height: 34px;
+    font-size: 14px;
+  }
+  .step-input {
+    width: 40px;
+    height: 34px;
+    font-size: 13.5px;
   }
   .buttons-horizontal-row {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .btn-add-cart-tactile,
+  .btn-buy-now-tactile {
+    padding: 10px 8px;
+    font-size: 13px;
+    height: 42px;
+    border-radius: 10px;
+    white-space: nowrap;
+    gap: 6px;
+  }
+  .btn-add-cart-tactile i,
+  .btn-buy-now-tactile i {
+    font-size: 14px;
+  }
+
+  /* 6. Dải cam kết phụ & Sticky bottom */
+  .trust-pills-row {
+    padding-top: 10px;
+    gap: 6px;
+  }
+  .trust-mini-pill {
+    font-size: 11px;
+    gap: 6px;
   }
   .sticky-mobile-bar {
     display: flex;
   }
   .tabs-content-body {
-    padding: 20px 16px;
+    padding: 16px 14px;
   }
   .top-nav-bar .breadcrumb-trail {
     display: none;
+  }
+}
+
+@media (max-width: 400px) {
+  .product-detail-page {
+    padding: 8px 8px 84px 8px;
+  }
+  .main-showcase-bento {
+    padding: 10px 10px;
+    border-radius: 12px;
+    gap: 12px;
+  }
+  .product-main-title {
+    font-size: 18px;
+  }
+  .price-highlight {
+    font-size: 22px;
+  }
+  .buttons-horizontal-row {
+    gap: 6px;
+  }
+  .btn-add-cart-tactile,
+  .btn-buy-now-tactile {
+    padding: 8px 4px;
+    font-size: 11.5px;
+    height: 38px;
+    gap: 4px;
+  }
+  .vendor-store-card {
+    padding: 9px;
+    gap: 7px;
+  }
+  .store-avatar-box {
+    width: 32px;
+    height: 32px;
+    font-size: 15px;
+  }
+  .store-name {
+    font-size: 12px;
+  }
+  .store-address-text {
+    font-size: 10px;
+  }
+  .btn-store-chat {
+    padding: 4px 7px;
+    font-size: 10.5px;
+  }
+  .store-micro-metrics {
+    padding: 6px 6px;
+    font-size: 10px;
+    gap: 2px;
+  }
+  .metric-pill {
+    font-size: 10px;
+    gap: 2px;
+  }
+  .metric-pill strong {
+    font-size: 10px;
+  }
+  .variant-chip-btn {
+    padding: 7px 10px;
+  }
+  .variant-chip-label {
+    font-size: 12px;
+  }
+  .variant-chip-desc {
+    font-size: 10px;
   }
 }
 </style>
