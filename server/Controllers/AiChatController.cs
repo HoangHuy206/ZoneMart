@@ -320,7 +320,11 @@ namespace ZoneMart.Server.Controllers
 
         {
 
-            public string Role { get; set; } = ""; // "BUYER", "SELLER", "SHIPPER"
+            public string Role { get; set; } = ""; // "BUYER", "SELLER", "SHIPPER", "UPGRADE_SELLER", "UPGRADE_SHIPPER"
+
+            public bool IsUpgrade { get; set; } = false;
+
+            public string? UserId { get; set; }
 
             public string FullName { get; set; } = "";
 
@@ -4490,7 +4494,8 @@ namespace ZoneMart.Server.Controllers
 
                                ((cleanMsgNoTone.Contains("khach hang") || cleanMsgNoTone.Contains("nguoi mua") || cleanMsgNoTone.Contains("tai khoan")) &&
 
-                                (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("tao") || cleanMsgNoTone.Contains("lap") || cleanMsgNoTone.Contains("muon"))));
+                                (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("tao") || cleanMsgNoTone.Contains("lap") || cleanMsgNoTone.Contains("muon"))) ||
+                               cleanMsgNoTone.Contains("nang cap") || cleanMsgNoTone.Contains("len seller") || cleanMsgNoTone.Contains("len shipper"));
 
 
 
@@ -4498,7 +4503,7 @@ namespace ZoneMart.Server.Controllers
 
             {
 
-                var regResult = await TryProcessAiDirectRegistrationAsync(userMsg, cleanMsgNoTone, request?.RegistrationState, request?.History, request?.RegDraft);
+                var regResult = await TryProcessAiDirectRegistrationAsync(userMsg, cleanMsgNoTone, request?.RegistrationState, request?.History, request?.RegDraft, request);
 
                 if (regResult != null)
 
@@ -5064,7 +5069,8 @@ namespace ZoneMart.Server.Controllers
 
                                ((cleanMsgNoTone.Contains("khach hang") || cleanMsgNoTone.Contains("nguoi mua") || cleanMsgNoTone.Contains("tai khoan")) &&
 
-                                (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("tao") || cleanMsgNoTone.Contains("lap") || cleanMsgNoTone.Contains("muon")));
+                                (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("tao") || cleanMsgNoTone.Contains("lap") || cleanMsgNoTone.Contains("muon"))) ||
+                               cleanMsgNoTone.Contains("nang cap") || cleanMsgNoTone.Contains("len seller") || cleanMsgNoTone.Contains("len shipper");
 
 
 
@@ -5072,7 +5078,7 @@ namespace ZoneMart.Server.Controllers
 
             {
 
-                var regResult = await TryProcessAiDirectRegistrationAsync(userMsg, cleanMsgNoTone, request?.RegistrationState, request?.History, request?.RegDraft);
+                var regResult = await TryProcessAiDirectRegistrationAsync(userMsg, cleanMsgNoTone, request?.RegistrationState, request?.History, request?.RegDraft, request);
 
                 if (regResult != null)
 
@@ -9592,6 +9598,10 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
 
                 }
 
+                else if (cleanMsgNoTone.Contains("nang cap") || cleanMsgNoTone.Contains("nang cap tai khoan") || cleanMsgNoTone.Contains("nang cap tk"))
+                {
+                    actionIntent = "UPGRADE_CHOOSE_ROLE";
+                }
                 else if (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("tai khoan"))
 
                 {
@@ -15278,7 +15288,7 @@ hoặc
 
 
 
-        private async Task<object?> TryProcessAiDirectRegistrationAsync(string userMsg, string cleanMsgNoTone, string? currentRegState, List<ChatMessageItem>? history, DirectRegDraft? incomingDraft)
+        private async Task<object?> TryProcessAiDirectRegistrationAsync(string userMsg, string cleanMsgNoTone, string? currentRegState, List<ChatMessageItem>? history, DirectRegDraft? incomingDraft, ChatRequest? request = null)
 
         {
 
@@ -15390,17 +15400,652 @@ hoặc
 
 
 
+            // 1b-1. XỬ LÝ KHI NGƯỜI DÙNG TẢI ẢNH (TRONG LUỒNG SELLER / SHIPPER VÀ CẢ LUỒNG NÂNG CẤP HOẶC RE-UPLOAD)
+            bool isPhotoUploadMsg = (userMsg.Trim().StartsWith("[Ảnh") || userMsg.Trim().StartsWith("[Anh")) &&
+                                    (userMsg.Contains("đã tải") || userMsg.Contains("thành công") || userMsg.Contains("da tai") || userMsg.Contains("thanh cong"));
+
+            if (isPhotoUploadMsg)
+            {
+                // Đồng bộ toàn bộ các trường ảnh từ incomingDraft (nếu có)
+                if (!string.IsNullOrWhiteSpace(incomingDraft?.PortraitImage)) draft.PortraitImage = incomingDraft.PortraitImage;
+                if (!string.IsNullOrWhiteSpace(incomingDraft?.CccdFrontImage)) draft.CccdFrontImage = incomingDraft.CccdFrontImage;
+                if (!string.IsNullOrWhiteSpace(incomingDraft?.CccdBackImage)) draft.CccdBackImage = incomingDraft.CccdBackImage;
+                if (!string.IsNullOrWhiteSpace(incomingDraft?.DrivingLicenseImage)) draft.DrivingLicenseImage = incomingDraft.DrivingLicenseImage;
+                if (!string.IsNullOrWhiteSpace(incomingDraft?.FoodSafetyImage)) draft.FoodSafetyImage = incomingDraft.FoodSafetyImage;
+
+                string photoTitle = "giấy tờ";
+                string targetExpectedStateSeller = "";
+                string targetExpectedStateShipper = "";
+
+                if (userMsg.Contains("CCCD Mặt Trước") || cleanMsgNoTone.Contains("cccd mat truoc") || activeState.Contains("CCCD_FRONT"))
+                {
+                    photoTitle = "CCCD Mặt Trước";
+                    targetExpectedStateSeller = "REGISTER_SELLER_Q12_CCCD_FRONT";
+                    targetExpectedStateShipper = "REGISTER_SHIPPER_Q7_CCCD_FRONT";
+                    if (!string.IsNullOrWhiteSpace(incomingDraft?.CccdFrontImage))
+                        draft.CccdFrontImage = incomingDraft.CccdFrontImage;
+                }
+                else if (userMsg.Contains("CCCD Mặt Sau") || cleanMsgNoTone.Contains("cccd mat sau") || activeState.Contains("CCCD_BACK"))
+                {
+                    photoTitle = "CCCD Mặt Sau";
+                    targetExpectedStateSeller = "REGISTER_SELLER_Q13_CCCD_BACK";
+                    targetExpectedStateShipper = "REGISTER_SHIPPER_Q8_CCCD_BACK";
+                    if (!string.IsNullOrWhiteSpace(incomingDraft?.CccdBackImage))
+                        draft.CccdBackImage = incomingDraft.CccdBackImage;
+                }
+                else if (userMsg.Contains("An Toàn Thực Phẩm") || cleanMsgNoTone.Contains("an toan thuc pham") || cleanMsgNoTone.Contains("attp") || activeState.Contains("FOOD_SAFETY"))
+                {
+                    photoTitle = "Giấy CN An Toàn Thực Phẩm";
+                    targetExpectedStateSeller = "REGISTER_SELLER_Q14_FOOD_SAFETY";
+                    if (!string.IsNullOrWhiteSpace(incomingDraft?.FoodSafetyImage))
+                        draft.FoodSafetyImage = incomingDraft.FoodSafetyImage;
+                }
+                else if (userMsg.Contains("Chân Dung") || cleanMsgNoTone.Contains("chan dung") || activeState.Contains("PORTRAIT"))
+                {
+                    photoTitle = "Ảnh Chân Dung Tài Xế";
+                    targetExpectedStateShipper = "REGISTER_SHIPPER_Q6_PORTRAIT";
+                    if (!string.IsNullOrWhiteSpace(incomingDraft?.PortraitImage))
+                        draft.PortraitImage = incomingDraft.PortraitImage;
+                }
+                else if (userMsg.Contains("Bằng Lái") || cleanMsgNoTone.Contains("bang lai") || cleanMsgNoTone.Contains("gplx") || activeState.Contains("GPLX"))
+                {
+                    photoTitle = "Bằng Lái Xe (GPLX)";
+                    targetExpectedStateShipper = "REGISTER_SHIPPER_Q12_GPLX";
+                    if (!string.IsNullOrWhiteSpace(incomingDraft?.DrivingLicenseImage))
+                        draft.DrivingLicenseImage = incomingDraft.DrivingLicenseImage;
+                }
+
+                // [A] LUỒNG NÂNG CẤP TÀI KHOẢN (UPGRADE_SELLER & UPGRADE_SHIPPER)
+                if (activeState == "UPGRADE_SELLER_Q9_CCCD_FRONT")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"Đã tải lên ảnh **CCCD Mặt Trước** thành công! 🆔
+
+---
+🔟 **Câu 10 / 13:** Vui lòng tải lên ảnh **CCCD Mặt Sau \*** của chủ tiệm:
+(Nhấp vào khung bên dưới để chọn ảnh từ thư mục máy tính, không nhận video)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q10_CCCD_BACK",
+                        actionIntent = "SELLER_UPLOAD_CCCD_BACK",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "UPGRADE_SELLER_Q10_CCCD_BACK")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"Đã tải lên ảnh **CCCD Mặt Sau** thành công! 🆔
+
+---
+1️⃣1️⃣ **Câu 11 / 13:** Vui lòng tải lên ảnh **Giấy Chứng Nhận An Toàn Thực Phẩm \*** (hoặc Giấy Phép Kinh Doanh / VietGAP):
+(Nhấp vào khung bên dưới để chọn ảnh từ thư mục máy tính, không nhận video)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q11_FOOD_SAFETY",
+                        actionIntent = "SELLER_UPLOAD_FOOD_SAFETY",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "UPGRADE_SELLER_Q11_FOOD_SAFETY")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"Đã tải lên ảnh **Giấy Chứng Nhận An Toàn Thực Phẩm** thành công! 📜
+
+---
+1️⃣2️⃣ **Câu 12 / 13:** Vui lòng chọn **Ngân hàng nhận doanh thu \*** từ 10 ngân hàng bên dưới (Bấm nút hoặc nhập đúng 1 trong 10 ngân hàng):",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q12_BANK",
+                        actionIntent = "SELLER_CHOOSE_BANK",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState.StartsWith("UPGRADE_SELLER_EDIT_Q") && (activeState.Contains("CCCD") || activeState.Contains("FOOD_SAFETY")))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = $"Đã cập nhật ảnh {photoTitle} thành công! 📸\n\n" + BuildSellerUpgradeReviewSummaryReply(draft),
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                        actionIntent = "SELLER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "UPGRADE_SHIPPER_Q3_PORTRAIT")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên <strong>Ảnh Chân Dung Tài Xế</strong> thành công!
+
+<hr class=""chat-divider""/>
+4. <strong>Câu 4 / 12:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Trước</strong> của tài xế:
+(Nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q4_CCCD_FRONT",
+                        actionIntent = "SHIPPER_UPLOAD_CCCD_FRONT",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "UPGRADE_SHIPPER_Q4_CCCD_FRONT")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên ảnh <strong>CCCD Mặt Trước</strong> thành công!
+
+<hr class=""chat-divider""/>
+5. <strong>Câu 5 / 12:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Sau</strong> của tài xế:
+(Nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q5_CCCD_BACK",
+                        actionIntent = "SHIPPER_UPLOAD_CCCD_BACK",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "UPGRADE_SHIPPER_Q5_CCCD_BACK")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên ảnh <strong>CCCD Mặt Sau</strong> thành công!
+
+<hr class=""chat-divider""/>
+6. <strong>Câu 6 / 12:</strong> Cho mình xin <strong>Biển số xe máy</strong> bạn chạy đơn:
+- Hàng trên: 2 số địa phương + 2 chữ cái sê-ri (Ví dụ: `29-AA`, `59-AB`)
+- Hàng dưới: Dãy 4 hoặc 5 số tự nhiên (Ví dụ: `123.45` hoặc `12345` hoặc `1234`)
+<em>(AI sẽ tự động định dạng và viết hoa chuẩn quy định nhé)</em>",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q6_LICENSE_PLATE",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "UPGRADE_SHIPPER_Q9_GPLX")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên ảnh <strong>Bằng Lái Xe (GPLX)</strong> thành công!
+
+<hr class=""chat-divider""/>
+10. <strong>Câu 10 / 12:</strong> Vui lòng chọn <strong>Khu vực đăng ký chạy chính</strong> từ danh sách 21 Quận / Huyện bên dưới:
+(Bấm nút hoặc nhập đúng 1 trong 21 lựa chọn Quận / Huyện)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q10_AREA",
+                        actionIntent = "SHIPPER_CHOOSE_AREA",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState.StartsWith("UPGRADE_SHIPPER_EDIT_Q") && (activeState.Contains("PORTRAIT") || activeState.Contains("CCCD") || activeState.Contains("GPLX")))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật ảnh <strong>{photoTitle}</strong> thành công! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+{BuildShipperUpgradeReviewSummaryReply(draft)}",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_REVIEW_SUMMARY",
+                        actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+
+                // [B] LUỒNG ĐĂNG KÝ TRỰC TIẾP (REGISTER_SELLER & REGISTER_SHIPPER)
+                else if (activeState == "REGISTER_SELLER_Q12_CCCD_FRONT")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"Đã tải lên ảnh **CCCD Mặt Trước** thành công! 🆔
+
+---
+1️⃣3️⃣ **Câu 13 / 16:** Vui lòng tải lên ảnh **CCCD Mặt Sau \*** của chủ tiệm:
+(Nhấp vào khung bên dưới để chọn ảnh từ thư mục máy tính, không nhận video)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q13_CCCD_BACK",
+                        actionIntent = "SELLER_UPLOAD_CCCD_BACK",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SELLER_Q13_CCCD_BACK")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"Đã tải lên ảnh **CCCD Mặt Sau** thành công! 🆔
+
+---
+1️⃣4️⃣ **Câu 14 / 16:** Vui lòng tải lên ảnh **Giấy Chứng Nhận An Toàn Thực Phẩm \*** (hoặc Giấy Phép Kinh Doanh):
+(Nhấp vào khung bên dưới để chọn ảnh từ thư mục máy tính, không nhận video)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q14_FOOD_SAFETY",
+                        actionIntent = "SELLER_UPLOAD_FOOD_SAFETY",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SELLER_Q14_FOOD_SAFETY")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"Đã tải lên ảnh **Giấy Chứng Nhận An Toàn Thực Phẩm** thành công! 📜
+
+---
+1️⃣5️⃣ **Câu 15 / 16:** Vui lòng chọn **Ngân hàng nhận doanh thu \*** từ 8 ngân hàng bên dưới (Bấm nút hoặc nhập đúng 1 trong 8 ngân hàng):",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_Q15_BANK",
+                        actionIntent = "SELLER_CHOOSE_BANK",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SELLER_EDIT_Q12_CCCD_FRONT" || activeState == "REGISTER_SELLER_EDIT_Q13_CCCD_BACK" || activeState == "REGISTER_SELLER_EDIT_Q14_FOOD_SAFETY")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = $"Đã cập nhật ảnh {photoTitle} thành công! 📸\n\n" + BuildSellerReviewSummaryReply(draft),
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SELLER_REVIEW_SUMMARY",
+                        actionIntent = "SELLER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SHIPPER_Q6_PORTRAIT")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên <strong>Ảnh Chân Dung Tài Xế</strong> thành công!
+
+<hr class=""chat-divider""/>
+7. <strong>Câu 7 / 15:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Trước</strong> của tài xế:
+(Nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_Q7_CCCD_FRONT",
+                        actionIntent = "SHIPPER_UPLOAD_CCCD_FRONT",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SHIPPER_Q7_CCCD_FRONT")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên ảnh <strong>CCCD Mặt Trước</strong> thành công!
+
+<hr class=""chat-divider""/>
+8. <strong>Câu 8 / 15:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Sau</strong> của tài xế:
+(Nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_Q8_CCCD_BACK",
+                        actionIntent = "SHIPPER_UPLOAD_CCCD_BACK",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SHIPPER_Q8_CCCD_BACK")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên ảnh <strong>CCCD Mặt Sau</strong> thành công!
+
+<hr class=""chat-divider""/>
+9. <strong>Câu 9 / 15:</strong> Cho mình xin <strong>Biển số xe máy</strong> bạn chạy đơn:
+- Hàng trên: 2 số địa phương + 2 chữ cái sê-ri (Ví dụ: `29-AA`, `59-AB`)
+- Hàng dưới: Dãy 4 hoặc 5 số tự nhiên (Ví dụ: `123.45` hoặc `12345` hoặc `1234`)
+<em>(AI sẽ tự động định dạng và viết hoa chuẩn quy định nhé)</em>",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_Q9_LICENSE_PLATE",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SHIPPER_Q12_GPLX")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên ảnh <strong>Bằng Lái Xe (GPLX)</strong> thành công!
+
+<hr class=""chat-divider""/>
+13. <strong>Câu 13 / 15:</strong> Vui lòng chọn <strong>Khu vực đăng ký chạy chính</strong> từ danh sách 21 Quận / Huyện bên dưới:
+(Bấm nút hoặc nhập đúng 1 trong 21 lựa chọn Quận / Huyện)",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_Q13_AREA",
+                        actionIntent = "SHIPPER_CHOOSE_AREA",
+                        regDraft = draft
+                    };
+                }
+                else if (activeState == "REGISTER_SHIPPER_EDIT_Q6_PORTRAIT" || activeState == "REGISTER_SHIPPER_EDIT_Q7_CCCD_FRONT" || activeState == "REGISTER_SHIPPER_EDIT_Q8_CCCD_BACK" || activeState == "REGISTER_SHIPPER_EDIT_Q12_GPLX")
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật ảnh <strong>{photoTitle}</strong> thành công! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
+
+{BuildShipperReviewSummaryReply(draft)}",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY",
+                        actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+
+                // [C] TẢI LẠI ẢNH (RE-UPLOAD)
+                bool isDirectPhotoStep = activeState == "REGISTER_SELLER_Q12_CCCD_FRONT" ||
+                                         activeState == "REGISTER_SELLER_Q13_CCCD_BACK" ||
+                                         activeState == "REGISTER_SELLER_Q14_FOOD_SAFETY" ||
+                                         activeState == "REGISTER_SHIPPER_Q6_PORTRAIT" ||
+                                         activeState == "REGISTER_SHIPPER_Q7_CCCD_FRONT" ||
+                                         activeState == "REGISTER_SHIPPER_Q8_CCCD_BACK" ||
+                                         activeState == "REGISTER_SHIPPER_Q12_GPLX" ||
+                                         activeState == "UPGRADE_SELLER_Q9_CCCD_FRONT" ||
+                                         activeState == "UPGRADE_SELLER_Q10_CCCD_BACK" ||
+                                         activeState == "UPGRADE_SELLER_Q11_FOOD_SAFETY" ||
+                                         activeState == "UPGRADE_SHIPPER_Q3_PORTRAIT" ||
+                                         activeState == "UPGRADE_SHIPPER_Q4_CCCD_FRONT" ||
+                                         activeState == "UPGRADE_SHIPPER_Q5_CCCD_BACK" ||
+                                         activeState == "UPGRADE_SHIPPER_Q9_GPLX" ||
+                                         activeState.Contains("_EDIT_");
+
+                bool isReupload = !isDirectPhotoStep || userMsg.Contains("một lần nữa") || userMsg.Contains("tải lại");
+
+                if (isReupload)
+                {
+                    var (shortTitle, nextPrompt, qIntent) = GetQuestionInfoForState(activeState);
+                    if (activeState.StartsWith("REGISTER_SHIPPER") || activeState.StartsWith("UPGRADE_SHIPPER"))
+                    {
+                        return new
+                        {
+                            success = true,
+                            reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lại ảnh <strong>{photoTitle}</strong> thành công! Tiếp tục với câu <strong>{shortTitle}</strong> nhé:
+
+<hr class=""chat-divider""/>
+{nextPrompt}",
+                            provider = "ZoneMart AI Direct Registration Engine",
+                            registrationState = activeState,
+                            actionIntent = qIntent,
+                            regDraft = draft
+                        };
+                    }
+                    return new
+                    {
+                        success = true,
+                        reply = $@"Dạ bạn vừa tải lại ảnh **{photoTitle}** thành công rồi nhé! Giờ mình hỏi bạn tiếp câu **{shortTitle}** nhé ạ:
+
+---
+{nextPrompt}",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = activeState,
+                        actionIntent = qIntent,
+                        regDraft = draft
+                    };
+                }
+            }
+
+
+            // 1b-2. XỬ LÝ CÁC BƯỚC NÂNG CẤP TÀI KHOẢN (UPGRADE_SELLER / UPGRADE_SHIPPER)
+            if (activeState.StartsWith("UPGRADE_SELLER_") || activeState.StartsWith("UPGRADE_SHIPPER_"))
+            {
+                var upgradeRes = await TryProcessAiUpgradeFlowAsync(userMsg, cleanMsgNoTone, activeState, draft, incomingDraft, request);
+                if (upgradeRes != null) return upgradeRes;
+            }
+
+            // 1b-3. ĐANG Ở BƯỚC CHỌN VAI TRÒ NÂNG CẤP TÀI KHOẢN (UPGRADE_CHOOSE_ROLE)
+            // Chỉ chấp nhận 1 trong 2 lựa chọn (Seller hoặc Shipper) hoặc Hủy
+            if (activeState == "UPGRADE_CHOOSE_ROLE")
+            {
+                bool isPickSeller = cleanMsgNoTone == "1" ||
+                                    cleanMsgNoTone.Contains("nang cap seller") ||
+                                    cleanMsgNoTone.Contains("nang cap gian hang") ||
+                                    cleanMsgNoTone.Contains("nang cap len seller") ||
+                                    cleanMsgNoTone.Contains("nang cap tai khoan len seller") ||
+                                    cleanMsgNoTone.Contains("nang cap thanh seller") ||
+                                    cleanMsgNoTone.Contains("nang cap len gian hang") ||
+                                    cleanMsgNoTone == "seller" ||
+                                    cleanMsgNoTone == "gian hang" ||
+                                    cleanMsgNoTone == "nang cap nguoi ban" ||
+                                    cleanMsgNoTone == "nguoi ban";
+
+                bool isPickShipper = cleanMsgNoTone == "2" ||
+                                     cleanMsgNoTone.Contains("nang cap shipper") ||
+                                     cleanMsgNoTone.Contains("nang cap tai xe") ||
+                                     cleanMsgNoTone.Contains("nang cap len shipper") ||
+                                     cleanMsgNoTone.Contains("nang cap tai khoan len shipper") ||
+                                     cleanMsgNoTone.Contains("nang cap thanh shipper") ||
+                                     cleanMsgNoTone.Contains("nang cap len tai xe") ||
+                                     cleanMsgNoTone == "shipper" ||
+                                     cleanMsgNoTone == "tai xe" ||
+                                     cleanMsgNoTone == "chay xe" ||
+                                     cleanMsgNoTone == "giao hang";
+
+                if (isPickSeller)
+                {
+                    var (eligible, reason, buyerUser) = await CheckUpgradeEligibilityAsync(request, "UPGRADE_SELLER");
+                    if (!eligible || buyerUser == null)
+                    {
+                        return new
+                        {
+                            success = true,
+                            reply = reason,
+                            provider = "ZoneMart AI Direct Registration Engine",
+                            registrationState = "UPGRADE_CHOOSE_ROLE",
+                            actionIntent = "UPGRADE_CHOOSE_ROLE",
+                            regDraft = draft
+                        };
+                    }
+
+                    draft = new DirectRegDraft
+                    {
+                        Role = "UPGRADE_SELLER",
+                        IsUpgrade = true,
+                        UserId = buyerUser.Id,
+                        Email = buyerUser.PhoneEmail,
+                        Password = !string.IsNullOrWhiteSpace(buyerUser.Password) ? buyerUser.Password : (!string.IsNullOrWhiteSpace(buyerUser.PasswordHash) ? buyerUser.PasswordHash : "123456"),
+                        OwnerFullName = buyerUser.FullName ?? "",
+                        FullName = buyerUser.FullName ?? ""
+                    };
+
+                    return new
+                    {
+                        success = true,
+                        reply = $@"🚀 **NÂNG CẤP TÀI KHOẢN LÊN GIAN HÀNG SELLER (TRỰC TIẾP QUA AI)**
+
+Dạ vâng! AI sẽ hỏi bạn lần lượt **13 câu hỏi** để hoàn thiện hồ sơ nâng cấp tài khoản Khách Hàng thành Người Bán trên ZoneMart nhé! 😊
+🔒 *(Tài khoản và mật khẩu sẽ tự động liên kết với tài khoản Khách Hàng hiện tại: **{draft.Email}**)*
+
+---
+1️⃣ **Câu 1 / 13:** Vui lòng chọn **Mô hình kinh doanh địa phương \*** (Chọn đúng nhóm đối tượng của gian hàng):
+1. **Chợ truyền thống** (Tiểu thương tại sạp chợ 🏡)
+2. **Hộ kinh doanh tại nhà** (Chế biến / bán tại gia 🏭)
+3. **Cửa hàng / Cơ sở SX** (Tiệm tạp hóa, xưởng SX 👨‍🌾)
+4. **Người bán địa phương khác** (Nông dân bán nông sản)
+
+*(Bấm nút bên dưới hoặc nhập đúng 1 trong 4 lựa chọn trên nhé)*
+
+💡 *(Nếu không muốn nâng cấp nữa, bạn nhắn **""hủy""** để dừng lại nhé!)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q1_TYPE",
+                        actionIntent = "SELLER_CHOOSE_TYPE",
+                        regDraft = draft
+                    };
+                }
+                else if (isPickShipper)
+                {
+                    var (eligible, reason, buyerUser) = await CheckUpgradeEligibilityAsync(request, "UPGRADE_SHIPPER");
+                    if (!eligible || buyerUser == null)
+                    {
+                        return new
+                        {
+                            success = true,
+                            reply = reason,
+                            provider = "ZoneMart AI Direct Registration Engine",
+                            registrationState = "UPGRADE_CHOOSE_ROLE",
+                            actionIntent = "UPGRADE_CHOOSE_ROLE",
+                            regDraft = draft
+                        };
+                    }
+
+                    draft = new DirectRegDraft
+                    {
+                        Role = "UPGRADE_SHIPPER",
+                        IsUpgrade = true,
+                        UserId = buyerUser.Id,
+                        Email = buyerUser.PhoneEmail,
+                        Password = !string.IsNullOrWhiteSpace(buyerUser.Password) ? buyerUser.Password : (!string.IsNullOrWhiteSpace(buyerUser.PasswordHash) ? buyerUser.PasswordHash : "123456"),
+                        FullName = buyerUser.FullName ?? ""
+                    };
+
+                    return new
+                    {
+                        success = true,
+                        reply = $@"🚀 <i class=""bi bi-bicycle"" style=""color: #EA580C;""></i> <strong>NÂNG CẤP TÀI KHOẢN LÊN TÀI XẾ SHIPPER (TRỰC TIẾP QUA AI)</strong>
+
+Dạ vâng! AI sẽ hỏi bạn lần lượt <strong>12 câu hỏi</strong> để hoàn thiện hồ sơ đối tác tài xế ZoneMart Driver nhé! <i class=""bi bi-bicycle"" style=""color: #EA580C;""></i>
+🔒 *(Tài khoản và mật khẩu sẽ tự động liên kết với tài khoản Khách Hàng hiện tại: <strong>{draft.Email}</strong>)*
+
+<hr class=""chat-divider""/>
+1. <strong>Câu 1 / 12:</strong> Cho mình xin <strong>Họ và tên thật của tài xế</strong> (Từ 6 - 30 ký tự) nhé?
+- Bắt đầu bằng các họ phổ biến ở Việt Nam (như Đỗ, Nguyễn, Trần, Lê, Phạm, Hoàng, Vũ...)
+- Tên đệm tối thiểu 1 từ, tối đa 2 từ (như Thị, Thị Phương...)
+- Tên tối đa 1 từ (như Bình, Huy, Đạt, Anh...)
+
+💡 <em>(Nhắn ""<strong>hủy</strong>"" nếu bạn muốn dừng luồng nâng cấp)</em>",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q1_NAME",
+                        actionIntent = "SHIPPER_INPUT_NAME",
+                        regDraft = draft
+                    };
+                }
+                else
+                {
+                    // Người dùng nhập khác ngoài 2 lựa chọn và chữ hủy -> Hỏi lại nghiêm ngặt đến khi nhập đúng hoặc chọn
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Hiện tại bạn đang trong bước chọn vai trò nâng cấp tài khoản. Vui lòng bấm chọn 1 trong 2 vai trò bên dưới:\n\n1️⃣ **Nâng cấp Gian Hàng Seller**\n2️⃣ **Nâng cấp Tài Xế Shipper**\n\n*(Hoặc nhập đúng số **1** hoặc **2**, hoặc nhắn **\"Hủy\"** nếu muốn dừng luồng nâng cấp nhé!)* 😊",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_CHOOSE_ROLE",
+                        actionIntent = "UPGRADE_CHOOSE_ROLE",
+                        regDraft = draft
+                    };
+                }
+            }
+
             // 1c. ĐANG Ở BƯỚC CHỌN VAI TRÒ ĐĂNG KÝ (REGISTER_CHOOSE_ROLE)
 
             if (activeState == "REGISTER_CHOOSE_ROLE")
 
             {
 
+                bool isPickUpgradeSeller = cleanMsgNoTone == "4" || cleanMsgNoTone.Contains("nang cap seller") || cleanMsgNoTone.Contains("nang cap gian hang") || cleanMsgNoTone.Contains("nang cap len seller") || cleanMsgNoTone.Contains("nang cap tai khoan len seller") || cleanMsgNoTone.Contains("nang cap thanh seller") || cleanMsgNoTone.Contains("nang cap len gian hang");
+                bool isPickUpgradeShipper = cleanMsgNoTone == "5" || cleanMsgNoTone.Contains("nang cap shipper") || cleanMsgNoTone.Contains("nang cap tai xe") || cleanMsgNoTone.Contains("nang cap len shipper") || cleanMsgNoTone.Contains("nang cap tai khoan len shipper") || cleanMsgNoTone.Contains("nang cap thanh shipper") || cleanMsgNoTone.Contains("nang cap len tai xe");
                 bool isPickBuyer = cleanMsgNoTone == "1" || cleanMsgNoTone.Contains("khach hang") || cleanMsgNoTone.Contains("nguoi mua") || cleanMsgNoTone.Contains("buyer") || cleanMsgNoTone.Contains("mua hang");
+                bool isPickSeller = !isPickUpgradeSeller && (cleanMsgNoTone == "2" || cleanMsgNoTone.Contains("seller") || cleanMsgNoTone.Contains("gian hang") || cleanMsgNoTone.Contains("mo shop") || cleanMsgNoTone.Contains("chu quan") || cleanMsgNoTone.Contains("cua hang") || (cleanMsgNoTone.Contains("ban hang") && !cleanMsgNoTone.Contains("co ai ban")));
+                bool isPickShipper = !isPickUpgradeShipper && (cleanMsgNoTone == "3" || cleanMsgNoTone.Contains("shipper") || cleanMsgNoTone.Contains("tai xe") || cleanMsgNoTone.Contains("chay xe") || cleanMsgNoTone.Contains("giao hang"));
 
-                bool isPickSeller = cleanMsgNoTone == "2" || cleanMsgNoTone.Contains("seller") || cleanMsgNoTone.Contains("gian hang") || cleanMsgNoTone.Contains("mo shop") || cleanMsgNoTone.Contains("chu quan") || cleanMsgNoTone.Contains("cua hang") || (cleanMsgNoTone.Contains("ban hang") && !cleanMsgNoTone.Contains("co ai ban"));
+                if (isPickUpgradeSeller)
+                {
+                    var (eligible, reason, buyerUser) = await CheckUpgradeEligibilityAsync(request, "UPGRADE_SELLER");
+                    if (!eligible || buyerUser == null)
+                    {
+                        return new
+                        {
+                            success = true,
+                            reply = reason,
+                            provider = "ZoneMart AI Direct Registration Engine",
+                            registrationState = "REGISTER_CHOOSE_ROLE",
+                            actionIntent = "REGISTER_CHOOSE_ROLE",
+                            regDraft = draft
+                        };
+                    }
 
-                bool isPickShipper = cleanMsgNoTone == "3" || cleanMsgNoTone.Contains("shipper") || cleanMsgNoTone.Contains("tai xe") || cleanMsgNoTone.Contains("chay xe") || cleanMsgNoTone.Contains("giao hang");
+                    draft = new DirectRegDraft
+                    {
+                        Role = "UPGRADE_SELLER",
+                        IsUpgrade = true,
+                        UserId = buyerUser.Id,
+                        Email = buyerUser.PhoneEmail,
+                        Password = !string.IsNullOrWhiteSpace(buyerUser.Password) ? buyerUser.Password : (!string.IsNullOrWhiteSpace(buyerUser.PasswordHash) ? buyerUser.PasswordHash : "123456"),
+                        OwnerFullName = buyerUser.FullName ?? "",
+                        FullName = buyerUser.FullName ?? ""
+                    };
+
+                    return new
+                    {
+                        success = true,
+                        reply = $@"🚀 **NÂNG CẤP TÀI KHOẢN LÊN GIAN HÀNG SELLER (TRỰC TIẾP QUA AI)**
+
+Dạ vâng! AI sẽ hỏi bạn lần lượt **13 câu hỏi** để hoàn thiện hồ sơ nâng cấp tài khoản Khách Hàng thành Người Bán trên ZoneMart nhé! 😊
+🔒 *(Tài khoản và mật khẩu sẽ tự động liên kết với tài khoản Khách Hàng hiện tại: **{draft.Email}**)*
+
+---
+1️⃣ **Câu 1 / 13:** Vui lòng chọn **Mô hình kinh doanh địa phương \*** (Chọn đúng nhóm đối tượng của gian hàng):
+1. **Chợ truyền thống** (Tiểu thương tại sạp chợ 🏡)
+2. **Hộ kinh doanh tại nhà** (Chế biến / bán tại gia 🏭)
+3. **Cửa hàng / Cơ sở SX** (Tiệm tạp hóa, xưởng SX 👨‍🌾)
+4. **Người bán địa phương khác** (Nông dân bán nông sản)
+
+*(Bấm nút bên dưới hoặc nhập đúng 1 trong 4 lựa chọn trên nhé)*
+
+💡 *(Nếu không muốn nâng cấp nữa, bạn nhắn **""hủy""** để dừng lại nhé!)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q1_TYPE",
+                        actionIntent = "SELLER_CHOOSE_TYPE",
+                        regDraft = draft
+                    };
+                }
+                else if (isPickUpgradeShipper)
+                {
+                    var (eligible, reason, buyerUser) = await CheckUpgradeEligibilityAsync(request, "UPGRADE_SHIPPER");
+                    if (!eligible || buyerUser == null)
+                    {
+                        return new
+                        {
+                            success = true,
+                            reply = reason,
+                            provider = "ZoneMart AI Direct Registration Engine",
+                            registrationState = "REGISTER_CHOOSE_ROLE",
+                            actionIntent = "REGISTER_CHOOSE_ROLE",
+                            regDraft = draft
+                        };
+                    }
+
+                    draft = new DirectRegDraft
+                    {
+                        Role = "UPGRADE_SHIPPER",
+                        IsUpgrade = true,
+                        UserId = buyerUser.Id,
+                        Email = buyerUser.PhoneEmail,
+                        Password = !string.IsNullOrWhiteSpace(buyerUser.Password) ? buyerUser.Password : (!string.IsNullOrWhiteSpace(buyerUser.PasswordHash) ? buyerUser.PasswordHash : "123456"),
+                        FullName = buyerUser.FullName ?? ""
+                    };
+
+                    return new
+                    {
+                        success = true,
+                        reply = $@"🚀 <i class=""bi bi-bicycle"" style=""color: #EA580C;""></i> <strong>NÂNG CẤP TÀI KHOẢN LÊN TÀI XẾ SHIPPER (TRỰC TIẾP QUA AI)</strong>
+
+Dạ vâng! AI sẽ hỏi bạn lần lượt <strong>12 câu hỏi</strong> để hoàn thiện hồ sơ đối tác tài xế ZoneMart Driver nhé! <i class=""bi bi-bicycle"" style=""color: #EA580C;""></i>
+🔒 *(Tài khoản và mật khẩu sẽ tự động liên kết với tài khoản Khách Hàng hiện tại: <strong>{draft.Email}</strong>)*
+
+<hr class=""chat-divider""/>
+1. <strong>Câu 1 / 12:</strong> Cho mình xin <strong>Họ và tên thật của tài xế</strong> (Từ 6 - 30 ký tự) nhé?
+- Bắt đầu bằng các họ phổ biến ở Việt Nam (như Đỗ, Nguyễn, Trần, Lê, Phạm, Hoàng, Vũ...)
+- Tên đệm tối thiểu 1 từ, tối đa 2 từ (như Thị, Thị Phương...)
+- Tên tối đa 1 từ (như Bình, Huy, Đạt, Anh...)
+- Tổng cộng gồm 3 từ (Ví dụ: Lê Thành Đạt) hoặc 4 từ (Ví dụ: Nguyễn Thị Phương Anh). Chỉ nhập chữ cái, không nhận số hay ký tự đặc biệt (%^&*).
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nếu không muốn nâng cấp nữa, bạn nhắn <strong>""hủy""</strong> để dừng nhé!)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q1_NAME",
+                        regDraft = draft
+                    };
+                }
 
 
 
@@ -15552,7 +16197,7 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
 
                         success = true,
 
-                        reply = "⚠️ Hiện tại mình đang trong bước chọn vai trò đăng ký tài khoản. Vui lòng bấm chọn 1 trong 3 vai trò bên dưới (**Khách Hàng**, **Gian Hàng Seller**, **Tài Xế Shipper**) hoặc nhắn **\"Hủy\"** để dừng lại nhé! 😊",
+                        reply = "⚠️ Hiện tại mình đang trong bước chọn vai trò đăng ký tài khoản. Vui lòng bấm chọn 1 trong các vai trò bên dưới (**Khách Hàng**, **Gian Hàng Seller**, **Tài Xế Shipper**, **Nâng cấp Seller**, **Nâng cấp Shipper**) hoặc nhắn **\"Hủy\"** để dừng lại nhé! 😊",
 
                         provider = "ZoneMart AI Direct Registration Engine",
 
@@ -15636,7 +16281,35 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
 
 
 
-            bool isGeneralRegInquiry = !isStoreOrHourQuestion && (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("dangky") ||
+            bool isSpecificUpgradeSeller = !isStoreOrHourQuestion && (
+                                            cleanMsgNoTone.Contains("nang cap seller") ||
+                                            cleanMsgNoTone.Contains("nang cap len seller") ||
+                                            cleanMsgNoTone.Contains("nang cap gian hang") ||
+                                            cleanMsgNoTone.Contains("nang cap tai khoan len seller") ||
+                                            cleanMsgNoTone.Contains("nang cap thanh seller") ||
+                                            cleanMsgNoTone.Contains("nang cap len gian hang")
+                                        );
+
+            bool isSpecificUpgradeShipper = !isStoreOrHourQuestion && (
+                                            cleanMsgNoTone.Contains("nang cap shipper") ||
+                                            cleanMsgNoTone.Contains("nang cap len shipper") ||
+                                            cleanMsgNoTone.Contains("nang cap tai xe") ||
+                                            cleanMsgNoTone.Contains("nang cap tai khoan len shipper") ||
+                                            cleanMsgNoTone.Contains("nang cap thanh shipper") ||
+                                            cleanMsgNoTone.Contains("nang cap len tai xe")
+                                        );
+
+            bool isUpgradeGeneral = !isStoreOrHourQuestion && !isSpecificUpgradeSeller && !isSpecificUpgradeShipper && (
+                                        cleanMsgNoTone.Contains("nang cap tai khoan") ||
+                                        cleanMsgNoTone.Contains("nang cap tk") ||
+                                        cleanMsgNoTone.Contains("nang cap doi tac") ||
+                                        cleanMsgNoTone.Contains("muon nang cap") ||
+                                        cleanMsgNoTone == "nang cap" ||
+                                        cleanMsgNoTone.StartsWith("nang cap ") ||
+                                        cleanMsgNoTone.Contains("nang cap")
+                                    );
+
+            bool isGeneralRegInquiry = !isStoreOrHourQuestion && !isUpgradeGeneral && (cleanMsgNoTone.Contains("dang ky") || cleanMsgNoTone.Contains("dangky") ||
 
                                        cleanMsgNoTone.Contains("tao tai khoan") || cleanMsgNoTone.Contains("lap tai khoan") ||
 
@@ -15648,11 +16321,129 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
 
 
 
-            if (activeState == "NONE" && (isSpecificSeller || isSpecificShipper || isSpecificBuyer || isGeneralRegInquiry))
+            if (activeState == "NONE" && (isSpecificUpgradeSeller || isSpecificUpgradeShipper || isUpgradeGeneral || isSpecificSeller || isSpecificShipper || isSpecificBuyer || isGeneralRegInquiry))
 
             {
 
-                if (isSpecificSeller)
+                if (isSpecificUpgradeSeller)
+                {
+                    var (eligible, reason, buyerUser) = await CheckUpgradeEligibilityAsync(request, "UPGRADE_SELLER");
+                    if (!eligible || buyerUser == null)
+                    {
+                        return new
+                        {
+                            success = true,
+                            reply = reason,
+                            provider = "ZoneMart AI Direct Registration Engine",
+                            registrationState = "REGISTER_CHOOSE_ROLE",
+                            actionIntent = "REGISTER_CHOOSE_ROLE",
+                            regDraft = draft
+                        };
+                    }
+
+                    draft = new DirectRegDraft
+                    {
+                        Role = "UPGRADE_SELLER",
+                        IsUpgrade = true,
+                        UserId = buyerUser.Id,
+                        Email = buyerUser.PhoneEmail,
+                        Password = !string.IsNullOrWhiteSpace(buyerUser.Password) ? buyerUser.Password : (!string.IsNullOrWhiteSpace(buyerUser.PasswordHash) ? buyerUser.PasswordHash : "123456"),
+                        OwnerFullName = buyerUser.FullName ?? "",
+                        FullName = buyerUser.FullName ?? ""
+                    };
+
+                    return new
+                    {
+                        success = true,
+                        reply = $@"🚀 **NÂNG CẤP TÀI KHOẢN LÊN GIAN HÀNG SELLER (TRỰC TIẾP QUA AI)**
+
+Dạ vâng! AI sẽ hỏi bạn lần lượt **13 câu hỏi** để hoàn thiện hồ sơ nâng cấp tài khoản Khách Hàng thành Người Bán trên ZoneMart nhé! 😊
+🔒 *(Tài khoản và mật khẩu sẽ tự động liên kết với tài khoản Khách Hàng hiện tại: **{draft.Email}**)*
+
+---
+1️⃣ **Câu 1 / 13:** Vui lòng chọn **Mô hình kinh doanh địa phương \*** (Chọn đúng nhóm đối tượng của gian hàng):
+1. **Chợ truyền thống** (Tiểu thương tại sạp chợ 🏡)
+2. **Hộ kinh doanh tại nhà** (Chế biến / bán tại gia 🏭)
+3. **Cửa hàng / Cơ sở SX** (Tiệm tạp hóa, xưởng SX 👨‍🌾)
+4. **Người bán địa phương khác** (Nông dân bán nông sản)
+
+*(Bấm nút bên dưới hoặc nhập đúng 1 trong 4 lựa chọn trên nhé)*
+
+💡 *(Nếu không muốn nâng cấp nữa, bạn nhắn **""hủy""** để dừng lại nhé!)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q1_TYPE",
+                        actionIntent = "SELLER_CHOOSE_TYPE",
+                        regDraft = draft
+                    };
+                }
+                else if (isSpecificUpgradeShipper)
+                {
+                    var (eligible, reason, buyerUser) = await CheckUpgradeEligibilityAsync(request, "UPGRADE_SHIPPER");
+                    if (!eligible || buyerUser == null)
+                    {
+                        return new
+                        {
+                            success = true,
+                            reply = reason,
+                            provider = "ZoneMart AI Direct Registration Engine",
+                            registrationState = "REGISTER_CHOOSE_ROLE",
+                            actionIntent = "REGISTER_CHOOSE_ROLE",
+                            regDraft = draft
+                        };
+                    }
+
+                    draft = new DirectRegDraft
+                    {
+                        Role = "UPGRADE_SHIPPER",
+                        IsUpgrade = true,
+                        UserId = buyerUser.Id,
+                        Email = buyerUser.PhoneEmail,
+                        Password = !string.IsNullOrWhiteSpace(buyerUser.Password) ? buyerUser.Password : (!string.IsNullOrWhiteSpace(buyerUser.PasswordHash) ? buyerUser.PasswordHash : "123456"),
+                        FullName = buyerUser.FullName ?? ""
+                    };
+
+                    return new
+                    {
+                        success = true,
+                        reply = $@"🚀 <i class=""bi bi-bicycle"" style=""color: #EA580C;""></i> <strong>NÂNG CẤP TÀI KHOẢN LÊN TÀI XẾ SHIPPER (TRỰC TIẾP QUA AI)</strong>
+
+Dạ vâng! AI sẽ hỏi bạn lần lượt <strong>12 câu hỏi</strong> để hoàn thiện hồ sơ đối tác tài xế ZoneMart Driver nhé! <i class=""bi bi-bicycle"" style=""color: #EA580C;""></i>
+🔒 *(Tài khoản và mật khẩu sẽ tự động liên kết với tài khoản Khách Hàng hiện tại: <strong>{draft.Email}</strong>)*
+
+<hr class=""chat-divider""/>
+1. <strong>Câu 1 / 12:</strong> Cho mình xin <strong>Họ và tên thật của tài xế</strong> (Từ 6 - 30 ký tự) nhé?
+- Bắt đầu bằng các họ phổ biến ở Việt Nam (như Đỗ, Nguyễn, Trần, Lê, Phạm, Hoàng, Vũ...)
+- Tên đệm tối thiểu 1 từ, tối đa 2 từ (như Thị, Thị Phương...)
+- Tên tối đa 1 từ (như Bình, Huy, Đạt, Anh...)
+- Tổng cộng gồm 3 từ (Ví dụ: Lê Thành Đạt) hoặc 4 từ (Ví dụ: Nguyễn Thị Phương Anh). Chỉ nhập chữ cái, không nhận số hay ký tự đặc biệt (%^&*).
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nếu không muốn nâng cấp nữa, bạn nhắn <strong>""hủy""</strong> để dừng nhé!)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q1_NAME",
+                        regDraft = draft
+                    };
+                }
+                else if (isUpgradeGeneral)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"🚀 **NÂNG CẤP TÀI KHOẢN LIÊN KẾT (TRỰC TIẾP QUA AI)**
+
+Dạ chào bạn! Để AI hỗ trợ nâng cấp tài khoản Khách Hàng hiện tại của bạn thành đối tác ZoneMart một cách nhanh chóng và chính xác nhất, bạn vui lòng chọn 1 trong 2 hình thức nâng cấp bên dưới nhé:
+
+🏪 1️⃣ **Nâng cấp Gian Hàng Seller**: Nâng cấp tài khoản Khách Hàng thành Người Bán (Tiểu thương chợ, hộ kinh doanh, xưởng SX địa phương).
+
+🛵 2️⃣ **Nâng cấp Tài Xế Shipper**: Nâng cấp tài khoản Khách Hàng thành Đối Tác Tài Xế giao vận siêu tốc ZoneMart Driver.
+
+*(Vui lòng bấm chọn 1 trong 2 vai trò bên dưới hoặc nhập số **1** hoặc **2**. Nếu muốn dừng lại, bạn nhắn **""Hủy""** nhé!)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_CHOOSE_ROLE",
+                        actionIntent = "UPGRADE_CHOOSE_ROLE",
+                        regDraft = draft ?? new DirectRegDraft()
+                    };
+                }
+                else if (isSpecificSeller)
 
                 {
 
@@ -15802,17 +16593,13 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
 
                         reply = @"Dạ chào bạn! Để AI hỗ trợ đăng ký tài khoản nhanh chóng và chính xác nhất, bạn vui lòng chọn hình thức bạn muốn tham gia nhé:
 
-
-
 1️⃣ **Đăng ký Khách Hàng**: Dành cho người mua sắm nông sản sạch, thực phẩm tươi sống và nhận ưu đãi giao nhanh 10km.
-
 2️⃣ **Đăng ký Gian Hàng Seller**: Dành cho tiểu thương, hộ kinh doanh & cơ sở sản xuất mở tiệm bán hàng địa phương.
-
 3️⃣ **Đăng ký Tài Xế Shipper**: Dành cho đối tác tài xế gia nhập đội ngũ giao vận siêu tốc Zone Shipper.
+4️⃣ **Nâng cấp lên Seller**: Nâng cấp tài khoản Khách Hàng hiện tại thành Gian Hàng Người Bán (kế thừa tài khoản).
+5️⃣ **Nâng cấp lên Shipper**: Nâng cấp tài khoản Khách Hàng hiện tại thành Đối Tác Tài Xế (kế thừa tài khoản).
 
-
-
-*(Vui lòng bấm chọn 1 trong 3 vai trò bên dưới hoặc nhắn **""Hủy""** để thoát nhé!)*",
+*(Vui lòng bấm chọn 1 trong các vai trò bên dưới hoặc nhắn số tương ứng (1 - 5), hoặc nhắn **""Hủy""** để thoát nhé!)*",
 
                         provider = "ZoneMart AI Direct Registration Engine",
 
@@ -15854,463 +16641,7 @@ Dạ vâng! AI sẽ hỏi bạn lần lượt **4 câu hỏi** để tạo tài 
 
 
 
-            // 3b. XỬ LÝ KHI NGƯỜI DÙNG TẢI ẢNH (RE-UPLOAD HOẶC TRONG LUỒNG SELLER / SHIPPER)
-
-            bool isPhotoUploadMsg = userMsg.StartsWith("[Ảnh ") && (userMsg.Contains("đã tải") || userMsg.Contains("thành công"));
-
-            if (isPhotoUploadMsg)
-
-            {
-
-                string photoTitle = "giấy tờ";
-
-                string targetExpectedStateSeller = "";
-
-                string targetExpectedStateShipper = "";
-
-
-
-                if (userMsg.Contains("CCCD Mặt Trước") || cleanMsgNoTone.Contains("cccd mat truoc"))
-
-                {
-
-                    photoTitle = "CCCD Mặt Trước";
-
-                    targetExpectedStateSeller = "REGISTER_SELLER_Q12_CCCD_FRONT";
-
-                    targetExpectedStateShipper = "REGISTER_SHIPPER_Q7_CCCD_FRONT";
-
-                    if (!string.IsNullOrWhiteSpace(incomingDraft?.CccdFrontImage))
-
-                        draft.CccdFrontImage = incomingDraft.CccdFrontImage;
-
-                }
-
-                else if (userMsg.Contains("CCCD Mặt Sau") || cleanMsgNoTone.Contains("cccd mat sau"))
-
-                {
-
-                    photoTitle = "CCCD Mặt Sau";
-
-                    targetExpectedStateSeller = "REGISTER_SELLER_Q13_CCCD_BACK";
-
-                    targetExpectedStateShipper = "REGISTER_SHIPPER_Q8_CCCD_BACK";
-
-                    if (!string.IsNullOrWhiteSpace(incomingDraft?.CccdBackImage))
-
-                        draft.CccdBackImage = incomingDraft.CccdBackImage;
-
-                }
-
-                else if (userMsg.Contains("An Toàn Thực Phẩm") || cleanMsgNoTone.Contains("an toan thuc pham") || cleanMsgNoTone.Contains("attp"))
-
-                {
-
-                    photoTitle = "Giấy CN An Toàn Thực Phẩm";
-
-                    targetExpectedStateSeller = "REGISTER_SELLER_Q14_FOOD_SAFETY";
-
-                    if (!string.IsNullOrWhiteSpace(incomingDraft?.FoodSafetyImage))
-
-                        draft.FoodSafetyImage = incomingDraft.FoodSafetyImage;
-
-                }
-
-                else if (userMsg.Contains("Chân Dung") || cleanMsgNoTone.Contains("chan dung"))
-
-                {
-
-                    photoTitle = "Ảnh Chân Dung Tài Xế";
-
-                    targetExpectedStateShipper = "REGISTER_SHIPPER_Q6_PORTRAIT";
-
-                    if (!string.IsNullOrWhiteSpace(incomingDraft?.PortraitImage))
-
-                        draft.PortraitImage = incomingDraft.PortraitImage;
-
-                }
-
-                else if (userMsg.Contains("Bằng Lái") || cleanMsgNoTone.Contains("bang lai") || cleanMsgNoTone.Contains("gplx"))
-
-                {
-
-                    photoTitle = "Bằng Lái Xe (GPLX)";
-
-                    targetExpectedStateShipper = "REGISTER_SHIPPER_Q12_GPLX";
-
-                    if (!string.IsNullOrWhiteSpace(incomingDraft?.DrivingLicenseImage))
-
-                        draft.DrivingLicenseImage = incomingDraft.DrivingLicenseImage;
-
-                }
-
-
-
-                // Xử lý trực tiếp nếu đang ở các câu hỏi upload của Seller
-
-                if (activeState == "REGISTER_SELLER_Q12_CCCD_FRONT")
-
-                {
-
-                    return new
-
-                    {
-
-                        success = true,
-
-                        reply = @"Đã tải lên ảnh **CCCD Mặt Trước** thành công! 🆔
-
-
-
----
-
-1️⃣3️⃣ **Câu 13 / 16:** Vui lòng tải lên ảnh **CCCD Mặt Sau \*** của chủ tiệm:
-
-(Nhấp vào khung bên dưới để chọn ảnh từ thư mục máy tính, không nhận video)",
-
-                        provider = "ZoneMart AI Direct Registration Engine",
-
-                        registrationState = "REGISTER_SELLER_Q13_CCCD_BACK",
-
-                        actionIntent = "SELLER_UPLOAD_CCCD_BACK",
-
-                        regDraft = draft
-
-                    };
-
-                }
-
-                else if (activeState == "REGISTER_SELLER_Q13_CCCD_BACK")
-
-                {
-
-                    return new
-
-                    {
-
-                        success = true,
-
-                        reply = @"Đã tải lên ảnh **CCCD Mặt Sau** thành công! 🆔
-
-
-
----
-
-1️⃣4️⃣ **Câu 14 / 16:** Vui lòng tải lên ảnh **Giấy Chứng Nhận An Toàn Thực Phẩm \*** (hoặc Giấy Phép Kinh Doanh):
-
-(Nhấp vào khung bên dưới để chọn ảnh từ thư mục máy tính, không nhận video)",
-
-                        provider = "ZoneMart AI Direct Registration Engine",
-
-                        registrationState = "REGISTER_SELLER_Q14_FOOD_SAFETY",
-
-                        actionIntent = "SELLER_UPLOAD_FOOD_SAFETY",
-
-                        regDraft = draft
-
-                    };
-
-                }
-
-                else if (activeState == "REGISTER_SELLER_Q14_FOOD_SAFETY")
-
-                {
-
-                    return new
-
-                    {
-
-                        success = true,
-
-                        reply = @"Đã tải lên ảnh **Giấy Chứng Nhận An Toàn Thực Phẩm** thành công! 📜
-
-
-
----
-
-1️⃣5️⃣ **Câu 15 / 16:** Vui lòng chọn **Ngân hàng nhận doanh thu \*** từ 8 ngân hàng bên dưới (Bấm nút hoặc nhập đúng 1 trong 8 ngân hàng):",
-
-                        provider = "ZoneMart AI Direct Registration Engine",
-
-                        registrationState = "REGISTER_SELLER_Q15_BANK",
-
-                        actionIntent = "SELLER_CHOOSE_BANK",
-
-                        regDraft = draft
-
-                    };
-
-                }
-
-                else if (activeState == "REGISTER_SELLER_EDIT_Q12_CCCD_FRONT" || activeState == "REGISTER_SELLER_EDIT_Q13_CCCD_BACK" || activeState == "REGISTER_SELLER_EDIT_Q14_FOOD_SAFETY")
-
-                {
-
-                    return new
-
-                    {
-
-                        success = true,
-
-                        reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật ảnh <strong>{photoTitle}</strong> thành công! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
-
-
-
-{BuildSellerReviewSummaryReply(draft)}",
-
-                        provider = "ZoneMart AI Direct Registration Engine",
-
-                        registrationState = "REGISTER_SELLER_REVIEW_SUMMARY",
-
-                        actionIntent = "SELLER_REVIEW_SUMMARY",
-
-                        regDraft = draft
-
-                    };
-
-                }
-
-                // Xử lý trực tiếp nếu đang ở các câu hỏi upload của Shipper
-
-                else if (activeState == "REGISTER_SHIPPER_Q6_PORTRAIT")
-
-                {
-
-                    return new
-
-                    {
-
-                        success = true,
-
-                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên <strong>Ảnh Chân Dung Tài Xế</strong> thành công!
-
-
-
-<hr class=""chat-divider""/>
-
-7. <strong>Câu 7 / 15:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Trước</strong> của tài xế:
-
-(Nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)",
-
-                        provider = "ZoneMart AI Direct Registration Engine",
-
-                        registrationState = "REGISTER_SHIPPER_Q7_CCCD_FRONT",
-
-                        actionIntent = "SHIPPER_UPLOAD_CCCD_FRONT",
-
-                        regDraft = draft
-
-                    };
-
-                }
-
-                else if (activeState == "REGISTER_SHIPPER_Q7_CCCD_FRONT")
-
-                {
-
-                    return new
-
-                    {
-
-                        success = true,
-
-                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên ảnh <strong>CCCD Mặt Trước</strong> thành công!
-
-
-
-<hr class=""chat-divider""/>
-
-8. <strong>Câu 8 / 15:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Sau</strong> của tài xế:
-
-(Nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)",
-
-                        provider = "ZoneMart AI Direct Registration Engine",
-
-                        registrationState = "REGISTER_SHIPPER_Q8_CCCD_BACK",
-
-                        actionIntent = "SHIPPER_UPLOAD_CCCD_BACK",
-
-                        regDraft = draft
-
-                    };
-
-                }
-
-                else if (activeState == "REGISTER_SHIPPER_Q8_CCCD_BACK")
-
-                {
-
-                    return new
-
-                    {
-
-                        success = true,
-
-                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên ảnh <strong>CCCD Mặt Sau</strong> thành công!
-
-
-
-<hr class=""chat-divider""/>
-
-9. <strong>Câu 9 / 15:</strong> Cho mình xin <strong>Biển số xe máy</strong> bạn chạy đơn:
-
-- Hàng trên: 2 số địa phương + 2 chữ cái sê-ri (Ví dụ: `29-AA`, `59-AB`)
-
-- Hàng dưới: Dãy 4 hoặc 5 số tự nhiên (Ví dụ: `123.45` hoặc `12345` hoặc `1234`)
-
-<em>(AI sẽ tự động định dạng và viết hoa chuẩn quy định nhé)</em>",
-
-                        provider = "ZoneMart AI Direct Registration Engine",
-
-                        registrationState = "REGISTER_SHIPPER_Q9_LICENSE_PLATE",
-
-                        regDraft = draft
-
-                    };
-
-                }
-
-                else if (activeState == "REGISTER_SHIPPER_Q12_GPLX")
-
-                {
-
-                    return new
-
-                    {
-
-                        success = true,
-
-                        reply = @"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lên ảnh <strong>Bằng Lái Xe (GPLX)</strong> thành công!
-
-
-
-<hr class=""chat-divider""/>
-
-13. <strong>Câu 13 / 15:</strong> Vui lòng chọn <strong>Khu vực đăng ký chạy chính</strong> từ danh sách 21 Quận / Huyện bên dưới:
-
-(Bấm nút hoặc nhập đúng 1 trong 21 lựa chọn Quận / Huyện)",
-
-                        provider = "ZoneMart AI Direct Registration Engine",
-
-                        registrationState = "REGISTER_SHIPPER_Q13_AREA",
-
-                        actionIntent = "SHIPPER_CHOOSE_AREA",
-
-                        regDraft = draft
-
-                    };
-
-                }
-
-                else if (activeState == "REGISTER_SHIPPER_EDIT_Q6_PORTRAIT" || activeState == "REGISTER_SHIPPER_EDIT_Q7_CCCD_FRONT" || activeState == "REGISTER_SHIPPER_EDIT_Q8_CCCD_BACK" || activeState == "REGISTER_SHIPPER_EDIT_Q12_GPLX")
-
-                {
-
-                    return new
-
-                    {
-
-                        success = true,
-
-                        reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã cập nhật ảnh <strong>{photoTitle}</strong> thành công! Bảng tổng kết hồ sơ đã được đồng bộ lại với thông tin mới nhất:
-
-
-
-{BuildShipperReviewSummaryReply(draft)}",
-
-                        provider = "ZoneMart AI Direct Registration Engine",
-
-                        registrationState = "REGISTER_SHIPPER_REVIEW_SUMMARY",
-
-                        actionIntent = "SHIPPER_REVIEW_SUMMARY",
-
-                        regDraft = draft
-
-                    };
-
-                }
-
-
-
-                bool isReupload = userMsg.Contains("một lần nữa") || userMsg.Contains("tải lại") ||
-
-                                  (activeState != targetExpectedStateSeller && activeState != targetExpectedStateShipper &&
-
-                                   activeState != "REGISTER_SELLER_Q12_CCCD_FRONT" && activeState != "REGISTER_SELLER_Q13_CCCD_BACK" &&
-
-                                   activeState != "REGISTER_SELLER_Q14_FOOD_SAFETY" &&
-
-                                   activeState != "REGISTER_SHIPPER_Q6_PORTRAIT" && activeState != "REGISTER_SHIPPER_Q7_CCCD_FRONT" &&
-
-                                   activeState != "REGISTER_SHIPPER_Q8_CCCD_BACK" && activeState != "REGISTER_SHIPPER_Q12_GPLX");
-
-
-
-                if (isReupload)
-
-                {
-
-                    var (shortTitle, nextPrompt, qIntent) = GetQuestionInfoForState(activeState);
-
-                    if (activeState.StartsWith("REGISTER_SHIPPER"))
-
-                    {
-
-                        return new
-
-                        {
-
-                            success = true,
-
-                            reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã tải lại ảnh <strong>{photoTitle}</strong> thành công! Tiếp tục với câu <strong>{shortTitle}</strong> nhé:
-
-
-
-<hr class=""chat-divider""/>
-
-{nextPrompt}",
-
-                            provider = "ZoneMart AI Direct Registration Engine",
-
-                            registrationState = activeState,
-
-                            actionIntent = qIntent,
-
-                            regDraft = draft
-
-                        };
-
-                    }
-
-                    return new
-
-                    {
-
-                        success = true,
-
-                        reply = $@"Dạ bạn vừa tải lại ảnh **{photoTitle}** thành công rồi nhé! Giờ mình hỏi bạn tiếp câu **{shortTitle}** nhé ạ:
-
-
-
----
-
-{nextPrompt}",
-
-                        provider = "ZoneMart AI Direct Registration Engine",
-
-                        registrationState = activeState,
-
-                        actionIntent = qIntent,
-
-                        regDraft = draft
-
-                    };
-
-                }
-
-            }
-
-
+            // 3b. (ĐÃ CHUYỂN TOÀN BỘ LOGIC XỬ LÝ ẢNH isPhotoUploadMsg LÊN ĐẦU HÀM Ở MỤC 1b-1 ĐỂ ƯU TIÊN XỬ LÝ TRƯỚC TẤT CẢ CÁC LUỒNG)
 
             // 4. LUỒNG HỎI LẦN LƯỢT TỪNG CÂU MỘT VỚI VALIDATE CHẶT CHẼ
 
@@ -22303,6 +22634,62 @@ Nếu bạn cần mua sắm hay hỗ trợ thêm việc gì, bạn cứ nhắn c
 
 
 
+                // UPGRADE SELLER (13 CÂU HỎI KẾ THỪA TỪ REGISTER_SELLER)
+                "UPGRADE_SELLER_Q1_TYPE" =>
+                    ("Mô hình kinh doanh", "1️⃣ **Câu 1 / 13:** Vui lòng chọn **Mô hình kinh doanh địa phương*** (Chọn đúng nhóm đối tượng của gian hàng):", "SELLER_CHOOSE_TYPE"),
+                "UPGRADE_SELLER_Q2_WARD" =>
+                    ("Xã / Phường", "2️⃣ **Câu 2 / 13:** Cho mình xin tên **Xã / Phường*** nơi gian hàng hoạt động (Chỉ nhập chữ cái tiếng Việt, không chứa số hoặc ký tự đặc biệt nhé):", null),
+                "UPGRADE_SELLER_Q3_DISTRICT" =>
+                    ("Quận / Huyện", "3️⃣ **Câu 3 / 13:** Cho mình xin tên **Quận / Huyện*** nơi gian hàng hoạt động (Chỉ nhập chữ cái tiếng Việt, không chứa số hoặc ký tự đặc biệt nhé):", null),
+                "UPGRADE_SELLER_Q4_MARKETNAME" =>
+                    ("Tên Chợ Truyền Thống / Cơ sở", "4️⃣ **Câu 4 / 13:** Cho mình xin **Tên Chợ Truyền Thống / Cụm Chợ Số Địa Phương** (Chỉ chứa chữ và số, không chứa ký tự đặc biệt):", null),
+                "UPGRADE_SELLER_Q5_STORENAME" =>
+                    ("Tên gian hàng", "5️⃣ **Câu 5 / 13:** Cho mình xin **Tên gian hàng*** (Từ 12 - 30 ký tự, chỉ gồm chữ cái và khoảng trắng, không chứa số hoặc ký tự đặc biệt) nhé?", null),
+                "UPGRADE_SELLER_Q6_ADDRESS" =>
+                    ("Địa chỉ tiệm", @"6️⃣ **Câu 6 / 13:** Cho mình xin **Địa chỉ tiệm*** (Bắt buộc phải có cả từ ""ngõ"" và ""đường"" - Có thể bấm nút **[📍 Lấy GPS hiện tại]** bên dưới):", "SELLER_INPUT_ADDRESS_GPS"),
+                "UPGRADE_SELLER_Q7_CATEGORY" =>
+                    ("Danh mục hàng bán chính", "7️⃣ **Câu 7 / 13:** Tiệm bạn kinh doanh **Danh mục hàng bán chính*** nào? (Chọn 1 trong 8 danh mục bên dưới):", "SELLER_CHOOSE_CATEGORY"),
+                "UPGRADE_SELLER_Q8_OPENHOURS" =>
+                    ("Khung giờ mở cửa", "8️⃣ **Câu 8 / 13:** Vui lòng chọn **Khung giờ mở cửa kinh doanh*** (Bấm nút bên dưới để chọn):", "SELLER_CHOOSE_OPENHOURS"),
+                "UPGRADE_SELLER_Q8_CUSTOM_OPENHOURS" =>
+                    ("Khung giờ tùy chỉnh", "8️⃣ **Câu 8 / 13:** Vui lòng nhập khung giờ mở - đóng cửa tùy chỉnh của bạn (Ví dụ: `07:00 - 21:00`):", null),
+                "UPGRADE_SELLER_Q9_CCCD_FRONT" =>
+                    ("CCCD Mặt Trước", "9️⃣ **Câu 9 / 13:** Vui lòng tải lên ảnh **CCCD Mặt Trước** của chủ tiệm (Nhấp vào ô bên dưới để chọn ảnh):", "SELLER_UPLOAD_CCCD_FRONT"),
+                "UPGRADE_SELLER_Q10_CCCD_BACK" =>
+                    ("CCCD Mặt Sau", "🔟 **Câu 10 / 13:** Vui lòng tải lên ảnh **CCCD Mặt Sau** của chủ tiệm (Nhấp vào ô bên dưới để chọn ảnh):", "SELLER_UPLOAD_CCCD_BACK"),
+                "UPGRADE_SELLER_Q11_FOOD_SAFETY" =>
+                    ("Giấy CN ATTP", "1️⃣1️⃣ **Câu 11 / 13:** Vui lòng tải lên ảnh **Giấy Chứng Nhận An Toàn Thực Phẩm** (hoặc Giấy Phép Kinh Doanh / VietGAP):", "SELLER_UPLOAD_FOOD_SAFETY"),
+                "UPGRADE_SELLER_Q12_BANK" =>
+                    ("Ngân hàng nhận doanh thu", "1️⃣2️⃣ **Câu 12 / 13:** Vui lòng chọn **Ngân hàng nhận doanh thu** từ 10 ngân hàng bên dưới:", "SELLER_CHOOSE_BANK"),
+                "UPGRADE_SELLER_Q13_BANKACC" =>
+                    ("Số tài khoản ngân hàng", "1️⃣3️⃣ **Câu 13 / 13:** Cho mình xin **Số tài khoản ngân hàng** nhận doanh thu (Chỉ nhận số từ 8 đến 15 chữ số):", null),
+
+                // UPGRADE SHIPPER (12 CÂU HỎI KẾ THỪA TỪ REGISTER_SHIPPER)
+                "UPGRADE_SHIPPER_Q1_NAME" =>
+                    ("Họ tên tài xế", "1. <strong>Câu 1 / 12:</strong> Cho mình xin <strong>Họ và tên thật của tài xế</strong> (Từ 6 - 30 ký tự) nhé?", "SHIPPER_INPUT_NAME"),
+                "UPGRADE_SHIPPER_Q2_CCCD" =>
+                    ("Số CCCD", "2. <strong>Câu 2 / 12:</strong> Cho mình xin <strong>Số Căn cước công dân (CCCD)</strong> (Gồm đúng 12 chữ số) nhé?", null),
+                "UPGRADE_SHIPPER_Q3_PORTRAIT" =>
+                    ("Ảnh Chân Dung", "3. <strong>Câu 3 / 12:</strong> Vui lòng tải lên <strong>Ảnh Chân Dung Đại Diện</strong> (Rõ khuôn mặt):", "SHIPPER_UPLOAD_PORTRAIT"),
+                "UPGRADE_SHIPPER_Q4_CCCD_FRONT" =>
+                    ("CCCD Mặt Trước", "4. <strong>Câu 4 / 12:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Trước</strong> của tài xế:", "SHIPPER_UPLOAD_CCCD_FRONT"),
+                "UPGRADE_SHIPPER_Q5_CCCD_BACK" =>
+                    ("CCCD Mặt Sau", "5. <strong>Câu 5 / 12:</strong> Vui lòng tải lên ảnh <strong>CCCD Mặt Sau</strong> của tài xế:", "SHIPPER_UPLOAD_CCCD_BACK"),
+                "UPGRADE_SHIPPER_Q6_LICENSE_PLATE" =>
+                    ("Biển số xe máy", "6. <strong>Câu 6 / 12:</strong> Cho mình xin <strong>Biển số xe máy</strong> bạn chạy đơn:", null),
+                "UPGRADE_SHIPPER_Q7_VEHICLE_TYPE" =>
+                    ("Loại phương tiện", "7. <strong>Câu 7 / 12:</strong> Vui lòng chọn <strong>Loại phương tiện giao hàng</strong>:", "SHIPPER_CHOOSE_VEHICLE_TYPE"),
+                "UPGRADE_SHIPPER_Q8_VEHICLE_MODEL" =>
+                    ("Dòng xe", "8. <strong>Câu 8 / 12:</strong> Cho mình xin <strong>Dòng xe / Mẫu xe</strong> bạn đang sử dụng:", "SHIPPER_CHOOSE_VEHICLE_MODEL"),
+                "UPGRADE_SHIPPER_Q9_GPLX" =>
+                    ("Bằng Lái Xe (GPLX)", "9. <strong>Câu 9 / 12:</strong> Vui lòng tải lên ảnh <strong>Giấy Phép Lái Xe (GPLX)</strong> còn hiệu lực:", "SHIPPER_UPLOAD_GPLX"),
+                "UPGRADE_SHIPPER_Q10_AREA" =>
+                    ("Khu vực hoạt động", "10. <strong>Câu 10 / 12:</strong> Vui lòng chọn <strong>Khu vực đăng ký chạy chính</strong> từ danh sách 21 Quận / Huyện:", "SHIPPER_CHOOSE_AREA"),
+                "UPGRADE_SHIPPER_Q11_BANK" =>
+                    ("Ngân hàng nhận cước", "11. <strong>Câu 11 / 12:</strong> Vui lòng chọn <strong>Ngân hàng nhận tiền cước ship</strong> từ 10 ngân hàng bên dưới:", "SHIPPER_CHOOSE_BANK"),
+                "UPGRADE_SHIPPER_Q12_BANKACC" =>
+                    ("Số tài khoản nhận cước", "12. <strong>Câu 12 / 12:</strong> Cho mình xin <strong>Số tài khoản ngân hàng</strong> (Gồm 8 đến 15 chữ số):", null),
+
                 _ => ("thông tin tiếp theo", "Vui lòng tiếp tục nhập thông tin để hoàn tất hồ sơ nhé!", null)
 
             };
@@ -25031,6 +25418,1956 @@ Bạn xem chi tiết và hình ảnh các món nóng hổi ngay bên dưới đ�
 
                 .Replace("đ", "d").Replace("Đ", "D");
 
+        }
+
+        // =========================================================================================
+        // TÍNH NĂNG NÂNG CẤP TÀI KHOẢN KHÁCH HÀNG LÊN SELLER HOẶC SHIPPER (AI TƯ VẤN NÂNG CẤP HỘ)
+        // =========================================================================================
+
+        private async Task<(bool eligible, string reason, User? user)> CheckUpgradeEligibilityAsync(ChatRequest? request, string targetRole)
+        {
+            User? buyerUser = null;
+            string? uid = request?.UserId?.Trim();
+            string? accKey = request?.UserEmail?.Trim().ToLowerInvariant();
+
+            if (!string.IsNullOrEmpty(uid))
+            {
+                var idFilters = new List<FilterDefinition<User>> { Builders<User>.Filter.Eq(u => u.UserCode, uid) };
+                if (ObjectId.TryParse(uid, out _)) idFilters.Add(Builders<User>.Filter.Eq(u => u.Id, uid));
+                buyerUser = await _mongoService.Users.Find(Builders<User>.Filter.Or(idFilters)).FirstOrDefaultAsync();
+            }
+            if (buyerUser == null && !string.IsNullOrEmpty(accKey))
+            {
+                buyerUser = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == accKey || u.Phone == accKey).FirstOrDefaultAsync();
+            }
+
+            if (buyerUser == null)
+            {
+                return (false, "⚠️ Bạn cần **đăng nhập tài khoản Khách Hàng** trên ZoneMart trước khi thực hiện nâng cấp nhé! Vui lòng đăng nhập và nhắn lại giúp mình nhé! 😊", null);
+            }
+
+            if (buyerUser.IsSeller || buyerUser.IsShipper || buyerUser.IsAdmin)
+            {
+                string roleDisplay = buyerUser.IsSeller ? "Người Bán (Gian Hàng)" : (buyerUser.IsShipper ? "Tài Xế (Shipper)" : "Quản Trị Viên");
+                return (false, $"⚠️ Tài khoản của bạn hiện đang có vai trò là **{roleDisplay}**! Nâng cấp đối tác chỉ áp dụng cho tài khoản Khách Hàng (Buyer) thôi nhé! 😊", buyerUser);
+            }
+
+            string effectiveEmail = buyerUser.PhoneEmail?.Trim().ToLowerInvariant() ?? "";
+
+            if (targetRole == "UPGRADE_SELLER")
+            {
+                var existingStore = await _mongoService.Stores.Find(s =>
+                    (s.PhoneEmail != null && s.PhoneEmail.ToLower() == effectiveEmail) ||
+                    s.UserId == buyerUser.Id ||
+                    (!string.IsNullOrEmpty(buyerUser.UserCode) && s.UserId == buyerUser.UserCode)
+                ).FirstOrDefaultAsync();
+
+                if (existingStore != null)
+                {
+                    if (existingStore.Status == "Pending")
+                    {
+                        return (false, "⚠️ Hồ sơ mở Gian Hàng Seller của bạn đã được gửi trước đó và đang trong quá trình chờ Ban Quản Trị xét duyệt nhé! Bạn vui lòng chờ thông báo duyệt nhé! 😊", buyerUser);
+                    }
+                    if (existingStore.Status == "Approved" || existingStore.Status == "Active")
+                    {
+                        return (false, "⚠️ Tài khoản của bạn đã được phê duyệt làm Người Bán (Gian Hàng) rồi nhé! Bạn có thể vào Kênh Người Bán để quản lý tiệm ạ! 😊", buyerUser);
+                    }
+                }
+
+                var existingShipper = await _mongoService.Shippers.Find(s =>
+                    (s.PhoneNumber != null && s.PhoneNumber.ToLower() == effectiveEmail) ||
+                    (!string.IsNullOrEmpty(buyerUser.Phone) && s.PhoneNumber == buyerUser.Phone) ||
+                    s.UserId == buyerUser.Id ||
+                    (!string.IsNullOrEmpty(buyerUser.UserCode) && s.UserId == buyerUser.UserCode)
+                ).FirstOrDefaultAsync();
+
+                if (existingShipper != null && (existingShipper.Status == "Pending" || existingShipper.Status == "Approved" || existingShipper.Status == "Active"))
+                {
+                    return (false, "⚠️ Tài khoản của bạn đã đăng ký vai trò **Tài Xế Shipper** (đang chờ duyệt hoặc đã duyệt). Theo quy định ZoneMart, mỗi tài khoản Khách Hàng chỉ có thể nâng cấp 1 trong 2 vai trò: **Seller** hoặc **Shipper** thôi nhé! 😊", buyerUser);
+                }
+            }
+            else if (targetRole == "UPGRADE_SHIPPER")
+            {
+                var existingShipper = await _mongoService.Shippers.Find(s =>
+                    (s.PhoneNumber != null && s.PhoneNumber.ToLower() == effectiveEmail) ||
+                    (!string.IsNullOrEmpty(buyerUser.Phone) && s.PhoneNumber == buyerUser.Phone) ||
+                    s.UserId == buyerUser.Id ||
+                    (!string.IsNullOrEmpty(buyerUser.UserCode) && s.UserId == buyerUser.UserCode)
+                ).FirstOrDefaultAsync();
+
+                if (existingShipper != null)
+                {
+                    if (existingShipper.Status == "Pending")
+                    {
+                        return (false, "⚠️ Hồ sơ đăng ký Tài Xế Shipper của bạn đã được gửi trước đó và đang trong quá trình chờ Ban Quản Trị xét duyệt nhé! Bạn vui lòng chờ thông báo duyệt nhé! 😊", buyerUser);
+                    }
+                    if (existingShipper.Status == "Approved" || existingShipper.Status == "Active")
+                    {
+                        return (false, "⚠️ Tài khoản của bạn đã được phê duyệt làm Tài Xế Shipper rồi nhé! Bạn có thể vào Cổng Tài Xế để nhận đơn ạ! 😊", buyerUser);
+                    }
+                }
+
+                var existingStore = await _mongoService.Stores.Find(s =>
+                    (s.PhoneEmail != null && s.PhoneEmail.ToLower() == effectiveEmail) ||
+                    s.UserId == buyerUser.Id ||
+                    (!string.IsNullOrEmpty(buyerUser.UserCode) && s.UserId == buyerUser.UserCode)
+                ).FirstOrDefaultAsync();
+
+                if (existingStore != null && (existingStore.Status == "Pending" || existingStore.Status == "Approved" || existingStore.Status == "Active"))
+                {
+                    return (false, "⚠️ Tài khoản của bạn đã đăng ký vai trò **Người Bán (Seller)** (đang chờ duyệt hoặc đã duyệt). Theo quy định ZoneMart, mỗi tài khoản Khách Hàng chỉ có thể nâng cấp 1 trong 2 vai trò: **Seller** hoặc **Shipper** thôi nhé! 😊", buyerUser);
+                }
+            }
+
+            return (true, "", buyerUser);
+        }
+
+        private static string BuildSellerUpgradeReviewSummaryReply(DirectRegDraft draft)
+        {
+            string cccdFrontStatus = !string.IsNullOrWhiteSpace(draft.CccdFrontImage) ? "<i class=\"bi bi-check2-circle me-1\"></i>Đã tải ảnh lên" : "Chưa tải";
+            string cccdBackStatus = !string.IsNullOrWhiteSpace(draft.CccdBackImage) ? "<i class=\"bi bi-check2-circle me-1\"></i>Đã tải ảnh lên" : "Chưa tải";
+            string foodSafetyStatus = !string.IsNullOrWhiteSpace(draft.FoodSafetyImage) ? "<i class=\"bi bi-check2-circle me-1\"></i>Đã tải ảnh lên" : "Chưa tải";
+            string marketNameVal = string.IsNullOrWhiteSpace(draft.MarketName) ? "Chưa điền" : draft.MarketName;
+
+            return $@"<div class=""seller-fee-card"">
+  <div class=""fee-row""><i class=""bi bi-gift-fill me-1"" style=""color: #EA580C;""></i><strong>Phí Khởi Tạo Gian Hàng Số:</strong> <span style=""color: #16A34A; font-weight: 700;"">0 VNĐ (MIỄN PHÍ)</span></div>
+  <div class=""fee-sub"">Được UBND Xã/Phường & Ban Quản Lý Chợ tài trợ 100% trong khuôn khổ Đề án Chuyển Đổi Số Chợ Địa Phương.</div>
+  <div class=""fee-status-line""><i class=""bi bi-check-circle-fill me-1"" style=""color: #16A34A;""></i><strong>Trạng thái phí:</strong> <span style=""color: #16A34A; font-weight: 600;"">Đã miễn trừ (Chính sách hỗ trợ Chợ số)</span> &bull; <span class=""badge-bql""><i class=""bi bi-shield-check me-1""></i>Bảo chứng BQL Chợ</span></div>
+</div>
+
+<hr class=""chat-divider""/>
+<div class=""seller-summary-title""><i class=""bi bi-clipboard2-check-fill me-1"" style=""color: #D94E15;""></i><strong>BẢNG TỔNG KẾT HỒ SƠ NÂNG CẤP GIAN HÀNG SELLER</strong></div>
+<div class=""seller-summary-list"">
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-person-check-fill me-1"" style=""color: #10B981;""></i>Loại nâng cấp:</span><span class=""seller-row-value font-semibold text-success"">Khách Hàng lên Người Bán (Seller)</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-envelope-check-fill me-1"" style=""color: #2563EB;""></i>Tài khoản liên kết:</span><span class=""seller-row-value seller-code-val""><code>{draft.Email}</code> *(Kế thừa tài khoản hiện tại)*</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-key-fill me-1"" style=""color: #D97706;""></i>Mật khẩu:</span><span class=""seller-row-value"">[Dùng chung mật khẩu tài khoản hiện có]</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-shop me-1"" style=""color: #EA580C;""></i>1. Mô hình:</span><span class=""seller-row-value"">{draft.SellerType}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-geo-alt me-1"" style=""color: #EF4444;""></i>2. Xã / Phường:</span><span class=""seller-row-value"">{draft.Ward}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-pin-map me-1"" style=""color: #2563EB;""></i>3. Quận / Huyện:</span><span class=""seller-row-value"">{draft.District}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-buildings me-1"" style=""color: #0284C7;""></i>4. Tên Chợ:</span><span class=""seller-row-value"">{marketNameVal}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-house-door me-1"" style=""color: #10B981;""></i>5. Tên cửa hàng:</span><span class=""seller-row-value"">{draft.StoreName}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-geo-alt me-1"" style=""color: #64748B;""></i>6. Địa chỉ:</span><span class=""seller-row-value"">{draft.Address}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-tags me-1"" style=""color: #8B5CF6;""></i>7. Ngành hàng:</span><span class=""seller-row-value"">{draft.Category}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-clock me-1"" style=""color: #0284C7;""></i>8. Khung giờ:</span><span class=""seller-row-value"">{draft.OpenHours}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-card-heading me-1"" style=""color: #059669;""></i>9. CCCD Trước:</span><span class=""seller-row-value"">{cccdFrontStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-card-text me-1"" style=""color: #059669;""></i>10. CCCD Sau:</span><span class=""seller-row-value"">{cccdBackStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-patch-check me-1"" style=""color: #16A34A;""></i>11. Giấy CN ATTP:</span><span class=""seller-row-value"">{foodSafetyStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-bank me-1"" style=""color: #2563EB;""></i>12. Ngân hàng:</span><span class=""seller-row-value"">{draft.BankName}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-row-label""><i class=""bi bi-credit-card me-1"" style=""color: #D94E15;""></i>13. Số tài khoản:</span><span class=""seller-row-value"">{draft.BankAccountNumber}</span></div>
+</div>
+
+<div class=""seller-summary-hint""><i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i>Vui lòng kiểm tra kỹ thông tin. Bấm **[Gửi Hồ Sơ]** để nộp hồ sơ nâng cấp cho AI kiểm duyệt và Ban Quản Trị phê duyệt, hoặc bấm **[Sửa Hồ Sơ]** để chỉnh sửa nhé!</div>";
+        }
+
+        private static string BuildShipperUpgradeReviewSummaryReply(DirectRegDraft draft)
+        {
+            string portraitStatus = !string.IsNullOrWhiteSpace(draft.PortraitImage) ? "<i class=\"bi bi-check2-circle me-1\"></i>Đã tải ảnh lên" : "Chưa tải";
+            string cccdFrontStatus = !string.IsNullOrWhiteSpace(draft.CccdFrontImage) ? "<i class=\"bi bi-check2-circle me-1\"></i>Đã tải ảnh lên" : "Chưa tải";
+            string cccdBackStatus = !string.IsNullOrWhiteSpace(draft.CccdBackImage) ? "<i class=\"bi bi-check2-circle me-1\"></i>Đã tải ảnh lên" : "Chưa tải";
+            string gplxStatus = !string.IsNullOrWhiteSpace(draft.DrivingLicenseImage) ? "<i class=\"bi bi-check2-circle me-1\"></i>Đã tải ảnh lên" : "Chưa tải";
+
+            return $@"<div class=""seller-fee-card"">
+  <div class=""fee-row""><i class=""bi bi-bicycle me-1"" style=""color: #EA580C;""></i><strong>Chính Sách Đối Tác Tài Xế Zone Shipper:</strong> <span style=""color: #16A34A; font-weight: 700;"">MIỄN PHÍ GIA NHẬP</span></div>
+  <div class=""fee-sub"">Nhận đơn hàng bán kính 10km quanh khu vực, cước phí minh bạch, đối soát tự động hàng tuần.</div>
+  <div class=""fee-status-line""><i class=""bi bi-shield-check me-1"" style=""color: #16A34A;""></i><strong>Bảo chứng:</strong> <span style=""color: #16A34A; font-weight: 600;"">Đội ngũ Vận Hành ZoneMart Hà Nội</span></div>
+</div>
+
+<hr class=""chat-divider""/>
+<div class=""seller-summary-title""><i class=""bi bi-clipboard2-check-fill me-1"" style=""color: #D94E15;""></i><strong>BẢNG TỔNG KẾT HỒ SƠ NÂNG CẤP TÀI XẾ SHIPPER</strong></div>
+<div class=""seller-summary-list"">
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-person-check-fill me-1"" style=""color: #10B981;""></i>Loại nâng cấp:</span><span class=""seller-summary-val font-semibold text-success"">Khách Hàng lên Tài Xế (Shipper)</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-envelope-check-fill me-1"" style=""color: #2563EB;""></i>Tài khoản liên kết:</span><span class=""seller-summary-val""><code>{draft.Email}</code> *(Kế thừa tài khoản hiện tại)*</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-key-fill me-1"" style=""color: #D97706;""></i>Mật khẩu:</span><span class=""seller-row-value"">[Dùng chung mật khẩu tài khoản hiện có]</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-person-fill me-1"" style=""color: #0284C7;""></i>1. Họ và tên:</span><span class=""seller-summary-val font-semibold"">{draft.FullName}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-person-vcard-fill me-1"" style=""color: #0284C7;""></i>2. Số CCCD:</span><span class=""seller-summary-val""><code>{draft.CccdNumber}</code></span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-image me-1"" style=""color: #0284C7;""></i>3. Ảnh Chân Dung:</span><span class=""seller-summary-val"">{portraitStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-card-heading me-1"" style=""color: #0284C7;""></i>4. CCCD Mặt Trước:</span><span class=""seller-summary-val"">{cccdFrontStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-card-text me-1"" style=""color: #0284C7;""></i>5. CCCD Mặt Sau:</span><span class=""seller-summary-val"">{cccdBackStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-123 me-1"" style=""color: #0284C7;""></i>6. Biển số xe:</span><span class=""seller-summary-val font-semibold"">{draft.LicensePlate}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-bicycle me-1"" style=""color: #0284C7;""></i>7. Loại xe:</span><span class=""seller-summary-val"">{draft.VehicleType}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-ev-front me-1"" style=""color: #0284C7;""></i>8. Dòng xe:</span><span class=""seller-summary-val"">{draft.VehicleModel}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-file-earmark-person-fill me-1"" style=""color: #0284C7;""></i>9. Giấy Phép Lái Xe:</span><span class=""seller-summary-val"">{gplxStatus}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-geo-alt-fill me-1"" style=""color: #0284C7;""></i>10. Khu vực chạy:</span><span class=""seller-summary-val"">{draft.OperatingArea}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-bank2 me-1"" style=""color: #0284C7;""></i>11. Ngân hàng nhận cước:</span><span class=""seller-summary-val"">{draft.BankName}</span></div>
+  <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-credit-card-2-front me-1"" style=""color: #0284C7;""></i>12. Số tài khoản:</span><span class=""seller-summary-val""><code>{draft.BankAccountNumber}</code></span></div>
+</div>
+
+<div class=""seller-summary-hint""><i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i>Vui lòng kiểm tra kỹ thông tin. Bấm **[Gửi Hồ Sơ]** để nộp hồ sơ nâng cấp cho AI kiểm duyệt và Ban Quản Trị phê duyệt, hoặc bấm **[Sửa Hồ Sơ]** để chỉnh sửa nhé!</div>";
+        }
+
+        private async Task<object> CompleteSellerUpgradeAsync(DirectRegDraft draft)
+        {
+            string cleanAccount = draft.Email?.Trim().ToLowerInvariant() ?? "";
+            string storeName = draft.StoreName?.Trim() ?? "Gian Hàng ZoneMart";
+            string fullName = draft.OwnerFullName?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(fullName)) fullName = draft.FullName?.Trim() ?? storeName;
+            string address = draft.Address?.Trim() ?? "Hà Nội";
+            string category = draft.Category?.Trim() ?? "Thực phẩm & Nhu yếu phẩm";
+            string openHours = draft.OpenHours?.Trim() ?? "07:00 - 22:00";
+            string bankName = draft.BankName?.Trim() ?? "Vietcombank (VCB)";
+            string bankAcc = draft.BankAccountNumber?.Trim() ?? "123456789";
+            string password = draft.Password?.Trim() ?? "123456";
+            string cccdNumber = draft.CccdNumber?.Trim() ?? "";
+            string sellerType = draft.SellerType?.Trim() ?? "Chợ truyền thống";
+            string ward = draft.Ward?.Trim() ?? "";
+            string district = draft.District?.Trim() ?? "";
+            string marketName = draft.MarketName?.Trim() ?? "";
+
+            User? buyerUser = null;
+            if (!string.IsNullOrEmpty(draft.UserId))
+            {
+                var idFilters = new List<FilterDefinition<User>> { Builders<User>.Filter.Eq(u => u.UserCode, draft.UserId) };
+                if (ObjectId.TryParse(draft.UserId, out _)) idFilters.Add(Builders<User>.Filter.Eq(u => u.Id, draft.UserId));
+                buyerUser = await _mongoService.Users.Find(Builders<User>.Filter.Or(idFilters)).FirstOrDefaultAsync();
+            }
+            if (buyerUser == null && !string.IsNullOrEmpty(cleanAccount))
+            {
+                buyerUser = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == cleanAccount || u.Phone == cleanAccount).FirstOrDefaultAsync();
+            }
+
+            if (buyerUser == null)
+            {
+                return new
+                {
+                    success = false,
+                    reply = "⚠️ Không tìm thấy thông tin tài khoản Khách Hàng để thực hiện nâng cấp! Vui lòng đăng nhập lại nhé! 😊",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "NONE"
+                };
+            }
+
+            var existingStore = await _mongoService.Stores.Find(s =>
+                (s.PhoneEmail != null && s.PhoneEmail.ToLower() == cleanAccount) ||
+                s.UserId == buyerUser.Id ||
+                (!string.IsNullOrEmpty(buyerUser.UserCode) && s.UserId == buyerUser.UserCode)
+            ).FirstOrDefaultAsync();
+
+            if (existingStore != null)
+            {
+                return new
+                {
+                    success = false,
+                    reply = "⚠️ Tài khoản của bạn đã gửi hồ sơ Gian Hàng hoặc đã được phê duyệt làm Người Bán rồi nhé! 😊",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "NONE"
+                };
+            }
+
+            var existingShipper = await _mongoService.Shippers.Find(s =>
+                (s.PhoneNumber != null && s.PhoneNumber.ToLower() == cleanAccount) ||
+                (!string.IsNullOrEmpty(buyerUser.Phone) && s.PhoneNumber == buyerUser.Phone) ||
+                s.UserId == buyerUser.Id ||
+                (!string.IsNullOrEmpty(buyerUser.UserCode) && s.UserId == buyerUser.UserCode)
+            ).FirstOrDefaultAsync();
+
+            if (existingShipper != null && (existingShipper.Status == "Pending" || existingShipper.Status == "Approved" || existingShipper.Status == "Active"))
+            {
+                return new
+                {
+                    success = false,
+                    reply = "⚠️ Tài khoản của bạn đã đăng ký vai trò Tài Xế Shipper. Mỗi tài khoản Khách Hàng chỉ có thể nâng cấp 1 trong 2 vai trò đối tác thôi nhé! 😊",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "NONE"
+                };
+            }
+
+            string sellerCode = $"SEL-{Random.Shared.Next(1000, 9999)}";
+            var newStore = new Store
+            {
+                UserId = buyerUser.UserCode ?? sellerCode,
+                StoreCode = sellerCode,
+                Password = !string.IsNullOrWhiteSpace(buyerUser.Password) ? buyerUser.Password : (!string.IsNullOrWhiteSpace(buyerUser.PasswordHash) ? buyerUser.PasswordHash : password),
+                PhoneEmail = cleanAccount,
+                StoreName = storeName,
+                Category = category,
+                Address = address,
+                SellerType = sellerType,
+                Ward = ward,
+                District = district,
+                MarketName = marketName,
+                OpenHours = openHours,
+                OwnerFullName = fullName,
+                CccdNumber = cccdNumber,
+                BankName = bankName,
+                BankAccountNumber = bankAcc,
+                CccdFrontImage = draft.CccdFrontImage ?? "",
+                CccdBackImage = draft.CccdBackImage ?? "",
+                FoodSafetyCertImage = draft.FoodSafetyImage ?? "",
+                RegistrationFee = 0,
+                FeePaymentStatus = "waived",
+                FeePaymentNote = "Nâng cấp từ tài khoản Khách Hàng hiện có qua AI Tư Vấn",
+                Status = "Pending",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _mongoService.Stores.InsertOneAsync(newStore);
+            if (!string.IsNullOrEmpty(newStore.Id)) AuthController.InMemoryStores[newStore.Id] = newStore;
+
+            try
+            {
+                await _mongoService.AdminNotifications.InsertOneAsync(new AdminNotification
+                {
+                    Type = "SELLER_UPGRADE_REGISTRATION",
+                    Title = "Hồ sơ nâng cấp Gian Hàng mới (AI Tư Vấn)",
+                    Message = $"Khách hàng {buyerUser.FullName} ({cleanAccount}) vừa hoàn tất hồ sơ nâng cấp lên Gian Hàng '{storeName}' qua AI Tư Vấn. Đang chờ AI kiểm duyệt và Ban Quản Trị phê duyệt.",
+                    TargetUserId = newStore.Id ?? "",
+                    TargetName = storeName,
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false
+                });
+            }
+            catch { }
+
+            return new
+            {
+                success = true,
+                reply = $@"<div class=""seller-fee-card mt-2 mb-2"" style=""border-left: 4px solid #10B981;"">
+  <div class=""seller-summary-title"" style=""color: #10B981;"">
+    <i class=""bi bi-check-circle-fill me-2""></i> HỒ SƠ NÂNG CẤP GIAN HÀNG SELLER ĐÃ ĐƯỢC GỬI THÀNH CÔNG!
+  </div>
+  <div class=""seller-summary-desc mb-2"">Hồ sơ nâng cấp tài khoản của bạn đã được chuyển lên cơ sở dữ liệu để <strong>AI kiểm duyệt tự động</strong> và <strong>Ban Quản Trị xét duyệt</strong>.</div>
+  <div class=""seller-summary-list"">
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-shop me-1"" style=""color: #EA580C;""></i> Tên gian hàng:</span> <span class=""seller-summary-val font-semibold"">{storeName}</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-envelope-fill me-1"" style=""color: #EA580C;""></i> Tài khoản liên kết:</span> <span class=""seller-summary-val""><code>{cleanAccount}</code></span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-tag-fill me-1"" style=""color: #EA580C;""></i> Ngành hàng:</span> <span class=""seller-summary-val"">{category}</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-geo-alt-fill me-1"" style=""color: #EA580C;""></i> Địa chỉ gian hàng:</span> <span class=""seller-summary-val"">{address}</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-clock-fill me-1"" style=""color: #EA580C;""></i> Giờ mở cửa:</span> <span class=""seller-summary-val"">{openHours}</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-bank2 me-1"" style=""color: #EA580C;""></i> Ngân hàng nhận tiền:</span> <span class=""seller-summary-val"">{bankName} (STK: <code>{bankAcc}</code>)</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-shield-check me-1"" style=""color: #10B981;""></i> Trạng thái hồ sơ:</span> <span class=""seller-summary-val"" style=""color: #EA580C; font-weight: 600;""><i class=""bi bi-clock-history me-1""></i> Chờ duyệt (Pending)</span></div>
+  </div>
+</div>
+
+<i class=""bi bi-bell-fill me-1"" style=""color: #0284C7;""></i> <strong>Thông báo phê duyệt:</strong> Ban Quản Trị ZoneMart sẽ kiểm tra và phê duyệt hồ sơ trong vòng 24h. Bạn có thể theo dõi tiến độ trong mục Hồ sơ cá nhân nhé! Chúc gian hàng của bạn kinh doanh hồng phát!",
+                provider = "ZoneMart AI Direct Registration Engine",
+                registrationState = "NONE",
+                actionIntent = "SELLER_REGISTER_SUCCESS",
+                regDraft = new DirectRegDraft(),
+                summaryData = new
+                {
+                    role = "SELLER",
+                    storeName = storeName,
+                    email = cleanAccount,
+                    category = category,
+                    address = address,
+                    openHours = openHours,
+                    bankName = bankName,
+                    bankAcc = bankAcc,
+                    status = "Chờ duyệt (Pending)"
+                }
+            };
+        }
+
+        private async Task<object> CompleteShipperUpgradeAsync(DirectRegDraft draft)
+        {
+            string cleanAccount = draft.Email?.Trim().ToLowerInvariant() ?? "";
+            string fullName = draft.FullName?.Trim() ?? "Tài Xế ZoneMart";
+            string licensePlate = draft.LicensePlate?.Trim().ToUpperInvariant() ?? "29A-12345";
+            string vehicleType = draft.VehicleType?.Trim() ?? "Xe máy xăng";
+            string vehicleModel = draft.VehicleModel?.Trim() ?? "Honda Wave Alpha";
+            string area = draft.OperatingArea?.Trim() ?? "Quận Cầu Giấy";
+            string bankName = draft.BankName?.Trim() ?? "Vietcombank (VCB)";
+            string bankAcc = draft.BankAccountNumber?.Trim() ?? "99998888";
+            string password = draft.Password?.Trim() ?? "123456";
+            string cccdNumber = draft.CccdNumber?.Trim() ?? "";
+
+            User? buyerUser = null;
+            if (!string.IsNullOrEmpty(draft.UserId))
+            {
+                var idFilters = new List<FilterDefinition<User>> { Builders<User>.Filter.Eq(u => u.UserCode, draft.UserId) };
+                if (ObjectId.TryParse(draft.UserId, out _)) idFilters.Add(Builders<User>.Filter.Eq(u => u.Id, draft.UserId));
+                buyerUser = await _mongoService.Users.Find(Builders<User>.Filter.Or(idFilters)).FirstOrDefaultAsync();
+            }
+            if (buyerUser == null && !string.IsNullOrEmpty(cleanAccount))
+            {
+                buyerUser = await _mongoService.Users.Find(u => u.PhoneEmail.ToLower() == cleanAccount || u.Phone == cleanAccount).FirstOrDefaultAsync();
+            }
+
+            if (buyerUser == null)
+            {
+                return new
+                {
+                    success = false,
+                    reply = "⚠️ Không tìm thấy thông tin tài khoản Khách Hàng để thực hiện nâng cấp! Vui lòng đăng nhập lại nhé! 😊",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "NONE"
+                };
+            }
+
+            var existingShipper = await _mongoService.Shippers.Find(s =>
+                (s.PhoneNumber != null && s.PhoneNumber.ToLower() == cleanAccount) ||
+                (!string.IsNullOrEmpty(buyerUser.Phone) && s.PhoneNumber == buyerUser.Phone) ||
+                s.UserId == buyerUser.Id ||
+                (!string.IsNullOrEmpty(buyerUser.UserCode) && s.UserId == buyerUser.UserCode)
+            ).FirstOrDefaultAsync();
+
+            if (existingShipper != null)
+            {
+                return new
+                {
+                    success = false,
+                    reply = "⚠️ Tài khoản của bạn đã gửi hồ sơ Tài Xế Shipper hoặc đã được phê duyệt làm Tài Xế rồi nhé! 😊",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "NONE"
+                };
+            }
+
+            var existingStore = await _mongoService.Stores.Find(s =>
+                (s.PhoneEmail != null && s.PhoneEmail.ToLower() == cleanAccount) ||
+                s.UserId == buyerUser.Id ||
+                (!string.IsNullOrEmpty(buyerUser.UserCode) && s.UserId == buyerUser.UserCode)
+            ).FirstOrDefaultAsync();
+
+            if (existingStore != null && (existingStore.Status == "Pending" || existingStore.Status == "Approved" || existingStore.Status == "Active"))
+            {
+                return new
+                {
+                    success = false,
+                    reply = "⚠️ Tài khoản của bạn đã đăng ký vai trò Người Bán (Gian Hàng). Mỗi tài khoản Khách Hàng chỉ có thể nâng cấp 1 trong 2 vai trò đối tác thôi nhé! 😊",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "NONE"
+                };
+            }
+
+            string shipperCode = $"SHP-{Random.Shared.Next(1000, 9999)}";
+            var newShipper = new Shipper
+            {
+                Id = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                ShipperCode = shipperCode,
+                UserId = buyerUser.Id ?? "",
+                FullName = fullName,
+                PhoneNumber = cleanAccount,
+                Password = !string.IsNullOrWhiteSpace(buyerUser.Password) ? buyerUser.Password : (!string.IsNullOrWhiteSpace(buyerUser.PasswordHash) ? buyerUser.PasswordHash : password),
+                LicensePlate = licensePlate,
+                VehicleType = vehicleType,
+                VehicleModel = vehicleModel,
+                OperatingArea = area,
+                CccdNumber = cccdNumber,
+                AvatarUrl = draft.PortraitImage ?? "",
+                CccdFrontImage = draft.CccdFrontImage ?? "",
+                CccdBackImage = draft.CccdBackImage ?? "",
+                DrivingLicenseImage = draft.DrivingLicenseImage ?? "",
+                BankName = bankName,
+                BankAccountNumber = bankAcc,
+                Status = "Pending",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await _mongoService.Shippers.InsertOneAsync(newShipper);
+            if (!string.IsNullOrEmpty(newShipper.Id)) AuthController.InMemoryShippers[newShipper.Id] = newShipper;
+
+            try
+            {
+                await _mongoService.AdminNotifications.InsertOneAsync(new AdminNotification
+                {
+                    Type = "SHIPPER_UPGRADE_REGISTRATION",
+                    Title = "Hồ sơ nâng cấp Tài Xế mới (AI Tư Vấn)",
+                    Message = $"Khách hàng {buyerUser.FullName} ({cleanAccount}) vừa hoàn tất hồ sơ nâng cấp lên Tài Xế Shipper (Biển số: {licensePlate}) qua AI Tư Vấn. Đang chờ AI kiểm duyệt và Ban Quản Trị phê duyệt.",
+                    TargetUserId = newShipper.Id,
+                    TargetName = fullName,
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false
+                });
+            }
+            catch { }
+
+            return new
+            {
+                success = true,
+                reply = $@"<div class=""seller-fee-card mt-2 mb-2"" style=""border-left: 4px solid #10B981;"">
+  <div class=""seller-summary-title"" style=""color: #10B981;"">
+    <i class=""bi bi-check-circle-fill me-2""></i> HỒ SƠ NÂNG CẤP TÀI XẾ SHIPPER ĐÃ ĐƯỢC GỬI THÀNH CÔNG!
+  </div>
+  <div class=""seller-summary-desc mb-2"">Hồ sơ nâng cấp đối tác tài xế của bạn đã được chuyển lên cơ sở dữ liệu để <strong>AI kiểm duyệt tự động</strong> và <strong>Ban Quản Trị xét duyệt</strong>.</div>
+  <div class=""seller-summary-list"">
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-person-fill me-1"" style=""color: #0284C7;""></i> Họ và tên:</span> <span class=""seller-summary-val font-semibold"">{fullName}</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-envelope-fill me-1"" style=""color: #0284C7;""></i> Tài khoản liên kết:</span> <span class=""seller-summary-val""><code>{cleanAccount}</code></span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-person-vcard-fill me-1"" style=""color: #0284C7;""></i> Số CCCD:</span> <span class=""seller-summary-val""><code>{cccdNumber}</code></span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-bicycle me-1"" style=""color: #0284C7;""></i> Phương tiện & Biển số:</span> <span class=""seller-summary-val"">{vehicleType} - {vehicleModel} (<strong>{licensePlate}</strong>)</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-file-earmark-person-fill me-1"" style=""color: #0284C7;""></i> GPLX & Giấy tờ:</span> <span class=""seller-summary-val text-success"">Đã tải đầy đủ ảnh CCCD 2 mặt, chân dung & GPLX</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-geo-alt-fill me-1"" style=""color: #0284C7;""></i> Khu vực hoạt động:</span> <span class=""seller-summary-val"">{area}</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-bank2 me-1"" style=""color: #0284C7;""></i> Ngân hàng nhận cước:</span> <span class=""seller-summary-val"">{bankName} (STK: <code>{bankAcc}</code>)</span></div>
+    <div class=""seller-summary-row""><span class=""seller-summary-label""><i class=""bi bi-shield-check me-1"" style=""color: #10B981;""></i> Trạng thái hồ sơ:</span> <span class=""seller-summary-val"" style=""color: #EA580C; font-weight: 600;""><i class=""bi bi-clock-history me-1""></i> Chờ duyệt (Pending)</span></div>
+  </div>
+</div>
+
+<i class=""bi bi-bell-fill me-1"" style=""color: #0284C7;""></i> <strong>Thông báo phê duyệt:</strong> Ban Quản Trị ZoneMart sẽ kiểm tra và phê duyệt hồ sơ trong vòng 24h. Bạn có thể theo dõi tiến độ trong mục Hồ sơ cá nhân nhé! Cảm ơn bạn đã đồng hành cùng ZoneMart Driver!",
+                provider = "ZoneMart AI Direct Registration Engine",
+                registrationState = "NONE",
+                actionIntent = "SHIPPER_REGISTER_SUCCESS",
+                regDraft = new DirectRegDraft(),
+                summaryData = new
+                {
+                    role = "SHIPPER",
+                    fullName = fullName,
+                    email = cleanAccount,
+                    cccdNumber = cccdNumber,
+                    licensePlate = licensePlate,
+                    vehicleType = vehicleType,
+                    vehicleModel = vehicleModel,
+                    area = area,
+                    bankName = bankName,
+                    bankAcc = bankAcc,
+                    status = "Chờ duyệt (Pending)"
+                }
+            };
+        }
+
+        private async Task<object?> TryProcessAiUpgradeFlowAsync(
+            string userMsg,
+            string cleanMsgNoTone,
+            string activeState,
+            DirectRegDraft draft,
+            DirectRegDraft? incomingDraft,
+            ChatRequest? request)
+        {
+            // Bảo vệ luồng nâng cấp: Không chặn hoặc hiểu nhầm các tin nhắn tải ảnh thành văn bản thường
+            if ((userMsg.Trim().StartsWith("[Ảnh") || userMsg.Trim().StartsWith("[Anh")) &&
+                (userMsg.Contains("đã tải") || userMsg.Contains("thành công") || userMsg.Contains("da tai") || userMsg.Contains("thanh cong")))
+            {
+                return null;
+            }
+            // ---------------------------------------------------------------------------------
+            // LUỒNG 1: NÂNG CẤP GIAN HÀNG SELLER (13 CÂU HỎI)
+            // ---------------------------------------------------------------------------------
+            if (activeState == "UPGRADE_SELLER_Q1_TYPE")
+            {
+                string? matchedType = MatchSellerType(userMsg);
+                if (matchedType == null)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Lựa chọn mô hình không hợp lệ. Vui lòng bấm chọn 1 trong 4 mô hình kinh doanh có sẵn bên dưới nhé!\n- 1. Chợ truyền thống\n- 2. Hộ kinh doanh tại nhà\n- 3. Cửa hàng / Cơ sở SX\n- 4. Người bán địa phương khác\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q1_TYPE",
+                        actionIntent = "SELLER_CHOOSE_TYPE",
+                        regDraft = draft
+                    };
+                }
+
+                draft.SellerType = matchedType;
+                return new
+                {
+                    success = true,
+                    reply = $@"Đã lưu mô hình: **{matchedType}**! ✅
+
+---
+2️⃣ **Câu 2 / 13:** Cho mình xin tên **Xã / Phường** nơi gian hàng hoạt động (Ví dụ: Phường Dịch Vọng Hậu, Xã An Khánh...) nhé?
+
+💡 *(Nhắn **""hủy""** nếu bạn muốn dừng luồng nâng cấp)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_Q2_WARD",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_Q2_WARD")
+            {
+                string ward = userMsg.Trim();
+                if (ward.Length < 2 || !Regex.IsMatch(ward, @"^[\p{L}\s]+$"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Tên Xã / Phường chỉ được nhập chữ cái tiếng Việt, không chứa số hoặc ký tự đặc biệt nhé! Vui lòng nhập lại tên Xã / Phường nơi đặt gian hàng:\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q2_WARD",
+                        regDraft = draft
+                    };
+                }
+
+                draft.Ward = ward;
+                return new
+                {
+                    success = true,
+                    reply = $@"Đã lưu Xã / Phường: **{ward}**! 🏡
+
+---
+3️⃣ **Câu 3 / 13:** Cho mình xin **Quận / Huyện** của gian hàng (Ví dụ: Quận Cầu Giấy, Huyện Hoài Đức...) nhé?
+
+💡 *(Nhắn **""hủy""** nếu bạn muốn dừng luồng nâng cấp)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_Q3_DISTRICT",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_Q3_DISTRICT")
+            {
+                string district = userMsg.Trim();
+                if (district.Length < 2 || !Regex.IsMatch(district, @"^[\p{L}\s]+$"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Tên Quận / Huyện chỉ được nhập chữ cái tiếng Việt, không chứa số hoặc ký tự đặc biệt nhé! Vui lòng nhập lại tên Quận / Huyện nơi đặt gian hàng:\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q3_DISTRICT",
+                        regDraft = draft
+                    };
+                }
+
+                draft.District = district;
+                return new
+                {
+                    success = true,
+                    reply = $@"Đã lưu Quận / Huyện: **{district}**! 📍
+
+---
+4️⃣ **Câu 4 / 13:** Cho mình xin **Tên Chợ Truyền Thống / Cụm Chợ Số Địa Phương** (Ví dụ: Chợ Cầu Giấy, Chợ Đồng Xuân, Cụm Chợ Số Hoài Đức...) nhé?
+
+💡 *(Nhắn **""hủy""** nếu bạn muốn dừng luồng nâng cấp)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_Q4_MARKETNAME",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_Q4_MARKETNAME")
+            {
+                string marketName = userMsg.Trim();
+                if (marketName.Length < 2 || !Regex.IsMatch(marketName, @"^[\p{L}0-9\s]+$"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Tên Chợ / Cụm Chợ không được chứa ký tự đặc biệt như %&*! Vui lòng chỉ nhập chữ và số (Ví dụ: Chợ Cầu Giấy, Chợ Hôm...):\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q4_MARKETNAME",
+                        regDraft = draft
+                    };
+                }
+
+                draft.MarketName = marketName;
+                return new
+                {
+                    success = true,
+                    reply = $@"Đã lưu Tên Chợ: **{marketName}**! 🏪
+
+---
+5️⃣ **Câu 5 / 13:** Cho mình xin **Tên Cửa Hàng / Tiệm Kinh Doanh** của bạn nhé? (Từ 6 - 50 ký tự, ví dụ: Nông Sản Sạch Ba Vì, Tiệm Thịt Tươi Bác Bảy...):
+
+💡 *(Nhắn **""hủy""** nếu bạn muốn dừng luồng nâng cấp)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_Q5_STORENAME",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_Q5_STORENAME")
+            {
+                string storeName = userMsg.Trim();
+                if (storeName.Length < 12 || storeName.Length > 30)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = $"⚠️ Tên cửa hàng phải có độ dài từ 12 đến 30 ký tự (Hiện tại bạn nhập {storeName.Length} ký tự)! Vui lòng nhập lại tên tiệm nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q5_STORENAME",
+                        regDraft = draft
+                    };
+                }
+
+                if (!Regex.IsMatch(storeName, @"^[\p{L}\s]+$"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Tên cửa hàng chỉ được nhập chữ cái (từ 12 - 30 ký tự, không nhận số hay ký tự đặc biệt như %&*)! Vui lòng nhập lại nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q5_STORENAME",
+                        regDraft = draft
+                    };
+                }
+
+                draft.StoreName = storeName;
+                return new
+                {
+                    success = true,
+                    reply = $@"Tuyệt vời! Tên gian hàng: **{storeName}**! 🛒
+
+---
+6️⃣ **Câu 6 / 13:** Cho mình xin **Địa chỉ cụ thể của gian hàng \*** (Số ki-ốt, ngõ ngách, tên đường, chợ...):
+*(Bạn có thể bấm **[📍 Lấy vị trí GPS hiện tại]** hoặc nhập trực tiếp địa chỉ cụ thể nhé)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_Q6_ADDRESS",
+                    actionIntent = "SELLER_INPUT_ADDRESS_GPS",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_Q6_ADDRESS")
+            {
+                string addr = userMsg.Trim();
+                if (addr.Length < 6)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Địa chỉ tiệm phải nhập rõ ràng (tối thiểu 6 ký tự)! Vui lòng nhập lại hoặc bấm nút **Lấy GPS hiện tại** bên dưới nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q6_ADDRESS",
+                        actionIntent = "SELLER_INPUT_ADDRESS_GPS",
+                        regDraft = draft
+                    };
+                }
+
+                if (Regex.IsMatch(addr, @"[\^&*]"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Địa chỉ tiệm không được chứa ký tự đặc biệt như ^&*! Vui lòng chỉ nhập chữ cái, số và khoảng trắng nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q6_ADDRESS",
+                        actionIntent = "SELLER_INPUT_ADDRESS_GPS",
+                        regDraft = draft
+                    };
+                }
+
+                string addrNoTone = RemoveVietnameseTones(addr.ToLower());
+                bool hasNgo = addrNoTone.Contains("ngo") || addr.ToLower().Contains("ngõ");
+                bool hasDuong = addrNoTone.Contains("duong") || addr.ToLower().Contains("đường");
+                if (!hasNgo || !hasDuong)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Địa chỉ tiệm phải có đầy đủ thông tin ngõ gì, đường gì (Ví dụ: `Ngõ 12 đường Cầu Giấy, Hà Nội`)! Vui lòng nhập lại hoặc bấm nút **Lấy GPS hiện tại** bên dưới nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q6_ADDRESS",
+                        actionIntent = "SELLER_INPUT_ADDRESS_GPS",
+                        regDraft = draft
+                    };
+                }
+
+                draft.Address = addr;
+                return new
+                {
+                    success = true,
+                    reply = $@"Đã lưu Địa chỉ: **{addr}**! 📍
+
+---
+7️⃣ **Câu 7 / 13:** Vui lòng chọn **Ngành hàng kinh doanh chính \*** từ danh sách 8 ngành hàng bên dưới:
+1. Thực phẩm & Nhu yếu phẩm
+2. Rau củ quả & Nông sản sạch
+3. Thịt tươi & Thủy hải sản
+4. Đồ ăn & Đồ uống chế biến sẵn
+5. Đặc sản vùng miền & Đồ khô
+6. Đồ gia dụng gia đình
+7. Trái cây tươi & Nước ép
+8. Hoa quả & Thực phẩm đóng hộp
+
+*(Bấm nút bên dưới hoặc nhập đúng 1 trong 8 ngành hàng trên nhé)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_Q7_CATEGORY",
+                    actionIntent = "SELLER_CHOOSE_CATEGORY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_Q7_CATEGORY")
+            {
+                string? matchedCat = MatchSellerCategory(userMsg);
+                if (matchedCat == null)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Ngành hàng không hợp lệ. Vui lòng bấm chọn 1 trong 8 ngành hàng có sẵn bên dưới nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q7_CATEGORY",
+                        actionIntent = "SELLER_CHOOSE_CATEGORY",
+                        regDraft = draft
+                    };
+                }
+
+                draft.Category = matchedCat;
+                return new
+                {
+                    success = true,
+                    reply = $@"Đã lưu Danh mục hàng bán chính: **{matchedCat}**! 🏷️
+
+🔒 *(Thông tin Gmail và Mật khẩu được tự động kế thừa từ tài khoản Khách Hàng hiện tại: **{draft.Email}**)*
+
+---
+8️⃣ **Câu 8 / 13:** Vui lòng chọn **Khung giờ mở cửa kinh doanh \*** của tiệm:
+1. **Giờ hành chính** (07:00 - 22:00)
+2. **Cả ngày** (06:00 - 23:00)
+3. **Tự chọn giờ** (Nhập khung giờ theo ý bạn)
+
+*(Bấm nút bên dưới hoặc nhập đúng 1 trong 3 lựa chọn nhé)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_Q8_OPENHOURS",
+                    actionIntent = "SELLER_CHOOSE_OPENHOURS",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_Q8_OPENHOURS")
+            {
+                string openChoice = userMsg.Trim();
+                if (openChoice.Contains("Tùy chọn") || openChoice.Contains("Tùy chỉnh") || openChoice.Contains("tuy chinh") || openChoice.Contains("tuy chon") || openChoice.Contains("3"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⏰ Bạn vui lòng nhập khung giờ mở cửa mong muốn (Ví dụ: `06:30 - 21:00` hoặc `08:00 - 22:00`):\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q8_CUSTOM_OPENHOURS",
+                        regDraft = draft
+                    };
+                }
+
+                string chosenHours = "07:00 - 22:00";
+                if (openChoice.Contains("Cả ngày") || openChoice.Contains("06:00") || openChoice.Contains("2"))
+                {
+                    chosenHours = "06:00 - 23:00";
+                }
+
+                draft.OpenHours = chosenHours;
+                return new
+                {
+                    success = true,
+                    reply = $@"Đã lưu Khung giờ mở cửa: **{chosenHours}**! ⏰
+
+---
+9️⃣ **Câu 9 / 13:** Vui lòng tải lên ảnh **CCCD Mặt Trước \*** của chủ tiệm:
+(Nhấp vào khung bên dưới để chọn ảnh từ thư mục máy tính, không nhận video)",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_Q9_CCCD_FRONT",
+                    actionIntent = "SELLER_UPLOAD_CCCD_FRONT",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_Q8_CUSTOM_OPENHOURS")
+            {
+                string customHours = userMsg.Trim();
+                if (Regex.IsMatch(customHours, @"[!@#$%^&*()_+=\[\]{};':""\\|,.<>?~`]"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Khung giờ không được chứa ký tự đặc biệt! Vui lòng nhập định dạng như `07:00 - 22:00`, `7h - 22h` hoặc `7 giờ - 22 giờ` nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q8_CUSTOM_OPENHOURS",
+                        regDraft = draft
+                    };
+                }
+
+                var hourMatches = Regex.Matches(customHours, @"(\d{1,2})(?::(\d{1,2})|\s*(?:h|giờ))?", RegexOptions.IgnoreCase);
+                bool validGap = false;
+                if (hourMatches.Count >= 2 && int.TryParse(hourMatches[0].Groups[1].Value, out int h1) && int.TryParse(hourMatches[1].Groups[1].Value, out int h2))
+                {
+                    if (h1 >= 0 && h1 <= 24 && h2 >= 0 && h2 <= 24)
+                    {
+                        int diff = h2 - h1;
+                        if (diff <= 0) diff += 24;
+                        if (diff >= 4) validGap = true;
+                    }
+                }
+
+                if (!validGap)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Khung giờ không hợp lệ! Giờ mở và giờ đóng phải cách nhau **tối thiểu 4 tiếng** (tối đa 24h, chấp nhận định dạng như `07:00 - 22:00`, `7h - 22h`, `7 giờ - 22 giờ`, `00:00`, `0h`, `0 giờ`)! Vui lòng nhập lại nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q8_CUSTOM_OPENHOURS",
+                        regDraft = draft
+                    };
+                }
+
+                draft.OpenHours = customHours;
+                return new
+                {
+                    success = true,
+                    reply = $@"Đã lưu Khung giờ mở cửa: **{customHours}**! ⏰
+
+---
+9️⃣ **Câu 9 / 13:** Vui lòng tải lên ảnh **CCCD Mặt Trước \*** của chủ tiệm:
+(Nhấp vào khung bên dưới để chọn ảnh từ thư mục máy tính, không nhận video)",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_Q9_CCCD_FRONT",
+                    actionIntent = "SELLER_UPLOAD_CCCD_FRONT",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_Q9_CCCD_FRONT" || activeState == "UPGRADE_SELLER_Q10_CCCD_BACK" || activeState == "UPGRADE_SELLER_Q11_FOOD_SAFETY")
+            {
+                string targetIntent = activeState == "UPGRADE_SELLER_Q9_CCCD_FRONT" ? "SELLER_UPLOAD_CCCD_FRONT" : (activeState == "UPGRADE_SELLER_Q10_CCCD_BACK" ? "SELLER_UPLOAD_CCCD_BACK" : "SELLER_UPLOAD_FOOD_SAFETY");
+                return new
+                {
+                    success = true,
+                    reply = "⚠️ Vui lòng bấm vào nút tải ảnh bên dưới để tải ảnh tài liệu lên nhé, không nhập tin nhắn văn bản!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = activeState,
+                    actionIntent = targetIntent,
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_Q12_BANK")
+            {
+                string? matchedBank = MatchSellerBank(userMsg);
+                if (matchedBank == null)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Ngân hàng không hợp lệ. Vui lòng bấm chọn 1 trong 10 ngân hàng có sẵn bên dưới nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q12_BANK",
+                        actionIntent = "SELLER_CHOOSE_BANK",
+                        regDraft = draft
+                    };
+                }
+
+                draft.BankName = matchedBank;
+                return new
+                {
+                    success = true,
+                    reply = $@"Đã lưu Ngân hàng: **{matchedBank}**! 🏛️
+
+---
+1️⃣3️⃣ **Câu 13 / 13:** Cho mình xin **Số tài khoản ngân hàng** nhận doanh thu (Chỉ nhận số từ 8 đến 15 chữ số):
+
+💡 *(Nhắn **""hủy""** nếu bạn muốn dừng luồng nâng cấp)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_Q13_BANKACC",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_Q13_BANKACC")
+            {
+                string bankAcc = userMsg.Trim();
+                if (!Regex.IsMatch(bankAcc, @"^\d{8,15}$"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Số tài khoản ngân hàng chỉ nhận chữ số (từ 8 đến 15 chữ số, không nhận chữ hay ký tự đặc biệt)! Vui lòng nhập lại số tài khoản nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_Q13_BANKACC",
+                        regDraft = draft
+                    };
+                }
+
+                draft.BankAccountNumber = bankAcc;
+                return new
+                {
+                    success = true,
+                    reply = BuildSellerUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_REVIEW_SUMMARY")
+            {
+                string norm = RemoveVietnameseTones(userMsg.Trim().ToLower());
+                if (norm.Contains("gui ho so") || norm == "gui" || norm.Contains("nop ho so") || norm == "nop" || norm.Contains("hoan tat"))
+                {
+                    return await CompleteSellerUpgradeAsync(draft);
+                }
+                else if (norm.Contains("sua ho so") || norm == "sua" || norm.Contains("chinh sua"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"📝 **CHỌN MỤC BẠN MUỐN CHỈNH SỬA TRONG HỒ SƠ NÂNG CẤP SELLER:**
+
+Dạ bạn muốn chỉnh sửa mục nào trong 13 mục dưới đây ạ? Hãy bấm vào nút hoặc nhập số tương ứng nhé:
+1. Mô hình kinh doanh địa phương
+2. Xã / Phường
+3. Quận / Huyện
+4. Tên Chợ Truyền Thống / Cụm Chợ Số Địa Phương
+5. Tên cửa hàng
+6. Địa chỉ tiệm
+7. Danh mục hàng bán chính
+8. Khung giờ mở cửa kinh doanh
+9. CCCD mặt trước
+10. CCCD mặt sau
+11. Giấy CN an toàn thực phẩm
+12. Ngân hàng nhận doanh thu
+13. Số tài khoản ngân hàng
+
+*(Bấm **[⬅️ Quay lại bảng tổng kết]** nếu không muốn sửa nữa nhé)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_MENU",
+                        actionIntent = "SELLER_EDIT_MENU",
+                        regDraft = draft
+                    };
+                }
+                else
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Ở bước này bạn chỉ được chọn **[Sửa hồ sơ]** hoặc **[Gửi hồ sơ]** bằng 2 nút bên dưới nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                        actionIntent = "SELLER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+            }
+            else if (activeState == "UPGRADE_SELLER_EDIT_MENU")
+            {
+                string norm = RemoveVietnameseTones(userMsg.Trim().ToLower());
+                if (norm.Contains("quay lai") || norm == "back" || norm.Contains("bang tong ket"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = BuildSellerUpgradeReviewSummaryReply(draft),
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                        actionIntent = "SELLER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+
+                if (norm == "1" || norm.Contains("mo hinh"))
+                {
+                    draft.CurrentEditField = "1";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng chọn **Mô hình kinh doanh địa phương** mới:\n- 1. Chợ truyền thống\n- 2. Hộ kinh doanh tại nhà\n- 3. Cửa hàng / Cơ sở SX\n- 4. Người bán địa phương khác",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q1_TYPE",
+                        actionIntent = "SELLER_CHOOSE_TYPE",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "2" || norm.Contains("xa") || norm.Contains("phuong"))
+                {
+                    draft.CurrentEditField = "2";
+                    return new
+                    {
+                        success = true,
+                        reply = "Nhập lại tên **Xã / Phường** mới của tiệm:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q2_WARD",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "3" || norm.Contains("quan") || norm.Contains("huyen"))
+                {
+                    draft.CurrentEditField = "3";
+                    return new
+                    {
+                        success = true,
+                        reply = "Nhập lại tên **Quận / Huyện** mới của tiệm:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q3_DISTRICT",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "4" || norm.Contains("ten cho") || norm.Contains("cum cho"))
+                {
+                    draft.CurrentEditField = "4";
+                    return new
+                    {
+                        success = true,
+                        reply = "Nhập lại **Tên Chợ Truyền Thống / Cụm Chợ Số Địa Phương** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q4_MARKETNAME",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "5" || norm.Contains("ten cua hang") || norm.Contains("ten tiem"))
+                {
+                    draft.CurrentEditField = "5";
+                    return new
+                    {
+                        success = true,
+                        reply = "Nhập lại **Tên Cửa Hàng / Gian Hàng** mới (Từ 6 - 50 ký tự):",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q5_STORENAME",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "6" || norm.Contains("dia chi"))
+                {
+                    draft.CurrentEditField = "6";
+                    return new
+                    {
+                        success = true,
+                        reply = "Nhập lại **Địa chỉ cụ thể** mới của tiệm:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q6_ADDRESS",
+                        actionIntent = "SELLER_INPUT_ADDRESS_GPS",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "7" || norm.Contains("danh muc") || norm.Contains("nganh hang"))
+                {
+                    draft.CurrentEditField = "7";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng chọn **Ngành hàng kinh doanh chính** mới từ 8 ngành hàng bên dưới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q7_CATEGORY",
+                        actionIntent = "SELLER_CHOOSE_CATEGORY",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "8" || norm.Contains("khung gio") || norm.Contains("gio mo cua"))
+                {
+                    draft.CurrentEditField = "8";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng chọn **Khung giờ mở cửa** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q8_OPENHOURS",
+                        actionIntent = "SELLER_CHOOSE_OPENHOURS",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "9" || norm.Contains("cccd mat truoc"))
+                {
+                    draft.CurrentEditField = "9";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng tải lên ảnh **CCCD Mặt Trước** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q9_CCCD_FRONT",
+                        actionIntent = "SELLER_UPLOAD_CCCD_FRONT",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "10" || norm.Contains("cccd mat sau"))
+                {
+                    draft.CurrentEditField = "10";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng tải lên ảnh **CCCD Mặt Sau** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q10_CCCD_BACK",
+                        actionIntent = "SELLER_UPLOAD_CCCD_BACK",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "11" || norm.Contains("an toan thuc pham") || norm.Contains("attp"))
+                {
+                    draft.CurrentEditField = "11";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng tải lên ảnh **Giấy Chứng Nhận ATTP** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q11_FOOD_SAFETY",
+                        actionIntent = "SELLER_UPLOAD_FOOD_SAFETY",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "12" || norm.Contains("ngan hang"))
+                {
+                    draft.CurrentEditField = "12";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng chọn **Ngân hàng nhận doanh thu** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q12_BANK",
+                        actionIntent = "SELLER_CHOOSE_BANK",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "13" || norm.Contains("so tai khoan") || norm.Contains("stk"))
+                {
+                    draft.CurrentEditField = "13";
+                    return new
+                    {
+                        success = true,
+                        reply = "Nhập lại **Số tài khoản ngân hàng** mới (Từ 8 đến 15 chữ số):",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_Q13_BANKACC",
+                        regDraft = draft
+                    };
+                }
+                else if (norm.Contains("gmail") || norm.Contains("mat khau") || norm.Contains("password"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "💡 Thông tin tài khoản và mật khẩu được tự động kế thừa từ tài khoản Khách Hàng hiện tại của bạn nên không thể thay đổi tại luồng nâng cấp này nhé! Hãy chọn mục khác từ 1 đến 13 nhé!\n\n*(Bấm **[⬅️ Quay lại bảng tổng kết]** nếu không muốn sửa nữa nhé)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_MENU",
+                        actionIntent = "SELLER_EDIT_MENU",
+                        regDraft = draft
+                    };
+                }
+                else
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Lựa chọn không hợp lệ. Vui lòng bấm chọn 1 mục từ 1 đến 13 bên dưới hoặc bấm **[⬅️ Quay lại bảng tổng kết]** nhé!",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SELLER_EDIT_MENU",
+                        actionIntent = "SELLER_EDIT_MENU",
+                        regDraft = draft
+                    };
+                }
+            }
+            else if (activeState == "UPGRADE_SELLER_EDIT_Q1_TYPE")
+            {
+                string? matched = MatchSellerType(userMsg);
+                if (matched != null) draft.SellerType = matched;
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật mô hình kinh doanh thành công! ✅\n\n" + BuildSellerUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_EDIT_Q2_WARD")
+            {
+                draft.Ward = userMsg.Trim();
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật Xã / Phường thành công! ✅\n\n" + BuildSellerUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_EDIT_Q3_DISTRICT")
+            {
+                draft.District = userMsg.Trim();
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật Quận / Huyện thành công! ✅\n\n" + BuildSellerUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_EDIT_Q4_MARKETNAME")
+            {
+                draft.MarketName = userMsg.Trim();
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật Tên Chợ thành công! ✅\n\n" + BuildSellerUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_EDIT_Q5_STORENAME")
+            {
+                draft.StoreName = userMsg.Trim();
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật Tên Gian Hàng thành công! ✅\n\n" + BuildSellerUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_EDIT_Q6_ADDRESS")
+            {
+                draft.Address = userMsg.Trim();
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật Địa chỉ cụ thể thành công! ✅\n\n" + BuildSellerUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_EDIT_Q7_CATEGORY")
+            {
+                string? matched = MatchSellerCategory(userMsg);
+                if (matched != null) draft.Category = matched;
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật Ngành hàng thành công! ✅\n\n" + BuildSellerUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_EDIT_Q8_OPENHOURS")
+            {
+                string openChoice = userMsg.Trim();
+                string chosenHours = "07:00 - 22:00";
+                if (openChoice.Contains("Cả ngày") || openChoice.Contains("06:00")) chosenHours = "06:00 - 23:00";
+                else if (openChoice.Contains("Tùy") || openChoice.Contains("tuy")) chosenHours = openChoice;
+                draft.OpenHours = chosenHours;
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật Khung giờ mở cửa thành công! ✅\n\n" + BuildSellerUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_EDIT_Q12_BANK")
+            {
+                string? matched = MatchSellerBank(userMsg);
+                if (matched != null) draft.BankName = matched;
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật Ngân hàng thành công! ✅\n\n" + BuildSellerUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SELLER_EDIT_Q13_BANKACC")
+            {
+                string bankAcc = userMsg.Trim();
+                if (Regex.IsMatch(bankAcc, @"^\d{8,15}$")) draft.BankAccountNumber = bankAcc;
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật Số tài khoản thành công! ✅\n\n" + BuildSellerUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SELLER_REVIEW_SUMMARY",
+                    actionIntent = "SELLER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+
+            // ---------------------------------------------------------------------------------
+            // LUỒNG 2: NÂNG CẤP TÀI XẾ SHIPPER (12 CÂU HỎI)
+            // ---------------------------------------------------------------------------------
+            else if (activeState == "UPGRADE_SHIPPER_Q1_NAME")
+            {
+                if (!IsValidShipperFullName(userMsg, out string errorMsg))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = $"{errorMsg}\n\n<i class=\"bi bi-info-circle me-1\" style=\"color: #0284C7;\"></i> *(Nhắn <strong>\"hủy\"</strong> nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q1_NAME",
+                        regDraft = draft
+                    };
+                }
+
+                draft.FullName = userMsg.Trim();
+                return new
+                {
+                    success = true,
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã lưu họ tên tài xế: <strong>{draft.FullName}</strong>!
+
+🔒 *(Thông tin Gmail và Mật khẩu được tự động kế thừa từ tài khoản Khách Hàng hiện tại: <strong>{draft.Email}</strong>)*
+
+<hr class=""chat-divider""/>
+2. <strong>Câu 2 / 12:</strong> Cho mình xin <strong>Số Căn cước công dân (CCCD)</strong> hoặc Mã định danh cá nhân (Gồm đúng 12 chữ số) nhé?
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""hủy""</strong> nếu bạn muốn dừng luồng nâng cấp)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_Q2_CCCD",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_Q2_CCCD")
+            {
+                if (!IsValidCccdNumber(userMsg, out string cccdErr))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = $"{cccdErr}\n\n<i class=\"bi bi-info-circle me-1\" style=\"color: #0284C7;\"></i> *(Nhắn <strong>\"hủy\"</strong> nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q2_CCCD",
+                        regDraft = draft
+                    };
+                }
+
+                draft.CccdNumber = userMsg.Trim();
+                return new
+                {
+                    success = true,
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã lưu số CCCD: <code>{draft.CccdNumber}</code>!
+
+<hr class=""chat-divider""/>
+3. <strong>Câu 3 / 12:</strong> Vui lòng tải lên <strong>Ảnh Chân Dung Đại Diện</strong> (Rõ khuôn mặt, góc chụp chính diện):
+(Nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_Q3_PORTRAIT",
+                    actionIntent = "SHIPPER_UPLOAD_PORTRAIT",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_Q3_PORTRAIT" || activeState == "UPGRADE_SHIPPER_Q4_CCCD_FRONT" || activeState == "UPGRADE_SHIPPER_Q5_CCCD_BACK" || activeState == "UPGRADE_SHIPPER_Q9_GPLX")
+            {
+                string targetIntent = activeState == "UPGRADE_SHIPPER_Q3_PORTRAIT" ? "SHIPPER_UPLOAD_PORTRAIT" : (activeState == "UPGRADE_SHIPPER_Q4_CCCD_FRONT" ? "SHIPPER_UPLOAD_CCCD_FRONT" : (activeState == "UPGRADE_SHIPPER_Q5_CCCD_BACK" ? "SHIPPER_UPLOAD_CCCD_BACK" : "SHIPPER_UPLOAD_GPLX"));
+                return new
+                {
+                    success = true,
+                    reply = "⚠️ Vui lòng bấm vào nút tải ảnh bên dưới để tải ảnh tài liệu lên nhé, không nhập tin nhắn văn bản!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = activeState,
+                    actionIntent = targetIntent,
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_Q6_LICENSE_PLATE")
+            {
+                if (!IsValidLicensePlate(userMsg, out string formattedPlate, out string plateErr))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = $"{plateErr}\n\n<i class=\"bi bi-info-circle me-1\" style=\"color: #0284C7;\"></i> *(Nhắn <strong>\"hủy\"</strong> nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q6_LICENSE_PLATE",
+                        regDraft = draft
+                    };
+                }
+
+                draft.LicensePlate = formattedPlate;
+                return new
+                {
+                    success = true,
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã lưu biển số xe: <strong>{formattedPlate}</strong>!
+
+<hr class=""chat-divider""/>
+7. <strong>Câu 7 / 12:</strong> Vui lòng chọn <strong>Loại phương tiện giao hàng</strong>:
+1. Xe máy xăng truyền thống
+2. Xe máy điện (VinFast, Dat Bike, Yadea...)
+
+*(Bấm nút bên dưới hoặc nhập đúng 1 trong 2 lựa chọn nhé)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_Q7_VEHICLE_TYPE",
+                    actionIntent = "SHIPPER_CHOOSE_VEHICLE_TYPE",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_Q7_VEHICLE_TYPE")
+            {
+                string? vType = MatchShipperVehicleType(userMsg);
+                if (vType == null)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Vui lòng chọn đúng 1 trong 2 loại phương tiện có sẵn bên dưới nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q7_VEHICLE_TYPE",
+                        actionIntent = "SHIPPER_CHOOSE_VEHICLE_TYPE",
+                        regDraft = draft
+                    };
+                }
+
+                draft.VehicleType = vType;
+                return new
+                {
+                    success = true,
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã chọn loại xe: <strong>{vType}</strong>!
+
+<hr class=""chat-divider""/>
+8. <strong>Câu 8 / 12:</strong> Cho mình xin <strong>Dòng xe / Mẫu xe</strong> bạn đang sử dụng (Ví dụ: Honda Wave Alpha, Honda Vision, Yamaha Sirius, VinFast Feliz...):
+
+*(Bấm nút gợi ý bên dưới hoặc nhập trực tiếp tên xe nhé)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_Q8_VEHICLE_MODEL",
+                    actionIntent = "SHIPPER_CHOOSE_VEHICLE_MODEL",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_Q8_VEHICLE_MODEL")
+            {
+                string? matchedModel = MatchShipperVehicleModel(userMsg, draft.VehicleType ?? "Xe máy xăng");
+                bool isElectric = (draft.VehicleType ?? "").Contains("điện");
+                string modelsListText = isElectric
+                    ? "- VinFast Feliz / Klara / Vento / Theon / Evo200\n- Dat Bike Weaver / Quantum\n- Yadea / Pega / Dibao"
+                    : "- Honda: Wave Alpha, Wave RSX, Blade, Future, Vision, Air Blade, Lead, SH, Winner X\n- Yamaha: Sirius, Jupiter, Exciter, Grande, Janus, Latte, NVX\n- Piaggio / Vespa / SYM...";
+
+                if (matchedModel == null)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = $@"<i class=""bi bi-exclamation-triangle-fill me-1"" style=""color: #F59E0B;""></i> Dòng xe không hợp lệ! Vui lòng chọn hoặc nhập đúng mẫu xe trong danh sách bên dưới nhé:
+
+{modelsListText}
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""hủy""</strong> nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q8_VEHICLE_MODEL",
+                        actionIntent = "SHIPPER_CHOOSE_VEHICLE_MODEL",
+                        regDraft = draft
+                    };
+                }
+
+                draft.VehicleModel = matchedModel;
+                return new
+                {
+                    success = true,
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã lưu dòng xe: <strong>{matchedModel}</strong>!
+
+<hr class=""chat-divider""/>
+9. <strong>Câu 9 / 12:</strong> Vui lòng tải lên ảnh <strong>Giấy Phép Lái Xe (GPLX)</strong> còn hiệu lực:
+(Nhấp vào ô bên dưới để chọn ảnh từ thư mục máy tính, chỉ nhận tệp ảnh, không nhận video như .mp4)",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_Q9_GPLX",
+                    actionIntent = "SHIPPER_UPLOAD_GPLX",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_Q10_AREA")
+            {
+                string? matchedArea = MatchShipperOperatingArea(userMsg);
+                if (matchedArea == null)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "<i class=\"bi bi-exclamation-triangle-fill me-1\" style=\"color: #F59E0B;\"></i> Khu vực không hợp lệ! Vui lòng bấm chọn hoặc nhập đúng 1 trong 21 Quận / Huyện có trong danh sách bên dưới nhé!\n\n*(Nhắn <strong>\"hủy\"</strong> nếu muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q10_AREA",
+                        actionIntent = "SHIPPER_CHOOSE_AREA",
+                        regDraft = draft
+                    };
+                }
+
+                draft.OperatingArea = matchedArea;
+                return new
+                {
+                    success = true,
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã lưu khu vực hoạt động: <strong>{matchedArea}</strong>!
+
+<hr class=""chat-divider""/>
+11. <strong>Câu 11 / 12:</strong> Vui lòng chọn <strong>Ngân hàng nhận tiền cước ship</strong> từ danh sách 10 ngân hàng bên dưới:
+(Bấm nút hoặc nhập đúng 1 trong 10 ngân hàng)",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_Q11_BANK",
+                    actionIntent = "SHIPPER_CHOOSE_BANK",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_Q11_BANK")
+            {
+                string? matchedBank = MatchShipperBank(userMsg);
+                if (matchedBank == null)
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "<i class=\"bi bi-exclamation-triangle-fill me-1\" style=\"color: #F59E0B;\"></i> Vui lòng bấm chọn hoặc nhập lại đúng ngân hàng có trong danh sách 10 ngân hàng bên dưới nhé!\n\n*(Nhắn <strong>\"hủy\"</strong> nếu muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q11_BANK",
+                        actionIntent = "SHIPPER_CHOOSE_BANK",
+                        regDraft = draft
+                    };
+                }
+
+                draft.BankName = matchedBank;
+                return new
+                {
+                    success = true,
+                    reply = $@"<i class=""bi bi-check-circle-fill me-1"" style=""color: #10B981;""></i> Đã chọn ngân hàng nhận cước: <strong>{matchedBank}</strong>!
+
+<hr class=""chat-divider""/>
+12. <strong>Câu 12 / 12:</strong> Cho mình xin <strong>Số tài khoản ngân hàng</strong> để ZoneMart đối soát trả cước (Gồm 8 đến 15 chữ số):
+
+<i class=""bi bi-info-circle me-1"" style=""color: #0284C7;""></i> *(Nhắn <strong>""hủy""</strong> nếu bạn muốn dừng luồng nâng cấp)*",
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_Q12_BANKACC",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_Q12_BANKACC")
+            {
+                if (!IsValidBankAccountNumber(userMsg, out string bankErr))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = $"{bankErr}\n\n<i class=\"bi bi-info-circle me-1\" style=\"color: #0284C7;\"></i> *(Nhắn <strong>\"hủy\"</strong> nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_Q12_BANKACC",
+                        regDraft = draft
+                    };
+                }
+
+                draft.BankAccountNumber = userMsg.Trim();
+                return new
+                {
+                    success = true,
+                    reply = BuildShipperUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_REVIEW_SUMMARY",
+                    actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_REVIEW_SUMMARY")
+            {
+                string norm = RemoveVietnameseTones(userMsg.Trim().ToLower());
+                if (norm.Contains("gui ho so") || norm == "gui" || norm.Contains("nop ho so") || norm == "nop" || norm.Contains("hoan tat"))
+                {
+                    return await CompleteShipperUpgradeAsync(draft);
+                }
+                else if (norm.Contains("sua ho so") || norm == "sua" || norm.Contains("chinh sua"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = @"<i class=""bi bi-pencil-square me-1"" style=""color: #D94E15;""></i> <strong>CHỌN MỤC BẠN MUỐN CHỈNH SỬA TRONG HỒ SƠ TÀI XẾ:</strong>
+
+Dạ bạn muốn chỉnh sửa mục nào trong 12 mục dưới đây ạ? Hãy bấm vào nút hoặc nhập số tương ứng nhé:
+1. Họ và tên thật tài xế
+2. Số Căn cước công dân (CCCD)
+3. Ảnh chân dung tài xế
+4. Ảnh CCCD Mặt Trước
+5. Ảnh CCCD Mặt Sau
+6. Biển số xe máy
+7. Loại xe đăng ký
+8. Dòng xe / Mẫu xe đăng ký
+9. Ảnh Bằng Lái Xe (GPLX)
+10. Khu vực đăng ký chạy chính
+11. Ngân hàng nhận cước phí
+12. Số tài khoản ngân hàng
+
+*(Bấm **[⬅️ Quay lại bảng tổng kết]** nếu không muốn sửa nữa nhé)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_MENU",
+                        actionIntent = "SHIPPER_EDIT_MENU",
+                        regDraft = draft
+                    };
+                }
+                else
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Ở bước này bạn chỉ được chọn **[Sửa hồ sơ]** hoặc **[Gửi hồ sơ]** bằng 2 nút bên dưới nhé!\n\n💡 *(Nhắn **\"hủy\"** nếu bạn muốn dừng luồng nâng cấp)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_REVIEW_SUMMARY",
+                        actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+            }
+            else if (activeState == "UPGRADE_SHIPPER_EDIT_MENU")
+            {
+                string norm = RemoveVietnameseTones(userMsg.Trim().ToLower());
+                if (norm.Contains("quay lai") || norm == "back" || norm.Contains("bang tong ket"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = BuildShipperUpgradeReviewSummaryReply(draft),
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_REVIEW_SUMMARY",
+                        actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                        regDraft = draft
+                    };
+                }
+
+                if (norm == "1" || norm.Contains("ho ten") || norm.Contains("ten"))
+                {
+                    draft.CurrentEditField = "1";
+                    return new
+                    {
+                        success = true,
+                        reply = "Nhập lại **Họ và tên thật tài xế** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_Q1_NAME",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "2" || norm.Contains("cccd") || norm.Contains("can cuoc"))
+                {
+                    draft.CurrentEditField = "2";
+                    return new
+                    {
+                        success = true,
+                        reply = "Nhập lại **Số CCCD** mới (Đúng 12 chữ số):",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_Q2_CCCD",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "3" || norm.Contains("chan dung"))
+                {
+                    draft.CurrentEditField = "3";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng tải lên ảnh **Chân dung tài xế** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_Q3_PORTRAIT",
+                        actionIntent = "SHIPPER_UPLOAD_PORTRAIT",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "4" || norm.Contains("cccd mat truoc"))
+                {
+                    draft.CurrentEditField = "4";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng tải lên ảnh **CCCD Mặt Trước** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_Q4_CCCD_FRONT",
+                        actionIntent = "SHIPPER_UPLOAD_CCCD_FRONT",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "5" || norm.Contains("cccd mat sau"))
+                {
+                    draft.CurrentEditField = "5";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng tải lên ảnh **CCCD Mặt Sau** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_Q5_CCCD_BACK",
+                        actionIntent = "SHIPPER_UPLOAD_CCCD_BACK",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "6" || norm.Contains("bien so"))
+                {
+                    draft.CurrentEditField = "6";
+                    return new
+                    {
+                        success = true,
+                        reply = "Nhập lại **Biển số xe** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_Q6_LICENSE_PLATE",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "7" || norm.Contains("loai xe"))
+                {
+                    draft.CurrentEditField = "7";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng chọn **Loại xe** mới (Xe máy xăng / Xe máy điện):",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_Q7_VEHICLE_TYPE",
+                        actionIntent = "SHIPPER_CHOOSE_VEHICLE_TYPE",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "8" || norm.Contains("dong xe") || norm.Contains("mau xe"))
+                {
+                    draft.CurrentEditField = "8";
+                    return new
+                    {
+                        success = true,
+                        reply = "Nhập lại **Dòng xe / Mẫu xe** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_Q8_VEHICLE_MODEL",
+                        actionIntent = "SHIPPER_CHOOSE_VEHICLE_MODEL",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "9" || norm.Contains("gplx") || norm.Contains("bang lai"))
+                {
+                    draft.CurrentEditField = "9";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng tải lên ảnh **Bằng Lái Xe (GPLX)** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_Q9_GPLX",
+                        actionIntent = "SHIPPER_UPLOAD_GPLX",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "10" || norm.Contains("khu vuc") || norm.Contains("chay"))
+                {
+                    draft.CurrentEditField = "10";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng chọn **Khu vực hoạt động** mới từ 21 Quận / Huyện:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_Q10_AREA",
+                        actionIntent = "SHIPPER_CHOOSE_AREA",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "11" || norm.Contains("ngan hang"))
+                {
+                    draft.CurrentEditField = "11";
+                    return new
+                    {
+                        success = true,
+                        reply = "Vui lòng chọn **Ngân hàng nhận cước** mới:",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_Q11_BANK",
+                        actionIntent = "SHIPPER_CHOOSE_BANK",
+                        regDraft = draft
+                    };
+                }
+                else if (norm == "12" || norm.Contains("so tai khoan") || norm.Contains("stk"))
+                {
+                    draft.CurrentEditField = "12";
+                    return new
+                    {
+                        success = true,
+                        reply = "Nhập lại **Số tài khoản ngân hàng** mới (Từ 8 đến 15 chữ số):",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_Q12_BANKACC",
+                        regDraft = draft
+                    };
+                }
+                else if (norm.Contains("gmail") || norm.Contains("mat khau") || norm.Contains("password"))
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "💡 Thông tin tài khoản và mật khẩu được tự động kế thừa từ tài khoản Khách Hàng hiện tại của bạn nên không thể thay đổi tại luồng nâng cấp này nhé! Hãy chọn mục khác từ 1 đến 12 nhé!\n\n*(Bấm **[⬅️ Quay lại bảng tổng kết]** nếu không muốn sửa nữa nhé)*",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_MENU",
+                        actionIntent = "SHIPPER_EDIT_MENU",
+                        regDraft = draft
+                    };
+                }
+                else
+                {
+                    return new
+                    {
+                        success = true,
+                        reply = "⚠️ Lựa chọn không hợp lệ. Vui lòng bấm chọn 1 mục từ 1 đến 12 bên dưới hoặc bấm **[⬅️ Quay lại bảng tổng kết]** nhé!",
+                        provider = "ZoneMart AI Direct Registration Engine",
+                        registrationState = "UPGRADE_SHIPPER_EDIT_MENU",
+                        actionIntent = "SHIPPER_EDIT_MENU",
+                        regDraft = draft
+                    };
+                }
+            }
+            else if (activeState == "UPGRADE_SHIPPER_EDIT_Q1_NAME")
+            {
+                if (IsValidShipperFullName(userMsg, out _)) draft.FullName = userMsg.Trim();
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật họ tên tài xế thành công! ✅\n\n" + BuildShipperUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_REVIEW_SUMMARY",
+                    actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_EDIT_Q2_CCCD")
+            {
+                if (IsValidCccdNumber(userMsg, out _)) draft.CccdNumber = userMsg.Trim();
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật số CCCD thành công! ✅\n\n" + BuildShipperUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_REVIEW_SUMMARY",
+                    actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_EDIT_Q6_LICENSE_PLATE")
+            {
+                draft.LicensePlate = userMsg.Trim().ToUpperInvariant();
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật biển số xe thành công! ✅\n\n" + BuildShipperUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_REVIEW_SUMMARY",
+                    actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_EDIT_Q7_VEHICLE_TYPE")
+            {
+                string? vType = MatchShipperVehicleType(userMsg);
+                if (vType != null) draft.VehicleType = vType;
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật loại phương tiện thành công! ✅\n\n" + BuildShipperUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_REVIEW_SUMMARY",
+                    actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_EDIT_Q8_VEHICLE_MODEL")
+            {
+                draft.VehicleModel = userMsg.Trim();
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật dòng xe thành công! ✅\n\n" + BuildShipperUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_REVIEW_SUMMARY",
+                    actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_EDIT_Q10_AREA")
+            {
+                string? matchedArea = MatchShipperOperatingArea(userMsg);
+                if (matchedArea != null) draft.OperatingArea = matchedArea;
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật khu vực hoạt động thành công! ✅\n\n" + BuildShipperUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_REVIEW_SUMMARY",
+                    actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_EDIT_Q11_BANK")
+            {
+                string? matchedBank = MatchShipperBank(userMsg);
+                if (matchedBank != null) draft.BankName = matchedBank;
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật ngân hàng nhận cước thành công! ✅\n\n" + BuildShipperUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_REVIEW_SUMMARY",
+                    actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+            else if (activeState == "UPGRADE_SHIPPER_EDIT_Q12_BANKACC")
+            {
+                if (IsValidBankAccountNumber(userMsg, out _)) draft.BankAccountNumber = userMsg.Trim();
+                return new
+                {
+                    success = true,
+                    reply = "Đã cập nhật số tài khoản ngân hàng thành công! ✅\n\n" + BuildShipperUpgradeReviewSummaryReply(draft),
+                    provider = "ZoneMart AI Direct Registration Engine",
+                    registrationState = "UPGRADE_SHIPPER_REVIEW_SUMMARY",
+                    actionIntent = "SHIPPER_REVIEW_SUMMARY",
+                    regDraft = draft
+                };
+            }
+
+            return null;
         }
 
     }
