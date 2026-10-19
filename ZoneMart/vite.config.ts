@@ -1048,11 +1048,11 @@ function vietQrPaymentPlugin(): Plugin {
             const keyUpper = key.toUpperCase()
             const codeUpper = cleanCode.toUpperCase()
             if (
-              cleanCode &&
+              cleanCode && cleanCode.length >= 6 &&
               (keyUpper === codeUpper ||
                keyUpper.startsWith(codeUpper) ||
                keyUpper.includes(codeUpper) ||
-               codeUpper.includes(keyUpper) ||
+               (keyUpper.length >= 6 && codeUpper.includes(keyUpper)) ||
                rawStr.toUpperCase().includes(codeUpper))
             ) {
               res.end(
@@ -1323,6 +1323,8 @@ export default defineConfig({
       },
     },
     hmr: {
+      host: 'localhost',
+      clientPort: 5173,
       overlay: false,
     },
   },

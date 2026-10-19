@@ -751,14 +751,19 @@ public class AdminController : ControllerBase
                 var user = filterList.Count > 0 ? await _mongoService.Users.Find(Builders<User>.Filter.Or(filterList)).FirstOrDefaultAsync() : null;
                 if (user != null)
                 {
+                    string targetUserCode = !string.IsNullOrEmpty(store.StoreCode)
+                        ? store.StoreCode
+                        : ((!string.IsNullOrEmpty(user.UserCode) && user.UserCode.StartsWith("CUST-")) ? $"SEL-{Random.Shared.Next(1000, 9999)}" : user.UserCode);
+
                     var userUpdate = Builders<User>.Update
                         .Set(u => u.IsSeller, true)
                         .Set(u => u.AccountStatus, "active")
-                        .Set(u => u.UserCode, string.IsNullOrEmpty(user.UserCode) ? store.StoreCode : user.UserCode);
+                        .Set(u => u.UserCode, targetUserCode);
                     await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, userUpdate);
 
                     user.IsSeller = true;
                     user.AccountStatus = "active";
+                    user.UserCode = targetUserCode;
                     if (!string.IsNullOrEmpty(user.PhoneEmail)) AuthController.InMemoryUsers[user.PhoneEmail] = user;
 
                     // Liên kết store.UserId trực tiếp với user.Id
@@ -915,14 +920,19 @@ public class AdminController : ControllerBase
                 var user = filterList.Count > 0 ? await _mongoService.Users.Find(Builders<User>.Filter.Or(filterList)).FirstOrDefaultAsync() : null;
                 if (user != null)
                 {
+                    string targetUserCode = !string.IsNullOrEmpty(shipper.ShipperCode)
+                        ? shipper.ShipperCode
+                        : ((!string.IsNullOrEmpty(user.UserCode) && user.UserCode.StartsWith("CUST-")) ? $"SHP-{Random.Shared.Next(1000, 9999)}" : user.UserCode);
+
                     var userUpdate = Builders<User>.Update
                         .Set(u => u.IsShipper, true)
                         .Set(u => u.AccountStatus, "active")
-                        .Set(u => u.UserCode, string.IsNullOrEmpty(user.UserCode) ? shipper.ShipperCode : user.UserCode);
+                        .Set(u => u.UserCode, targetUserCode);
                     await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, userUpdate);
 
                     user.IsShipper = true;
                     user.AccountStatus = "active";
+                    user.UserCode = targetUserCode;
                     if (!string.IsNullOrEmpty(user.PhoneEmail)) AuthController.InMemoryUsers[user.PhoneEmail] = user;
 
                     await _mongoService.Shippers.UpdateOneAsync(s => s.Id == shipper.Id, Builders<Shipper>.Update.Set(s => s.UserId, user.Id));
