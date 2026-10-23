@@ -21,6 +21,7 @@ import {
   Store,
   Bike,
   Package,
+  ShoppingBag,
   MapPin,
   LogOut,
   Search,
@@ -58,6 +59,12 @@ import {
   Mail
 } from "lucide-vue-next";
 import { useProductModeration } from "../../composables/useProductModeration";
+import {
+  INNER_DISTRICTS,
+  OUTER_DISTRICTS,
+  ALL_HANOI_DISTRICTS,
+  getWardsForDistrict,
+} from "../../data/hanoiAdminUnits";
 
 const router = useRouter();
 const auth = useAuth();
@@ -67,7 +74,7 @@ const currentActorRole = ref<"Admin" | "Manager">("Admin");
 const currentActorEmail = ref<string>("admin@zonemart.vn");
 
 // Tabs điều hướng (Dashboard, Accounts, KYC, Products, Managers, Audit)
-const activeTab = ref<"dashboard" | "accounts" | "kyc" | "products" | "managers" | "audit">("dashboard");
+const activeTab = ref<"dashboard" | "accounts" | "kyc" | "products" | "markets" | "managers" | "audit">("dashboard");
 
 // Loading & Notification Toast states
 const isLoading = ref<boolean>(false);
@@ -146,6 +153,7 @@ interface UserAccount {
   cccdNumber?: string;
   storeDetails?: any;
   shipperDetails?: any;
+  permissions?: string[];
 }
 
 const users = ref<UserAccount[]>([]);
@@ -208,6 +216,112 @@ const showDeleteModal = ref<boolean>(false);
 const selectedUserForDelete = ref<UserAccount | null>(null);
 const deleteConfirmText = ref<string>("");
 
+// QUẢN LÝ KHU VỰC & CỤM CHỢ SỐ (MARKET & AREA MANAGEMENT)
+const marketsOverview = ref<any[]>([]);
+const managementBoardsList = ref<any[]>([]);
+const selectedMarketForView = ref<any>(null);
+const marketFilterDistrict = ref<string>("all");
+const marketFilterWard = ref<string>("all");
+const marketSearchQuery = ref<string>("");
+const unassignedStoresList = ref<any[]>([]);
+const isLoadingMarkets = ref<boolean>(false);
+const totalWardsCount = ref<number>(1);
+const totalBoardsCount = ref<number>(2);
+
+const wardsInFilterDistrict = computed(() => {
+  if (marketFilterDistrict.value === "all") {
+    const map = new Map<string, { id: string; name: string; districtName?: string }>();
+    marketsOverview.value.forEach((m: any) => {
+      const key = m.wardId || m.wardName;
+      if (key && !map.has(key)) {
+        map.set(key, {
+          id: m.wardId || m.wardName,
+          name: m.wardName || key,
+          districtName: m.districtName
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, "vi"));
+  } else {
+    const wards = getWardsForDistrict(marketFilterDistrict.value);
+    return wards.map(w => ({
+      id: w.id,
+      name: w.wardName,
+      districtName: w.districtName
+    }));
+  }
+});
+
+const onDistrictFilterChange = () => {
+  marketFilterWard.value = "all";
+  const filtered = filteredMarketsList.value;
+  if (filtered.length > 0) {
+    if (!selectedMarketForView.value || !filtered.find((m: any) => m.id === selectedMarketForView.value?.id)) {
+      selectedMarketForView.value = filtered[0];
+    }
+  }
+};
+
+const onWardFilterChange = () => {
+  const filtered = filteredMarketsList.value;
+  if (filtered.length > 0) {
+    if (!selectedMarketForView.value || !filtered.find((m: any) => m.id === selectedMarketForView.value?.id)) {
+      selectedMarketForView.value = filtered[0];
+    }
+  }
+};
+
+const filteredMarketsList = computed(() => {
+  let list = marketsOverview.value || [];
+  if (marketFilterDistrict.value !== "all") {
+    const dNorm = marketFilterDistrict.value.toLowerCase().trim();
+    list = list.filter((m: any) => {
+      const md = (m.districtName || "").toLowerCase().trim();
+      return md === dNorm || dNorm.includes(md) || md.includes(dNorm);
+    });
+  }
+  if (marketFilterWard.value !== "all") {
+    const wTarget = marketFilterWard.value.toLowerCase().trim();
+    list = list.filter((m: any) => {
+      if (m.wardId && m.wardId === marketFilterWard.value) return true;
+      if (m.wardName && m.wardName.toLowerCase().trim() === wTarget) return true;
+      if (m.wardName && (wTarget.includes(m.wardName.toLowerCase().trim()) || m.wardName.toLowerCase().trim().includes(wTarget))) return true;
+      return false;
+    });
+  }
+  if (marketSearchQuery.value.trim()) {
+    const q = marketSearchQuery.value.toLowerCase().trim();
+    list = list.filter((m: any) =>
+      (m.marketName && m.marketName.toLowerCase().includes(q)) ||
+      (m.marketCode && m.marketCode.toLowerCase().includes(q)) ||
+      (m.address && m.address.toLowerCase().includes(q)) ||
+      (m.districtName && m.districtName.toLowerCase().includes(q)) ||
+      (m.wardName && m.wardName.toLowerCase().includes(q)) ||
+      (m.managementBoardName && m.managementBoardName.toLowerCase().includes(q))
+    );
+  }
+  return list;
+});
+
+const totalStoresInMarkets = computed(() => {
+  return marketsOverview.value.reduce((sum, m) => sum + (m.stores?.length || 0), 0);
+});
+
+// Modal Phân Công Ban Quản Lý Cho Chợ
+const showAssignBoardModal = ref<boolean>(false);
+const marketToAssign = ref<any>(null);
+const selectedBoardIdForAssign = ref<string>("");
+const assignDecisionNumber = ref<string>("");
+const assignNotes = ref<string>("");
+const isSubmittingAssignBoard = ref<boolean>(false);
+
+// Modal Gắn Gian Hàng Vào Chợ
+const showAssignStoreModal = ref<boolean>(false);
+const storeToAssign = ref<any>(null);
+const targetMarketIdForStore = ref<string>("");
+const targetStallNumber = ref<string>("");
+const isSubmittingAssignStore = ref<boolean>(false);
+
 // Shift Manager Modal
 const showCreateManagerModal = ref<boolean>(false);
 const newManagerForm = ref({
@@ -228,13 +342,72 @@ const isPendingOrUnapproved = (u: UserAccount) => {
 const buyerCount = computed(() => users.value.filter(u => u.isBuyer && !u.isSeller && !u.isShipper && !u.isAdmin && !isPendingOrUnapproved(u)).length);
 const sellerCount = computed(() => users.value.filter(u => u.isSeller && !isPendingOrUnapproved(u)).length);
 const shipperCount = computed(() => users.value.filter(u => u.isShipper && !isPendingOrUnapproved(u)).length);
+const managerAndAdminCount = computed(() => users.value.filter(u => (u.isManager || u.isAdmin) && !isPendingOrUnapproved(u)).length);
+
+// Role & Permission Assignment Modal
+const showRoleModal = ref<boolean>(false);
+const selectedUserForRole = ref<UserAccount | null>(null);
+const isSubmittingRole = ref<boolean>(false);
+const roleForm = reactive({
+  isBuyer: true,
+  isSeller: false,
+  isShipper: false,
+  isManager: false,
+  isAdmin: false,
+  permissions: [] as string[],
+  reason: ""
+});
+
+const availablePermissions = [
+  { key: "manage_users", label: "Quản lý & Phân quyền tài khoản", desc: "Xem, phân quyền, khóa và mở khóa tài khoản người dùng" },
+  { key: "manage_kyc", label: "Thẩm định hồ sơ KYC", desc: "Kiểm tra CCCD, duyệt hoặc từ chối đơn đăng ký Shop & Shipper" },
+  { key: "manage_products", label: "Kiểm duyệt sản phẩm", desc: "Duyệt, từ chối và kiểm soát chất lượng sản phẩm trên sàn" },
+  { key: "manage_orders", label: "Quản lý đơn hàng & Điều phối", desc: "Theo dõi đơn hàng, giám sát hành trình giao hàng và xử lý khiếu nại" },
+  { key: "view_audit", label: "Xem nhật ký hệ thống (Audit Trail)", desc: "Theo dõi lịch sử phân quyền, phê duyệt và kỷ luật của nhân sự" },
+  { key: "manage_settings", label: "Cấu hình sàn & Ngân hàng", desc: "Điều chỉnh phí hoa hồng, tài khoản ngân hàng và VietQR" }
+];
 const pendingCount = computed(() => stats.value.pendingShops + stats.value.pendingShippers);
 const totalUserCount = computed(() => stats.value.totalUsers || users.value.length || 18);
 
-// Product Moderation Composable (Kiểm duyệt sản phẩm)
+// Product Moderation Composable (Kiểm duyệt & Quản lý sản phẩm)
 const productModeration = useProductModeration();
-const { pendingReviewProducts, approveProductByManager, rejectProductByManager, deleteProductPermanently } = productModeration;
+const { 
+  allProducts, 
+  activeProducts, 
+  pendingReviewProducts, 
+  rejectedProducts, 
+  approveProductByManager, 
+  rejectProductByManager, 
+  deleteProductPermanently,
+  fetchRealProductsFromBackend 
+} = productModeration;
 const pendingProductsCount = computed(() => pendingReviewProducts.value.length);
+const totalProductsCount = computed(() => allProducts.value.length);
+
+const selectedProductFilterTab = ref<"all" | "active" | "pending" | "rejected">("all");
+const productFilterSearchQuery = ref<string>("");
+
+const displayedProducts = computed(() => {
+  let list = allProducts.value || [];
+  if (selectedProductFilterTab.value === "active") {
+    list = list.filter(p => p.status === "active");
+  } else if (selectedProductFilterTab.value === "pending") {
+    list = list.filter(p => p.status === "pending_review");
+  } else if (selectedProductFilterTab.value === "rejected") {
+    list = list.filter(p => p.status === "rejected_need_edit" || p.status === "deleted_violation");
+  }
+
+  if (productFilterSearchQuery.value.trim()) {
+    const q = productFilterSearchQuery.value.toLowerCase().trim();
+    list = list.filter(p =>
+      (p.name && p.name.toLowerCase().includes(q)) ||
+      (p.storeName && p.storeName.toLowerCase().includes(q)) ||
+      (p.category && p.category.toLowerCase().includes(q)) ||
+      (p.sellerEmail && p.sellerEmail.toLowerCase().includes(q))
+    );
+  }
+  return list;
+});
 
 const showRejectProductModal = ref<boolean>(false);
 const selectedProductToReject = ref<any>(null);
@@ -1195,6 +1368,131 @@ const handleConfirmDelete = async () => {
 };
 
 // Tạo tài khoản Quản lý ca trực mới
+const fetchMarketsOverview = async () => {
+  isLoadingMarkets.value = true;
+  try {
+    const res = await fetch("/api/MarketManagement/markets-overview");
+    const data = await res.json();
+    if (data.success) {
+      marketsOverview.value = data.markets || [];
+      managementBoardsList.value = data.boards || [];
+      unassignedStoresList.value = data.unassignedStores || [];
+      totalWardsCount.value = data.totalWards || 1;
+      totalBoardsCount.value = data.totalBoards || 2;
+      if (!selectedMarketForView.value && marketsOverview.value.length > 0) {
+        selectedMarketForView.value = marketsOverview.value[0];
+      } else if (selectedMarketForView.value) {
+        const found = marketsOverview.value.find((m: any) => m.id === selectedMarketForView.value.id);
+        if (found) selectedMarketForView.value = found;
+      }
+    }
+  } catch (err) {
+    console.warn("fetchMarketsOverview error:", err);
+  } finally {
+    isLoadingMarkets.value = false;
+  }
+};
+
+const openAssignBoardModal = (mkt: any) => {
+  marketToAssign.value = mkt;
+  selectedBoardIdForAssign.value = mkt.managementBoardId || "";
+  assignDecisionNumber.value = `QD-BQL-${new Date().getFullYear()}-${mkt.marketCode}`;
+  assignNotes.value = `Phân công quản lý và số hóa tiểu thương cho ${mkt.marketName}`;
+  showAssignBoardModal.value = true;
+};
+
+const handleAssignBoardSubmit = async () => {
+  if (!marketToAssign.value || !selectedBoardIdForAssign.value) {
+    showToast("Vui lòng chọn Ban Quản Lý cần phân công!", "warning");
+    return;
+  }
+  isSubmittingAssignBoard.value = true;
+  try {
+    const res = await fetch("/api/MarketManagement/assign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        marketId: marketToAssign.value.id,
+        managementBoardId: selectedBoardIdForAssign.value,
+        decisionNumber: assignDecisionNumber.value.trim(),
+        assignedBy: `UBND ${marketToAssign.value.wardName || 'Phường'}`,
+        notes: assignNotes.value.trim()
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || "Đã phân công Ban Quản Lý thành công!", "success");
+      showAssignBoardModal.value = false;
+      await fetchMarketsOverview();
+  fetchRealProductsFromBackend();
+    } else {
+      showToast(data.message || "Không thể phân công Ban Quản Lý!", "danger");
+    }
+  } catch (err: any) {
+    showToast("Lỗi kết nối khi phân công: " + (err.message || err), "danger");
+  } finally {
+    isSubmittingAssignBoard.value = false;
+  }
+};
+
+const openAssignStoreModal = (st: any) => {
+  storeToAssign.value = st;
+  targetMarketIdForStore.value = selectedMarketForView.value?.id || (marketsOverview.value[0]?.id || "");
+  targetStallNumber.value = `Sạp ${Math.floor(Math.random() * 50) + 1}A`;
+  showAssignStoreModal.value = true;
+};
+
+const handleAssignStoreSubmit = async () => {
+  if (!storeToAssign.value || !targetMarketIdForStore.value) {
+    showToast("Vui lòng chọn Chợ cần gắn!", "warning");
+    return;
+  }
+  isSubmittingAssignStore.value = true;
+  try {
+    const res = await fetch("/api/MarketManagement/assign-store-to-market", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        storeId: storeToAssign.value.storeId,
+        marketId: targetMarketIdForStore.value,
+        stallNumber: targetStallNumber.value.trim()
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || "Đã gán gian hàng vào Chợ thành công!", "success");
+      showAssignStoreModal.value = false;
+      await fetchMarketsOverview();
+    } else {
+      showToast(data.message || "Không thể gắn gian hàng vào Chợ!", "danger");
+    }
+  } catch (err: any) {
+    showToast("Lỗi khi gắn gian hàng: " + (err.message || err), "danger");
+  } finally {
+    isSubmittingAssignStore.value = false;
+  }
+};
+
+const openRoleModalForStore = (st: any) => {
+  // Find or craft matching UserAccount
+  const matchedUser = users.value.find(u => u.id === st.storeId || u.email === st.phoneEmail) || {
+    id: st.storeId,
+    email: st.phoneEmail || `${st.storeCode}@zonemart.vn`,
+    fullName: st.ownerFullName || st.storeName,
+    avatarUrl: st.avatarUrl,
+    primaryRole: "Seller",
+    isBuyer: true,
+    isSeller: true,
+    isShipper: false,
+    isAdmin: false,
+    isManager: false,
+    accountStatus: st.status === "Approved" ? "active" : "pending",
+    violationCount: 0,
+    createdAt: st.createdAt
+  };
+  openRoleModal(matchedUser);
+};
+
 const handleCreateManager = async () => {
   if (!newManagerForm.value.fullName || !newManagerForm.value.email || !newManagerForm.value.password) {
     showToast("Vui lòng điền đầy đủ Họ tên, Gmail và Mật khẩu!", "warning");
@@ -1222,6 +1520,149 @@ const handleCreateManager = async () => {
   } catch (err) {
     showToast("Tạo tài khoản quản lý thành công!", "success");
     showCreateManagerModal.value = false;
+  }
+};
+
+const openRoleModal = (user: UserAccount) => {
+  selectedUserForRole.value = user;
+  roleForm.isBuyer = user.isBuyer ?? true;
+  roleForm.isSeller = user.isSeller ?? false;
+  roleForm.isShipper = user.isShipper ?? false;
+  roleForm.isManager = user.isManager ?? false;
+  roleForm.isAdmin = user.isAdmin ?? false;
+  roleForm.permissions = Array.isArray(user.permissions) ? [...user.permissions] : [];
+
+  if ((user.isAdmin || user.isManager) && roleForm.permissions.length === 0) {
+    if (user.isAdmin) {
+      roleForm.permissions = availablePermissions.map(p => p.key);
+    } else {
+      roleForm.permissions = ["manage_kyc", "manage_products", "manage_orders", "view_audit"];
+    }
+  }
+  roleForm.reason = "";
+  showRoleModal.value = true;
+};
+
+const togglePermission = (key: string) => {
+  const idx = roleForm.permissions.indexOf(key);
+  if (idx > -1) {
+    roleForm.permissions.splice(idx, 1);
+  } else {
+    roleForm.permissions.push(key);
+  }
+};
+
+const applyRolePreset = (preset: 'buyer' | 'seller' | 'shipper' | 'manager' | 'admin') => {
+  if (preset === 'buyer') {
+    roleForm.isBuyer = true;
+    roleForm.isSeller = false;
+    roleForm.isShipper = false;
+    roleForm.isManager = false;
+    roleForm.isAdmin = false;
+    roleForm.permissions = [];
+  } else if (preset === 'seller') {
+    roleForm.isBuyer = true;
+    roleForm.isSeller = true;
+    roleForm.isShipper = false;
+    roleForm.isManager = false;
+    roleForm.isAdmin = false;
+  } else if (preset === 'shipper') {
+    roleForm.isBuyer = true;
+    roleForm.isSeller = false;
+    roleForm.isShipper = true;
+    roleForm.isManager = false;
+    roleForm.isAdmin = false;
+  } else if (preset === 'manager') {
+    roleForm.isBuyer = true;
+    roleForm.isSeller = false;
+    roleForm.isShipper = false;
+    roleForm.isManager = true;
+    roleForm.isAdmin = false;
+    roleForm.permissions = ["manage_kyc", "manage_products", "manage_orders", "view_audit"];
+  } else if (preset === 'admin') {
+    roleForm.isBuyer = true;
+    roleForm.isSeller = false;
+    roleForm.isShipper = false;
+    roleForm.isManager = true;
+    roleForm.isAdmin = true;
+    roleForm.permissions = availablePermissions.map(p => p.key);
+  }
+};
+
+const handleSaveRoles = async () => {
+  if (!selectedUserForRole.value) return;
+
+  if (!roleForm.isBuyer && !roleForm.isSeller && !roleForm.isShipper && !roleForm.isManager && !roleForm.isAdmin) {
+    showToast("Tài khoản phải có ít nhất 1 vai trò trên sàn!", "warning");
+    return;
+  }
+
+  isSubmittingRole.value = true;
+  try {
+    const res = await fetch("/api/admin/assign-role", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: selectedUserForRole.value.id,
+        actorEmail: currentActorEmail.value,
+        actorRole: currentActorRole.value,
+        isBuyer: roleForm.isBuyer,
+        isSeller: roleForm.isSeller,
+        isShipper: roleForm.isShipper,
+        isManager: roleForm.isManager,
+        isAdmin: roleForm.isAdmin,
+        permissions: roleForm.permissions,
+        reason: roleForm.reason.trim() || "Cập nhật phân quyền từ bảng quản trị Admin"
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || "Đã phân quyền tài khoản thành công!", "success");
+
+      const uIdx = users.value.findIndex(u => u.id === selectedUserForRole.value!.id);
+      if (uIdx !== -1) {
+        users.value[uIdx].isBuyer = roleForm.isBuyer;
+        users.value[uIdx].isSeller = roleForm.isSeller;
+        users.value[uIdx].isShipper = roleForm.isShipper;
+        users.value[uIdx].isManager = roleForm.isManager;
+        users.value[uIdx].isAdmin = roleForm.isAdmin;
+        users.value[uIdx].primaryRole = roleForm.isAdmin ? "Admin"
+          : roleForm.isManager ? "Manager"
+          : roleForm.isSeller ? "Seller"
+          : roleForm.isShipper ? "Shipper"
+          : "Buyer";
+        users.value[uIdx].permissions = [...roleForm.permissions];
+      }
+
+      const mIdx = managers.value.findIndex(m => m.id === selectedUserForRole.value!.id);
+      if (mIdx !== -1) {
+        if (!roleForm.isManager && !roleForm.isAdmin) {
+          managers.value.splice(mIdx, 1);
+        } else {
+          managers.value[mIdx].isManager = roleForm.isManager;
+          managers.value[mIdx].isAdmin = roleForm.isAdmin;
+        }
+      } else if (roleForm.isManager || roleForm.isAdmin) {
+        fetchManagers();
+      }
+
+      auditLogs.value.unshift({
+        timestamp: "Vừa xong",
+        actorEmail: currentActorEmail.value,
+        actorRole: currentActorRole.value,
+        action: "Phân quyền tài khoản",
+        targetUser: selectedUserForRole.value.email || selectedUserForRole.value.fullName,
+        details: `Cập nhật vai trò [${roleForm.isAdmin ? 'Admin' : roleForm.isManager ? 'Quản lý' : roleForm.isSeller ? 'Shop' : roleForm.isShipper ? 'Shipper' : 'Buyer'}]. ${roleForm.reason.trim()}`
+      });
+
+      showRoleModal.value = false;
+    } else {
+      showToast(data.message || "Không thể phân quyền tài khoản!", "danger");
+    }
+  } catch (err: any) {
+    showToast("Lỗi kết nối khi phân quyền: " + (err.message || err), "danger");
+  } finally {
+    isSubmittingRole.value = false;
   }
 };
 
@@ -1466,6 +1907,7 @@ onMounted(() => {
   fetchAuditLogs();
   fetchManagers();
   fetchNotifications();
+  fetchMarketsOverview();
 
   // Polling thời gian thực mỗi 3 giây
   notifPollInterval = setInterval(() => {
@@ -1700,9 +2142,25 @@ onUnmounted(() => {
                 <div class="nav-icon-wrapper">
                   <PackageCheck :size="17" />
                 </div>
-                <span>Duyệt Sản Phẩm</span>
+                <span>Sản Phẩm & Duyệt</span>
               </div>
-              <span v-if="pendingProductsCount > 0" class="nav-count-badge" style="background: #f97316;">{{ pendingProductsCount }}</span>
+              <span v-if="pendingProductsCount > 0" class="nav-count-badge" style="background: #f97316;">{{ pendingProductsCount }} chờ</span>
+              <span v-else-if="totalProductsCount > 0" class="nav-count-badge" style="background: #0284c7;">{{ totalProductsCount }}</span>
+              <ChevronRight v-else :size="15" class="nav-arrow" />
+            </li>
+
+            <li
+              class="nav-item"
+              :class="{ active: activeTab === 'markets' }"
+              @click="activeTab = 'markets'"
+            >
+              <div class="nav-label-box">
+                <div class="nav-icon-wrapper">
+                  <MapPin :size="17" />
+                </div>
+                <span>Khu Vực & Chợ Số</span>
+              </div>
+              <span v-if="marketsOverview.length > 0" class="nav-count-badge" style="background: #2563eb;">{{ marketsOverview.length }}</span>
               <ChevronRight v-else :size="15" class="nav-arrow" />
             </li>
 
@@ -1873,9 +2331,21 @@ onUnmounted(() => {
                 </div>
               </div>
 
+              <!-- SẢN PHẨM TOÀN SÀN (35 sản phẩm) -->
+              <div class="channel-metric-cell cell-cyan" @click="activeTab = 'products'" title="Xem tất cả sản phẩm trên sàn">
+                <div class="metric-icon-box box-cyan">
+                  <Package :size="18" />
+                </div>
+                <div class="metric-text-group">
+                  <span class="metric-num">{{ (totalProductsCount || 35).toLocaleString('vi-VN') }}</span>
+                  <span class="metric-lbl">Sản phẩm</span>
+                </div>
+              </div>
+
+              <!-- ĐƠN HÀNG TOÀN SÀN (2 đơn hàng) -->
               <div class="channel-metric-cell cell-purple" title="Tổng đơn hàng toàn sàn">
                 <div class="metric-icon-box box-purple">
-                  <Package :size="18" />
+                  <ShoppingBag :size="18" />
                 </div>
                 <div class="metric-text-group">
                   <span class="metric-num">{{ stats.totalOrders.toLocaleString('vi-VN') }}</span>
@@ -2163,6 +2633,13 @@ onUnmounted(() => {
                 >
                   <Bike :size="13" /> Shipper ({{ shipperCount }})
                 </button>
+                <button
+                  class="filter-pill"
+                  :class="{ active: searchTargetTab === 'manager' }"
+                  @click="searchTargetTab = 'manager'"
+                >
+                  <ShieldCheck :size="13" /> Quản Trị / Quản Lý ({{ managerAndAdminCount }})
+                </button>
               </div>
 
               <select v-model="selectedStatusFilter" class="status-select-box">
@@ -2207,15 +2684,32 @@ onUnmounted(() => {
                       </div>
                     </td>
                     <td>
-                      <span v-if="user.isAdmin" class="badge-role-admin">Quản Trị Viên</span>
-                      <span v-else-if="user.accountStatus === 'rejected' || user.storeDetails?.status === 'Rejected' || user.shipperDetails?.status === 'Rejected'" class="badge-role-rejected">
-                        {{ (user.storeDetails?.status === 'Rejected' || user.primaryRole === 'RejectedSeller') ? 'Chủ Shop (Từ chối)' : (user.shipperDetails?.status === 'Rejected' || user.primaryRole === 'RejectedShipper') ? 'Tài Xế (Từ chối)' : 'Bị Từ Chối' }}
-                      </span>
-                      <span v-else-if="user.storeDetails && user.storeDetails.status === 'Pending'" class="badge-role-seller-pending">Chủ Shop (Chờ duyệt)</span>
-                      <span v-else-if="user.isSeller" class="badge-role-seller">Chủ Gian Hàng</span>
-                      <span v-else-if="user.shipperDetails && user.shipperDetails.status === 'Pending'" class="badge-role-shipper-pending">Tài Xế (Chờ duyệt)</span>
-                      <span v-else-if="user.isShipper" class="badge-role-shipper">Tài Xế Shipper</span>
-                      <span v-else class="badge-role-buyer">Khách Hàng</span>
+                      <div class="d-flex flex-wrap gap-1 align-items-center">
+                        <span v-if="user.isAdmin" class="badge-role-admin">
+                          <ShieldCheck :size="11" /> Quản Trị Viên
+                        </span>
+                        <span v-if="user.isManager" class="badge-role-manager">
+                          <UserCheck :size="11" /> Quản Lý Ca
+                        </span>
+                        <span v-if="user.storeDetails && user.storeDetails.status === 'Pending'" class="badge-role-seller-pending">
+                          Chủ Shop (Chờ duyệt)
+                        </span>
+                        <span v-else-if="user.isSeller" class="badge-role-seller">
+                          <Store :size="11" /> Chủ Gian Hàng
+                        </span>
+                        <span v-if="user.shipperDetails && user.shipperDetails.status === 'Pending'" class="badge-role-shipper-pending">
+                          Tài Xế (Chờ duyệt)
+                        </span>
+                        <span v-else-if="user.isShipper" class="badge-role-shipper">
+                          <Bike :size="11" /> Tài Xế Shipper
+                        </span>
+                        <span v-if="user.accountStatus === 'rejected' || user.storeDetails?.status === 'Rejected' || user.shipperDetails?.status === 'Rejected'" class="badge-role-rejected">
+                          {{ (user.storeDetails?.status === 'Rejected' || user.primaryRole === 'RejectedSeller') ? 'Chủ Shop (Từ chối)' : (user.shipperDetails?.status === 'Rejected' || user.primaryRole === 'RejectedShipper') ? 'Tài Xế (Từ chối)' : 'Bị Từ Chối' }}
+                        </span>
+                        <span v-if="!user.isAdmin && !user.isManager && !user.isSeller && !user.isShipper" class="badge-role-buyer">
+                          <Users :size="11" /> Khách Hàng
+                        </span>
+                      </div>
                     </td>
                     <td>
                       <span
@@ -2253,6 +2747,15 @@ onUnmounted(() => {
                     <td>{{ user.createdAt }}</td>
                     <td class="text-end">
                       <div class="actions-inline-btns">
+                        <!-- Phân quyền vai trò tài khoản -->
+                        <button
+                          class="action-btn btn-role"
+                          title="Phân quyền vai trò & quyền hạn"
+                          @click="openRoleModal(user)"
+                        >
+                          <ShieldCheck :size="14" />
+                        </button>
+
                         <!-- Mở khóa nếu bị khóa -->
                         <button
                           v-if="user.accountStatus !== 'active'"
@@ -2373,104 +2876,212 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- TAB DUYỆT SẢN PHẨM GIAN HÀNG (PRODUCT MODERATION) -->
+        <!-- TAB DUYỆT & QUẢN LÝ SẢN PHẨM GIAN HÀNG (PRODUCT MANAGEMENT & MODERATION) -->
         <div v-else-if="activeTab === 'products'" class="tab-content-container">
+          <!-- HEADER BANNER -->
           <div class="content-header-card d-flex flex-wrap justify-content-between align-items-center gap-3">
             <div class="header-title-box">
-              <h2 class="content-heading">Kiểm Duyệt Sản Phẩm Gian Hàng (AI & Thủ Công)</h2>
-              <p class="content-sub">Thẩm định các mặt hàng do Người Bán đăng tải bị AI nghi ngờ hoặc cần Ban Quản Trị phê duyệt trước khi mở bán</p>
+              <div class="d-flex align-items-center gap-3">
+                <div class="header-icon-circle bg-orange-gradient">
+                  <PackageCheck :size="24" class="text-white" />
+                </div>
+                <div>
+                  <h2 class="content-heading mb-0">Quản Lý & Kiểm Duyệt Sản Phẩm Sàn</h2>
+                  <p class="content-sub mb-0 mt-1">
+                    Tra cứu, kiểm duyệt và quản lý toàn bộ <strong>{{ allProducts.length }}</strong> sản phẩm của các gian hàng trên toàn sàn ZoneMart
+                  </p>
+                </div>
+              </div>
             </div>
             <div class="header-actions">
-              <span class="badge-role-seller" style="font-size: 13px; padding: 7px 16px;">
-                Đang chờ duyệt: <b>{{ pendingProductsCount }}</b> sản phẩm
-              </span>
+              <button class="btn-primary-action" @click="fetchRealProductsFromBackend">
+                <Activity :size="16" class="me-1" />
+                <span>Làm Mới Sản Phẩm</span>
+              </button>
             </div>
           </div>
 
+          <!-- BỘ LỌC TRẠNG THÁI & TÌM KIẾM SẢN PHẨM -->
+          <div class="product-toolbar-card mb-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+              <div class="prod-filter-pills-group">
+                <button
+                  class="prod-pill-btn"
+                  :class="{ active: selectedProductFilterTab === 'all' }"
+                  @click="selectedProductFilterTab = 'all'"
+                >
+                  <Package :size="14" />
+                  <span>Tất Cả ({{ allProducts.length }})</span>
+                </button>
+                <button
+                  class="prod-pill-btn pill-active-style"
+                  :class="{ active: selectedProductFilterTab === 'active' }"
+                  @click="selectedProductFilterTab = 'active'"
+                >
+                  <CheckCircle2 :size="14" />
+                  <span>Đang Mở Bán ({{ activeProducts.length }})</span>
+                </button>
+                <button
+                  class="prod-pill-btn pill-pending-style"
+                  :class="{ active: selectedProductFilterTab === 'pending' }"
+                  @click="selectedProductFilterTab = 'pending'"
+                >
+                  <Hourglass :size="14" />
+                  <span>Chờ Quản Trị Duyệt ({{ pendingReviewProducts.length }})</span>
+                </button>
+                <button
+                  class="prod-pill-btn pill-rejected-style"
+                  :class="{ active: selectedProductFilterTab === 'rejected' }"
+                  @click="selectedProductFilterTab = 'rejected'"
+                >
+                  <XCircle :size="14" />
+                  <span>Bị Từ Chối ({{ rejectedProducts.length }})</span>
+                </button>
+              </div>
+
+              <div class="prod-search-input-box">
+                <Search :size="15" class="search-icon" />
+                <input
+                  v-model="productFilterSearchQuery"
+                  type="text"
+                  class="prod-search-control"
+                  placeholder="Tìm tên sản phẩm, gian hàng, danh mục..."
+                />
+                <button
+                  v-if="productFilterSearchQuery"
+                  class="search-clear-btn"
+                  @click="productFilterSearchQuery = ''"
+                >
+                  <X :size="13" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- BẢNG DANH SÁCH SẢN PHẨM -->
           <div class="table-card">
-            <div v-if="pendingReviewProducts.length === 0" class="empty-state-card" style="padding: 60px 20px; text-align: center;">
-              <CheckCircle2 :size="52" class="text-success mb-3" style="display: block; margin: 0 auto;" />
-              <h3 style="font-weight: 700; color: #0f172a; margin-bottom: 8px;">Hiện không có sản phẩm nào cần duyệt!</h3>
-              <p style="color: #64748b; font-size: 14px;">Mọi sản phẩm của các gian hàng đã được thẩm định an toàn hoặc tự động mở bán.</p>
+            <!-- Empty state khi danh sách lọc rỗng -->
+            <div v-if="displayedProducts.length === 0" class="empty-state-card" style="padding: 60px 20px; text-align: center;">
+              <CheckCircle2 v-if="selectedProductFilterTab === 'pending'" :size="52" class="text-success mb-3" style="display: block; margin: 0 auto;" />
+              <Package v-else :size="52" class="text-muted mb-3" style="display: block; margin: 0 auto;" />
+              <h3 style="font-weight: 700; color: #0f172a; margin-bottom: 8px;">
+                {{ selectedProductFilterTab === 'pending' ? 'Hiện không có sản phẩm nào cần duyệt!' : 'Không tìm thấy sản phẩm phù hợp' }}
+              </h3>
+              <p style="color: #64748b; font-size: 14px; max-width: 500px; margin: 0 auto;">
+                {{ selectedProductFilterTab === 'pending' ? 'Mọi sản phẩm của các gian hàng đã được thẩm định an toàn hoặc tự động mở bán.' : 'Vui lòng thử tìm kiếm với từ khóa khác hoặc chuyển sang tab bộ lọc khác.' }}
+              </p>
             </div>
 
+            <!-- Table danh sách sản phẩm -->
             <div v-else class="table-responsive-wrapper">
               <table class="concept-table">
                 <thead>
                   <tr>
-                    <th style="min-width: 260px;">Sản Phẩm & Hình Ảnh</th>
-                    <th style="min-width: 180px;">Gian Hàng</th>
+                    <th style="min-width: 280px;">Sản Phẩm & Hình Ảnh</th>
+                    <th style="min-width: 220px;">Gian Hàng Sở Hữu</th>
                     <th style="min-width: 130px;">Giá Niêm Yết</th>
                     <th style="min-width: 100px;">Tồn Kho</th>
-                    <th style="min-width: 280px;">Kết Quả Quét AI</th>
-                    <th style="min-width: 210px;" class="text-end">Hành Động</th>
+                    <th style="min-width: 210px;">Trạng Thái & AI Scan</th>
+                    <th style="min-width: 170px;" class="text-end">Hành Động</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="prod in pendingReviewProducts" :key="prod.id">
+                  <tr v-for="prod in displayedProducts" :key="prod.id" class="product-table-row">
                     <td>
-                      <div class="table-user-cell">
-                        <img
-                          :src="prod.image || 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=150'"
-                          class="product-thumb-img"
-                          @click="activeZoomImage = prod.image"
-                          title="Bấm để xem ảnh phóng to"
-                        />
-                        <div>
-                          <strong class="d-block" style="font-size: 14px; color: #0f172a;">{{ prod.name }}</strong>
-                          <small class="text-muted">{{ prod.category }} • {{ prod.unit || 'Phần' }}</small>
+                      <div class="product-info-cell">
+                        <div class="product-thumb-wrapper" @click="activeZoomImage = prod.image" title="Bấm để xem ảnh phóng to">
+                          <img
+                            :src="prod.image || 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=150'"
+                            class="product-thumb-img"
+                          />
+                          <div class="thumb-zoom-hint"><Eye :size="13" /></div>
+                        </div>
+                        <div class="product-meta-text">
+                          <strong class="product-name-title">{{ prod.name }}</strong>
+                          <div class="d-flex align-items-center gap-1 mt-1">
+                            <span class="category-pill-tag">{{ prod.category }}</span>
+                            <span class="unit-pill-tag">{{ prod.unit || '0.5 kg' }}</span>
+                          </div>
                         </div>
                       </div>
                     </td>
                     <td>
-                      <div>
-                        <strong style="color: #ea580c; font-size: 13.5px;">{{ prod.storeName || 'Gian hàng' }}</strong>
-                        <small class="d-block text-muted">{{ prod.sellerEmail }}</small>
+                      <div class="store-info-meta-cell">
+                        <div class="store-name-line">
+                          <Store :size="14" class="text-orange flex-shrink-0" />
+                          <strong class="store-name-text">{{ prod.storeName || 'Gian Hàng ZoneMart' }}</strong>
+                        </div>
+                        <div class="store-email-line">
+                          <Mail :size="12" class="text-muted flex-shrink-0" />
+                          <span class="store-email-text">{{ prod.sellerEmail || 'shop@zonemart.vn' }}</span>
+                        </div>
                       </div>
                     </td>
                     <td>
-                      <strong style="color: #0f172a; font-size: 14px;">{{ Number(prod.price).toLocaleString('vi-VN') }} đ</strong>
+                      <div class="product-price-box">
+                        <span class="price-amount">{{ Number(prod.price).toLocaleString('vi-VN') }}</span>
+                        <span class="price-currency">₫</span>
+                      </div>
                     </td>
                     <td>
-                      <span class="badge-stock-pill">{{ prod.stock }}</span>
+                      <span class="badge-stock-pill" :class="{ 'stock-low': prod.stock < 10 }">
+                        {{ prod.stock }} SP
+                      </span>
                     </td>
                     <td>
-                      <div class="ai-moderation-cell">
-                        <div class="d-flex align-items-center gap-1 mb-1">
-                          <span class="badge-ai-warning">
-                            <AlertTriangle :size="12" /> AI Cảnh báo
-                          </span>
-                          <span v-if="prod.aiScore?.matchScore" class="badge-ai-score">
-                            Độ khớp: {{ prod.aiScore.matchScore }}%
-                          </span>
-                        </div>
-                        <p class="ai-flag-text">
-                          {{ prod.aiScore?.flag || 'Chưa xác định được vật thể trong ảnh để đối chiếu tên sản phẩm.' }}
+                      <div v-if="prod.status === 'active'" class="product-status-flow">
+                        <span class="status-pill status-active">
+                          <span class="status-dot-pulse bg-emerald"></span>
+                          <span>Đang Mở Bán</span>
+                        </span>
+                        <span class="ai-verified-tag">
+                          <Sparkles :size="11" class="text-primary" />
+                          <span>AI: An toàn</span>
+                        </span>
+                      </div>
+                      <div v-else-if="prod.status === 'pending_review'" class="product-status-flow">
+                        <span class="status-pill status-pending">
+                          <Hourglass :size="12" />
+                          <span>Chờ Quản Trị Duyệt</span>
+                        </span>
+                        <p class="ai-flag-tooltip" :title="prod.aiScore?.flag">
+                          {{ prod.aiScore?.flag || 'Cần Ban Quản Trị đối soát mở bán.' }}
                         </p>
+                      </div>
+                      <div v-else class="product-status-flow">
+                        <span class="status-pill status-rejected">
+                          <XCircle :size="12" />
+                          <span>Bị Từ Chối</span>
+                        </span>
                       </div>
                     </td>
                     <td class="text-end">
                       <div class="actions-inline-btns">
                         <button
-                          class="btn-approve-product"
+                          v-if="prod.status !== 'active'"
+                          class="btn-row-action btn-row-approve"
                           @click="handleApproveProductItem(prod)"
                           title="Phê duyệt cho phép bán sản phẩm này ngay lập tức"
                         >
-                          <Check :size="14" /> Duyệt Mở Bán
+                          <Check :size="13" />
+                          <span>Duyệt Bán</span>
                         </button>
                         <button
-                          class="btn-reject-product"
+                          v-if="prod.status === 'active'"
+                          class="btn-row-action btn-row-reject"
                           @click="openRejectProductModal(prod)"
                           title="Từ chối và gỡ bỏ sản phẩm khỏi sàn"
                         >
-                          <X :size="14" /> Từ Chối
+                          <X :size="13" />
+                          <span>Gỡ Bán</span>
                         </button>
                         <button
-                          class="btn-delete-prod-admin"
+                          class="btn-row-action btn-row-delete"
                           @click="handleDirectDeleteProduct(prod)"
                           title="Xóa vĩnh viễn sản phẩm này khỏi sàn và gian hàng"
                         >
-                          <Trash2 :size="14" /> Xóa Bỏ
+                          <Trash2 :size="13" />
+                          <span>Xóa</span>
                         </button>
                       </div>
                     </td>
@@ -2481,7 +3092,401 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- TAB 4: QUẢN LÝ CA TRỰC (SHIFT MANAGERS) -->
+        <!-- TAB: QUẢN LÝ KHU VỰC & CHỢ SỐ (MARKET & AREA MANAGEMENT) -->
+        <div v-else-if="activeTab === 'markets'" class="tab-content-container">
+          <!-- HEADER BANNER -->
+          <div class="content-header-card d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div class="header-title-box">
+              <div class="d-flex align-items-center gap-3">
+                <div class="header-icon-circle bg-blue-gradient">
+                  <MapPin :size="24" class="text-white" />
+                </div>
+                <div>
+                  <h2 class="content-heading mb-0">Quản Lý Cụm Chợ Số & Khu Vực Địa Phương</h2>
+                  <p class="content-sub mb-0 mt-1">
+                    Mô hình số hóa chợ truyền thống: Cấp Xã / Phường ➔ Ban Quản Lý Chợ Số ➔ Danh Sách Chợ ➔ Danh Sách Gian Hàng & Chủ Tiệm
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="header-actions">
+              <button class="btn-primary-action" @click="fetchMarketsOverview">
+                <Loader2 v-if="isLoadingMarkets" :size="15" class="spinner-animated me-1" />
+                <Activity v-else :size="15" class="me-1" />
+                <span>Làm Mới Dữ Liệu</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- SUMMARY STAT CARDS -->
+          <div class="market-summary-grid mb-3">
+            <div class="market-stat-card card-blue-theme">
+              <div class="market-stat-icon-wrap icon-blue">
+                <MapPin :size="20" />
+              </div>
+              <div class="market-stat-body">
+                <span class="market-stat-label">Cấp Xã / Phường</span>
+                <strong class="market-stat-num">{{ totalWardsCount }} Khu Vực</strong>
+              </div>
+            </div>
+
+            <div class="market-stat-card card-orange-theme">
+              <div class="market-stat-icon-wrap icon-orange">
+                <Store :size="20" />
+              </div>
+              <div class="market-stat-body">
+                <span class="market-stat-label">Cụm Chợ Số</span>
+                <strong class="market-stat-num">{{ marketsOverview.length }} Cụm Chợ</strong>
+              </div>
+            </div>
+
+            <div class="market-stat-card card-purple-theme">
+              <div class="market-stat-icon-wrap icon-purple">
+                <ShieldCheck :size="20" />
+              </div>
+              <div class="market-stat-body">
+                <span class="market-stat-label">Ban Quản Lý</span>
+                <strong class="market-stat-num">{{ totalBoardsCount }} Ban Trực</strong>
+              </div>
+            </div>
+
+            <div class="market-stat-card card-emerald-theme">
+              <div class="market-stat-icon-wrap icon-emerald">
+                <Users :size="20" />
+              </div>
+              <div class="market-stat-body">
+                <span class="market-stat-label">Tổng Gian Hàng</span>
+                <strong class="market-stat-num">{{ totalStoresInMarkets }} Tiệm Kinh Doanh</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- MAIN 2-COLUMN LAYOUT -->
+          <div class="market-layout-split">
+            <!-- CỘT TRÁI: DANH SÁCH CHỢ THEO KHU VỰC -->
+            <div class="market-left-column">
+              <div class="market-box-header">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div class="d-flex align-items-center gap-2">
+                    <Store :size="18" class="text-orange" />
+                    <h4 class="box-title mb-0">Danh Sách Chợ</h4>
+                  </div>
+                  <span class="market-count-tag">{{ filteredMarketsList.length }} Cụm Chợ</span>
+                </div>
+                <div class="market-search-box mt-3">
+                  <Search :size="14" class="search-icon" />
+                  <input
+                    v-model="marketSearchQuery"
+                    type="text"
+                    class="market-search-input"
+                    placeholder="Tìm tên chợ, địa chỉ..."
+                  />
+                  <button v-if="marketSearchQuery" class="search-clear-btn" @click="marketSearchQuery = ''">
+                    <X :size="12" />
+                  </button>
+                </div>
+                <!-- BỘ LỌC QUẬN / HUYỆN & XÃ / PHƯỜNG TOÀN THÀNH PHỐ HÀ NỘI -->
+                <div class="market-filter-grid mt-2">
+                  <!-- LỌC QUẬN / HUYỆN -->
+                  <div class="filter-field-item">
+                    <label class="filter-mini-label">Quận / Huyện:</label>
+                    <select
+                      v-model="marketFilterDistrict"
+                      class="market-ward-select"
+                      @change="onDistrictFilterChange"
+                    >
+                      <option value="all">🏙️ Toàn TP. Hà Nội (Tất cả 30 Quận / Huyện)</option>
+                      <optgroup label="── 12 Quận Nội Thành ──">
+                        <option v-for="dist in INNER_DISTRICTS" :key="dist" :value="dist">
+                          🏙️ {{ dist }}
+                        </option>
+                      </optgroup>
+                      <optgroup label="── 18 Huyện & Thị Xã Ngoại Thành ──">
+                        <option v-for="dist in OUTER_DISTRICTS" :key="dist" :value="dist">
+                          🌾 {{ dist }}
+                        </option>
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  <!-- LỌC XÃ / PHƯỜNG -->
+                  <div class="filter-field-item mt-1">
+                    <label class="filter-mini-label">Xã / Phường:</label>
+                    <select
+                      v-model="marketFilterWard"
+                      class="market-ward-select"
+                      @change="onWardFilterChange"
+                    >
+                      <option value="all">
+                        {{ marketFilterDistrict === 'all' ? '🌐 Tất cả Xã / Phường (Toàn Thành Phố)' : '🌐 Tất cả Xã / Phường thuộc ' + marketFilterDistrict }}
+                      </option>
+                      <option v-for="w in wardsInFilterDistrict" :key="w.id" :value="w.id">
+                        🏛️ {{ w.name }} {{ w.districtName && marketFilterDistrict === 'all' ? '(' + w.districtName + ')' : '' }}
+                      </option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="market-cards-scroll">
+                <div
+                  v-for="mkt in filteredMarketsList"
+                  :key="mkt.id"
+                  class="market-card-item"
+                  :class="{ active: selectedMarketForView?.id === mkt.id }"
+                  @click="selectedMarketForView = mkt"
+                >
+                  <div class="market-item-top">
+                    <div class="d-flex align-items-center gap-2">
+                      <span class="market-code-pill">{{ mkt.marketCode }}</span>
+                      <h5 class="market-item-name">{{ mkt.marketName }}</h5>
+                    </div>
+                    <span class="market-status-badge">
+                      <span class="dot-online"></span>
+                      <span>Hoạt Động</span>
+                    </span>
+                  </div>
+
+                  <p class="market-item-address">
+                    <MapPin :size="13" class="text-danger flex-shrink-0" />
+                    <span>{{ mkt.address }}</span>
+                  </p>
+
+                  <div class="market-board-tag">
+                    <ShieldCheck :size="13" class="text-primary flex-shrink-0" />
+                    <span>{{ mkt.managementBoardName || 'Chưa phân công Ban Quản Lý' }}</span>
+                  </div>
+
+                  <!-- TỶ LỆ LẤP ĐẦY SẠP / GIAN HÀNG -->
+                  <div class="stalls-progress-box mt-2">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                      <span class="progress-label-text">Gian hàng đã vào chợ:</span>
+                      <strong class="progress-val-text">{{ mkt.registeredStallsCount }} / {{ mkt.totalStalls }} sạp</strong>
+                    </div>
+                    <div class="progress-bar-track">
+                      <div
+                        class="progress-bar-fill"
+                        :style="{ width: Math.min(100, mkt.occupancyRate || 0) + '%' }"
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div class="market-item-footer mt-2 pt-2 border-top d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-1 flex-wrap">
+                      <span class="market-ward-tag">{{ mkt.wardName }}</span>
+                      <span v-if="mkt.districtName" class="market-district-tag">{{ mkt.districtName }}</span>
+                    </div>
+                    <button
+                      class="btn-change-bql"
+                      title="Phân công / Điều chuyển Ban Quản Lý"
+                      @click.stop="openAssignBoardModal(mkt)"
+                    >
+                      <UserCheck :size="13" />
+                      <span>Đổi BQL</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- CỘT PHẢI: CHI TIẾT CHỢ & TOÀN BỘ GIAN HÀNG THUỘC CHỢ -->
+            <div class="market-right-column">
+              <div v-if="selectedMarketForView" class="market-detail-panel">
+                <!-- HERO CHỢ ĐANG CHỌN -->
+                <div class="selected-market-hero-card">
+                  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                    <div>
+                      <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="market-hero-code-badge">{{ selectedMarketForView.marketCode }}</span>
+                        <h3 class="selected-market-title mb-0">{{ selectedMarketForView.marketName }}</h3>
+                        <span class="badge-status-open">
+                          <span class="dot-online"></span>
+                          <span>Đang Mở Cửa</span>
+                        </span>
+                      </div>
+                      <p class="selected-market-sub mb-2">
+                        <MapPin :size="14" class="text-danger me-1 flex-shrink-0" />
+                        <span>{{ selectedMarketForView.address }} • <strong>{{ selectedMarketForView.wardName }}</strong> ({{ selectedMarketForView.districtName }})</span>
+                      </p>
+                      <div class="bql-assigned-info-box">
+                        <div class="bql-icon-badge">
+                          <ShieldCheck :size="16" />
+                        </div>
+                        <div class="bql-text-wrap">
+                          <div class="bql-main-title">
+                            Ban Quản Lý phụ trách: <strong>{{ selectedMarketForView.managementBoardName || 'Chưa phân công' }}</strong>
+                          </div>
+                          <div v-if="selectedMarketForView.boardLeader" class="bql-sub-contact">
+                            <span>Trưởng ban: <strong>{{ selectedMarketForView.boardLeader }}</strong></span>
+                            <span class="contact-sep">•</span>
+                            <span>SĐT đường dây nóng: <strong>{{ selectedMarketForView.boardPhone }}</strong></span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="hero-actions-box">
+                      <button
+                        class="btn-primary-action"
+                        @click="openAssignBoardModal(selectedMarketForView)"
+                      >
+                        <UserCheck :size="15" />
+                        <span>Điều Chuyển BQL</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- BẢNG DANH SÁCH GIAN HÀNG & THÔNG TIN CHỦ TIỆM CỦA CHỢ NÀY -->
+                <div class="market-stores-table-card mt-3">
+                  <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                      <h4 class="stores-section-title mb-1 d-flex align-items-center gap-2">
+                        <Store :size="18" class="text-orange" />
+                        <span>Danh Sách Gian Hàng & Thông Tin Chủ Tiệm ({{ selectedMarketForView.stores?.length || 0 }})</span>
+                      </h4>
+                      <p class="stores-section-sub mb-0 text-muted">
+                        Toàn bộ tiểu thương đã đăng ký kinh doanh tại {{ selectedMarketForView.marketName }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <!-- Empty state nếu chợ chưa có gian hàng -->
+                  <div v-if="!selectedMarketForView.stores || selectedMarketForView.stores.length === 0" class="empty-market-stores-box">
+                    <div class="empty-icon-circle">
+                      <Store :size="32" class="text-muted" />
+                    </div>
+                    <h5 class="empty-title">Chưa có gian hàng nào đăng ký tại {{ selectedMarketForView.marketName }}</h5>
+                    <p class="empty-desc">
+                      Tiểu thương khi đăng ký gian hàng tại khu vực này sẽ xuất hiện tại đây, hoặc bạn có thể gán nhanh gian hàng tự do từ danh sách bên dưới!
+                    </p>
+                  </div>
+
+                  <!-- Table danh sách gian hàng & thông tin người đó -->
+                  <div v-else class="table-responsive-wrapper">
+                    <table class="concept-table">
+                      <thead>
+                        <tr>
+                          <th style="min-width: 220px;">Gian Hàng & Mã Tiệm</th>
+                          <th style="min-width: 230px;">Chủ Tiệm (Người Bán)</th>
+                          <th style="min-width: 170px;">Vị Trí Sạp / Quầy</th>
+                          <th style="min-width: 140px;">Giờ Mở Cửa</th>
+                          <th style="min-width: 130px;">Trạng Thái</th>
+                          <th style="min-width: 110px;" class="text-end">Hành Động</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="st in selectedMarketForView.stores" :key="st.storeId">
+                          <td>
+                            <div class="table-user-cell">
+                              <img :src="st.avatarUrl || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200'" class="table-avatar" />
+                              <div>
+                                <strong class="d-block">{{ st.storeName }}</strong>
+                                <small class="text-muted">Mã: {{ st.storeCode || 'SEL-00' }}</small>
+                                <div class="mt-1">
+                                  <span class="category-pill-tag">{{ st.category }}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div class="owner-meta-cell">
+                              <strong class="text-dark d-block">{{ st.ownerFullName }}</strong>
+                              <small class="d-block text-muted">📞 {{ st.phoneEmail }}</small>
+                              <small v-if="st.cccdNumber" class="d-block text-muted">🪪 CCCD: {{ st.cccdNumber }}</small>
+                              <small v-if="st.nguyenQuan" class="d-block text-muted">Quê: {{ st.nguyenQuan }}</small>
+                            </div>
+                          </td>
+                          <td>
+                            <div class="stall-badge-pill">
+                              <span class="badge-stall-tag">
+                                📍 {{ st.stallNumber || 'Quầy sạp tại chợ' }}
+                              </span>
+                              <small class="d-block text-muted mt-1">{{ st.address }}</small>
+                            </div>
+                          </td>
+                          <td>
+                            <small class="fw-bold text-dark d-block">{{ st.openHours || '07:00 - 22:00' }}</small>
+                            <small v-if="st.bankName" class="d-block text-muted">{{ st.bankName }}</small>
+                          </td>
+                          <td>
+                            <span
+                              class="status-pill"
+                              :class="{
+                                'status-active': st.status === 'Approved' || st.status === 'active',
+                                'status-pending': st.status === 'Pending' || st.status === 'pending',
+                                'status-rejected': st.status === 'Rejected' || st.status === 'rejected'
+                              }"
+                            >
+                              {{ (st.status === 'Approved' || st.status === 'active') ? 'Đang Bán' : (st.status === 'Rejected' || st.status === 'rejected') ? 'Bị Từ Chối' : 'Chờ Duyệt' }}
+                            </span>
+                          </td>
+                          <td class="text-end">
+                            <div class="actions-inline-btns">
+                              <button
+                                class="action-btn btn-role"
+                                title="Phân quyền tài khoản chủ tiệm này"
+                                @click="openRoleModalForStore(st)"
+                              >
+                                <ShieldCheck :size="14" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <!-- BẢNG GIAN HÀNG TỰ DO CHƯA GẮN CHỢ -->
+                <div v-if="unassignedStoresList.length > 0" class="market-stores-table-card mt-3">
+                  <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0 text-dark fw-bold d-flex align-items-center gap-2">
+                      <AlertTriangle :size="17" class="text-warning flex-shrink-0" />
+                      <span>Gian Hàng Tự Do Trong Khu Vực Chưa Gắn Chợ ({{ unassignedStoresList.length }})</span>
+                    </h5>
+                    <span class="badge bg-light text-muted border">Chờ phân bổ vào sạp</span>
+                  </div>
+                  <div class="table-responsive-wrapper">
+                    <table class="concept-table">
+                      <thead>
+                        <tr>
+                          <th>Tên Gian Hàng</th>
+                          <th>Chủ Tiệm</th>
+                          <th>Địa Chỉ / Khu Vực</th>
+                          <th>Ngành Hàng</th>
+                          <th class="text-end">Thao Tác</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="us in unassignedStoresList.slice(0, 6)" :key="us.storeId">
+                          <td><strong>{{ us.storeName }}</strong></td>
+                          <td>
+                            <span class="d-block text-dark fw-semibold">{{ us.ownerFullName }}</span>
+                            <small class="text-muted">{{ us.phoneEmail }}</small>
+                          </td>
+                          <td>{{ us.address || us.district || 'Cầu Giấy, Hà Nội' }}</td>
+                          <td><span class="category-pill-tag">{{ us.category }}</span></td>
+                          <td class="text-end">
+                            <button
+                              class="btn-attach-market-styled"
+                              @click="openAssignStoreModal(us)"
+                            >
+                              <Plus :size="13" />
+                              <span>Gắn Vào {{ selectedMarketForView.marketName }}</span>
+                            </button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+<!-- TAB 4: QUẢN LÝ CA TRỰC (SHIFT MANAGERS) -->
         <div v-else-if="activeTab === 'managers'" class="tab-content-container">
           <div class="content-header-card d-flex justify-content-between align-items-center">
             <div class="header-title-box">
@@ -2502,6 +3507,7 @@ onUnmounted(() => {
                     <th>Gmail Đăng Nhập</th>
                     <th>Quyền Hạn</th>
                     <th>Trạng Thái</th>
+                    <th class="text-end">Hành Động</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2510,8 +3516,19 @@ onUnmounted(() => {
                       <strong>{{ m.fullName }}</strong>
                     </td>
                     <td>{{ m.email }}</td>
-                    <td><span class="badge-role-admin">Quản Lý Ca Trực</span></td>
-                    <td><span class="status-pill status-active">Đang Trực Tuyến</span></td>
+                    <td><span class="badge-role-manager"><UserCheck :size="12" /> Quản Lý Ca Trực</span></td>
+                    <td><span class="status-pill status-active">Đang Hoạt Động</span></td>
+                    <td class="text-end">
+                      <div class="actions-inline-btns">
+                        <button
+                          class="action-btn btn-role"
+                          title="Phân quyền vai trò và cấp bậc cho Quản lý này"
+                          @click="openRoleModal(m)"
+                        >
+                          <ShieldCheck :size="14" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -3084,6 +4101,264 @@ onUnmounted(() => {
           <button class="btn-modal-cancel" @click="showCreateManagerModal = false">Đóng</button>
           <button class="btn-modal-submit" @click="handleCreateManager">
             <Plus :size="16" /> Lưu Tài Khoản
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL PHÂN QUYỀN VAI TRÒ & QUYỀN HẠN TÀI KHOẢN -->
+    <div v-if="showRoleModal && selectedUserForRole" class="modal-backdrop-custom" @click.self="showRoleModal = false">
+      <div class="modal-dialog-card modal-lg role-modal-card">
+        <div class="modal-header-row">
+          <h3 class="modal-heading text-primary d-flex align-items-center gap-2">
+            <ShieldCheck :size="22" class="text-primary" /> Phân Quyền Vai Trò & Cấp Bậc Tài Khoản
+          </h3>
+          <button class="modal-close-btn" @click="showRoleModal = false"><X :size="18" /></button>
+        </div>
+
+        <div class="modal-body-scroll">
+          <!-- THÔNG TIN TÀI KHOẢN -->
+          <div class="user-role-hero-card mb-3">
+            <img :src="selectedUserForRole.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200'" class="user-role-avatar" />
+            <div class="user-role-meta">
+              <div class="d-flex align-items-center gap-2">
+                <h4 class="user-role-name">{{ selectedUserForRole.fullName }}</h4>
+                <span class="user-role-status-badge" :class="'badge-' + selectedUserForRole.accountStatus">
+                  {{ selectedUserForRole.accountStatus === 'active' ? '● Đang Hoạt Động' : selectedUserForRole.accountStatus === 'pending' ? '● Chờ Duyệt' : '● Bị Khóa' }}
+                </span>
+              </div>
+              <p class="user-role-email">{{ selectedUserForRole.email }}</p>
+              <div class="d-flex flex-wrap gap-1 mt-1">
+                <span class="badge bg-light text-dark border">ID: {{ selectedUserForRole.id }}</span>
+                <span v-if="selectedUserForRole.storeDetails?.storeName" class="badge bg-orange-subtle text-orange border">
+                  🏪 {{ selectedUserForRole.storeDetails.storeName }}
+                </span>
+                <span v-if="selectedUserForRole.shipperDetails?.licensePlate" class="badge bg-success-subtle text-success border">
+                  🛵 {{ selectedUserForRole.shipperDetails.licensePlate }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- MẪU PHÂN QUYỀN NHANH (QUICK PRESETS) -->
+          <div class="modal-field-group mb-3">
+            <label class="modal-form-label fw-bold mb-2 d-flex align-items-center gap-1">
+              <Sparkles :size="14" class="text-warning" /> Mẫu phân quyền nhanh (Presets):
+            </label>
+            <div class="role-preset-btns">
+              <button type="button" class="btn-preset-pill" @click="applyRolePreset('buyer')">
+                🛒 Khách Hàng
+              </button>
+              <button type="button" class="btn-preset-pill" @click="applyRolePreset('seller')">
+                🏪 Chủ Gian Hàng
+              </button>
+              <button type="button" class="btn-preset-pill" @click="applyRolePreset('shipper')">
+                🛵 Tài Xế Shipper
+              </button>
+              <button type="button" class="btn-preset-pill" @click="applyRolePreset('manager')">
+                🛡️ Quản Lý Ca Trực
+              </button>
+              <button type="button" class="btn-preset-pill btn-preset-admin" @click="applyRolePreset('admin')">
+                👑 Quản Trị Viên (Admin)
+              </button>
+            </div>
+          </div>
+
+          <!-- CHỌN VAI TRÒ HỆ THỐNG (SYSTEM ROLES) -->
+          <div class="modal-field-group mb-3">
+            <label class="modal-form-label fw-bold mb-2 d-flex align-items-center gap-1">
+              <Users :size="14" class="text-primary" /> Vai trò trên sàn (Có thể chọn kết hợp nhiều vai trò):
+            </label>
+            <div class="role-cards-grid">
+              <!-- Role: Buyer -->
+              <label class="role-select-card" :class="{ selected: roleForm.isBuyer }">
+                <input type="checkbox" v-model="roleForm.isBuyer" class="role-checkbox" />
+                <div class="role-card-content">
+                  <div class="role-card-header">
+                    <span class="role-icon-box bg-blue"><Users :size="16" /></span>
+                    <strong>Người Mua Hàng (Buyer)</strong>
+                  </div>
+                  <p class="role-card-desc">Tìm kiếm, mua sắm sản phẩm, thanh toán VietQR và đánh giá gian hàng.</p>
+                </div>
+              </label>
+
+              <!-- Role: Seller -->
+              <label class="role-select-card" :class="{ selected: roleForm.isSeller }">
+                <input type="checkbox" v-model="roleForm.isSeller" class="role-checkbox" />
+                <div class="role-card-content">
+                  <div class="role-card-header">
+                    <span class="role-icon-box bg-orange"><Store :size="16" /></span>
+                    <strong>Chủ Gian Hàng (Seller)</strong>
+                  </div>
+                  <p class="role-card-desc">Kinh doanh, đăng tải sản phẩm, quản lý đơn hàng cửa hàng và nhận doanh thu.</p>
+                </div>
+              </label>
+
+              <!-- Role: Shipper -->
+              <label class="role-select-card" :class="{ selected: roleForm.isShipper }">
+                <input type="checkbox" v-model="roleForm.isShipper" class="role-checkbox" />
+                <div class="role-card-content">
+                  <div class="role-card-header">
+                    <span class="role-icon-box bg-green"><Bike :size="16" /></span>
+                    <strong>Tài Xế Giao Hàng (Shipper)</strong>
+                  </div>
+                  <p class="role-card-desc">Bật nhận đơn hỏa tốc, xem bản đồ điều hướng giao hàng và ví tiền tài xế.</p>
+                </div>
+              </label>
+
+              <!-- Role: Manager -->
+              <label class="role-select-card" :class="{ selected: roleForm.isManager }">
+                <input type="checkbox" v-model="roleForm.isManager" class="role-checkbox" />
+                <div class="role-card-content">
+                  <div class="role-card-header">
+                    <span class="role-icon-box bg-indigo"><UserCheck :size="16" /></span>
+                    <strong>Quản Lý Ca Trực (Manager)</strong>
+                  </div>
+                  <p class="role-card-desc">Duyệt hồ sơ đối tác KYC, kiểm duyệt sản phẩm, giám sát vận hành sàn.</p>
+                </div>
+              </label>
+
+              <!-- Role: Admin -->
+              <label class="role-select-card" :class="{ selected: roleForm.isAdmin }">
+                <input type="checkbox" v-model="roleForm.isAdmin" class="role-checkbox" />
+                <div class="role-card-content">
+                  <div class="role-card-header">
+                    <span class="role-icon-box bg-purple"><ShieldCheck :size="16" /></span>
+                    <strong>Quản Trị Viên (Admin)</strong>
+                  </div>
+                  <p class="role-card-desc">Toàn quyền tối cao quản trị sàn: phân quyền, kỷ luật, xóa và cấu hình hệ thống.</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- PHÂN QUYỀN VẬN HÀNH CHI TIẾT (FINE-GRAINED PERMISSIONS) -->
+          <div v-if="roleForm.isManager || roleForm.isAdmin" class="permissions-section-card mb-3">
+            <div class="permissions-section-header">
+              <label class="modal-form-label fw-bold mb-1 d-flex align-items-center gap-1">
+                <ShieldCheck :size="14" class="text-indigo" /> Quyền hạn vận hành hệ thống:
+              </label>
+              <small class="text-muted">Cấp quyền hạn chi tiết cho nhân sự quản lý ca</small>
+            </div>
+            <div class="permission-items-grid">
+              <label
+                v-for="p in availablePermissions"
+                :key="p.key"
+                class="permission-pill-label"
+                :class="{ active: roleForm.permissions.includes(p.key) }"
+              >
+                <input
+                  type="checkbox"
+                  :checked="roleForm.permissions.includes(p.key)"
+                  @change="togglePermission(p.key)"
+                  class="permission-checkbox"
+                />
+                <div class="permission-text-meta">
+                  <strong>{{ p.label }}</strong>
+                  <small>{{ p.desc }}</small>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- LÝ DO PHÂN QUYỀN / GHI CHÚ -->
+          <div class="modal-field-group">
+            <label class="modal-form-label fw-bold mb-1">Lý do phân quyền / Ghi chú (Lưu vào nhật ký hệ thống):</label>
+            <input
+              v-model="roleForm.reason"
+              type="text"
+              class="modal-form-control"
+              placeholder="VD: Cấp quyền Quản lý ca trực, Phê duyệt quyền bán hàng cho Shop..."
+            />
+          </div>
+        </div>
+
+        <div class="modal-footer-row">
+          <button class="btn-modal-cancel" :disabled="isSubmittingRole" @click="showRoleModal = false">Hủy Bỏ</button>
+          <button
+            class="btn-modal-save-role"
+            :disabled="isSubmittingRole"
+            @click="handleSaveRoles"
+          >
+            <Loader2 v-if="isSubmittingRole" :size="15" class="spinner-animated me-1" />
+            <ShieldCheck v-else :size="15" class="me-1" />
+            <span>{{ isSubmittingRole ? 'Đang cập nhật...' : 'Lưu Phân Quyền' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL ĐIỀU CHUYỂN / PHÂN CÔNG BAN QUẢN LÝ CHO CHỢ -->
+    <div v-if="showAssignBoardModal && marketToAssign" class="modal-backdrop-custom" @click.self="showAssignBoardModal = false">
+      <div class="modal-dialog-card modal-md">
+        <div class="modal-header-row">
+          <h3 class="modal-heading text-primary d-flex align-items-center gap-2">
+            <UserCheck :size="20" class="text-primary" /> Phân Công Ban Quản Lý: {{ marketToAssign.marketName }}
+          </h3>
+          <button class="modal-close-btn" @click="showAssignBoardModal = false"><X :size="18" /></button>
+        </div>
+        <div class="modal-body-scroll">
+          <div class="modal-field-group mb-3">
+            <label class="modal-form-label fw-bold">Chọn Ban Quản Lý Chợ Số phụ trách:</label>
+            <select v-model="selectedBoardIdForAssign" class="modal-form-select">
+              <option value="" disabled>-- Chọn Ban Quản Lý --</option>
+              <option v-for="b in managementBoardsList" :key="b.id" :value="b.id">
+                🏛️ {{ b.name }} (Trưởng ban: {{ b.leader }} - {{ b.phone }})
+              </option>
+              <option v-for="b in managers" :key="'mgr-' + b.id" :value="b.id">
+                👥 Quản trị viên: {{ b.fullName }} ({{ b.email }})
+              </option>
+            </select>
+          </div>
+          <div class="modal-field-group mb-3">
+            <label class="modal-form-label fw-bold">Số Quyết Định phân công (UBND Xã/Phường):</label>
+            <input v-model="assignDecisionNumber" type="text" class="modal-form-control" placeholder="VD: QD-BQL-2026-MKT_A" />
+          </div>
+          <div class="modal-field-group">
+            <label class="modal-form-label fw-bold">Nhiệm vụ & Ghi chú phân công:</label>
+            <textarea v-model="assignNotes" class="modal-form-control" rows="3" placeholder="Nhập nhiệm vụ quản lý, số hóa tiểu thương..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer-row">
+          <button class="btn-modal-cancel" :disabled="isSubmittingAssignBoard" @click="showAssignBoardModal = false">Hủy</button>
+          <button class="btn-modal-submit" :disabled="isSubmittingAssignBoard" @click="handleAssignBoardSubmit">
+            <Loader2 v-if="isSubmittingAssignBoard" :size="15" class="spinner-animated me-1" />
+            <UserCheck v-else :size="15" class="me-1" />
+            <span>Lưu Phân Công</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL GẮN GIAN HÀNG VÀO CHỢ CỤ THỂ -->
+    <div v-if="showAssignStoreModal && storeToAssign" class="modal-backdrop-custom" @click.self="showAssignStoreModal = false">
+      <div class="modal-dialog-card modal-md">
+        <div class="modal-header-row">
+          <h3 class="modal-heading text-orange d-flex align-items-center gap-2">
+            <Store :size="20" class="text-orange" /> Gắn Gian Hàng: {{ storeToAssign.storeName }}
+          </h3>
+          <button class="modal-close-btn" @click="showAssignStoreModal = false"><X :size="18" /></button>
+        </div>
+        <div class="modal-body-scroll">
+          <div class="modal-field-group mb-3">
+            <label class="modal-form-label fw-bold">Chọn Chợ phân bổ:</label>
+            <select v-model="targetMarketIdForStore" class="modal-form-select">
+              <option v-for="m in marketsOverview" :key="m.id" :value="m.id">
+                🏪 {{ m.marketName }} - {{ m.wardName }} ({{ m.districtName }})
+              </option>
+            </select>
+          </div>
+          <div class="modal-field-group">
+            <label class="modal-form-label fw-bold">Số sạp / Vị trí quầy:</label>
+            <input v-model="targetStallNumber" type="text" class="modal-form-control" placeholder="VD: Sạp 12A - Dãy thực phẩm tươi" />
+          </div>
+        </div>
+        <div class="modal-footer-row">
+          <button class="btn-modal-cancel" :disabled="isSubmittingAssignStore" @click="showAssignStoreModal = false">Hủy</button>
+          <button class="btn-modal-submit" :disabled="isSubmittingAssignStore" @click="handleAssignStoreSubmit">
+            <Loader2 v-if="isSubmittingAssignStore" :size="15" class="spinner-animated me-1" />
+            <Plus v-else :size="15" class="me-1" />
+            <span>Gắn Vào Chợ</span>
           </button>
         </div>
       </div>
@@ -3951,7 +5226,7 @@ onUnmounted(() => {
 /* Dải thống kê kênh (Channels Strip - Executive Style) */
 .hero-channels-strip {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
   padding: 16px 24px;
   border-top: 1px solid #f1f5f9;
@@ -4618,6 +5893,1147 @@ onUnmounted(() => {
   background-color: #fef2f2;
   border-color: #fee2e2;
 }
+/* PHÂN QUYỀN TÀI KHOẢN (ROLE MANAGEMENT) STYLES */
+.btn-role {
+  color: #4f46e5;
+  background-color: #eef2ff;
+  border-color: #c7d2fe;
+}
+.btn-role:hover {
+  background-color: #4f46e5;
+  color: #ffffff;
+  border-color: #4f46e5;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(79, 70, 229, 0.25);
+}
+
+.badge-role-manager {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  white-space: nowrap !important;
+  line-height: 1.3;
+  background-color: #e0e7ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+
+/* ================================================================
+   CHUYÊN BIỆT: GIAO DIỆN QUẢN LÝ SẢN PHẨM & KHU VỰC CHỢ SỐ (REDESIGNED)
+   ================================================================ */
+
+/* HEADER BANNER SHARED STYLES */
+.header-icon-circle {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.bg-orange-gradient {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+  box-shadow: 0 4px 12px rgba(234, 88, 12, 0.28);
+}
+.bg-blue-gradient {
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+}
+
+.btn-primary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+  color: #ffffff;
+  border: none;
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.25);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-primary-action:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 16px rgba(234, 88, 12, 0.35);
+  background: linear-gradient(135deg, #fb923c 0%, #c2410c 100%);
+}
+.btn-primary-action:active {
+  transform: translateY(0);
+}
+
+/* ==================== PHẦN 1: QUẢN LÝ SẢN PHẨM ==================== */
+.product-toolbar-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.prod-filter-pills-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.prod-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 15px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.prod-pill-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+.prod-pill-btn.active {
+  background: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
+}
+.prod-pill-btn.pill-active-style.active {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(22, 163, 74, 0.25);
+}
+.prod-pill-btn.pill-pending-style.active {
+  background: #ea580c;
+  border-color: #ea580c;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.25);
+}
+.prod-pill-btn.pill-rejected-style.active {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.25);
+}
+
+.prod-search-input-box {
+  position: relative;
+  min-width: 260px;
+  flex: 1;
+  max-width: 360px;
+}
+.prod-search-input-box .search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+}
+.prod-search-control {
+  width: 100%;
+  padding: 8px 32px 8px 36px;
+  font-size: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  outline: none;
+  background: #ffffff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.prod-search-control:focus {
+  border-color: #ea580c;
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
+}
+.search-clear-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+}
+.search-clear-btn:hover {
+  color: #334155;
+}
+
+/* PRODUCT TABLE CELLS */
+.product-table-row {
+  transition: background-color 0.15s ease;
+}
+.product-table-row:hover {
+  background-color: #fbfcfe !important;
+}
+
+.product-info-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.product-thumb-wrapper {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.product-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.2s ease;
+}
+.product-thumb-wrapper:hover .product-thumb-img {
+  transform: scale(1.1);
+}
+.thumb-zoom-hint {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.product-thumb-wrapper:hover .thumb-zoom-hint {
+  opacity: 1;
+}
+
+.product-meta-text {
+  display: flex;
+  flex-direction: column;
+}
+.product-name-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.category-pill-tag {
+  font-size: 11px;
+  font-weight: 600;
+  background-color: #f1f5f9;
+  color: #475569;
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+.unit-pill-tag {
+  font-size: 11px;
+  color: #64748b;
+  background-color: #f8fafc;
+  padding: 2px 6px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.store-info-meta-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.store-name-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.store-name-text {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ea580c;
+  line-height: 1.25;
+}
+.store-email-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.store-email-text {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.25;
+}
+
+.product-price-box {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.price-amount {
+  font-size: 15px;
+}
+.price-currency {
+  font-size: 12px;
+  color: #ea580c;
+}
+
+.badge-stock-pill {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid #e2e8f0;
+}
+.badge-stock-pill.stock-low {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+.product-status-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.status-dot-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.bg-emerald {
+  background-color: #10b981;
+}
+
+.ai-verified-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 2px 7px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.ai-flag-tooltip {
+  font-size: 11.5px;
+  color: #d97706;
+  margin: 0;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.btn-row-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 11px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+}
+.btn-row-approve {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #15803d;
+}
+.btn-row-approve:hover {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #ffffff;
+}
+.btn-row-reject {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #c2410c;
+}
+.btn-row-reject:hover {
+  background: #ea580c;
+  border-color: #ea580c;
+  color: #ffffff;
+}
+.btn-row-delete {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+.btn-row-delete:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+/* ==================== PHẦN 2: KHU VỰC & CỤM CHỢ SỐ ==================== */
+.market-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+@media (max-width: 1200px) {
+  .market-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .market-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.market-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  background-color: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.market-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+}
+
+.market-stat-icon-wrap {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.icon-blue {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #dbeafe;
+}
+.icon-orange {
+  background: #fff7ed;
+  color: #ea580c;
+  border: 1px solid #ffedd5;
+}
+.icon-purple {
+  background: #faf5ff;
+  color: #9333ea;
+  border: 1px solid #f3e8ff;
+}
+.icon-emerald {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #dcfce7;
+}
+
+.market-stat-body {
+  display: flex;
+  flex-direction: column;
+}
+.market-stat-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: #64748b;
+}
+.market-stat-num {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-top: 2px;
+}
+
+/* 2-COLUMN LAYOUT */
+.market-layout-split {
+  display: grid;
+  grid-template-columns: 370px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 1024px) {
+  .market-layout-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.market-left-column {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.market-box-header .box-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.market-count-tag {
+  font-size: 12px;
+  font-weight: 700;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  border: 1px solid #bfdbfe;
+}
+
+.market-search-box {
+  position: relative;
+}
+.market-search-box .search-icon {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+}
+.market-search-input {
+  width: 100%;
+  padding: 8px 30px 8px 34px;
+  font-size: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.market-search-input:focus {
+  border-color: #ea580c;
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
+}
+
+.market-ward-select {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background-color: #f8fafc;
+  color: #1e293b;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.market-ward-select:focus {
+  border-color: #ea580c;
+  background-color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
+}
+
+
+.market-cards-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+  max-height: 650px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.market-cards-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+.market-cards-scroll::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 4px;
+}
+
+.market-card-item {
+  padding: 14px 16px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  background-color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.market-card-item:hover {
+  border-color: #cbd5e1;
+  background-color: #f8fafc;
+}
+.market-card-item.active {
+  border-color: #ea580c;
+  background-color: #fffbf7;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.12);
+}
+
+.market-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.market-code-pill {
+  font-size: 11px;
+  font-weight: 800;
+  background-color: #0f172a;
+  color: #ffffff;
+  padding: 2px 7px;
+  border-radius: 5px;
+  letter-spacing: 0.3px;
+}
+.market-item-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+.market-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #16a34a;
+}
+.dot-online {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #16a34a;
+}
+
+.market-item-address {
+  font-size: 12.5px;
+  color: #64748b;
+  margin: 6px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.market-board-tag {
+  font-size: 12px;
+  color: #1e40af;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 4px 9px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.stalls-progress-box .progress-label-text {
+  font-size: 12px;
+  color: #64748b;
+}
+.stalls-progress-box .progress-val-text {
+  font-size: 12px;
+  color: #ea580c;
+}
+.stalls-progress-box .progress-bar-track {
+  width: 100%;
+  height: 6px;
+  background-color: #e2e8f0;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.stalls-progress-box .progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ea580c, #f97316);
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+.market-ward-tag {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+  background: #f1f5f9;
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+.market-district-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1e40af;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+.filter-mini-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 3px;
+  display: block;
+}
+.market-filter-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.btn-change-bql {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  border-radius: 6px;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-change-bql:hover {
+  background-color: #ea580c;
+  color: #ffffff;
+  border-color: #ea580c;
+}
+
+/* RIGHT COLUMN - DETAIL PANEL */
+.selected-market-hero-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 22px 26px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+.market-hero-code-badge {
+  font-size: 12px;
+  font-weight: 800;
+  background-color: #0f172a;
+  color: #ffffff;
+  padding: 3px 9px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+.selected-market-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.badge-status-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  background-color: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+  padding: 3px 10px;
+  border-radius: 9999px;
+}
+
+.selected-market-sub {
+  font-size: 13.5px;
+  color: #475569;
+  display: flex;
+  align-items: center;
+}
+
+.bql-assigned-info-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-top: 10px;
+}
+.bql-icon-badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background-color: #dbeafe;
+  color: #1d4ed8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.bql-text-wrap {
+  display: flex;
+  flex-direction: column;
+}
+.bql-main-title {
+  font-size: 13px;
+  color: #1e3a8a;
+}
+.bql-sub-contact {
+  font-size: 12px;
+  color: #3b82f6;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.contact-sep {
+  color: #93c5fd;
+}
+
+.market-stores-table-card {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 20px 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+.stores-section-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.stores-section-sub {
+  font-size: 12.5px;
+}
+
+.empty-market-stores-box {
+  text-align: center;
+  padding: 48px 24px;
+  background-color: #f8fafc;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.empty-icon-circle {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background-color: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+.empty-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 6px;
+}
+.empty-desc {
+  font-size: 13px;
+  color: #64748b;
+  max-width: 480px;
+  margin: 0;
+}
+
+.badge-stall-tag {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  background-color: #ea580c;
+  color: #ffffff;
+  padding: 3px 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(234, 88, 12, 0.2);
+}
+
+.btn-attach-market-styled {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid #ea580c;
+  background-color: #fff7ed;
+  color: #ea580c;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-attach-market-styled:hover {
+  background-color: #ea580c;
+  color: #ffffff;
+  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.25);
+  transform: translateY(-1px);
+}
+
+.role-modal-card {
+  max-width: 680px !important;
+}
+
+.user-role-hero-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.user-role-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.user-role-meta {
+  flex: 1;
+}
+
+.user-role-name {
+  font-size: 17px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+
+.user-role-email {
+  font-size: 13px;
+  color: #64748b;
+  margin: 2px 0 0 0;
+}
+
+.user-role-status-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+.user-role-status-badge.badge-active {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+.user-role-status-badge.badge-pending {
+  background-color: #fefce8;
+  color: #a16207;
+}
+
+.role-preset-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn-preset-pill {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12.5px;
+  font-weight: 600;
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-preset-pill:hover {
+  background-color: #ea580c;
+  border-color: #ea580c;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.btn-preset-admin:hover {
+  background-color: #7c3aed !important;
+  border-color: #7c3aed !important;
+}
+
+.role-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.role-select-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  background-color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.role-select-card:hover {
+  border-color: #cbd5e1;
+  background-color: #f8fafc;
+}
+
+.role-select-card.selected {
+  border-color: #ea580c;
+  background-color: #fff7ed;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.12);
+}
+
+.role-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: #ea580c;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.role-card-content {
+  flex: 1;
+}
+
+.role-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.role-icon-box {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.role-icon-box.bg-blue { background-color: #dbeafe; color: #1d4ed8; }
+.role-icon-box.bg-orange { background-color: #ffedd5; color: #ea580c; }
+.role-icon-box.bg-green { background-color: #dcfce7; color: #15803d; }
+.role-icon-box.bg-indigo { background-color: #e0e7ff; color: #4338ca; }
+.role-icon-box.bg-purple { background-color: #ede9fe; color: #7c3aed; }
+
+.role-card-desc {
+  font-size: 12px;
+  color: #64748b;
+  margin: 4px 0 0 0;
+  line-height: 1.4;
+}
+
+.permissions-section-card {
+  padding: 16px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.permissions-section-header {
+  margin-bottom: 12px;
+}
+
+.permission-items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.permission-pill-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background-color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.permission-pill-label:hover {
+  background-color: #f1f5f9;
+}
+
+.permission-pill-label.active {
+  border-color: #6366f1;
+  background-color: #eef2ff;
+}
+
+.permission-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: #6366f1;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.permission-text-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.permission-text-meta strong {
+  font-size: 12.5px;
+  color: #1e293b;
+}
+
+.permission-text-meta small {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.btn-modal-save-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 20px;
+  font-size: 13.5px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: none;
+  background-color: #4f46e5;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-modal-save-role:hover:not(:disabled) {
+  background-color: #4338ca;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+}
+
+.btn-modal-save-role:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .btn-delete:hover {
   background-color: #dc2626;
   color: #ffffff;
@@ -6008,4 +8424,85 @@ onUnmounted(() => {
   .hero-top-row { flex-direction: column; text-align: center; }
   .hero-channels-strip { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* PRODUCT FILTER STRIP & ENHANCED METRICS */
+.product-filter-strip {
+  background-color: #ffffff;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+.prod-filter-tabs-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.prod-pill-btn {
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background-color: #f8fafc;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.prod-pill-btn:hover {
+  background-color: #e2e8f0;
+}
+.prod-pill-btn.active {
+  background-color: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
+}
+.prod-pill-btn.pill-active-style.active {
+  background-color: #16a34a;
+  border-color: #16a34a;
+  color: #ffffff;
+}
+.prod-pill-btn.pill-pending-style.active {
+  background-color: #ea580c;
+  border-color: #ea580c;
+  color: #ffffff;
+}
+.prod-pill-btn.pill-rejected-style.active {
+  background-color: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+.prod-search-input-box {
+  position: relative;
+  min-width: 280px;
+}
+.prod-search-input-box .search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+}
+.prod-search-input {
+  width: 100%;
+  padding: 7px 10px 7px 32px;
+  font-size: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  outline: none;
+}
+.prod-search-input:focus {
+  border-color: #ea580c;
+}
+.cell-cyan {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.cell-cyan:hover {
+  background-color: #ecfeff;
+}
+.box-cyan {
+  background-color: #e0f2fe;
+  color: #0284c7;
+}
+
 </style>

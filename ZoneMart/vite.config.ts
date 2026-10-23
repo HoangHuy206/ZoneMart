@@ -6,7 +6,7 @@ import path from 'node:path'
 import https from 'node:https'
 
 // File lưu trữ lịch sử giao dịch tiền vào thực tế để không bị mất khi restart server
-const PAID_ORDERS_FILE = path.resolve(__dirname, '.paid_orders.json')
+const PAID_ORDERS_FILE = path.resolve(import.meta.dirname, '.paid_orders.json')
 
 interface PaidTransaction {
   code?: string
@@ -71,7 +71,7 @@ function extractOrderCode(text: string): string | null {
 function resolveTelegramToken(): string {
   if (process.env.TELEGRAM_BOT_TOKEN) return process.env.TELEGRAM_BOT_TOKEN.trim()
   try {
-    const envFile = path.resolve(__dirname, '.env')
+    const envFile = path.resolve(import.meta.dirname, '.env')
     if (fs.existsSync(envFile)) {
       const content = fs.readFileSync(envFile, 'utf8')
       const match = content.match(/TELEGRAM_BOT_TOKEN\s*=\s*([^\r\n]+)/i)
@@ -79,7 +79,7 @@ function resolveTelegramToken(): string {
     }
   } catch (e) {}
   try {
-    const appsettingsPath = path.resolve(__dirname, '../server/appsettings.json')
+    const appsettingsPath = path.resolve(import.meta.dirname, '../server/appsettings.json')
     if (fs.existsSync(appsettingsPath)) {
       const data = JSON.parse(fs.readFileSync(appsettingsPath, 'utf8'))
       if (data.TelegramSettings?.BotToken && data.TelegramSettings.BotToken !== 'YOUR_TELEGRAM_BOT_TOKEN') {
@@ -93,7 +93,7 @@ function resolveTelegramToken(): string {
 function resolveTelegramAdminChatId(): string {
   if (process.env.TELEGRAM_ADMIN_CHAT_ID) return process.env.TELEGRAM_ADMIN_CHAT_ID.trim()
   try {
-    const envFile = path.resolve(__dirname, '.env')
+    const envFile = path.resolve(import.meta.dirname, '.env')
     if (fs.existsSync(envFile)) {
       const content = fs.readFileSync(envFile, 'utf8')
       const match = content.match(/TELEGRAM_ADMIN_CHAT_ID\s*=\s*([^\r\n]+)/i)
@@ -101,7 +101,7 @@ function resolveTelegramAdminChatId(): string {
     }
   } catch (e) {}
   try {
-    const appsettingsPath = path.resolve(__dirname, '../server/appsettings.json')
+    const appsettingsPath = path.resolve(import.meta.dirname, '../server/appsettings.json')
     if (fs.existsSync(appsettingsPath)) {
       const data = JSON.parse(fs.readFileSync(appsettingsPath, 'utf8'))
       if (data.TelegramSettings?.ChatId) return String(data.TelegramSettings.ChatId).trim()
@@ -113,7 +113,7 @@ function resolveTelegramAdminChatId(): string {
 function resolveSepayApiKey(): string {
   if (process.env.SEPAY_API_KEY) return process.env.SEPAY_API_KEY.trim()
   try {
-    const envFile = path.resolve(__dirname, '.env')
+    const envFile = path.resolve(import.meta.dirname, '.env')
     if (fs.existsSync(envFile)) {
       const content = fs.readFileSync(envFile, 'utf8')
       const match = content.match(/SEPAY_API_KEY\s*=\s*([^\r\n]+)/i)
@@ -127,7 +127,7 @@ function resolveSepayApiKey(): string {
 function resolvePaymentSecret(): string {
   if (process.env.ZONEMART_PAYMENT_SECRET) return process.env.ZONEMART_PAYMENT_SECRET.trim()
   try {
-    const envFile = path.resolve(__dirname, '.env')
+    const envFile = path.resolve(import.meta.dirname, '.env')
     if (fs.existsSync(envFile)) {
       const content = fs.readFileSync(envFile, 'utf8')
       const match = content.match(/ZONEMART_PAYMENT_SECRET\s*=\s*([^\r\n]+)/i)
@@ -140,7 +140,7 @@ function resolvePaymentSecret(): string {
 function resolveCassoApiKey(): string {
   if (process.env.CASSO_API_KEY) return process.env.CASSO_API_KEY.trim()
   try {
-    const envFile = path.resolve(__dirname, '.env')
+    const envFile = path.resolve(import.meta.dirname, '.env')
     if (fs.existsSync(envFile)) {
       const content = fs.readFileSync(envFile, 'utf8')
       const match = content.match(/CASSO_API_KEY\s*=\s*([^\r\n]+)/i)
@@ -264,7 +264,7 @@ interface PendingOrderData {
   time?: number
 }
 
-const PENDING_ORDERS_FILE = path.resolve(__dirname, '.pending_orders.json')
+const PENDING_ORDERS_FILE = path.resolve(import.meta.dirname, '.pending_orders.json')
 
 function loadPendingOrders(): Map<string, PendingOrderData> {
   const map = new Map<string, PendingOrderData>()
@@ -329,7 +329,7 @@ interface RealtimeOrderServer {
   }
 }
 
-const REALTIME_ORDERS_FILE = path.resolve(__dirname, '.realtime_orders.json')
+const REALTIME_ORDERS_FILE = path.resolve(import.meta.dirname, '.realtime_orders.json')
 const realtimeSseClients = new Set<(data: string) => void>()
 
 function loadRealtimeOrders(): Map<string, RealtimeOrderServer> {

@@ -62,5 +62,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-fix_hosts_and_push.bat
+# Windows Batch & Command Scripts (Local only - do not push to Git)
+*.bat
+*.cmd
 

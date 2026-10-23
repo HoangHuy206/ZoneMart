@@ -1,4 +1,4 @@
-using MongoDB.Bson;
+﻿using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace ZoneMart.Server.Models;
@@ -39,6 +39,15 @@ public class Store
 
     [BsonElement("market_name")]
     public string MarketName { get; set; } = string.Empty; // Tên Chợ truyền thống hoặc Cụm chợ số địa phương
+
+    [BsonElement("market_id")]
+    public string? MarketId { get; set; } // Khóa ngoại liên kết Chợ
+
+    [BsonElement("ward_id")]
+    public string? WardId { get; set; } // Khóa ngoại liên kết Xã / Phường
+
+    [BsonElement("stall_number")]
+    public string? StallNumber { get; set; } // Số sạp / Quầy hàng trong chợ
 
     [BsonElement("open_hours")]
     public string OpenHours { get; set; } = "07:00 - 22:00"; // Khung giờ mở cửa (vd: 7h đến 22h)

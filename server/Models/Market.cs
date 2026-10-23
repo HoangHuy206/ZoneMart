@@ -26,6 +26,9 @@ public class Market
     [BsonElement("ward_name")]
     public string WardName { get; set; } = string.Empty;
 
+    [BsonElement("district_name")]
+    public string DistrictName { get; set; } = string.Empty;
+
     [BsonElement("management_board_id")]
     public string? ManagementBoardId { get; set; } // Ban quản lý hiện tại phụ trách
 

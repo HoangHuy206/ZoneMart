@@ -899,8 +899,7 @@ public class AuthController : ControllerBase
                 shipperInfo = await _mongoService.Shippers.Find(sh => 
                     sh.UserId == existingUser.Id || 
                     (!string.IsNullOrEmpty(existingUser.UserCode) && sh.UserId == existingUser.UserCode) ||
-                    sh.PhoneNumber == existingUser.PhoneEmail || 
-                    (sh.FullName == existingUser.FullName && !string.IsNullOrEmpty(existingUser.FullName))
+                    sh.PhoneNumber == existingUser.PhoneEmail
                 ).FirstOrDefaultAsync();
                 string cleanEmail = existingUser.PhoneEmail?.Trim().ToLower() ?? "";
                 string cleanPhone = (!string.IsNullOrEmpty(existingUser.Phone)) ? existingUser.Phone.Trim() : "";
@@ -1139,8 +1138,12 @@ public class AuthController : ControllerBase
                 userCode = existingUser?.UserCode ?? shipperInfo?.ShipperCode ?? "",
                 phoneEmail = existingUser?.PhoneEmail ?? shipperInfo?.PhoneNumber ?? "",
                 phone = existingUser?.Phone ?? (shipperInfo != null ? shipperInfo.PhoneNumber : ""),
-                fullName = shipperInfo?.FullName ?? existingUser?.FullName ?? (determinedRole == "admin" ? "Ban Quản Trị ZoneMart" : "Người Dùng"),
-                avatarUrl = !string.IsNullOrEmpty(shipperInfo?.AvatarUrl) ? shipperInfo.AvatarUrl : (existingUser?.AvatarUrl ?? ""),
+                fullName = !string.IsNullOrWhiteSpace(existingUser?.FullName)
+                    ? existingUser.FullName
+                    : (shipperInfo?.FullName ?? (determinedRole == "admin" ? "Ban Quản Trị ZoneMart" : "Người Dùng")),
+                avatarUrl = !string.IsNullOrWhiteSpace(existingUser?.AvatarUrl)
+                    ? existingUser.AvatarUrl
+                    : (shipperInfo?.AvatarUrl ?? ""),
                 role = determinedRole,
                 isAdmin = determinedRole == "admin" || (existingUser?.IsAdmin ?? false),
                 isSeller = (existingUser?.IsSeller ?? false) || isStoreApproved || sellerStatus == "Approved",
@@ -1840,6 +1843,9 @@ Email liên hệ: dobinh225599@gmail.com
             Ward = !string.IsNullOrWhiteSpace(request.Ward) ? request.Ward.Trim() : "",
             District = !string.IsNullOrWhiteSpace(request.District) ? request.District.Trim() : "",
             MarketName = !string.IsNullOrWhiteSpace(request.MarketName) ? request.MarketName.Trim() : "",
+            MarketId = !string.IsNullOrWhiteSpace(request.MarketId) ? request.MarketId.Trim() : null,
+            WardId = !string.IsNullOrWhiteSpace(request.WardId) ? request.WardId.Trim() : null,
+            StallNumber = !string.IsNullOrWhiteSpace(request.StallNumber) ? request.StallNumber.Trim() : null,
             RegistrationFee = 0,
             FeePaymentStatus = "waived",
             FeePaymentNote = "Được miễn phí theo Chương trình Chuyển đổi số Chợ địa phương",
@@ -1849,6 +1855,16 @@ Email liên hệ: dobinh225599@gmail.com
 
         try
         {
+            if (string.IsNullOrWhiteSpace(newStore.MarketId) && !string.IsNullOrWhiteSpace(newStore.MarketName))
+            {
+                var matchedMkt = await _mongoService.Markets.Find(m => m.MarketName.ToLower() == newStore.MarketName.ToLower() || m.MarketName.Contains(newStore.MarketName)).FirstOrDefaultAsync();
+                if (matchedMkt != null)
+                {
+                    newStore.MarketId = matchedMkt.Id;
+                    if (string.IsNullOrWhiteSpace(newStore.WardId)) newStore.WardId = matchedMkt.WardId;
+                }
+            }
+
             await _mongoService.Stores.InsertOneAsync(newStore);
             Console.WriteLine($"🏪 [MongoDB Atlas] Đã lưu thành công Hồ sơ đăng ký gian hàng '{newStore.StoreName}' của chủ tiệm '{newStore.OwnerFullName}' (StoreCode / ID chữ: {newStore.StoreCode}) vào CSDL MongoDB Atlas!");
             
@@ -3574,6 +3590,9 @@ public class RegisterSellerRequest
     public string Ward { get; set; } = string.Empty;
     public string District { get; set; } = string.Empty;
     public string MarketName { get; set; } = string.Empty;
+    public string? MarketId { get; set; }
+    public string? WardId { get; set; }
+    public string? StallNumber { get; set; }
     public string PhoneEmail { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public double? Latitude { get; set; }

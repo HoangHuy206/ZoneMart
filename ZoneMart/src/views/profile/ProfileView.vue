@@ -17,6 +17,18 @@ import {
 } from '../../composables/useAuth';
 import FaceScanModal from '../../components/auth/FaceScanModal.vue';
 import { apiFetch } from '../../utils/apiConfig';
+import {
+  INNER_DISTRICTS,
+  OUTER_DISTRICTS,
+  ALL_HANOI_DISTRICTS,
+  ALL_HANOI_WARDS,
+  ALL_HANOI_MARKETS,
+  getWardsForDistrict,
+  getMarketsForLocation,
+  type WardItem,
+  type MarketItem,
+} from '../../data/hanoiAdminUnits';
+import { getSafeCurrentLocation } from '../../composables/useSafeLocation';
 
 const router = useRouter();
 const route = useRoute();
@@ -1211,6 +1223,293 @@ const isSellerFormLocked = computed(() => {
   return sh === 'Pending' || sh === 'Approved' || sh === 'Active';
 });
 
+const isCustomDistrict = ref(false);
+const isAutoLocating = ref(false);
+
+const selectedDistrictValue = computed(() => {
+  if (isCustomDistrict.value) return "__custom_district__";
+  return sellerForm.district || "Quận Cầu Giấy";
+});
+
+const systemWards = ref<WardItem[]>([...ALL_HANOI_WARDS]);
+const systemMarkets = ref<MarketItem[]>([...ALL_HANOI_MARKETS]);
+
+// Danh sách xã / phường tương ứng chính xác 100% với quận được chọn
+const wardsInSelectedDistrict = computed(() => {
+  if (!sellerForm.district || isCustomDistrict.value) return [];
+  const distNorm = sellerForm.district.toLowerCase().trim();
+  let list = systemWards.value.filter(w => {
+    if (!w.districtName) return false;
+    const d = w.districtName.toLowerCase().trim();
+    return d === distNorm || distNorm.includes(d) || d.includes(distNorm);
+  });
+  if (list.length === 0) {
+    list = getWardsForDistrict(sellerForm.district);
+  }
+  return list;
+});
+
+// Danh sách chợ truyền thống được lọc chuẩn theo Quận & Xã/Phường
+const filteredMarkets = computed(() => {
+  if (!sellerForm.district || isCustomDistrict.value) return [];
+  const dist = sellerForm.district;
+  const wardId = sellerForm.wardId;
+  
+  // 1. Nếu đã chọn Xã/Phường cụ thể (và không phải tự do)
+  if (wardId && wardId !== "__custom_ward__") {
+    const list = systemMarkets.value.filter(m => m.wardId === wardId);
+    if (list.length > 0) return list;
+  }
+
+  // 2. Lọc theo Quận/Huyện
+  const dNorm = dist.toLowerCase().trim();
+  const inDistrict = systemMarkets.value.filter(m => {
+    if (!m.districtName) return false;
+    const md = m.districtName.toLowerCase().trim();
+    return md === dNorm || dNorm.includes(md) || md.includes(dNorm);
+  });
+  if (inDistrict.length > 0) return inDistrict;
+
+  // 3. Fallback qua helper chuẩn
+  return getMarketsForLocation(dist, wardId);
+});
+
+const selectedMarketInfo = computed(() => {
+  if (!sellerForm.marketId || sellerForm.marketId === '__custom__') return null;
+  return systemMarkets.value.find(m => m.id === sellerForm.marketId) || null;
+});
+
+const loadSystemWardsAndMarkets = async () => {
+  try {
+    const [wRes, mRes] = await Promise.all([
+      fetch("/api/MarketManagement/wards").then(r => r.json()).catch(() => null),
+      fetch("/api/MarketManagement/markets").then(r => r.json()).catch(() => null)
+    ]);
+    if (wRes && wRes.success && Array.isArray(wRes.data) && wRes.data.length > 0) {
+      const dbWardMap = new Map<string, any>();
+      wRes.data.forEach((w: any) => {
+        if (w.wardName) dbWardMap.set(w.wardName.trim().toLowerCase(), w);
+        if (w.id) dbWardMap.set(w.id, w);
+      });
+
+      const merged = ALL_HANOI_WARDS.map(w => {
+        const dbW = dbWardMap.get(w.wardName.trim().toLowerCase());
+        if (dbW) {
+          return { ...w, id: dbW.id || w.id, wardCode: dbW.wardCode || w.wardCode };
+        }
+        return w;
+      });
+
+      const existingIds = new Set(merged.map(w => w.id));
+      wRes.data.forEach((w: any) => {
+        if (!existingIds.has(w.id)) {
+          merged.push(w);
+          existingIds.add(w.id);
+        }
+      });
+      systemWards.value = merged;
+    } else {
+      systemWards.value = [...ALL_HANOI_WARDS];
+    }
+
+    if (mRes && mRes.success && Array.isArray(mRes.data) && mRes.data.length > 0) {
+      const dbMarketMap = new Map<string, any>();
+      mRes.data.forEach((m: any) => {
+        if (m.marketName) dbMarketMap.set(m.marketName.trim().toLowerCase(), m);
+        if (m.id) dbMarketMap.set(m.id, m);
+      });
+
+      const mergedM = ALL_HANOI_MARKETS.map(m => {
+        const dbM = dbMarketMap.get(m.marketName.trim().toLowerCase());
+        if (dbM) {
+          return { ...m, id: dbM.id || m.id, marketCode: dbM.marketCode || m.marketCode };
+        }
+        return m;
+      });
+
+      const existingMarketIds = new Set(mergedM.map(m => m.id));
+      mRes.data.forEach((m: any) => {
+        if (!existingMarketIds.has(m.id)) {
+          mergedM.push(m);
+          existingMarketIds.add(m.id);
+        }
+      });
+      systemMarkets.value = mergedM;
+    } else {
+      systemMarkets.value = [...ALL_HANOI_MARKETS];
+    }
+  } catch (err) {
+    console.warn("Could not load wards/markets:", err);
+    systemWards.value = [...ALL_HANOI_WARDS];
+    systemMarkets.value = [...ALL_HANOI_MARKETS];
+  } finally {
+    if (!sellerForm.district) sellerForm.district = "Quận Cầu Giấy";
+    if (!sellerForm.wardId) {
+      const firstW = wardsInSelectedDistrict.value[0] || systemWards.value[0];
+      if (firstW) {
+        sellerForm.wardId = firstW.id;
+        sellerForm.ward = firstW.wardName;
+      }
+    }
+    if (!sellerForm.marketId && filteredMarkets.value.length > 0) {
+      sellerForm.marketId = filteredMarkets.value[0].id;
+      sellerForm.marketName = filteredMarkets.value[0].marketName;
+      if (!sellerForm.address) sellerForm.address = filteredMarkets.value[0].address || "";
+    }
+  }
+};
+
+const onDistrictChange = (e: any) => {
+  const chosenDistrict = e.target.value;
+  if (chosenDistrict === "__custom_district__") {
+    isCustomDistrict.value = true;
+    sellerForm.district = "";
+    sellerForm.wardId = "__custom_ward__";
+    sellerForm.ward = "";
+    sellerForm.marketId = "";
+    sellerForm.marketName = "";
+  } else {
+    isCustomDistrict.value = false;
+    sellerForm.district = chosenDistrict;
+    
+    // Đồng bộ lập tức danh sách xã/phường chuẩn của quận này
+    const distNorm = chosenDistrict.toLowerCase().trim();
+    let wards = systemWards.value.filter(w => {
+      if (!w.districtName) return false;
+      const d = w.districtName.toLowerCase().trim();
+      return d === distNorm || distNorm.includes(d) || d.includes(distNorm);
+    });
+    if (wards.length === 0) {
+      wards = getWardsForDistrict(chosenDistrict);
+    }
+
+    if (wards.length > 0) {
+      const firstW = wards[0];
+      sellerForm.wardId = firstW.id;
+      sellerForm.ward = firstW.wardName;
+
+      // Tìm chợ truyền thống phù hợp trong khu vực
+      const markets = getMarketsForLocation(chosenDistrict, firstW.id);
+      if (markets.length > 0) {
+        sellerForm.marketId = markets[0].id;
+        sellerForm.marketName = markets[0].marketName;
+        sellerForm.address = markets[0].address || `${firstW.wardName}, ${chosenDistrict}, Hà Nội`;
+      } else {
+        sellerForm.marketId = "__custom__";
+        sellerForm.marketName = `Chợ ${firstW.wardName.replace(/^(Phường|Xã|Thị trấn)\s+/i, '')}`;
+        sellerForm.address = `${firstW.wardName}, ${chosenDistrict}, Hà Nội`;
+      }
+    } else {
+      sellerForm.wardId = "__custom_ward__";
+      sellerForm.ward = "";
+      sellerForm.marketId = "__custom__";
+      sellerForm.marketName = "";
+    }
+  }
+};
+
+const onWardChange = (e: any) => {
+  onWardSelect(e.target.value);
+};
+
+const onWardSelect = (chosenWardId: string) => {
+  sellerForm.wardId = chosenWardId;
+  if (chosenWardId === "__custom_ward__") {
+    sellerForm.ward = "";
+    sellerForm.marketId = "__custom__";
+    sellerForm.marketName = "";
+    return;
+  }
+  const w = systemWards.value.find(x => x.id === chosenWardId) || ALL_HANOI_WARDS.find(x => x.id === chosenWardId);
+  if (w) {
+    sellerForm.ward = w.wardName;
+    if (w.districtName && !isCustomDistrict.value) {
+      sellerForm.district = w.districtName;
+    }
+  }
+  
+  // Lọc chợ cho phường đã chọn
+  const markets = getMarketsForLocation(sellerForm.district, chosenWardId);
+  if (markets.length > 0) {
+    sellerForm.marketName = markets[0].marketName;
+    sellerForm.marketId = markets[0].id;
+    if (!sellerForm.address || sellerForm.address.includes("Chợ") || sellerForm.address.includes("Hà Nội")) {
+      sellerForm.address = markets[0].address || `${sellerForm.ward}, ${sellerForm.district}, Hà Nội`;
+    }
+  } else {
+    sellerForm.marketName = `Chợ ${sellerForm.ward ? sellerForm.ward.replace(/^(Phường|Xã|Thị trấn)\s+/i, '') : ''}`;
+    sellerForm.marketId = "__custom__";
+    if (!sellerForm.address || sellerForm.address.includes("Chợ") || sellerForm.address.includes("Hà Nội")) {
+      sellerForm.address = `${sellerForm.ward}, ${sellerForm.district}, Hà Nội`;
+    }
+  }
+};
+
+const onMarketChange = (e: any) => {
+  const val = e.target.value;
+  if (val === "__custom__") {
+    sellerForm.marketId = "__custom__";
+    sellerForm.marketName = "";
+  } else {
+    sellerForm.marketId = val;
+    const m = systemMarkets.value.find(x => x.id === val) || ALL_HANOI_MARKETS.find(x => x.id === val);
+    if (m) {
+      sellerForm.marketName = m.marketName;
+      if (m.address) {
+        sellerForm.address = m.address;
+      }
+    }
+  }
+};
+
+// Định vị GPS 1 chạm tự động nhận diện chuẩn xác Quận/Huyện và Xã/Phường
+const autoDetectLocation = async () => {
+  isAutoLocating.value = true;
+  try {
+    const loc = await getSafeCurrentLocation();
+    if (loc && loc.safeLocationName) {
+      const locText = loc.safeLocationName;
+      let matchedDistrict = "";
+      for (const d of ALL_HANOI_DISTRICTS) {
+        const dClean = d.replace(/^(Quận|Huyện|Thị xã)\s+/i, '').toLowerCase().trim();
+        if (locText.toLowerCase().includes(d.toLowerCase()) || locText.toLowerCase().includes(dClean)) {
+          matchedDistrict = d;
+          break;
+        }
+      }
+
+      if (matchedDistrict) {
+        sellerForm.district = matchedDistrict;
+        isCustomDistrict.value = false;
+        
+        const wards = getWardsForDistrict(matchedDistrict);
+        let matchedWard = null;
+        for (const w of wards) {
+          const wClean = w.wardName.replace(/^(Phường|Xã|Thị trấn)\s+/i, '').toLowerCase().trim();
+          if (locText.toLowerCase().includes(w.wardName.toLowerCase()) || locText.toLowerCase().includes(wClean)) {
+            matchedWard = w;
+            break;
+          }
+        }
+
+        if (matchedWard) {
+          onWardSelect(matchedWard.id);
+        } else if (wards.length > 0) {
+          onWardSelect(wards[0].id);
+        }
+
+        if (!sellerForm.address) {
+          sellerForm.address = locText;
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error("GPS auto-detect error:", err);
+  } finally {
+    isAutoLocating.value = false;
+  }
+};
+
 // Form Người Bán (Gian hàng) - KHÔNG CÓ EMAIL & MẬT KHẨU (Tất cả đều để trống cho người dùng tự điền)
 const sellerForm = reactive({
   storeName: '',
@@ -1218,8 +1517,11 @@ const sellerForm = reactive({
   category: '',
   address: '',
   ward: '',
-  district: '',
+  wardId: '',
+  district: 'Quận Cầu Giấy',
   marketName: '',
+  marketId: '',
+  stallNumber: '',
   openHours: '',
   ownerFullName: '',
   dateOfBirth: '',
@@ -1320,8 +1622,11 @@ const submitSellerUpgrade = async () => {
         category: sellerForm.category,
         address: sellerForm.address.trim(),
         ward: sellerForm.ward.trim(),
+        wardId: sellerForm.wardId || undefined,
         district: sellerForm.district.trim(),
         marketName: sellerForm.marketName.trim(),
+        marketId: sellerForm.marketId || undefined,
+        stallNumber: sellerForm.stallNumber.trim(),
         openHours: sellerForm.openHours.trim(),
         ownerFullName: sellerForm.ownerFullName.trim(),
         dateOfBirth: sellerForm.dateOfBirth,
@@ -1465,6 +1770,9 @@ watch(
   (tab) => {
     if (tab && ['profile', 'orders', 'addresses', 'seller-reg', 'shipper-reg'].includes(tab as string)) {
       currentTab.value = tab as ProfileTab;
+      if (tab === 'seller-reg') {
+        loadSystemWardsAndMarkets();
+      }
     }
   },
 );
@@ -1476,6 +1784,7 @@ onMounted(() => {
   loadUserProfile();
   checkFaceStatus();
   fetchPartnerStatus();
+  loadSystemWardsAndMarkets();
 });
 </script>
 
@@ -2427,45 +2736,147 @@ onMounted(() => {
                   </div>
                 </div>
 
+                <!-- CHỌN ĐỊA BÀN HÀNH CHÍNH (QUẬN/HUYỆN & XÃ/PHƯỜNG) -->
+                <div class="form-grid-2">
+                  <div class="form-group-item">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                      <label class="form-label" style="margin-bottom: 0;">Quận / Huyện (Hà Nội) <span class="text-danger">*</span></label>
+                      <button
+                        type="button"
+                        class="btn-gps-detect"
+                        :disabled="isAutoLocating"
+                        @click="autoDetectLocation"
+                        title="Tự động nhận diện Quận/Huyện và Xã/Phường theo vị trí GPS thực tế"
+                      >
+                        <span v-if="isAutoLocating">🔄 Đang định vị...</span>
+                        <span v-else>📍 Định vị hiện tại</span>
+                      </button>
+                    </div>
+                    <select
+                      :value="selectedDistrictValue"
+                      class="form-select"
+                      @change="onDistrictChange"
+                      required
+                    >
+                      <optgroup label="⭐ Khu Vực Trọng Điểm Số Hóa">
+                        <option value="Quận Cầu Giấy">🏙️ Quận Cầu Giấy (Trung Tâm Thí Điểm Chợ Số)</option>
+                      </optgroup>
+                      
+                      <optgroup label="🏙️ 12 Quận Nội Thành Hà Nội">
+                        <option v-for="d in INNER_DISTRICTS" :key="d" :value="d">🏙️ {{ d }}</option>
+                      </optgroup>
+
+                      <optgroup label="🌾 18 Huyện & Thị Xã Ngoại Thành Hà Nội">
+                        <option v-for="d in OUTER_DISTRICTS" :key="d" :value="d">🌾 {{ d }}</option>
+                      </optgroup>
+
+                      <optgroup label="🌐 Khu Vực Khác">
+                        <option value="__custom_district__">➕ Tỉnh / Quận / Huyện khác (Tự do nhập)</option>
+                      </optgroup>
+                    </select>
+
+                    <input
+                      v-if="isCustomDistrict"
+                      v-model="sellerForm.district"
+                      type="text"
+                      class="form-input"
+                      style="margin-top: 8px;"
+                      placeholder="Nhập tên Quận/Huyện hoặc Tỉnh/Thành cụ thể..."
+                      required
+                    />
+                  </div>
+
+                  <div class="form-group-item">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                      <label class="form-label" style="margin-bottom: 0;">
+                        Xã / Phường <span class="text-danger">*</span>
+                        <span v-if="wardsInSelectedDistrict.length > 0" style="font-size: 11px; color: #10b981; font-weight: 600; margin-left: 4px;">
+                          ({{ wardsInSelectedDistrict.length }} đơn vị)
+                        </span>
+                      </label>
+                    </div>
+                    <select
+                      :value="sellerForm.wardId"
+                      class="form-select"
+                      @change="onWardChange"
+                      required
+                    >
+                      <option v-for="w in wardsInSelectedDistrict" :key="w.id" :value="w.id">
+                        🏛️ {{ w.wardName }}
+                      </option>
+                      <option value="__custom_ward__">➕ Phường / Xã khác (Tự nhập tên)</option>
+                    </select>
+                    <input
+                      v-if="sellerForm.wardId === '__custom_ward__' || wardsInSelectedDistrict.length === 0"
+                      v-model="sellerForm.ward"
+                      type="text"
+                      class="form-input"
+                      style="margin-top: 8px;"
+                      placeholder="Nhập tên Xã / Phường cụ thể..."
+                      required
+                    />
+                  </div>
+                </div>
+
+                <!-- CHỌN CHỢ TRUYỀN THỐNG / CỤM CHỢ SỐ & SỐ SẠP / VỊ TRÍ GIAN HÀNG -->
+                <div class="form-grid-2">
+                  <div class="form-group-item">
+                    <label class="form-label">Chợ Truyền Thống / Điểm Kinh Doanh <span class="text-danger">*</span></label>
+                    <select
+                      :value="sellerForm.marketId || '__custom__'"
+                      class="form-select"
+                      @change="onMarketChange"
+                      required
+                    >
+                      <option v-for="m in filteredMarkets" :key="m.id" :value="m.id">
+                        🏪 {{ m.marketName }} ({{ m.totalStalls }} sạp)
+                      </option>
+                      <option value="__custom__">➕ Chợ truyền thống khác / Điểm ngoài chợ</option>
+                    </select>
+                    <input
+                      v-if="filteredMarkets.length === 0 || !sellerForm.marketId || sellerForm.marketId === '__custom__'"
+                      v-model="sellerForm.marketName"
+                      type="text"
+                      class="form-input"
+                      style="margin-top: 8px;"
+                      placeholder="Nhập tên chợ truyền thống hoặc cụm quầy hàng..."
+                      required
+                    />
+                  </div>
+
+                  <div class="form-group-item">
+                    <label class="form-label">Số Sạp / Vị Trí Quầy Trong Chợ</label>
+                    <input
+                      v-model="sellerForm.stallNumber"
+                      type="text"
+                      class="form-input"
+                      placeholder="VD: Sạp 12A - Dãy thực phẩm tươi / Ki-ốt 08"
+                    />
+                  </div>
+                </div>
+
+                <!-- THẺ PREVIEW TÓM TẮT THÔNG TIN CHỢ ĐÃ CHỌN -->
+                <div v-if="selectedMarketInfo" class="market-info-preview-box">
+                  <div class="market-preview-header">
+                    <span class="preview-badge">🏬 {{ selectedMarketInfo.marketName }}</span>
+                    <span class="stall-badge">Quy mô: {{ selectedMarketInfo.totalStalls || 0 }} sạp</span>
+                  </div>
+                  <div class="market-preview-details">
+                    <span class="preview-item">📍 <strong>Địa chỉ cụm chợ:</strong> {{ selectedMarketInfo.address || 'Đang cập nhật' }}</span>
+                    <span v-if="selectedMarketInfo.managementBoardName" class="preview-item">🏛️ <strong>Đơn vị quản lý:</strong> {{ selectedMarketInfo.managementBoardName }}</span>
+                  </div>
+                </div>
+
+                <!-- ĐỊA CHỈ GIAN HÀNG CỤ THỂ -->
                 <div class="form-group-full">
                   <label class="form-label">Địa Chỉ Gian Hàng Cụ Thể <span class="text-danger">*</span></label>
                   <input
                     v-model="sellerForm.address"
                     type="text"
                     class="form-input"
-                    placeholder="Số nhà, tên đường, ngõ ngách, tên chợ (VD: Ki-ốt 12, Chợ Cầu Giấy, Hà Nội)"
+                    placeholder="Số nhà, tên đường, tên chợ (VD: Ki-ốt 12, Chợ Nhà Xanh, Cầu Giấy, Hà Nội)"
                     required
                   />
-                </div>
-
-                <div class="form-grid-3">
-                  <div class="form-group-item">
-                    <label class="form-label">Xã / Phường</label>
-                    <input
-                      v-model="sellerForm.ward"
-                      type="text"
-                      class="form-input"
-                      placeholder="VD: Phường Dịch Vọng"
-                    />
-                  </div>
-                  <div class="form-group-item">
-                    <label class="form-label">Quận / Huyện</label>
-                    <input
-                      v-model="sellerForm.district"
-                      type="text"
-                      class="form-input"
-                      placeholder="VD: Quận Cầu Giấy"
-                    />
-                  </div>
-                  <div class="form-group-item">
-                    <label class="form-label">Tên Chợ (nếu có)</label>
-                    <input
-                      v-model="sellerForm.marketName"
-                      type="text"
-                      class="form-input"
-                      placeholder="VD: Chợ Nhà Xanh, Chợ Cầu Giấy"
-                    />
-                  </div>
                 </div>
               </div>
 
@@ -5972,6 +6383,77 @@ onMounted(() => {
   box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
 }
 
+/* Market Preview Box */
+.market-info-preview-box {
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-top: 10px;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: fadeInPreview 0.25s ease-in-out;
+}
+
+@keyframes fadeInPreview {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.market-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.preview-badge {
+  font-size: 14px;
+  font-weight: 800;
+  color: #166534;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stall-badge {
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  border: 1px solid #86efac;
+}
+
+.market-preview-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.preview-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preview-item strong {
+  color: #1f2937;
+  font-weight: 600;
+}
+
 /* Upload Dropzones */
 .upload-box-wrapper {
   position: relative;
@@ -6272,5 +6754,31 @@ onMounted(() => {
 
 .tab-btn-locked {
   opacity: 0.85;
+}
+
+.btn-gps-detect {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(16, 185, 129, 0.25);
+}
+.btn-gps-detect:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.35);
+}
+.btn-gps-detect:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 </style>

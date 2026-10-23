@@ -1,4 +1,4 @@
-using MongoDB.Bson;
+﻿using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace ZoneMart.Server.Models;
@@ -44,6 +44,9 @@ public class User
 
     [BsonElement("is_manager")]
     public bool IsManager { get; set; } = false;
+
+    [BsonElement("permissions")]
+    public List<string> Permissions { get; set; } = new();
 
     [BsonElement("is_deleted")]
     public bool IsDeleted { get; set; } = false;
