@@ -31,6 +31,7 @@ let incomingTimer: any = null;
 const incomingDistance = ref(0);
 let unsubscribeOrderDispatch: (() => void) | null = null;
 let unsubscribeStatusChanged: (() => void) | null = null;
+let unsubscribeOrderCreated: (() => void) | null = null;
 const ignoredOrderIds = new Set<string>();
 
 // 1. Trạng thái hoạt động (Mặc định: Tạm nghỉ)
@@ -670,9 +671,9 @@ const triggerIncomingOrderCheck = (order: RealtimeOrder) => {
     return;
   }
 
-  // 2. Chỉ nổ đơn khi đơn đã được quán XÁC NHẬN (chờ tài xế)
-  if (order.status !== "confirmed") {
-    console.log("[ShipperView] Đơn chưa được Quán xác nhận -> Không nổ đơn.");
+  // 2. Chấp nhận nổ đơn cả khi quán đã xác nhận (confirmed) hoặc đơn hỏa tốc mới tạo (pending)
+  if (order.status !== "confirmed" && order.status !== "pending") {
+    console.log("[ShipperView] Đơn không ở trạng thái chờ tài xế -> Không nổ đơn.");
     return;
   }
 
@@ -744,6 +745,22 @@ const toggleOnline = () => {
     // Tự động định vị ngay lập tức vị trí thực tế của người dùng
     locateAndTrackDriver(false);
     startLocationWatch();
+
+    // Tự động quét tức thì các đơn hỏa tốc đang chờ nhận trong hệ thống
+    setTimeout(() => {
+      orderRealtimeService.syncOrdersFromServer().then(() => {
+        const orders = orderRealtimeService.getAllOrders();
+        const pending = orders.find(
+          (o) =>
+            (o.status === "confirmed" || o.status === "pending") &&
+            !ignoredOrderIds.has(o.id) &&
+            currentStep.value === "idle"
+        );
+        if (pending && isOnline.value) {
+          triggerIncomingOrderCheck(pending);
+        }
+      });
+    }, 400);
   } else {
     stopLocationWatch();
     triggerToast("🔴 Đã TẮT nhận đơn. Bạn đang ở trạng thái tạm nghỉ.");
@@ -907,9 +924,14 @@ onMounted(() => {
 
   // 2. Lắng nghe trạng thái đơn chuyển sang 'confirmed'
   unsubscribeStatusChanged = orderRealtimeService.onOrderStatusChanged(({ status, order }) => {
-    if (status === "confirmed" && order) {
+    if ((status === "confirmed" || status === "pending") && order) {
       triggerIncomingOrderCheck(order);
     }
+  });
+
+  // 3. Lắng nghe ngay khi có đơn hàng hỏa tốc mới tạo từ người mua
+  unsubscribeOrderCreated = orderRealtimeService.onOrderCreated((order) => {
+    triggerIncomingOrderCheck(order);
   });
 
   // Khóa cuộn trang toàn cục để thanh menu và nút công tắc trên di động không bao giờ bị trôi/mất
@@ -929,6 +951,7 @@ onUnmounted(() => {
   if (incomingTimer) clearInterval(incomingTimer);
   if (unsubscribeOrderDispatch) unsubscribeOrderDispatch();
   if (unsubscribeStatusChanged) unsubscribeStatusChanged();
+  if (unsubscribeOrderCreated) unsubscribeOrderCreated();
   stopLocationWatch();
   if (map) {
     map.remove();
