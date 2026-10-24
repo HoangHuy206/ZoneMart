@@ -1,4 +1,5 @@
 import { ref, computed } from "vue";
+import { apiFetch } from "../utils/apiConfig";
 
 export type ProductStatus =
   | "active"              // Đang bán (hợp lệ)
@@ -8,6 +9,7 @@ export type ProductStatus =
 
 export interface ModeratedProduct {
   id: string;
+  storeId?: string;
   name: string;
   category: string;
   price: number;
@@ -18,6 +20,7 @@ export interface ModeratedProduct {
   isAvailable: boolean;
   sellerEmail: string;
   storeName: string;
+  description?: string;
   createdAt: string;
   aiScore?: {
     safetyScore: number;
@@ -435,19 +438,11 @@ async function syncProductToBackend(p: ModeratedProduct) {
       status: p.status
     };
 
-    let res = await fetch("/api/products/sync-product", {
+    const res = await apiFetch("/api/products/sync-product", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     }).catch(() => null);
-
-    if (!res || !res.ok) {
-      res = await fetch("http://localhost:5000/api/products/sync-product", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      }).catch(() => null);
-    }
 
     if (res && res.ok) {
       const data = await res.json().catch(() => null);
@@ -470,19 +465,9 @@ export async function fetchRealProductsFromBackend(): Promise<ModeratedProduct[]
   isRefreshingProducts = true;
 
   try {
-    let res = await fetch(`/api/products?_t=${Date.now()}`, {
-      cache: "no-store",
-      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
-      signal: AbortSignal.timeout(3500)
+    const res = await apiFetch(`/api/products?_t=${Date.now()}`, {
+      headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" }
     }).catch(() => null);
-
-    if (!res || !res.ok) {
-      res = await fetch(`http://localhost:5000/api/products?_t=${Date.now()}`, {
-        cache: "no-store",
-        headers: { "Cache-Control": "no-cache", "Pragma": "no-cache" },
-        signal: AbortSignal.timeout(3500)
-      }).catch(() => null);
-    }
 
     if (res && res.ok) {
       const data = await res.json().catch(() => null);
@@ -518,16 +503,18 @@ export async function fetchRealProductsFromBackend(): Promise<ModeratedProduct[]
 
           mappedList.push({
             id: bp.id || `p-${Date.now()}`,
+            storeId: bp.storeId || "",
             name: pName,
             category: bp.category || "Thực phẩm tươi",
             price: bp.price || 0,
-            unit: bp.weight ? `${bp.weight} kg` : "Khay / Gói",
+            unit: bp.weight ? `${bp.weight} kg` : (bp.unit || "Khay / Gói"),
             stock: bp.stockQuantity ?? 30,
             image: realImage,
             status: prodStatus,
             isAvailable: isApproved,
             sellerEmail: realSellerEmail,
             storeName: realStoreName,
+            description: bp.description || "",
             createdAt: bp.createdAt ? new Date(bp.createdAt).toLocaleDateString("vi-VN") : "Hôm nay",
             aiScore: {
               safetyScore: isPending ? 80 : 99,
@@ -814,17 +801,11 @@ export function useProductModeration() {
         actionType: actionType || "warn"
       };
 
-      await fetch("/api/moderation/send-violation-email", {
+      await apiFetch("/api/moderation/send-violation-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
-      }).catch(async () => {
-        await fetch("http://localhost:5000/api/moderation/send-violation-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        }).catch(() => {});
-      });
+      }).catch(() => {});
     } catch (e) {
       console.warn("Lỗi khi gửi email cảnh báo vi phạm:", e);
     }
@@ -1117,8 +1098,7 @@ export function useProductModeration() {
     try {
       const encId = encodeURIComponent(productId);
       const encName = encodeURIComponent(targetName);
-      await fetch(`/api/products/${encId}?name=${encName}`, { method: "DELETE" });
-      await fetch(`http://localhost:5000/api/products/${encId}?name=${encName}`, { method: "DELETE" }).catch(() => {});
+      await apiFetch(`/api/products/${encId}?name=${encName}`, { method: "DELETE" }).catch(() => {});
     } catch (err) {
       console.warn("⚠️ Error removing rejected product from backend:", err);
     }
@@ -1152,8 +1132,7 @@ export function useProductModeration() {
     try {
       const encId = encodeURIComponent(productId);
       const encName = encodeURIComponent(targetName);
-      await fetch(`/api/products/${encId}?name=${encName}`, { method: "DELETE" });
-      await fetch(`http://localhost:5000/api/products/${encId}?name=${encName}`, { method: "DELETE" }).catch(() => {});
+      await apiFetch(`/api/products/${encId}?name=${encName}`, { method: "DELETE" }).catch(() => {});
     } catch {}
 
     if (typeof window !== "undefined") {
@@ -1218,7 +1197,7 @@ export function useProductModeration() {
 
       // Đồng bộ giảm tồn kho vào CSDL MongoDB Backend
       try {
-        fetch("/api/products/reduce-stock", {
+        apiFetch("/api/products/reduce-stock", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

@@ -68,6 +68,14 @@ public class OrdersController : ControllerBase
                 return BadRequest(new { success = false, message = "Đơn hàng chưa có sản phẩm nào!" });
             }
 
+            // Kiểm tra bắt buộc đăng nhập tài khoản trước khi đặt hàng
+            if (string.IsNullOrWhiteSpace(request.BuyerId) || 
+                request.BuyerId.Trim().ToLowerInvariant().StartsWith("guest") ||
+                request.BuyerId.Trim().ToLowerInvariant() == "null")
+            {
+                return Unauthorized(new { success = false, message = "Bạn cần đăng nhập tài khoản ZoneMart trước khi đặt hàng!" });
+            }
+
             // 1. Chuẩn hóa ID người mua thành ObjectId hợp lệ
             string safeBuyerId = EnsureValidObjectId(request.BuyerId);
 

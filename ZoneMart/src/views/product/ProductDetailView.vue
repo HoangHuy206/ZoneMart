@@ -12,11 +12,13 @@ import { useRoute, useRouter } from "vue-router";
 import { useCart } from "../../composables/useCart";
 import { useProductCatalog, type CatalogProduct } from "../../composables/useProductCatalog";
 import { useToast } from "../../composables/useToast";
+import { useAuth } from "../../composables/useAuth";
 
 const route = useRoute();
 const router = useRouter();
 const cart = useCart();
 const catalog = useProductCatalog();
+const auth = useAuth();
 
 // State quản lý sản phẩm
 const currentId = computed(() => (route.params.id as string) || "p1");
@@ -137,6 +139,17 @@ const handleAddToCart = () => {
 // Mua ngay hỏa tốc (Thêm vào giỏ và sang trang Checkout ngay)
 const handleBuyNow = () => {
   handleAddToCart();
+  if (!auth.isLoggedIn.value) {
+    toast.warning("Vui lòng đăng nhập tài khoản để tiến hành mua hàng!", "Yêu Cầu Đăng Nhập");
+    router.push({
+      path: "/login",
+      query: {
+        redirect: "/checkout",
+        reason: "auth_required"
+      }
+    });
+    return;
+  }
   router.push("/checkout");
 };
 

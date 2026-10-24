@@ -697,7 +697,9 @@ const handleLogin = async () => {
             <div class="register-cta-box">
               <div class="cta-line">
                 <span>Bạn chưa có tài khoản? </span>
-                <router-link to="/register" class="link-orange-bold"
+                <router-link
+                  :to="route.query.redirect ? { path: '/register', query: { redirect: route.query.redirect } } : '/register'"
+                  class="link-orange-bold"
                   >Tạo tài khoản Khách Hàng</router-link
                 >
               </div>

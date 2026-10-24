@@ -101,6 +101,17 @@ const handleProceedToCheckout = () => {
     toast.warning('Vui lòng chọn ít nhất 1 sản phẩm để tiến hành thanh toán!', 'Chưa Chọn Món');
     return;
   }
+  if (!auth.isLoggedIn.value) {
+    toast.warning('Vui lòng đăng nhập tài khoản để tiếp tục thanh toán đơn hàng!', 'Yêu Cầu Đăng Nhập');
+    router.push({
+      path: '/login',
+      query: {
+        redirect: '/checkout',
+        reason: 'auth_required'
+      }
+    });
+    return;
+  }
   router.push('/checkout');
 };
 </script>
@@ -521,12 +532,16 @@ const handleProceedToCheckout = () => {
           <button
             type="button"
             class="btn-proceed-checkout"
+            :class="{ 'btn-require-login': !auth.isLoggedIn.value }"
             :disabled="cart.selectedItemsCount.value === 0"
             @click="handleProceedToCheckout"
           >
-            <span
-              >TIẾN HÀNH ĐẶT HÀNG ({{ cart.selectedItemsCount.value }})</span
-            >
+            <span v-if="!auth.isLoggedIn.value">
+              <i class="bi bi-person-lock me-1"></i> ĐĂNG NHẬP ĐỂ ĐẶT HÀNG ({{ cart.selectedItemsCount.value }})
+            </span>
+            <span v-else>
+              TIẾN HÀNH ĐẶT HÀNG ({{ cart.selectedItemsCount.value }})
+            </span>
             <i class="bi bi-arrow-right-short"></i>
           </button>
           <p

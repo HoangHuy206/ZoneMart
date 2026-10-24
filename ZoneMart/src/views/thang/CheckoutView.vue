@@ -501,6 +501,10 @@ const resolveStoreDispatchLocation = (shopName: string) => {
 
 // KHI TIỀN THỰC SỰ VÀO -> BẬT HIỆU ỨNG THÀNH CÔNG VÀ LƯU ĐƠN
 const onPaymentConfirmed = (paidAmount?: number) => {
+  if (!auth.isLoggedIn.value) {
+    console.warn("Chưa đăng nhập tài khoản, không thể lưu đơn hàng.");
+    return;
+  }
   if (paymentState.value === "SUCCESS") return;
   paymentState.value = "SUCCESS";
 
@@ -858,6 +862,17 @@ const loadAddressForCurrentAccount = () => {
 };
 
 onMounted(() => {
+  if (!auth.isLoggedIn.value) {
+    toast.warning("Vui lòng đăng nhập tài khoản để thanh toán đơn hàng!", "Yêu Cầu Đăng Nhập");
+    router.replace({
+      path: "/login",
+      query: {
+        redirect: "/checkout",
+        reason: "auth_required"
+      }
+    });
+    return;
+  }
   loadAddressForCurrentAccount();
   initVietQrSocket();
   startPaymentListener();
@@ -993,6 +1008,17 @@ const handleSelectExpress = (val: boolean) => {
 
 // Đặt hàng COD
 const handlePlaceOrder = () => {
+  if (!auth.isLoggedIn.value) {
+    toast.warning("Vui lòng đăng nhập tài khoản để tiến hành đặt hàng!", "Yêu Cầu Đăng Nhập");
+    router.push({
+      path: "/login",
+      query: {
+        redirect: "/checkout",
+        reason: "auth_required"
+      }
+    });
+    return;
+  }
   if (selectedCartItems.value.length === 0) {
     toast.info("Bạn chưa chọn món nào để thanh toán! Vui lòng quay lại giỏ hàng và chọn món.", "Giỏ Hàng Rỗng");
     router.push("/cart");

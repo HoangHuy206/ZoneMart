@@ -8,11 +8,12 @@
  * ================================================================
  */
 import { ref, reactive, onMounted } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import AuthCelebrationModal from "../../components/common/AuthCelebrationModal.vue";
 import { useToast } from "../../composables/useToast";
 
 const router = useRouter();
+const route = useRoute();
 
 // Form State
 const form = reactive({
@@ -38,7 +39,12 @@ const celebrationMessage = ref("");
 
 const onCelebrationComplete = () => {
   showCelebrationModal.value = false;
-  router.push("/login");
+  const redirectTarget = route.query.redirect as string;
+  if (redirectTarget) {
+    router.push({ path: "/login", query: { redirect: redirectTarget } });
+  } else {
+    router.push("/login");
+  }
 };
 
 const isRotatingCaptcha = ref(false);

@@ -134,7 +134,7 @@ public class WebAuthnController : ControllerBase
         }
 
         var clean = username.Trim().ToLowerInvariant();
-        var update = Builders<User>.Update.Set(u => u.PasskeyCredentials, new List<UserPasskeyCredential>());
+        var update = Builders<User>.Update.Set(u => u.PasskeyCredentials, new List<PasskeyCredential>());
         await _mongoService.Users.UpdateOneAsync(
             u => !u.IsDeleted && (u.PhoneEmail.ToLower() == clean || (u.Phone != null && u.Phone == clean) || u.UserCode == clean),
             update
