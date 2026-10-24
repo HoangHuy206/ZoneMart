@@ -1,21 +1,22 @@
-name: Build iOS IPA & Android APK
+name: Build iOS IPA
 
 on:
-  workflow_dispatch: # Cho phép bấm "Run workflow" thủ công trên giao diện GitHub
+  workflow_dispatch: # Cho phép bấm nút "Run workflow" thủ công trên GitHub
   push:
     branches:
       - main
     paths:
-      - 'src/**'
-      - 'ios/**'
-      - 'package.json'
-      - 'capacitor.config.ts'
+      - 'ZoneMart/**'
       - '.github/workflows/build-ios.yml'
 
 jobs:
   build-ios:
     name: Build iOS IPA (on macOS Cloud)
     runs-on: macos-14
+    defaults:
+      run:
+        working-directory: ZoneMart
+
     steps:
       - name: 1. Checkout mã nguồn
         uses: actions/checkout@v4
@@ -58,6 +59,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ZoneMart-iOS-IPA
-          path: ios/App/ZoneMart.ipa
+          path: ZoneMart/ios/App/ZoneMart.ipa
           retention-days: 14
-
