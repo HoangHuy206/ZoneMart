@@ -1712,7 +1712,7 @@ label {
    ========================================================================== */
 @media (max-width: 1024px) {
   .login-page-container {
-    padding: 24px 20px;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) 20px calc(24px + env(safe-area-inset-bottom, 0px));
     height: auto;
     min-height: 100vh;
     max-height: none;
@@ -1740,7 +1740,7 @@ label {
 
 @media (max-width: 640px) {
   .login-page-container {
-    padding: 16px 12px;
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px));
   }
   .login-card-floating {
     padding: 20px 18px 18px 18px;

@@ -1824,7 +1824,7 @@ onUnmounted(() => {
    ========================================================================== */
 .top-floating-bar {
   position: absolute;
-  top: 14px;
+  top: calc(14px + env(safe-area-inset-top, 0px));
   left: 14px;
   right: 14px;
   z-index: 50;
@@ -3040,7 +3040,7 @@ onUnmounted(() => {
 /* 1. Google Maps Top Bar Controls */
 .gm-top-controls {
   position: absolute;
-  top: 14px;
+  top: calc(14px + env(safe-area-inset-top, 0px));
   left: 14px;
   right: 14px;
   display: flex;
@@ -4318,7 +4318,7 @@ onUnmounted(() => {
 
   /* 1. TOP FLOATING BAR (TRÊN CÙNG BẢN ĐỒ) */
   .top-floating-bar {
-    top: 10px !important;
+    top: calc(10px + env(safe-area-inset-top, 0px)) !important;
     left: 10px !important;
     right: 10px !important;
     flex-wrap: nowrap !important;

@@ -1104,7 +1104,7 @@ const handleLogout = () => {
     </header>
 
     <!-- Nội dung chính được điều hướng qua Router -->
-    <main class="main-content">
+    <main class="main-content" :class="{ 'has-no-header': !!$route.meta.hideHeader }">
       <router-view v-slot="{ Component }">
         <transition name="page-fade-slide" mode="out-in">
           <component :is="Component" />
@@ -1363,6 +1363,11 @@ body {
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.main-content.has-no-header {
+  padding-top: env(safe-area-inset-top, 0px);
   overflow-x: clip;
 }
 
