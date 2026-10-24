@@ -12,7 +12,7 @@ on:
 jobs:
   build-ios:
     name: Build iOS IPA (on macOS Cloud)
-    runs-on: macos-14
+    runs-on: macos-15
     defaults:
       run:
         working-directory: ZoneMart
@@ -32,8 +32,8 @@ jobs:
       - name: 4. Biên dịch Web Vue 3 (Vite)
         run: npx vite build
 
-      - name: 5. Đồng bộ mã sang iOS (Capacitor Sync)
-        run: npx cap sync ios
+      - name: 5. Copy Web Assets sang iOS
+        run: npx cap copy ios
 
       - name: 6. Build Archive & Đóng gói file .IPA
         run: |
