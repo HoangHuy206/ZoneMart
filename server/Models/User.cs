@@ -1,4 +1,4 @@
-﻿using MongoDB.Bson;
+using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace ZoneMart.Server.Models;
@@ -80,4 +80,7 @@ public class User
 
     [BsonElement("face_registered_at")]
     public DateTime? FaceRegisteredAt { get; set; }
+
+    [BsonElement("passkey_credentials")]
+    public List<PasskeyCredential> PasskeyCredentials { get; set; } = new();
 }

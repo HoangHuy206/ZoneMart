@@ -1,3 +1,4 @@
+using Fido2NetLib;
 using ZoneMart.Server.Services;
 using ZoneMart.Server.Settings;
 
@@ -45,7 +46,24 @@ builder.Services.AddScoped<ITelegramService, TelegramService>();
 builder.Services.AddScoped<IProductModerationService, ProductModerationService>();
 builder.Services.AddHostedService<PythonFaceServiceManager>();
 
-// 4. Cấu hình CORS cho phép Vue 3 Frontend (localhost:5173) gọi API
+// 4. MemoryCache & WebAuthn / Passkeys (FIDO2)
+builder.Services.AddMemoryCache();
+builder.Services.AddFido2(options =>
+{
+    options.RPID = "localhost";
+    options.RPName = "ZoneMart";
+    options.Origins = new HashSet<string>
+    {
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5000",
+        "http://127.0.0.1:5000",
+        "https://localhost:5173",
+        "https://localhost:5000"
+    };
+});
+
+// 5. Cấu hình CORS cho phép Vue 3 Frontend (localhost:5173) gọi API
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowVueClient", policy =>
@@ -86,5 +104,6 @@ app.MapControllers();
 Console.WriteLine("🚀 ZoneMart C# ASP.NET Core Web API đang khởi động...");
 Console.WriteLine("📧 Đã nạp cấu hình gửi thư Gmail: hh9393100@gmail.com");
 Console.WriteLine("🤖 Đã nạp cấu hình Bot Telegram: @ZoneMarttt_bot");
+Console.WriteLine("🛡️ Đã sẵn sàng hệ thống WebAuthn / Passkey Sinh trắc học!");
 
 app.Run("http://localhost:5000");

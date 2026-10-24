@@ -6,13 +6,19 @@
  * Tích hợp Bảng Quên Mật Khẩu với Gmail OTP 120s (dobinh225599@gmail.com)
  * ================================================================
  */
-import { ref, reactive } from 'vue';
+import { ref, reactive, onMounted } from 'vue';
+import {
+  detectBiometricDevice,
+  loginWithBiometrics,
+  registerPasskeyForCurrentUser,
+  checkUserPasskeyStatus,
+  type BiometricDeviceInfo,
+} from '../../utils/biometricHelper';
 import { useRouter, useRoute } from 'vue-router';
 import ForgotPasswordForm from './ForgotPasswordForm.vue';
 import { useAuth, type UserRole } from '../../composables/useAuth';
 import { apiFetch } from '../../utils/apiConfig';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
-import FaceScanModal from '../../components/auth/FaceScanModal.vue';
 import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
 import { useToast } from '../../composables/useToast';
 
@@ -76,11 +82,105 @@ const onCelebrationComplete = () => {
   navigateAfterLogin(pendingRole);
 };
 
-// Trạng thái & Handler cho Đăng nhập Face ID AI UniFace
-const showFaceLoginModal = ref(false);
+// Tự động nhận diện thiết bị sinh trắc học (Face ID iPhone X+, Touch ID iPhone cũ / Mac, Vân tay Android, Windows Hello)
+const biometricDevice = ref<BiometricDeviceInfo | null>(null);
+const isBiometricChecking = ref(false);
 
-const openFaceIdLoginModal = () => {
-  showFaceLoginModal.value = true;
+onMounted(async () => {
+  try {
+    biometricDevice.value = await detectBiometricDevice();
+    console.log('🔍 [ZoneMart Biometric] Thiết bị phát hiện:', biometricDevice.value);
+  } catch (err) {
+    console.warn('Không thể kiểm tra sinh trắc học thiết bị:', err);
+  }
+});
+
+const handleQuickBiometricLogin = async () => {
+  if (isBiometricChecking.value) return;
+
+  const targetAccount = form.account.trim();
+  const targetPassword = form.password.trim();
+  const deviceLabel = biometricDevice.value?.label || 'Face ID';
+  const isPasskeySaved = typeof localStorage !== 'undefined' && localStorage.getItem('zonemart_passkey_saved') === 'true';
+
+  try {
+    isBiometricChecking.value = true;
+    errorMessage.value = '';
+
+    // Trường hợp 1: Nếu iPhone này ĐÃ từng lưu Face ID cho ZoneMart trước đó
+    if (isPasskeySaved) {
+      // Gọi trực tiếp WebAuthn Native (Apple Safari sẽ hiện sheet Face ID quét mặt)
+      const res = await loginWithBiometrics(targetAccount);
+
+      if (res && res.success && res.data) {
+        handleFaceLoginSuccess(res.data);
+        return;
+      }
+
+      // Nếu người dùng chủ động bấm Hủy trên sheet Face ID của Apple
+      if (res && res.message && res.message.includes('đã bị hủy')) {
+        return;
+      }
+    }
+
+    // Trường hợp 2: iPhone này CHƯA từng lưu Face ID cho ZoneMart
+    // Nếu cả Tài khoản và Mật khẩu đều để trống
+    if (!targetAccount && !targetPassword) {
+      toast.info(
+        `iPhone này chưa lưu ${deviceLabel} cho ZoneMart.\n\nVui lòng nhập Tài khoản & Mật khẩu bên dưới, sau đó bấm lại biểu tượng ${deviceLabel} để kích hoạt 1-chạm!`,
+        'Kích Hoạt ' + deviceLabel
+      );
+      return;
+    }
+
+    // Nếu đã nhập Tài khoản nhưng chưa nhập Mật khẩu
+    if (targetAccount && !targetPassword) {
+      toast.info(
+        `Vui lòng nhập mật khẩu của tài khoản '${targetAccount}', sau đó bấm lại biểu tượng ${deviceLabel} để lưu và kích hoạt!`,
+        'Xác Minh Mật Khẩu'
+      );
+      return;
+    }
+
+    // Nếu đã nhập cả Tài khoản & Mật khẩu -> Bắt đầu kích hoạt lưu Face ID vào iPhone
+    if (targetAccount && targetPassword) {
+      // 1. Kiểm tra xác thực tài khoản & mật khẩu với backend
+      const checkLogin = await apiFetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account: targetAccount,
+          password: targetPassword,
+        }),
+      }).catch(() => null);
+
+      if (!checkLogin || !checkLogin.ok) {
+        const errData = await checkLogin?.json().catch(() => ({}));
+        toast.error(errData?.message || 'Mật khẩu tài khoản không đúng! Vui lòng kiểm tra lại trước khi liên kết Face ID.');
+        return;
+      }
+
+      const loginData = await checkLogin.json();
+
+      // 2. Kích hoạt Passkey chuẩn Face ID Apple (iOS sẽ hiện sheet Apple Face ID thật: "Lưu mã khóa cho ZoneMart")
+      toast.info(`Vui lòng nhìn vào màn hình để iPhone quét và lưu ${deviceLabel}...`);
+      const regRes = await registerPasskeyForCurrentUser(targetAccount, deviceLabel);
+
+      if (regRes.success) {
+        localStorage.setItem('zonemart_passkey_saved', 'true');
+        localStorage.setItem('zonemart_passkey_account', targetAccount);
+        toast.success(`🎉 Đã lưu ${deviceLabel} thành công vào iPhone! Từ lần sau bạn chỉ cần 1-chạm là vào ngay.`);
+        handleFaceLoginSuccess(loginData);
+      } else {
+        toast.info(regRes.message || `Chưa hoàn tất lưu ${deviceLabel}.`);
+      }
+      return;
+    }
+  } catch (err: any) {
+    console.error('Biometric login error:', err);
+  } finally {
+    isBiometricChecking.value = false;
+  }
 };
 
 const handleFaceLoginSuccess = (data: any) => {
@@ -362,6 +462,7 @@ const handleLogin = async () => {
                 type="text"
                 class="field-input"
                 placeholder="Nhập SĐT Zalo đã liên kết hoặc Email"
+                autocomplete="username webauthn"
                 required
               />
             </div>
@@ -449,11 +550,18 @@ const handleLogin = async () => {
               <button
                 type="button"
                 class="btn-face-quick-icon"
-                @click="openFaceIdLoginModal"
-                title="Đăng nhập nhanh bằng Face ID (1-Chạm)"
+                @click="handleQuickBiometricLogin"
+                :class="{
+                  'is-touch-id': biometricDevice?.iconType === 'touchid' || biometricDevice?.iconType === 'fingerprint',
+                  'is-face-id': biometricDevice?.iconType === 'faceid',
+                  'is-windows': biometricDevice?.iconType === 'windows',
+                  'is-loading': isBiometricChecking
+                }"
+                :title="biometricDevice ? biometricDevice.actionTitle : 'Đăng nhập nhanh bằng Sinh trắc học'"
               >
-                <!-- Authentic Apple iPhone Face ID Icon -->
+                <!-- 1. Apple Face ID Icon (iPhone X trở lên) -->
                 <svg
+                  v-if="!biometricDevice || biometricDevice.iconType === 'faceid'"
                   class="apple-faceid-svg"
                   width="25"
                   height="25"
@@ -469,6 +577,56 @@ const handleLogin = async () => {
                   <path d="M54.737,30.213 L54.737,35.931 C54.737,37.114 55.632,38.073 56.737,38.073 C57.841,38.073 58.737,37.114 58.737,35.931 L58.737,30.213 C58.737,29.030 57.841,28.070 56.737,28.070 C55.632,28.070 54.737,29.030 54.737,30.213 Z" />
                   <path d="M40,30.175 L40,44.912 C40,45.855 39.539,46.316 38.591,46.316 L37.193,46.316 C36.030,46.316 35.088,47.258 35.088,48.421 C35.088,49.584 36.030,50.526 37.193,50.526 L38.591,50.526 C41.863,50.526 44.211,48.182 44.211,44.912 L44.211,30.175 C44.211,29.013 43.268,28.070 42.105,28.070 C40.943,28.070 40,29.013 40,30.175 Z" />
                   <path d="M25.932,59.083 C29.833,62.724 34.558,64.561 40,64.561 C45.442,64.561 50.167,62.724 54.068,59.083 C54.918,58.290 54.964,56.957 54.171,56.107 C53.377,55.257 52.045,55.211 51.195,56.005 C48.079,58.913 44.382,60.351 40,60.351 C35.618,60.351 31.921,58.913 28.805,56.005 C27.955,55.211 26.623,55.257 25.829,56.107 C25.036,56.957 25.082,58.290 25.932,59.083 Z" />
+                </svg>
+
+                <!-- 2. Touch ID / Vân tay Icon (iPhone <= 8 / Mac / Android) -->
+                <svg
+                  v-else-if="biometricDevice.iconType === 'touchid' || biometricDevice.iconType === 'fingerprint'"
+                  class="apple-faceid-svg touchid-svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M2 12C2 6.5 6.5 2 12 2a10 10 0 0 1 8 4" />
+                  <path d="M5 19.5C5.5 18 6 15 6 12c0-.7.12-1.37.34-2" />
+                  <path d="M17.29 21.02c.12-.6.18-1.23.18-1.87 0-3.3-2.69-6-6-6s-6 2.7-6 6c0 .41.04.81.12 1.2" />
+                  <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
+                  <path d="M8.65 22A12.7 12.7 0 0 0 12 22c5.5 0 10-4.5 10-10 0-1.7-.42-3.3-1.16-4.7" />
+                  <path d="M14 13.1a5.95 5.95 0 0 1 1.48 4.4" />
+                </svg>
+
+                <!-- 3. Windows Hello Icon -->
+                <svg
+                  v-else-if="biometricDevice.iconType === 'windows'"
+                  class="apple-faceid-svg windows-svg"
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.949-1.8" />
+                </svg>
+
+                <!-- 4. Biometric Shield Icon mặc định -->
+                <svg
+                  v-else
+                  class="apple-faceid-svg"
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <path d="m9 12 2 2 4-4" />
                 </svg>
               </button>
             </div>
@@ -650,12 +808,6 @@ const handleLogin = async () => {
       </div>
     </Transition>
 
-    <!-- MODAL QUÉT KHUÔN MẶT ĐĂNG NHẬP FACE ID UNIFACE -->
-    <FaceScanModal
-      v-model="showFaceLoginModal"
-      mode="login"
-      @success="handleFaceLoginSuccess"
-    />
 
     <!-- MODAL CHÚC MỪNG ĐĂNG NHẬP THÀNH CÔNG VỚI ANIMATION ĐẲNG CẤP -->
     <AuthCelebrationModal

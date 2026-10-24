@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
 import { useToast } from '../../composables/useToast';
@@ -79,6 +79,18 @@ const liveMarketActivities = [
   },
 ];
 
+const observeNewElements = () => {
+  if (typeof document === 'undefined') return;
+  const revealElements = document.querySelectorAll('.scroll-reveal:not(.is-revealed)');
+  revealElements.forEach((el) => {
+    if (observer) {
+      observer.observe(el);
+    } else {
+      el.classList.add('is-revealed');
+    }
+  });
+};
+
 onMounted(async () => {
   catalog.refreshCatalog();
   await nextTick();
@@ -94,20 +106,27 @@ onMounted(async () => {
       },
       {
         root: null,
-        rootMargin: '0px 0px -40px 0px',
-        threshold: 0.08,
+        rootMargin: '120px 0px 80px 0px',
+        threshold: 0.02,
       }
     );
 
-    const revealElements = document.querySelectorAll('.scroll-reveal');
-    revealElements.forEach((el) => {
-      observer?.observe(el);
-    });
+    observeNewElements();
   } else if (typeof document !== 'undefined') {
     document.querySelectorAll('.scroll-reveal').forEach((el) => {
       el.classList.add('is-revealed');
     });
   }
+
+  // Safety fallback: Tự động reveal tất cả elements sau 500ms để không bao giờ bị ẩn/mất khi lướt
+  setTimeout(() => {
+    if (typeof document !== 'undefined') {
+      document.querySelectorAll('.scroll-reveal:not(.is-revealed)').forEach((el) => {
+        el.classList.add('is-revealed');
+      });
+    }
+  }, 500);
+
   startSlideTimer();
 });
 
@@ -485,7 +504,82 @@ const howItWorks = [
   },
 ];
 
-// 5. Nhà vườn & Gian hàng tiêu biểu địa phương (Đồng bộ thời gian thực từ Database)
+// 5. Nhà vườn & Gian hàng tiêu biểu địa phương (Đồng bộ thời gian thực từ Database, có fallback bảo vệ)
+const defaultFallbackVendors = [
+  {
+    id: 'store_dalat_farm',
+    name: "Nông Trại Hữu Cơ Đà Lạt O'Farm",
+    owner: 'Rau củ quả tươi sạch Đà Lạt',
+    distance: '1.2 km',
+    deliveryTime: '15 - 20 phút',
+    productsCount: '48+ sản phẩm',
+    rating: 5.0,
+    reviews: 182,
+    avatar: 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80',
+    cover: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'store_vua_trai_cay',
+    name: 'Vựa Trái Cây Miệt Vườn Chín Mọng',
+    owner: 'Trái cây đặc sản 3 miền',
+    distance: '1.8 km',
+    deliveryTime: '20 - 25 phút',
+    productsCount: '36+ sản phẩm',
+    rating: 4.9,
+    reviews: 145,
+    avatar: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80',
+    cover: 'https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'store_thit_sach',
+    name: 'Thịt Heo Sinh Học & Bò Tươi Sạch',
+    owner: 'Thực phẩm tươi sống VietGAP',
+    distance: '2.1 km',
+    deliveryTime: '15 - 25 phút',
+    productsCount: '29+ sản phẩm',
+    rating: 5.0,
+    reviews: 210,
+    avatar: 'https://images.unsplash.com/photo-1588854337236-6889d631faa8?auto=format&fit=crop&w=200&q=80',
+    cover: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'store_hai_san',
+    name: 'Hải Sản Biển Sống Vũng Tàu',
+    owner: 'Tôm cua ghẹ tươi sống mỗi ngày',
+    distance: '2.5 km',
+    deliveryTime: '25 - 30 phút',
+    productsCount: '42+ sản phẩm',
+    rating: 4.9,
+    reviews: 198,
+    avatar: 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=200&q=80',
+    cover: 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'store_nam_sach',
+    name: 'Trang Trại Nấm & Rau Mầm Hữu Cơ',
+    owner: 'Nấm tươi các loại giàu dinh dưỡng',
+    distance: '1.5 km',
+    deliveryTime: '15 - 20 phút',
+    productsCount: '25+ sản phẩm',
+    rating: 5.0,
+    reviews: 120,
+    avatar: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80',
+    cover: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'store_ga_ta',
+    name: 'Gà Ta Thả Vườn & Trứng Gà Sạch',
+    owner: 'Trại chăn thả sinh học tự nhiên',
+    distance: '3.0 km',
+    deliveryTime: '20 - 30 phút',
+    productsCount: '18+ sản phẩm',
+    rating: 4.8,
+    reviews: 95,
+    avatar: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=200&q=80',
+    cover: 'https://images.unsplash.com/photo-1516467508483-a7212febe31a?auto=format&fit=crop&w=600&q=80',
+  },
+];
+
 const featuredVendors = computed(() => {
   if (catalog.allStores.value && catalog.allStores.value.length > 0) {
     return catalog.allStores.value.slice(0, 6).map((s, idx) => ({
@@ -507,8 +601,17 @@ const featuredVendors = computed(() => {
         'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=600&q=80',
     }));
   }
-  return [];
+  return defaultFallbackVendors;
 });
+
+watch(
+  () => featuredVendors.value,
+  async () => {
+    await nextTick();
+    observeNewElements();
+  },
+  { deep: true }
+);
 
 // 6. Đánh giá thực tế từ cộng đồng
 const testimonials = [
@@ -1043,7 +1146,7 @@ const handleAddToCartHome = (item: any) => {
         <div
           v-for="(v, idx) in featuredVendors"
           :key="v.id"
-          class="vendor-card-wrap scroll-reveal"
+          class="vendor-card-wrap is-revealed"
           :style="{ '--reveal-delay': `${(idx % 3) * 0.08}s` }"
           @click="goToStore(v.name)"
         >
@@ -2365,6 +2468,9 @@ const handleAddToCartHome = (item: any) => {
 .vendor-card-wrap {
   perspective: 900px;
   cursor: pointer;
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: translate3d(0, 0, 0) !important;
 }
 .vendor-card {
   height: 100%;

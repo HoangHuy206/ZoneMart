@@ -15,7 +15,12 @@ import {
   type UserProfile,
   type UserRole,
 } from '../../composables/useAuth';
-import FaceScanModal from '../../components/auth/FaceScanModal.vue';
+import {
+  detectBiometricDevice,
+  registerPasskeyForCurrentUser,
+  checkUserPasskeyStatus,
+  type BiometricDeviceInfo,
+} from '../../utils/biometricHelper';
 import { apiFetch } from '../../utils/apiConfig';
 import {
   INNER_DISTRICTS,
@@ -1049,6 +1054,51 @@ const handleFaceRegisterSuccess = (payload: any) => {
   triggerToast('🎉 Đã kích hoạt và lưu khuôn mặt thành công cho tài khoản!');
 };
 
+// 10.1 WebAuthn / Passkey Sinh trắc học phần cứng (Face ID iPhone X+, Touch ID, Vân tay Android, Windows Hello)
+const currentBiometricDevice = ref<BiometricDeviceInfo | null>(null);
+const isRegisteringPasskey = ref(false);
+const hasDevicePasskey = ref(false);
+
+const loadBiometricDeviceInfo = async () => {
+  try {
+    currentBiometricDevice.value = await detectBiometricDevice();
+    const isSaved = typeof localStorage !== 'undefined' && localStorage.getItem('zonemart_passkey_saved') === 'true';
+    const acc = currentAccount.value;
+    const username = acc.phoneEmail || acc.id || (acc as any).userCode;
+    if (username) {
+      const statusRes = await checkUserPasskeyStatus(username);
+      hasDevicePasskey.value = statusRes.hasPasskey || isSaved;
+    } else {
+      hasDevicePasskey.value = isSaved;
+    }
+  } catch (e) {
+    console.warn('Lỗi nhận diện sinh trắc học thiết bị:', e);
+  }
+};
+
+const handleRegisterDeviceBiometrics = async () => {
+  const acc = currentAccount.value;
+  const username = acc.phoneEmail || acc.id || (acc as any).userCode;
+  if (!username) {
+    triggerToast('Không tìm thấy thông tin tài khoản để liên kết!');
+    return;
+  }
+
+  isRegisteringPasskey.value = true;
+  triggerToast(`Đang kết nối ${currentBiometricDevice.value?.label || 'Sinh trắc học'}... Vui lòng quét trên thiết bị!`);
+  try {
+    const res = await registerPasskeyForCurrentUser(username, currentBiometricDevice.value?.label);
+    if (res.success) {
+      hasDevicePasskey.value = true;
+      triggerToast(res.message);
+    } else {
+      triggerToast(res.message);
+    }
+  } finally {
+    isRegisteringPasskey.value = false;
+  }
+};
+
 const handleDisableFace = async () => {
   const acc = currentAccount.value;
   const term = acc.id || acc.phoneEmail;
@@ -1084,6 +1134,7 @@ watch(
   () => {
     loadUserProfile();
     checkFaceStatus();
+  loadBiometricDeviceInfo();
     fetchPartnerStatus();
   },
 );
@@ -1783,6 +1834,7 @@ onMounted(() => {
   }
   loadUserProfile();
   checkFaceStatus();
+  loadBiometricDeviceInfo();
   fetchPartnerStatus();
   loadSystemWardsAndMarkets();
 });
@@ -2225,68 +2277,55 @@ onMounted(() => {
                 <div class="label-with-badge">
                   <label class="form-label mb-0">Xác Thực Khuôn Mặt (Face ID)</label>
                   <span
-                    v-if="isFaceAuthEnabled"
+                    v-if="hasDevicePasskey"
                     class="face-status-chip active"
                   >
-                    <i class="bi bi-shield-check"></i> Đã kích hoạt
+                    <i class="bi bi-shield-check"></i> Đã liên kết ({{ currentBiometricDevice?.label || 'Face ID' }})
                   </span>
                   <span v-else class="face-status-chip inactive">
-                    <i class="bi bi-shield-slash"></i> Chưa kích hoạt
+                    <i class="bi bi-shield-slash"></i> Chưa liên kết
                   </span>
                 </div>
 
-                <div class="face-auth-card" :class="{ 'is-active': isFaceAuthEnabled }">
+                <!-- CARD DUY NHẤT: SINH TRẮC HỌC THIẾT BỊ (FACE ID / TOUCH ID) -->
+                <div class="face-auth-card" :class="{ 'is-active': hasDevicePasskey }">
                   <div class="face-info-left">
-                    <div class="face-symbol-icon" :class="{ 'symbol-active': isFaceAuthEnabled }">
-                      <i class="bi bi-person-bounding-box"></i>
+                    <div class="face-symbol-icon" :class="{ 'symbol-active': hasDevicePasskey }" style="background: linear-gradient(135deg, #0284c7, #2563eb);">
+                      <i class="bi bi-fingerprint"></i>
                     </div>
                     <div>
-                      <div class="face-title-text">
-                        {{ isFaceAuthEnabled ? 'Đã liên kết khuôn mặt của bạn' : 'Chưa kích hoạt nhận diện khuôn mặt' }}
+                      <div class="face-title-text d-flex align-items-center gap-2">
+                        <span>{{ hasDevicePasskey ? `Đã liên kết ${currentBiometricDevice?.label || 'Face ID'}` : `Liên kết ${currentBiometricDevice?.label || 'Face ID'} trên máy này` }}</span>
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle" style="font-size: 11px;">Chuẩn Passkey FIDO2</span>
                       </div>
                       <div class="face-helper-text">
-                        <span v-if="isFaceAuthEnabled" class="text-success-bold">
-                          ✓ Đăng nhập 1-chạm cực nhanh bằng AI UniFace (Kích hoạt: {{ faceRegisteredAt || 'Gần đây' }})
+                        <span v-if="hasDevicePasskey" class="text-success-bold">
+                          ✓ Thiết bị này đã sẵn sàng đăng nhập 1-chạm bằng Face ID chuẩn Apple không cần mật khẩu.
                         </span>
                         <span v-else class="text-muted">
-                          Bật tính năng này để quét khuôn mặt và liên kết độc quyền với tài khoản này, chống chéo tài khoản khi đăng nhập.
+                          Liên kết trực tiếp Face ID trên iPhone hoặc Vân tay để đăng nhập siêu tốc không cần nhập mật khẩu.
                         </span>
                       </div>
                     </div>
                   </div>
 
                   <div class="face-actions-right">
-                    <template v-if="isFaceAuthEnabled">
-                      <button
-                        type="button"
-                        class="btn-face-rescan"
-                        @click="openFaceRegisterModal"
-                        title="Quét lại khuôn mặt mới"
-                      >
-                        <i class="bi bi-arrow-clockwise me-1"></i> Quét Lại
-                      </button>
-                      <button
-                        type="button"
-                        class="btn-face-disable"
-                        :disabled="isDisablingFace"
-                        @click="handleDisableFace"
-                        title="Tắt xác thực khuôn mặt"
-                      >
-                        <i class="bi bi-x-circle me-1"></i> Tắt
-                      </button>
-                    </template>
-                    <template v-else>
-                      <button
-                        type="button"
-                        class="btn-face-activate"
-                        @click="openFaceRegisterModal"
-                      >
-                        <i class="bi bi-camera-fill me-1"></i> Bật Face ID
-                      </button>
-                    </template>
+                    <button
+                      type="button"
+                      class="btn-face-activate"
+                      :disabled="isRegisteringPasskey"
+                      @click="handleRegisterDeviceBiometrics"
+                      :title="hasDevicePasskey ? 'Cập nhật hoặc liên kết lại thiết bị này' : 'Liên kết cảm biến máy này với tài khoản'"
+                    >
+                      <i class="bi bi-shield-lock-fill me-1"></i>
+                      <span v-if="isRegisteringPasskey">Đang chờ quét...</span>
+                      <span v-else-if="hasDevicePasskey">Quét lại để cập nhật</span>
+                      <span v-else>Liên kết thiết bị này</span>
+                    </button>
                   </div>
                 </div>
               </div>
+
             </div>
           </div>
         </div>
@@ -3749,14 +3788,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Modal Quét & Kích Hoạt Khuôn Mặt (Face ID UniFace) -->
-    <FaceScanModal
-      v-model="showFaceModal"
-      mode="register"
-      :user-id="currentAccount.id || currentAccount.phoneEmail"
-      :user-name="user.fullName"
-      @success="handleFaceRegisterSuccess"
-    />
+
   </div>
 </template>
 
@@ -3776,14 +3808,20 @@ onMounted(() => {
     'Segoe UI',
     Roboto,
     sans-serif;
+  max-width: 100vw;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .profile-main-container {
   max-width: 1280px;
+  width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 32px;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .hidden-file-input,
@@ -4207,8 +4245,10 @@ onMounted(() => {
    ========================================================================== */
 .form-bento-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 24px;
+  width: 100%;
+  max-width: 100%;
 }
 
 .bento-card {
@@ -4220,6 +4260,11 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .card-section-title {
@@ -5035,22 +5080,193 @@ onMounted(() => {
   }
 
   .form-bento-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .wallet-bento-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 768px) {
+  .new-profile-page {
+    padding: 16px 12px 70px 12px;
+    overflow-x: hidden;
+  }
+
+  .profile-main-container {
+    gap: 18px;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .bento-card {
+    padding: 18px 14px;
+    border-radius: 16px;
+    gap: 16px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
   .profile-hero-card {
-    padding: 24px 20px;
+    padding: 20px 16px;
+    border-radius: 18px;
+    gap: 16px;
   }
 
   .hero-user-details {
     flex-direction: column;
     text-align: center;
+    min-width: 0;
+    width: 100%;
+    gap: 14px;
+  }
+
+  /* Zalo Phone Display Card - Stacking cleanly on mobile */
+  .zalo-phone-display-card {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 14px 12px;
+    gap: 12px;
+  }
+
+  .phone-info-left {
+    gap: 10px;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .phone-info-left > div {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .phone-number-text {
+    font-size: 15px;
+  }
+
+  .phone-helper-text {
+    word-break: break-word;
+    white-space: normal;
+  }
+
+  .btn-zalo-connect {
+    width: 100%;
+    justify-content: center;
+    padding: 10px 14px;
+    font-size: 13.5px;
+  }
+
+  /* Face ID Card - Stacking cleanly on mobile */
+  .face-auth-card {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 14px 12px;
+    gap: 12px;
+  }
+
+  .face-info-left {
+    gap: 10px;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .face-info-left > div {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .face-title-text {
+    flex-wrap: wrap;
+    font-size: 14px;
+    gap: 6px;
+    word-break: break-word;
+  }
+
+  .face-helper-text {
+    word-break: break-word;
+    white-space: normal;
+  }
+
+  .face-actions-right {
+    width: 100%;
+  }
+
+  .btn-face-activate {
+    width: 100%;
+    justify-content: center;
+    padding: 11px 14px;
+    font-size: 14px;
+  }
+
+  /* Label with badge on mobile */
+  .label-with-badge {
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .zalo-status-chip,
+  .face-status-chip {
+    font-size: 11px;
+    padding: 3px 8px;
+    white-space: nowrap;
+  }
+
+  /* Fields Grid & Gender */
+  .fields-grid-2 {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .gender-pill {
+    padding: 9px 6px;
+    font-size: 13px;
+  }
+
+  /* Pane Header */
+  .pane-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .pane-title {
+    font-size: 19px;
+  }
+
+  .pane-header > button,
+  .btn-save-primary {
+    width: 100%;
+    justify-content: center;
+    padding: 11px 16px;
+    font-size: 14px;
+  }
+
+  /* Input action wrap on mobile (Email & Password) */
+  .input-action-wrap {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .input-action-wrap .form-input {
+    padding-right: 96px;
+    font-size: 13.5px;
+  }
+
+  .verified-chip {
+    right: 8px;
+    font-size: 11px;
+    padding: 3px 6px;
+  }
+
+  .btn-change-pwd {
+    right: 6px;
+    font-size: 11.5px;
+    padding: 5px 8px;
   }
 
   .name-row {
@@ -5068,10 +5284,6 @@ onMounted(() => {
   .hero-stats-grid {
     width: 100%;
     flex-direction: column;
-  }
-
-  .fields-grid-2 {
-    grid-template-columns: 1fr;
   }
 
   .addresses-grid {
@@ -5100,6 +5312,28 @@ onMounted(() => {
   .order-actions {
     width: 100%;
     flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .new-profile-page {
+    padding: 12px 8px 60px 8px;
+  }
+
+  .bento-card {
+    padding: 16px 10px;
+    border-radius: 14px;
+  }
+
+  .phone-symbol-icon,
+  .face-symbol-icon {
+    width: 38px;
+    height: 38px;
+    font-size: 16px;
+  }
+
+  .phone-number-text {
+    font-size: 14.5px;
   }
 }
 

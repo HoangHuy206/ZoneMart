@@ -46,6 +46,7 @@ import {
   Activity,
   Unlock,
   X,
+  Menu,
   FileText,
   Clock,
   ShieldAlert,
@@ -75,6 +76,16 @@ const currentActorEmail = ref<string>("admin@zonemart.vn");
 
 // Tabs điều hướng (Dashboard, Accounts, KYC, Products, Managers, Audit)
 const activeTab = ref<"dashboard" | "accounts" | "kyc" | "products" | "markets" | "managers" | "audit">("dashboard");
+
+// Quản lý trạng thái mở/đóng Drawer Menu trên Mobile
+const isMobileMenuOpen = ref<boolean>(false);
+const selectAdminTab = (tab: "dashboard" | "accounts" | "kyc" | "products" | "markets" | "managers" | "audit", searchTarget?: string) => {
+  activeTab.value = tab;
+  if (searchTarget) {
+    searchTargetTab.value = searchTarget;
+  }
+  isMobileMenuOpen.value = false;
+};
 
 // Loading & Notification Toast states
 const isLoading = ref<boolean>(false);
@@ -1928,6 +1939,16 @@ onUnmounted(() => {
     <!-- 1. TOPBAR HEADER (Nền trắng, Logo Brand ZoneMart, Search, Icons, Profile Avatar) -->
     <header class="concept-topbar">
       <div class="topbar-left">
+        <!-- Nút mở menu trên điện thoại -->
+        <button
+          type="button"
+          class="mobile-menu-toggle-btn"
+          :aria-label="isMobileMenuOpen ? 'Đóng menu' : 'Mở menu quản trị'"
+          @click="isMobileMenuOpen = !isMobileMenuOpen"
+        >
+          <X v-if="isMobileMenuOpen" :size="20" />
+          <Menu v-else :size="20" />
+        </button>
         <router-link to="/" class="brand-link" title="Về trang chủ ZoneMart">
           <span class="brand-zone">Zone</span><span class="brand-mart">Mart</span>
           <span class="brand-badge-admin">ADMIN</span>
@@ -2065,13 +2086,13 @@ onUnmounted(() => {
           class="topbar-icon-btn grid-btn"
           :class="{ active: activeTab === 'dashboard' }"
           title="Bảng điều khiển tổng quan"
-          @click="activeTab = 'dashboard'"
+          @click="selectAdminTab('dashboard')"
         >
           <LayoutGrid :size="19" />
         </button>
 
         <!-- Profile Avatar của Admin đang đăng nhập -->
-        <div class="topbar-avatar-wrap" @click="activeTab = 'dashboard'">
+        <div class="topbar-avatar-wrap" @click="selectAdminTab('dashboard')">
           <img
             :src="auth.currentUser.value?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150'"
             alt="Admin Avatar"
@@ -2084,8 +2105,27 @@ onUnmounted(() => {
 
     <!-- 2. BỐ CỤC CHÍNH (SIDEBAR NỀN TỐI SLATE + KHU VỰC NỘI DUNG NỀN SÁNG) -->
     <div class="concept-body-layout">
-      <!-- LEFT SIDEBAR NỀN TỐI (DARK SLATE) THEO ĐÚNG HÌNH MẪU -->
-      <aside class="concept-sidebar">
+      <!-- Lớp phủ mờ (Backdrop) khi mở menu trên điện thoại -->
+      <transition name="fade-backdrop">
+        <div
+          v-if="isMobileMenuOpen"
+          class="sidebar-backdrop"
+          @click="isMobileMenuOpen = false"
+        ></div>
+      </transition>
+
+      <!-- LEFT SIDEBAR NỀN TỐI (DARK SLATE) -->
+      <aside class="concept-sidebar" :class="{ 'is-mobile-open': isMobileMenuOpen }">
+        <!-- Thanh tiêu đề menu trên mobile có nút đóng -->
+        <div class="sidebar-mobile-header">
+          <div class="sidebar-mobile-title">
+            <span class="brand-zone text-white">Zone</span><span class="brand-mart text-orange">Mart</span>
+            <span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-2" style="font-size: 10px;">MENU ADMIN</span>
+          </div>
+          <button type="button" class="sidebar-close-btn" @click="isMobileMenuOpen = false">
+            <X :size="18" />
+          </button>
+        </div>
         <!-- Nhóm 1: MENU -->
         <div class="sidebar-group">
           <div class="sidebar-heading">MENU</div>
@@ -2093,7 +2133,7 @@ onUnmounted(() => {
             <li
               class="nav-item"
               :class="{ active: activeTab === 'dashboard' }"
-              @click="activeTab = 'dashboard'"
+              @click="selectAdminTab('dashboard')"
             >
               <div class="nav-label-box">
                 <div class="nav-icon-wrapper">
@@ -2107,7 +2147,7 @@ onUnmounted(() => {
             <li
               class="nav-item"
               :class="{ active: activeTab === 'accounts' && searchTargetTab === 'all' }"
-              @click="activeTab = 'accounts'; searchTargetTab = 'all'"
+              @click="selectAdminTab('accounts', 'all')"
             >
               <div class="nav-label-box">
                 <div class="nav-icon-wrapper">
@@ -2121,7 +2161,7 @@ onUnmounted(() => {
             <li
               class="nav-item"
               :class="{ active: activeTab === 'kyc' }"
-              @click="activeTab = 'kyc'"
+              @click="selectAdminTab('kyc')"
             >
               <div class="nav-label-box">
                 <div class="nav-icon-wrapper">
@@ -2136,7 +2176,7 @@ onUnmounted(() => {
             <li
               class="nav-item"
               :class="{ active: activeTab === 'products' }"
-              @click="activeTab = 'products'"
+              @click="selectAdminTab('products')"
             >
               <div class="nav-label-box">
                 <div class="nav-icon-wrapper">
@@ -2152,7 +2192,7 @@ onUnmounted(() => {
             <li
               class="nav-item"
               :class="{ active: activeTab === 'markets' }"
-              @click="activeTab = 'markets'"
+              @click="selectAdminTab('markets')"
             >
               <div class="nav-label-box">
                 <div class="nav-icon-wrapper">
@@ -2167,7 +2207,7 @@ onUnmounted(() => {
             <li
               class="nav-item"
               :class="{ active: activeTab === 'managers' }"
-              @click="activeTab = 'managers'"
+              @click="selectAdminTab('managers')"
             >
               <div class="nav-label-box">
                 <div class="nav-icon-wrapper">
@@ -2181,7 +2221,7 @@ onUnmounted(() => {
             <li
               class="nav-item"
               :class="{ active: activeTab === 'audit' }"
-              @click="activeTab = 'audit'"
+              @click="selectAdminTab('audit')"
             >
               <div class="nav-label-box">
                 <div class="nav-icon-wrapper">
@@ -2201,7 +2241,7 @@ onUnmounted(() => {
             <li
               class="nav-item"
               :class="{ active: activeTab === 'accounts' && searchTargetTab === 'seller' }"
-              @click="activeTab = 'accounts'; searchTargetTab = 'seller'"
+              @click="selectAdminTab('accounts', 'seller')"
             >
               <div class="nav-label-box">
                 <div class="nav-icon-wrapper">
@@ -2215,7 +2255,7 @@ onUnmounted(() => {
             <li
               class="nav-item"
               :class="{ active: activeTab === 'accounts' && searchTargetTab === 'shipper' }"
-              @click="activeTab = 'accounts'; searchTargetTab = 'shipper'"
+              @click="selectAdminTab('accounts', 'shipper')"
             >
               <div class="nav-label-box">
                 <div class="nav-icon-wrapper">
@@ -2226,7 +2266,7 @@ onUnmounted(() => {
               <ChevronRight :size="15" class="nav-arrow" />
             </li>
 
-            <li class="nav-item" @click="activeTab = 'dashboard'">
+            <li class="nav-item" @click="selectAdminTab('dashboard')">
               <div class="nav-label-box">
                 <div class="nav-icon-wrapper">
                   <Package :size="17" />
@@ -2311,7 +2351,7 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <div class="channel-metric-cell cell-orange" @click="activeTab = 'accounts'; searchTargetTab = 'seller'" title="Xem danh sách gian hàng">
+              <div class="channel-metric-cell cell-orange" @click="selectAdminTab('accounts', 'seller')" title="Xem danh sách gian hàng">
                 <div class="metric-icon-box box-orange">
                   <Store :size="18" />
                 </div>
@@ -2321,7 +2361,7 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <div class="channel-metric-cell cell-green" @click="activeTab = 'accounts'; searchTargetTab = 'shipper'" title="Xem danh sách shipper">
+              <div class="channel-metric-cell cell-green" @click="selectAdminTab('accounts', 'shipper')" title="Xem danh sách shipper">
                 <div class="metric-icon-box box-green">
                   <Bike :size="18" />
                 </div>
@@ -2332,7 +2372,7 @@ onUnmounted(() => {
               </div>
 
               <!-- SẢN PHẨM TOÀN SÀN (35 sản phẩm) -->
-              <div class="channel-metric-cell cell-cyan" @click="activeTab = 'products'" title="Xem tất cả sản phẩm trên sàn">
+              <div class="channel-metric-cell cell-cyan" @click="selectAdminTab('products')" title="Xem tất cả sản phẩm trên sàn">
                 <div class="metric-icon-box box-cyan">
                   <Package :size="18" />
                 </div>
@@ -2353,7 +2393,7 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <div class="channel-metric-cell cell-amber" @click="activeTab = 'kyc'" title="Hồ sơ đối tác chờ duyệt">
+              <div class="channel-metric-cell cell-amber" @click="selectAdminTab('kyc')" title="Hồ sơ đối tác chờ duyệt">
                 <div class="metric-icon-box box-amber">
                   <Hourglass :size="18" class="hourglass-animated" />
                 </div>
@@ -2532,8 +2572,8 @@ onUnmounted(() => {
                 <h3 class="sec-title">Hồ Sơ Đối Tác Đang Chờ Ban Quản Trị Phê Duyệt</h3>
                 <span class="sec-badge">{{ pendingKycUsers.length }} hồ sơ</span>
               </div>
-              <button class="view-all-btn" @click="activeTab = 'kyc'">Xem toàn bộ ➔</button>
-              <button class="view-all-btn" @click="activeTab = 'kyc'">
+              <button class="view-all-btn" @click="selectAdminTab('kyc')">Xem toàn bộ ➔</button>
+              <button class="view-all-btn" @click="selectAdminTab('kyc')">
                 <span>Xem toàn bộ</span>
                 <ChevronRight :size="15" />
               </button>
@@ -2800,7 +2840,7 @@ onUnmounted(() => {
               <p class="content-sub">Đối soát giấy tờ CCCD, giấy phép kinh doanh, bằng lái xe của Gian Hàng và Shipper</p>
             </div>
             <div class="kyc-quick-switch-box" v-if="pendingProductsCount > 0">
-              <button class="btn-quick-switch" @click="activeTab = 'products'">
+              <button class="btn-quick-switch" @click="selectAdminTab('products')">
                 <PackageCheck :size="16" />
                 <span>Có <b>{{ pendingProductsCount }}</b> sản phẩm gian hàng chờ duyệt ➔</span>
               </button>
@@ -8417,12 +8457,131 @@ onUnmounted(() => {
   .analytics-cards-grid { grid-template-columns: 1fr; }
   .hero-channels-strip { grid-template-columns: repeat(3, 1fr); }
 }
+/* MOBILE DRAWER & RESPONSIVE LAYOUT */
+.mobile-menu-toggle-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #0f172a;
+  cursor: pointer;
+  margin-right: 10px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+.mobile-menu-toggle-btn:hover {
+  background: #e2e8f0;
+  color: #ea580c;
+}
+.sidebar-mobile-header {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 8px;
+}
+.sidebar-mobile-title {
+  font-size: 15px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+}
+.sidebar-close-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #ffffff;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.sidebar-close-btn:hover {
+  background: rgba(234, 88, 12, 0.8);
+}
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  top: 64px;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(2px);
+  z-index: 9998;
+}
+.fade-backdrop-enter-active,
+.fade-backdrop-leave-active {
+  transition: opacity 0.25s ease;
+}
+.fade-backdrop-enter-from,
+.fade-backdrop-leave-to {
+  opacity: 0;
+}
+
+@media (max-width: 992px) {
+  .concept-admin-root {
+    height: auto !important;
+    min-height: 100vh !important;
+    max-height: none !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+  .concept-topbar {
+    height: 60px;
+    padding: 0 12px;
+  }
+  .mobile-menu-toggle-btn {
+    display: flex;
+  }
+  .sidebar-mobile-header {
+    display: flex;
+  }
+  .search-input-pill {
+    display: none;
+  }
+  .topbar-right {
+    gap: 8px;
+  }
+  .concept-body-layout {
+    display: block !important;
+    height: auto !important;
+    min-height: calc(100vh - 60px) !important;
+    overflow: visible !important;
+  }
+  .concept-sidebar {
+    position: fixed !important;
+    top: 60px !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    width: 290px !important;
+    max-width: 85vw !important;
+    height: calc(100vh - 60px) !important;
+    z-index: 9999 !important;
+    transform: translateX(-100%);
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 8px 0 28px rgba(0, 0, 0, 0.35);
+  }
+  .concept-sidebar.is-mobile-open {
+    transform: translateX(0) !important;
+  }
+  .concept-main-content {
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 16px 12px !important;
+  }
+}
+
 @media (max-width: 768px) {
-  .concept-body-layout { flex-direction: column; }
-  .concept-sidebar { width: 100%; height: auto; position: static; min-height: auto; }
   .stat-cards-grid { grid-template-columns: 1fr; }
   .hero-top-row { flex-direction: column; text-align: center; }
   .hero-channels-strip { grid-template-columns: repeat(2, 1fr); }
+  .brand-link { font-size: 19px !important; }
 }
 
 /* PRODUCT FILTER STRIP & ENHANCED METRICS */
