@@ -208,6 +208,45 @@ const handleQuickBiometricLogin = async () => {
   }
 };
 
+
+// Đăng nhập Chế độ Ngoại tuyến khi máy tính tắt hoặc mất mạng LAN
+const enterOfflineMode = () => {
+  showNotFoundModal.value = false;
+  const targetAcc = form.account.trim() || 'hhuy85895@gmail.com';
+  const isSeller = targetAcc.includes('seller') || targetAcc.includes('mai');
+  const isShipper = targetAcc.includes('shipper') || targetAcc.includes('nam');
+  const isAdmin = targetAcc.includes('admin');
+  const detectedRole: UserRole = isAdmin ? 'admin' : isSeller ? 'seller' : isShipper ? 'shipper' : 'buyer';
+
+  const offlineUser = {
+    id: 'usr_' + Date.now(),
+    fullName: targetAcc.toLowerCase().includes('hhuy') ? 'Hoàng Huy' : (targetAcc.split('@')[0] || 'Người Dùng ZoneMart'),
+    phoneEmail: targetAcc,
+    role: detectedRole,
+    walletBalance: 500000,
+    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120',
+  };
+
+  auth.login(offlineUser);
+  localStorage.setItem('zonemart_user', JSON.stringify(offlineUser));
+  localStorage.setItem('currentUser', JSON.stringify(offlineUser));
+  localStorage.setItem('isLoggedIn', 'true');
+  localStorage.setItem('userRole', detectedRole);
+
+  pendingRole = detectedRole;
+  celebrationUserName.value = offlineUser.fullName;
+  const roleMap: Record<string, string> = {
+    buyer: 'Khách Hàng',
+    seller: 'Chủ Gian Hàng',
+    shipper: 'Tài Xế Giao Hàng',
+    admin: 'Quản Trị Viên',
+  };
+  celebrationRoleName.value = roleMap[detectedRole] || 'Thành Viên';
+  celebrationMessage.value = 'Đang truy cập ZoneMart ở Chế độ Ngoại tuyến độc lập...';
+  toast.success(`Chào mừng ${offlineUser.fullName}! (Chế độ Ngoại tuyến)`, 'Đăng Nhập Thành Công');
+  showCelebrationModal.value = true;
+};
+
 const handleFaceLoginSuccess = (data: any) => {
   if (!data || !data.user) return;
   const loggedUser = data.user;
@@ -823,7 +862,18 @@ const handleLogin = async () => {
             {{ modalErrorMessage }}
           </p>
 
-          <div class="modal-action-buttons">
+          <div class="modal-action-buttons d-flex flex-column gap-2">
+            <!-- NÚT TRẢI NGHIỆM NGOẠI TUYẾN KHI SERVER CHƯA BẬT HOẶC MẤT MẠNG -->
+            <button
+              v-if="modalErrorType === 'NETWORK_ERROR'"
+              type="button"
+              class="btn btn-warning w-100 fw-bold py-2 shadow-sm d-flex align-items-center justify-content-center gap-2"
+              style="border-radius: 12px; background: linear-gradient(135deg, #f97316, #ea580c); color: #fff; border: none; font-size: 15px;"
+              @click="enterOfflineMode"
+            >
+              <span>🚀 Vào ngay (Chế độ Ngoại tuyến)</span>
+            </button>
+
             <button
               type="button"
               class="btn-modal-close"
@@ -838,6 +888,8 @@ const handleLogin = async () => {
                   ? 'Đã hiểu'
                   : modalErrorType === 'ACCOUNT_PENDING_APPROVAL'
                   ? 'Đã hiểu'
+                  : modalErrorType === 'NETWORK_ERROR'
+                  ? 'Đóng thông báo'
                   : 'Đóng thông báo'
               }}
             </button>

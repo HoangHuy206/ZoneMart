@@ -2309,7 +2309,7 @@ onMounted(() => {
                     </div>
                   </div>
 
-                  <div class="face-actions-right">
+                  <div class="face-actions-right d-flex flex-wrap gap-2 align-items-center">
                     <button
                       type="button"
                       class="btn-face-activate"
@@ -2318,9 +2318,21 @@ onMounted(() => {
                       :title="hasDevicePasskey ? 'Cập nhật hoặc liên kết lại thiết bị này' : 'Liên kết cảm biến máy này với tài khoản'"
                     >
                       <i class="bi bi-shield-lock-fill me-1"></i>
-                      <span v-if="isRegisteringPasskey">Đang chờ quét...</span>
+                      <span v-if="isRegisteringPasskey">Đang kết nối...</span>
                       <span v-else-if="hasDevicePasskey">Quét lại để cập nhật</span>
                       <span v-else>Liên kết thiết bị này</span>
+                    </button>
+
+                    <button
+                      v-if="hasDevicePasskey"
+                      type="button"
+                      class="btn btn-outline-danger btn-sm d-inline-flex align-items-center gap-1"
+                      style="border-radius: 12px; font-weight: 600; font-size: 13px; padding: 7px 14px; height: 38px; border-width: 1.5px;"
+                      @click="handleResetDeviceBiometrics"
+                      title="Xóa Face ID đã lưu và đặt lại từ đầu"
+                    >
+                      <i class="bi bi-arrow-counterclockwise"></i>
+                      <span>Đặt lại từ đầu</span>
                     </button>
                   </div>
                 </div>

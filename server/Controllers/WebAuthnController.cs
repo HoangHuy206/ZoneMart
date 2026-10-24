@@ -125,6 +125,24 @@ public class WebAuthnController : ControllerBase
             devices = user.PasskeyCredentials?.Select(c => c.DeviceName).ToList() ?? new List<string>()
         });
     }
+    [HttpPost("clear-passkeys")]
+    public async Task<IActionResult> ClearPasskeys([FromQuery] string username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            return BadRequest(new { success = false, message = "Vui lòng cung cấp username!" });
+        }
+
+        var clean = username.Trim().ToLowerInvariant();
+        var update = Builders<User>.Update.Set(u => u.PasskeyCredentials, new List<UserPasskeyCredential>());
+        await _mongoService.Users.UpdateOneAsync(
+            u => !u.IsDeleted && (u.PhoneEmail.ToLower() == clean || (u.Phone != null && u.Phone == clean) || u.UserCode == clean),
+            update
+        );
+
+        return Ok(new { success = true, message = "Đã xóa toàn bộ khóa sinh trắc học Face ID của tài khoản!" });
+    }
+
 
     [HttpPost("register-options")]
     public async Task<IActionResult> RegisterOptions([FromBody] WebAuthnRegisterOptionsRequest request)
