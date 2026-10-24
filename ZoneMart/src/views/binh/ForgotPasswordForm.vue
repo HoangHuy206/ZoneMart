@@ -8,6 +8,7 @@
  * ================================================================
  */
 import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { apiFetch } from "../../utils/apiConfig";
 import { useRoute } from "vue-router";
 
 const props = withDefaults(
@@ -129,7 +130,7 @@ const handleSendOtp = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("/api/forgotpassword/send-otp", {
+    const res = await apiFetch("/api/forgotpassword/send-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: form.email.trim() })
@@ -181,7 +182,7 @@ const handleVerifyOtp = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("/api/forgotpassword/verify-otp", {
+    const res = await apiFetch("/api/forgotpassword/verify-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -228,7 +229,7 @@ const handleResetPassword = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("/api/forgotpassword/reset-password", {
+    const res = await apiFetch("/api/forgotpassword/reset-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

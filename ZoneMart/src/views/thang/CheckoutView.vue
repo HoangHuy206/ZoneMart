@@ -20,6 +20,7 @@ import { useAuth } from "../../composables/useAuth";
 import { useToast } from "../../composables/useToast";
 import { orderRealtimeService } from "../../services/orderRealtimeService";
 import { useProductModeration } from "../../composables/useProductModeration";
+import { apiFetch, getApiUrl } from "../../utils/apiConfig";
 
 const router = useRouter();
 const cart = useCart();
@@ -714,7 +715,7 @@ const initPaymentSSE = () => {
   try {
     if (typeof EventSource !== "undefined") {
       if (sseSource) sseSource.close();
-      const sseUrl = `/api/payment/events?code=${encodeURIComponent(orderPaymentCode.value)}`;
+      const sseUrl = getApiUrl(`/api/payment/events?code=${encodeURIComponent(orderPaymentCode.value)}`);
       sseSource = new EventSource(sseUrl);
       sseSource.onmessage = (e) => {
         try {
@@ -744,7 +745,7 @@ const syncOrderDetailsToServer = async () => {
       image: i.image,
       shop: i.shop,
     }));
-    await fetch('/api/payment/register-order', {
+    await apiFetch('/api/payment/register-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -799,7 +800,7 @@ const startPaymentListener = () => {
     // Đối soát tự động qua API Server thời gian thực (yêu cầu khớp chính xác mã đơn)
     try {
       const checkUrl = `/api/payment/check?code=${encodeURIComponent(orderPaymentCode.value)}&amount=${finalTotal.value}&bankAccount=${encodeURIComponent(vietinBankConfig.value.accountNo)}`;
-      const res = await fetch(checkUrl);
+      const res = await apiFetch(checkUrl);
       if (res.ok) {
         const data = await res.json();
         const incomingCode = String(data?.code || "").toUpperCase();

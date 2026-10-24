@@ -120,7 +120,7 @@ const loadDriverProfile = async () => {
       // Query API endpoint để đồng bộ thông tin mới nhất từ CSDL MongoDB Atlas
       const accountQuery = u.phoneEmail || u.phoneNumber || driverProfile.phoneEmail;
       if (accountQuery) {
-        const res = await fetch(`/api/auth/shipper-profile?account=${encodeURIComponent(accountQuery)}`).catch(() => null);
+        const res = await apiFetch(`/api/auth/shipper-profile?account=${encodeURIComponent(accountQuery)}`).catch(() => null);
         if (res && res.ok) {
           const data = await res.json();
           if (data.success && data.shipper) {
@@ -885,8 +885,7 @@ onMounted(() => {
   // Kiểm tra tính hợp lệ của tài khoản với backend (nếu tài khoản đã bị Admin xóa)
   const emailToCheck = auth.currentUser.value?.phoneEmail || auth.currentUser.value?.phone;
   if (emailToCheck && role !== 'admin') {
-    fetch(`http://localhost:5000/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
-    fetch(`/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
+    apiFetch(`/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
       .then((res) => {
         if (res.status === 404 || res.status === 401) {
           auth.logout();

@@ -12,6 +12,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
+import { apiFetch } from "../../utils/apiConfig";
 import {
   LayoutDashboard,
   Users,
@@ -63,7 +64,6 @@ import { useProductModeration } from "../../composables/useProductModeration";
 import {
   INNER_DISTRICTS,
   OUTER_DISTRICTS,
-  ALL_HANOI_DISTRICTS,
   getWardsForDistrict,
 } from "../../data/hanoiAdminUnits";
 
@@ -79,7 +79,7 @@ const activeTab = ref<"dashboard" | "accounts" | "kyc" | "products" | "markets" 
 
 // Quản lý trạng thái mở/đóng Drawer Menu trên Mobile
 const isMobileMenuOpen = ref<boolean>(false);
-const selectAdminTab = (tab: "dashboard" | "accounts" | "kyc" | "products" | "markets" | "managers" | "audit", searchTarget?: string) => {
+const selectAdminTab = (tab: "dashboard" | "accounts" | "kyc" | "products" | "markets" | "managers" | "audit", searchTarget?: any) => {
   activeTab.value = tab;
   if (searchTarget) {
     searchTargetTab.value = searchTarget;
@@ -631,7 +631,7 @@ const pendingKycUsers = computed(() => {
 // Fetch dữ liệu thật từ Backend
 const fetchStats = async () => {
   try {
-    const res = await fetch("/api/admin/stats");
+    const res = await apiFetch("/api/admin/stats");
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.stats) {
@@ -646,7 +646,7 @@ const fetchStats = async () => {
 const fetchUsers = async () => {
   isLoading.value = true;
   try {
-    const res = await fetch("/api/admin/users");
+    const res = await apiFetch("/api/admin/users");
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.users) {
@@ -695,7 +695,7 @@ const autoScanPendingPartnersToTable = async () => {
         const formData = new FormData();
         formData.append("file", fileToSend);
 
-        const scanRes = await fetch("/api/ocr/scan-id-card", {
+        const scanRes = await apiFetch("/api/ocr/scan-id-card", {
           method: "POST",
           body: formData,
         });
@@ -737,7 +737,7 @@ const autoScanPendingPartnersToTable = async () => {
 
 const fetchAuditLogs = async () => {
   try {
-    const res = await fetch("/api/admin/audit-logs");
+    const res = await apiFetch("/api/admin/audit-logs");
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.logs) {
@@ -751,7 +751,7 @@ const fetchAuditLogs = async () => {
 
 const fetchManagers = async () => {
   try {
-    const res = await fetch("/api/admin/managers");
+    const res = await apiFetch("/api/admin/managers");
     if (res.ok) {
       const data = await res.json();
       if (data.success && data.managers) {
@@ -917,7 +917,7 @@ const processOcrFile = async (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
 
-    const res = await fetch("/api/ocr/scan-id-card", {
+    const res = await apiFetch("/api/ocr/scan-id-card", {
       method: "POST",
       body: formData,
     });
@@ -1160,7 +1160,7 @@ const handleApproveKyc = async () => {
   showKycModal.value = false;
 
   try {
-    const res = await fetch("/api/admin/approve-kyc", {
+    const res = await apiFetch("/api/admin/approve-kyc", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1228,7 +1228,7 @@ const handleRejectKyc = async () => {
   rejectReasonInput.value = "";
 
   try {
-    const res = await fetch("/api/admin/reject-kyc", {
+    const res = await apiFetch("/api/admin/reject-kyc", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1262,7 +1262,7 @@ const openDisciplineModal = (user: UserAccount) => {
 const handleApplyDiscipline = async () => {
   if (!selectedUserForPunish.value) return;
   try {
-    const res = await fetch("/api/admin/discipline-user", {
+    const res = await apiFetch("/api/admin/discipline-user", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1293,7 +1293,7 @@ const handleApplyDiscipline = async () => {
 // Mở khóa nhanh
 const handleUnlockUser = async (user: UserAccount) => {
   try {
-    const res = await fetch("/api/admin/unlock-user", {
+    const res = await apiFetch("/api/admin/unlock-user", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1332,7 +1332,7 @@ const handleConfirmDelete = async () => {
   }
   try {
     const deletedUser = selectedUserForDelete.value;
-    const res = await fetch("/api/admin/delete-user", {
+    const res = await apiFetch("/api/admin/delete-user", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1382,7 +1382,7 @@ const handleConfirmDelete = async () => {
 const fetchMarketsOverview = async () => {
   isLoadingMarkets.value = true;
   try {
-    const res = await fetch("/api/MarketManagement/markets-overview");
+    const res = await apiFetch("/api/MarketManagement/markets-overview");
     const data = await res.json();
     if (data.success) {
       marketsOverview.value = data.markets || [];
@@ -1419,7 +1419,7 @@ const handleAssignBoardSubmit = async () => {
   }
   isSubmittingAssignBoard.value = true;
   try {
-    const res = await fetch("/api/MarketManagement/assign", {
+    const res = await apiFetch("/api/MarketManagement/assign", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1460,7 +1460,7 @@ const handleAssignStoreSubmit = async () => {
   }
   isSubmittingAssignStore.value = true;
   try {
-    const res = await fetch("/api/MarketManagement/assign-store-to-market", {
+    const res = await apiFetch("/api/MarketManagement/assign-store-to-market", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1510,7 +1510,7 @@ const handleCreateManager = async () => {
     return;
   }
   try {
-    const res = await fetch("/api/admin/create-manager", {
+    const res = await apiFetch("/api/admin/create-manager", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1610,7 +1610,7 @@ const handleSaveRoles = async () => {
 
   isSubmittingRole.value = true;
   try {
-    const res = await fetch("/api/admin/assign-role", {
+    const res = await apiFetch("/api/admin/assign-role", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1760,7 +1760,7 @@ const formatDisplayName = (name: string) => {
 
 const fetchNotifications = async () => {
   try {
-    const res = await fetch("/api/admin/notifications");
+    const res = await apiFetch("/api/admin/notifications");
     if (res.ok) {
       const data = await res.json();
       if (data.success) {
@@ -1805,7 +1805,7 @@ const fetchNotifications = async () => {
 
 const handleMarkAllRead = async () => {
   try {
-    await fetch("/api/admin/notifications/mark-read", {
+    await apiFetch("/api/admin/notifications/mark-read", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({})
@@ -1824,7 +1824,7 @@ const handleNotificationClick = async (notif: AdminNotificationItem) => {
     notif.isRead = true;
     unreadNotificationsCount.value = Math.max(0, unreadNotificationsCount.value - 1);
     try {
-      fetch("/api/admin/notifications/mark-read", {
+      apiFetch("/api/admin/notifications/mark-read", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: notif.id })
@@ -1868,7 +1868,7 @@ const handleNotificationClick = async (notif: AdminNotificationItem) => {
   // Nếu vẫn không thấy trong users.value, gọi trực tiếp API partner theo targetUserId
   if (notif.targetUserId) {
     try {
-      const res = await fetch(`/api/admin/partner/${notif.targetUserId}`);
+      const res = await apiFetch(`/api/admin/partner/${notif.targetUserId}`);
       if (res.ok) {
         const pData = await res.json();
         const p = pData.partner || pData.data;

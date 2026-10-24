@@ -12,6 +12,7 @@
  * ================================================================
  */
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
+import { apiFetch } from "../../utils/apiConfig";
 import { useRouter } from "vue-router";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -980,7 +981,7 @@ const handleFileUpload = (e: Event, field: 'cccdFrontImage' | 'cccdBackImage' | 
       try {
         const formData = new FormData();
         formData.append("file", file);
-        const scanRes = await fetch("/api/ocr/scan-id-card", {
+        const scanRes = await apiFetch("/api/ocr/scan-id-card", {
           method: "POST",
           body: formData
         });
@@ -1016,7 +1017,7 @@ const handleSubmitSeller = async () => {
 
   try {
     const cleanEmail = form.phoneEmail.trim().toLowerCase();
-    await fetch("/api/auth/register-seller", {
+    await apiFetch("/api/auth/register-seller", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1158,7 +1159,7 @@ const submitSellerSupportTicket = async () => {
 
   isSupportLoading.value = true;
   try {
-    const res = await fetch("/api/support/ticket", {
+    const res = await apiFetch("/api/support/ticket", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -172,6 +172,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
+import { apiFetch } from "../utils/apiConfig";
 import { useToast } from '../composables/useToast';
 
 interface ProductModerationResponse {
@@ -270,7 +271,7 @@ const handleFormSubmit = async () => {
     formData.append('productName', form.productName);
     formData.append('productImage', imageFile.value);
 
-    const res = await fetch('http://localhost:5000/api/moderation/check-product', {
+    const res = await apiFetch('/api/moderation/check-product', {
       method: 'POST',
       body: formData
     });
@@ -323,7 +324,7 @@ const executeFinalSubmit = async () => {
       finalData.append('image', imageFile.value);
     }
 
-    await fetch('http://localhost:5000/api/products', {
+    await apiFetch('/api/products', {
       method: 'POST',
       body: finalData
     });

@@ -838,7 +838,7 @@ export function getWardsForDistrict(districtName: string): WardItem[] {
   const normalizedInput = districtName.toLowerCase().trim();
 
   // Tìm trực tiếp theo key trong HANOI_WARDS_RAW
-  for (const [distKey, wardNames] of Object.entries(HANOI_WARDS_RAW)) {
+  for (const distKey of Object.keys(HANOI_WARDS_RAW)) {
     const kNorm = distKey.toLowerCase().trim();
     if (kNorm === normalizedInput || normalizedInput.includes(kNorm) || kNorm.includes(normalizedInput)) {
       return ALL_HANOI_WARDS.filter(w => w.districtName === distKey);

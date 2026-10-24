@@ -1,6 +1,7 @@
 <script setup lang="ts">
 
 import { ref, reactive, computed, nextTick, watch, onMounted, onUnmounted } from 'vue';
+import { apiFetch, getApiUrl } from "../../utils/apiConfig";
 
 import { useRouter } from 'vue-router';
 
@@ -80,7 +81,7 @@ const fetchAiPartnerStatus = async () => {
   const acc = auth.currentUser.value?.phoneEmail || (auth.currentUser.value as any)?.phone || '';
   if (!acc) return;
   try {
-    const res = await fetch(`/api/auth/partner-status?account=${encodeURIComponent(acc)}`);
+    const res = await apiFetch(`/api/auth/partner-status?account=${encodeURIComponent(acc)}`);
     if (res.ok) {
       const data = await res.json();
       if (data.success) {
@@ -2180,7 +2181,7 @@ const syncAiOrderToServer = async (code: string, total: number, items: any[]) =>
 
   try {
 
-    await fetch('/api/payment/register-order', {
+    await apiFetch('/api/payment/register-order', {
 
       method: 'POST',
 
@@ -2608,7 +2609,7 @@ const onAiPaymentConfirmed = async (paidAmount?: number) => {
 
   try {
 
-    await fetch('http://localhost:5000/api/aichat/confirm-bank-transfer', {
+    await apiFetch('/api/aichat/confirm-bank-transfer', {
 
       method: 'POST',
 
@@ -2996,7 +2997,7 @@ const startAiPaymentListener = (orderCode: string, amount: number) => {
 
       const sseUrl = `/api/payment/events?code=${encodeURIComponent(cleanCode)}`;
 
-      aiSseSource = new EventSource(sseUrl);
+      aiSseSource = new EventSource(getApiUrl(sseUrl));
 
       aiSseSource.onmessage = (e) => {
 
@@ -3148,7 +3149,7 @@ const startAiPaymentListener = (orderCode: string, amount: number) => {
 
       const checkUrl = `/api/payment/check?code=${encodeURIComponent(cleanCode)}&amount=${currentAiQrTotal.value}&bankAccount=28122068866`;
 
-      const res = await fetch(checkUrl);
+      const res = await apiFetch(checkUrl);
 
       if (res.ok) {
 
@@ -3174,9 +3175,9 @@ const startAiPaymentListener = (orderCode: string, amount: number) => {
 
     try {
 
-      const beRes = await fetch(`http://localhost:5000/api/aichat/check-qr-payment?orderCode=${encodeURIComponent(cleanCode)}`)
+      const beRes = await apiFetch(`/api/aichat/check-qr-payment?orderCode=${encodeURIComponent(cleanCode)}`)
 
-        .catch(() => fetch(`/api/aichat/check-qr-payment?orderCode=${encodeURIComponent(cleanCode)}`));
+        .catch(() => apiFetch(`/api/aichat/check-qr-payment?orderCode=${encodeURIComponent(cleanCode)}`));
 
       if (beRes && beRes.ok) {
 
@@ -3784,7 +3785,7 @@ async function sendMessage(customText?: string, extraPayload?: any) {
 
 
 
-            const response = await fetch('http://localhost:5000/api/aichat/chat', {
+            const response = await apiFetch('/api/aichat/chat', {
 
               method: 'POST',
 
@@ -4006,7 +4007,7 @@ async function sendMessage(customText?: string, extraPayload?: any) {
 
 
 
-    const response = await fetch('http://localhost:5000/api/aichat/chat', {
+    const response = await apiFetch('/api/aichat/chat', {
 
       method: 'POST',
 
@@ -4592,7 +4593,7 @@ async function handleOrderCombo(msg: any) {
 
   try {
 
-    await fetch('http://localhost:5000/api/aichat/create-combo-order', {
+    await apiFetch('/api/aichat/create-combo-order', {
 
       method: 'POST',
 
@@ -4634,7 +4635,7 @@ async function handleOrderCombo(msg: any) {
 
     }).catch(() => {
 
-      return fetch('/api/aichat/create-combo-order', {
+      return apiFetch('/api/aichat/create-combo-order', {
 
         method: 'POST',
 

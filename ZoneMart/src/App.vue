@@ -31,6 +31,15 @@ onMounted(() => {
   catalog.refreshCatalog();
 });
 
+const handleMobileSwitchRole = (role: 'buyer' | 'seller' | 'shipper' | 'admin') => {
+  auth.switchRole(role);
+  closeDropdowns();
+  if (role === 'buyer') router.push('/products');
+  else if (role === 'seller') router.push('/seller');
+  else if (role === 'shipper') router.push('/shipper');
+  else if (role === 'admin') router.push('/admin');
+};
+
 const navigateToBuyerOrders = () => {
   closeDropdowns();
   if (route.path === '/buyer-orders') {
@@ -937,6 +946,43 @@ const handleLogout = () => {
         class="mobile-menu"
         aria-label="Menu điều hướng di động"
       >
+        <!-- Chuyển đổi vai trò linh hoạt cho App di động -->
+        <div class="mobile-role-switcher">
+          <span class="switcher-lbl"><i class="bi bi-arrow-repeat me-1"></i>Chuyển Vai Trò Nhanh:</span>
+          <div class="mobile-switch-btns">
+            <button
+              type="button"
+              :class="{ active: auth.currentRole.value === 'buyer' }"
+              @click="handleMobileSwitchRole('buyer')"
+            >
+              🛒 Mua Sắm
+            </button>
+            <button
+              type="button"
+              :class="{ active: auth.currentRole.value === 'seller' }"
+              @click="handleMobileSwitchRole('seller')"
+            >
+              🏪 Bán Hàng
+            </button>
+            <button
+              type="button"
+              :class="{ active: auth.currentRole.value === 'shipper' }"
+              @click="handleMobileSwitchRole('shipper')"
+            >
+              🛵 Giao Hàng
+            </button>
+            <button
+              type="button"
+              :class="{ active: auth.currentRole.value === 'admin' }"
+              @click="handleMobileSwitchRole('admin')"
+            >
+              🛡️ Admin
+            </button>
+          </div>
+        </div>
+
+        <div class="mobile-divider"></div>
+
         <!-- Guest Mobile Links -->
         <template v-if="!auth.isLoggedIn.value">
           <router-link
@@ -945,7 +991,27 @@ const handleLogout = () => {
             @click="closeDropdowns"
           >
             <i class="bi bi-grid-fill menu-icon" aria-hidden="true"></i>
-            <span>Sản Phẩm</span>
+            <span>Sản Phẩm & Nông Sản</span>
+          </router-link>
+          <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
+            <i class="bi bi-cart3 menu-icon" aria-hidden="true"></i>
+            <span>Giỏ Hàng<span v-if="cart.totalCount.value > 0"> ({{ cart.totalCount.value }})</span></span>
+          </router-link>
+          <router-link
+            to="/register-seller"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
+            <i class="bi bi-shop menu-icon" aria-hidden="true"></i>
+            <span>Đăng Ký Mở Gian Hàng</span>
+          </router-link>
+          <router-link
+            to="/register-shipper"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
+            <i class="bi bi-bicycle menu-icon" aria-hidden="true"></i>
+            <span>Đăng Ký Đối Tác Giao Hàng</span>
           </router-link>
           <router-link
             to="/contact"
@@ -953,7 +1019,7 @@ const handleLogout = () => {
             @click="closeDropdowns"
           >
             <i class="bi bi-headset menu-icon" aria-hidden="true"></i>
-            <span>Liên Hệ</span>
+            <span>Trung Tâm Hỗ Trợ 24/7</span>
           </router-link>
           <div class="mobile-divider"></div>
           <div class="mobile-auth-grid">
@@ -994,7 +1060,7 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-grid-fill menu-icon"></i>
-              <span>Sản Phẩm</span>
+              <span>Sản Phẩm & Đi Chợ</span>
             </router-link>
             <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
               <i class="bi bi-cart3 menu-icon"></i>
@@ -1006,7 +1072,7 @@ const handleLogout = () => {
               @click="navigateToBuyerOrders"
             >
               <i class="bi bi-bag-check menu-icon"></i>
-              <span>Đơn Mua</span>
+              <span>Đơn Mua Của Tôi</span>
             </router-link>
             <router-link
               to="/profile"
@@ -1014,7 +1080,31 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-person-circle menu-icon"></i>
-              <span>Hồ Sơ Cá Nhân</span>
+              <span>Hồ Sơ Cá Nhân & Face ID</span>
+            </router-link>
+            <router-link
+              to="/register-seller"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-shop menu-icon"></i>
+              <span>Mở Gian Hàng Bán Nông Sản</span>
+            </router-link>
+            <router-link
+              to="/register-shipper"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-bicycle menu-icon"></i>
+              <span>Đăng Ký Tài Xế Shipper</span>
+            </router-link>
+            <router-link
+              to="/contact"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-headset menu-icon"></i>
+              <span>Tổng Đài Hỗ Trợ Khách Hàng</span>
             </router-link>
           </template>
 
@@ -1026,7 +1116,7 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-shop menu-icon"></i>
-              <span>Kênh Bán Hàng & Đơn</span>
+              <span>Kênh Gian Hàng & Đơn Mới</span>
             </router-link>
             <router-link
               to="/products"
@@ -1034,7 +1124,7 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-box-seam menu-icon"></i>
-              <span>Sản Phẩm Sàn</span>
+              <span>Sản Phẩm Trên Sàn</span>
             </router-link>
             <router-link
               to="/profile"
@@ -1042,7 +1132,15 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-cash-stack menu-icon"></i>
-              <span>Ví Doanh Thu</span>
+              <span>Ví Doanh Thu & Cài Đặt</span>
+            </router-link>
+            <router-link
+              to="/contact"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-headset menu-icon"></i>
+              <span>Hỗ Trợ Chủ Gian Hàng</span>
             </router-link>
           </template>
 
@@ -1054,7 +1152,7 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-bicycle menu-icon"></i>
-              <span>Nhận Đơn Hỏa Tốc</span>
+              <span>Bản Đồ Nhận Đơn Hỏa Tốc</span>
             </router-link>
             <router-link
               to="/profile"
@@ -1062,7 +1160,15 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-cash-coin menu-icon"></i>
-              <span>Ví Thu Nhập</span>
+              <span>Ví Thu Nhập & Tài Xế</span>
+            </router-link>
+            <router-link
+              to="/contact"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-telephone-outbound menu-icon"></i>
+              <span>Hỗ Trợ Tài Xế Khẩn Cấp</span>
             </router-link>
           </template>
 
@@ -1082,7 +1188,7 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-eye menu-icon"></i>
-              <span>Giám Sát Sàn</span>
+              <span>Giám Sát Sàn & Duyệt Tin</span>
             </router-link>
             <router-link
               to="/profile"
@@ -1090,7 +1196,7 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-gear menu-icon"></i>
-              <span>Hệ Thống</span>
+              <span>Cấu Hình Hệ Thống</span>
             </router-link>
           </template>
 

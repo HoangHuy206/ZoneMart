@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "../../utils/apiConfig";
 /**
  * ================================================================
  * ĐĂNG KÝ NGƯỜI BÁN / MỞ GIAN HÀNG (REGISTER SELLER VIEW) - Phụ trách: Bình
@@ -91,8 +92,8 @@ const selectedMarketInfo = computed(() => {
 const loadSystemWardsAndMarkets = async () => {
   try {
     const [wRes, mRes] = await Promise.all([
-      fetch("/api/MarketManagement/wards").then(r => r.json()).catch(() => null),
-      fetch("/api/MarketManagement/markets").then(r => r.json()).catch(() => null)
+      apiFetch("/api/MarketManagement/wards").then((r: any) => r.json()).catch(() => null),
+      apiFetch("/api/MarketManagement/markets").then((r: any) => r.json()).catch(() => null)
     ]);
     if (wRes && wRes.success && Array.isArray(wRes.data) && wRes.data.length > 0) {
       const dbWardMap = new Map<string, any>();
@@ -920,7 +921,7 @@ const handleCccdFrontUpload = (e: Event) => {
       try {
         const formData = new FormData();
         formData.append("file", file);
-        const scanRes = await fetch("/api/ocr/scan-id-card", {
+        const scanRes = await apiFetch("/api/ocr/scan-id-card", {
           method: "POST",
           body: formData
         });
@@ -947,7 +948,7 @@ const handleCccdFrontUpload = (e: Event) => {
 
     // Fallback tự động gửi ảnh lên backend để phân tích nhận diện số CCCD và Nguyên Quán
     try {
-      const res = await fetch("/api/auth/ocr-cccd", {
+      const res = await apiFetch("/api/auth/ocr-cccd", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: url })
@@ -1129,7 +1130,7 @@ const handleSubmitApplication = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("/api/auth/register-seller", {
+    const res = await apiFetch("/api/auth/register-seller", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

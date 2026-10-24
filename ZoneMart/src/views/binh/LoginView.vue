@@ -10,9 +10,6 @@ import { ref, reactive, onMounted } from 'vue';
 import {
   detectBiometricDevice,
   verifyDeviceFaceId,
-  loginWithBiometrics,
-  registerPasskeyForCurrentUser,
-  checkUserPasskeyStatus,
   type BiometricDeviceInfo,
 } from '../../utils/biometricHelper';
 import { useRouter, useRoute } from 'vue-router';
@@ -181,7 +178,7 @@ const handleQuickBiometricLogin = async () => {
 
 // Đăng nhập Chế độ Ngoại tuyến khi máy tính tắt hoặc mất mạng LAN
 
-const handleFaceScanModalSuccess = (payload: any) => {
+const handleFaceScanModalSuccess = (_payload?: any) => {
   showFaceScanModal.value = false;
   const savedBioAccount = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_account') : null;
   const targetAcc = form.account.trim() || savedBioAccount || 'hhuy85895@gmail.com';

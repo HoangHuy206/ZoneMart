@@ -13,6 +13,7 @@
  * ================================================================
  */
 import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { apiFetch } from "../../utils/apiConfig";
 import { useRouter, useRoute } from "vue-router";
 
 const router = useRouter();
@@ -78,7 +79,7 @@ const submitSupportTicket = async () => {
 
   isSupportLoading.value = true;
   try {
-    const res = await fetch("/api/support/ticket", {
+    const res = await apiFetch("/api/support/ticket", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -372,7 +373,7 @@ const handleSubmitShipper = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("/api/auth/register-shipper", {
+    const res = await apiFetch("/api/auth/register-shipper", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

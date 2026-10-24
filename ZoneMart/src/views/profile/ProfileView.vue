@@ -17,7 +17,6 @@ import {
 } from '../../composables/useAuth';
 import {
   detectBiometricDevice,
-  verifyDeviceFaceId,
   registerPasskeyForCurrentUser,
   checkUserPasskeyStatus,
   type BiometricDeviceInfo,
@@ -387,7 +386,7 @@ const handleAvatarChange = (e: Event) => {
 
           // 3. Đồng bộ lên CSDL MongoDB Atlas Backend
           const acc = currentAccount.value;
-          fetch('/api/auth/update-profile', {
+          apiFetch('/api/auth/update-profile', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -430,7 +429,7 @@ const handleSaveProfile = async () => {
 
     // 3. Cập nhật lên CSDL Backend ASP.NET Core
     const acc = currentAccount.value;
-    await fetch('/api/auth/update-profile', {
+    await apiFetch('/api/auth/update-profile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -864,7 +863,7 @@ const handleChangePasswordSubmit = async () => {
 
   isSubmittingPwd.value = true;
   try {
-    const res = await fetch('/api/auth/change-password', {
+    const res = await apiFetch('/api/auth/change-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -918,7 +917,7 @@ const handleSendZaloOtp = async () => {
 
   isSendingZaloOtp.value = true;
   try {
-    const res = await fetch('/api/auth/send-phone-otp', {
+    const res = await apiFetch('/api/auth/send-phone-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -969,8 +968,7 @@ const handleVerifyZaloOtp = async () => {
   isVerifyingZaloOtp.value = true;
   try {
     const acc = currentAccount.value;
-    const res = await fetch(
-      '/api/auth/verify-link-phone',
+    const res = await apiFetch('/api/auth/verify-link-phone',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1013,11 +1011,10 @@ const handleVerifyZaloOtp = async () => {
 };
 
 // 10. Xác thực khuôn mặt sinh trắc học Face ID (UniFace)
-const showFaceModal = ref(false);
+// const showFaceModal = ref(false);
 const isFaceAuthEnabled = ref(false);
 const faceRegisteredAt = ref('');
 const isCheckingFaceStatus = ref(false);
-const isDisablingFace = ref(false);
 
 const checkFaceStatus = async () => {
   const acc = currentAccount.value;
@@ -1045,15 +1042,7 @@ const checkFaceStatus = async () => {
   }
 };
 
-const openFaceRegisterModal = () => {
-  showFaceModal.value = true;
-};
 
-const handleFaceRegisterSuccess = (payload: any) => {
-  isFaceAuthEnabled.value = true;
-  faceRegisteredAt.value = payload.registeredAt || new Date().toLocaleString('vi-VN');
-  triggerToast('🎉 Đã kích hoạt và lưu khuôn mặt thành công cho tài khoản!');
-};
 
 // 10.1 WebAuthn / Passkey Sinh trắc học phần cứng (Face ID iPhone X+, Touch ID, Vân tay Android, Windows Hello)
 const currentBiometricDevice = ref<BiometricDeviceInfo | null>(null);
@@ -1074,6 +1063,34 @@ const loadBiometricDeviceInfo = async () => {
     }
   } catch (e) {
     console.warn('Lỗi nhận diện sinh trắc học thiết bị:', e);
+  }
+};
+
+const handleResetDeviceBiometrics = async () => {
+  const acc = currentAccount.value;
+  const username = acc.phoneEmail || acc.id || (acc as any).userCode;
+  
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('zonemart_passkey_saved');
+      localStorage.removeItem('zonemart_passkey_user');
+      localStorage.removeItem('zonemart_face_registered_' + (username || '').toLowerCase().trim());
+    }
+    hasDevicePasskey.value = false;
+    isFaceAuthEnabled.value = false;
+    faceRegisteredAt.value = '';
+    
+    if (username) {
+      await apiFetch('/api/auth/face/disable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: username }),
+      }).catch(() => {});
+    }
+    triggerToast('Đã xóa dữ liệu Face ID / Passkey cũ. Bạn có thể bấm "Liên kết thiết bị này" để quét lại từ đầu!');
+  } catch (err: any) {
+    hasDevicePasskey.value = false;
+    triggerToast('Đã đặt lại dữ liệu sinh trắc học trên thiết bị!');
   }
 };
 
@@ -1100,34 +1117,6 @@ const handleRegisterDeviceBiometrics = async () => {
   }
 };
 
-const handleDisableFace = async () => {
-  const acc = currentAccount.value;
-  const term = acc.id || acc.phoneEmail;
-  if (!confirm('Bạn có chắc chắn muốn tắt tính năng đăng nhập bằng khuôn mặt cho tài khoản này?')) {
-    return;
-  }
-
-  isDisablingFace.value = true;
-  try {
-    const res = await apiFetch('/api/auth/face/disable', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: term }),
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
-      isFaceAuthEnabled.value = false;
-      faceRegisteredAt.value = '';
-      triggerToast('Đã hủy kích hoạt đăng nhập bằng khuôn mặt Face ID.');
-    } else {
-      triggerToast(data.message || 'Không thể hủy Face ID.');
-    }
-  } catch (e: any) {
-    triggerToast(e.message || 'Lỗi khi hủy Face ID.');
-  } finally {
-    isDisablingFace.value = false;
-  }
-};
 
 // 9. Lắng nghe thay đổi tài khoản đăng nhập để chuyển đổi dữ liệu tức thì
 watch(
@@ -1334,8 +1323,8 @@ const selectedMarketInfo = computed(() => {
 const loadSystemWardsAndMarkets = async () => {
   try {
     const [wRes, mRes] = await Promise.all([
-      fetch("/api/MarketManagement/wards").then(r => r.json()).catch(() => null),
-      fetch("/api/MarketManagement/markets").then(r => r.json()).catch(() => null)
+      apiFetch("/api/MarketManagement/wards").then(r => r.json()).catch(() => null),
+      apiFetch("/api/MarketManagement/markets").then(r => r.json()).catch(() => null)
     ]);
     if (wRes && wRes.success && Array.isArray(wRes.data) && wRes.data.length > 0) {
       const dbWardMap = new Map<string, any>();

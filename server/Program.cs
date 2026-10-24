@@ -45,6 +45,7 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ITelegramService, TelegramService>();
 builder.Services.AddScoped<IProductModerationService, ProductModerationService>();
 builder.Services.AddHostedService<PythonFaceServiceManager>();
+builder.Services.AddSingleton<OrderRealtimeManager>();
 
 // 4. MemoryCache & WebAuthn / Passkeys (FIDO2)
 builder.Services.AddMemoryCache();
@@ -94,6 +95,15 @@ app.UseSwaggerUI();
 #endif
 
 app.UseCors("AllowVueClient");
+
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Append("X-Frame-Options", "SAMEORIGIN");
+    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    await next();
+});
+
+
 
 // app.UseHttpsRedirection();
 

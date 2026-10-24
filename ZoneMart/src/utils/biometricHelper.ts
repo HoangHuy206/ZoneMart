@@ -213,7 +213,7 @@ export async function registerPasskeyForCurrentUser(
 export async function loginWithBiometrics(
   usernameHint?: string,
   useAutofill: boolean = false
-): Promise<{ success: boolean; data?: any; message: string }> {
+): Promise<{ success: boolean; data?: any; message: string; hasPasskey?: boolean }> {
   try {
     const clientOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const clientHost = typeof window !== 'undefined' ? window.location.hostname : '';

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "../../utils/apiConfig";
 /**
  * ================================================================
  * ĐĂNG KÝ KHÁCH HÀNG (REGISTER BUYER VIEW) - Phụ trách: Bình
@@ -132,7 +133,7 @@ const handleRegister = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("/api/auth/register", {
+    const res = await apiFetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

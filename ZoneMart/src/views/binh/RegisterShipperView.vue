@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { apiFetch } from "../../utils/apiConfig";
 /**
  * ================================================================
  * ĐĂNG KÝ TÀI XẾ SHIPPER (REGISTER SHIPPER VIEW) - Phụ trách: Bình
@@ -431,7 +432,7 @@ const handleSubmitShipper = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("/api/auth/register-shipper", {
+    const res = await apiFetch("/api/auth/register-shipper", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -128,7 +128,7 @@ onMounted(async () => {
     // Kiểm tra tính hợp lệ của tài khoản với backend (nếu tài khoản đã bị Admin xóa khỏi hệ thống)
     const emailToCheck = parsed.phoneEmail || parsed.email;
     if (emailToCheck && parsed.role !== 'admin' && !parsed.isAdmin) {
-      fetch(`/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
+      apiFetch(`/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
         .then((res) => {
           if (res.status === 404 || res.status === 401) {
             localStorage.removeItem("isLoggedIn");
@@ -740,7 +740,7 @@ const loadSellerStoreProfile = async (parsedUser: any) => {
 
   // 2. Tra cứu thêm từ backend API nếu có để đồng bộ hồ sơ đã đăng ký trong CSDL MongoDB
   try {
-    const res = await fetch(`/api/auth/seller-profile?account=${encodeURIComponent(cleanEmail)}`).catch(() => null);
+    const res = await apiFetch(`/api/auth/seller-profile?account=${encodeURIComponent(cleanEmail)}`).catch(() => null);
     if (res && res.ok) {
       const data = await res.json();
       if (data && data.store) {
@@ -1043,7 +1043,7 @@ const handleSaveStoreSettings = async () => {
   } catch {}
 
   try {
-    await fetch("/api/auth/update-store-profile", {
+    await apiFetch("/api/auth/update-store-profile", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1533,7 +1533,7 @@ const handleSaveProduct = async () => {
         formData.append("productImage", fileObj);
       }
 
-      const res = await fetch("http://localhost:5000/api/moderation/check-product", {
+      const res = await apiFetch("/api/moderation/check-product", {
         method: "POST",
         body: formData
       });
@@ -1569,8 +1569,8 @@ const handleSaveProduct = async () => {
 
           // Xóa ngay lập tức khỏi database MongoDB
           try {
-            await fetch(`http://localhost:5000/api/products/${target.id}`, { method: "DELETE" }).catch(() => {});
-            await fetch(`http://localhost:5000/api/products/${encodeURIComponent(target.name)}`, { method: "DELETE" }).catch(() => {});
+            await apiFetch(`/api/products/${target.id}`, { method: "DELETE" }).catch(() => {});
+            await apiFetch(`/api/products/${encodeURIComponent(target.name)}`, { method: "DELETE" }).catch(() => {});
           } catch {}
 
           const finalReason = reason || "Phát hiện nội dung cấm, nhạy cảm hoặc vi phạm nghiêm trọng trên sàn ZoneMart!";
