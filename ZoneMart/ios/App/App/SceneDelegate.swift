@@ -6,8 +6,15 @@ import LocalAuthentication
 class MainViewController: CAPBridgeViewController, WKScriptMessageHandler {
     override func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
         let config = super.webViewConfiguration(for: instanceConfiguration)
+        config.userContentController.removeScriptMessageHandler(forName: "nativeFaceId")
         config.userContentController.add(self, name: "nativeFaceId")
         return config
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        self.webView?.configuration.userContentController.removeScriptMessageHandler(forName: "nativeFaceId")
+        self.webView?.configuration.userContentController.add(self, name: "nativeFaceId")
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
