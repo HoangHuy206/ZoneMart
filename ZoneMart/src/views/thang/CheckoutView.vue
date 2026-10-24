@@ -1723,6 +1723,8 @@ const handlePlaceOrder = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   border-bottom: 1px solid #f1f5f9;
   padding-bottom: 12px;
   margin-bottom: 16px;
@@ -1733,6 +1735,8 @@ const handlePlaceOrder = () => {
   font-size: 16px;
   font-weight: 700;
   color: #0f172a;
+  flex: 1;
+  min-width: 150px;
 }
 
 .btn-edit-addr {
@@ -1741,12 +1745,14 @@ const handlePlaceOrder = () => {
   border: 1px solid #fed7aa;
   font-size: 13px;
   font-weight: 700;
-  padding: 7px 15px;
+  padding: 7px 14px;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
   display: inline-flex;
   align-items: center;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn-edit-addr:hover {
@@ -1830,6 +1836,25 @@ const handlePlaceOrder = () => {
   cursor: pointer;
   background: #ffffff;
   transition: all 0.2s;
+  box-sizing: border-box;
+}
+
+.pay-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.pay-item > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.pay-item strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .opt-item:hover,
@@ -1852,14 +1877,24 @@ const handlePlaceOrder = () => {
 .opt-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 10px;
   margin-bottom: 4px;
+}
+
+.opt-head strong {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .opt-head .price {
   font-weight: 800;
   color: #ea580c;
   font-size: 15px;
+  white-space: nowrap !important;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .sub,
@@ -3325,6 +3360,237 @@ const handlePlaceOrder = () => {
 .btn-check-status-subtle:hover {
   color: #0f172a;
   text-decoration: underline;
+}
+
+
+/* ============================================================================
+   RESPONSIVE MOBILE & IOS FIX CHO TRANG THANH TOÁN (CHECKOUT)
+   ============================================================================ */
+@media (max-width: 768px) {
+  .checkout-container {
+    margin: 14px auto 140px auto !important;
+    padding: 0 12px !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+
+  .checkout-header {
+    margin-bottom: 16px;
+  }
+
+  .checkout-header h2 {
+    font-size: 20px !important;
+  }
+
+  .checkout-header p {
+    font-size: 13px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .checkout-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 14px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .left-col,
+  .right-col {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    min-width: 0 !important;
+  }
+
+  .card-box {
+    padding: 16px 14px !important;
+    border-radius: 16px !important;
+    margin-bottom: 14px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  .card-box-header {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+    margin-bottom: 12px !important;
+    padding-bottom: 10px !important;
+  }
+
+  .card-box-header h3 {
+    font-size: 15px !important;
+    margin: 0 !important;
+    flex: 1 !important;
+    min-width: 140px !important;
+  }
+
+  .btn-edit-addr {
+    padding: 6px 11px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    border-radius: 8px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .addr-content .user-info-row {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    flex-wrap: wrap !important;
+    margin-bottom: 6px !important;
+  }
+
+  .user-fullname {
+    font-size: 15px !important;
+  }
+
+  .user-phone {
+    font-size: 13.5px !important;
+  }
+
+  .badge-account-isolated {
+    font-size: 10.5px !important;
+    padding: 2px 6px !important;
+    white-space: nowrap !important;
+  }
+
+  .addr-text {
+    font-size: 13.5px !important;
+    line-height: 1.45 !important;
+    word-break: break-word !important;
+    margin-bottom: 8px !important;
+  }
+
+  .delivery-note-tag {
+    font-size: 12px !important;
+    padding: 5px 10px !important;
+    word-break: break-word !important;
+  }
+
+  .opt-item,
+  .pay-item {
+    padding: 12px !important;
+    border-radius: 12px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+
+  .opt-head {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    margin-bottom: 4px !important;
+  }
+
+  .opt-head strong {
+    font-size: 13.5px !important;
+    line-height: 1.35 !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+    word-break: break-word !important;
+  }
+
+  .opt-head .price {
+    font-size: 14px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    margin-left: auto !important;
+  }
+
+  .sub,
+  .pay-item p {
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+    word-break: break-word !important;
+  }
+
+  .pay-item {
+    display: flex !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .pay-item input[type="radio"] {
+    margin-top: 3px !important;
+  }
+
+  .pay-item > div {
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+
+  .pay-item strong {
+    font-size: 13.5px !important;
+    line-height: 1.35 !important;
+    word-break: break-word !important;
+  }
+
+  .sticky-box {
+    position: static !important;
+  }
+
+  .qr-checkout-card {
+    padding: 16px 12px !important;
+    border-radius: 16px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .vietqr-clean-img {
+    max-width: 180px !important;
+    height: auto !important;
+    aspect-ratio: 1 !important;
+  }
+
+  .memo-only-box {
+    padding: 10px 12px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .memo-copy-row {
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .memo-code {
+    font-size: 17px !important;
+    word-break: break-all !important;
+  }
+
+  .auto-active-banner {
+    padding: 10px 12px !important;
+    gap: 10px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+
+  .auto-title {
+    font-size: 11px !important;
+    word-break: break-word !important;
+  }
+
+  .auto-desc {
+    font-size: 10.5px !important;
+    word-break: break-word !important;
+  }
+
+  .modal-dialog-medium,
+  .modal-dialog-card {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    margin: 10px auto !important;
+    padding: 16px !important;
+    border-radius: 16px !important;
+  }
 }
 
 </style>

@@ -7505,41 +7505,24 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
 /* Bong bóng lời thoại gợi ý thi thoảng xuất hiện phía trên avatar */
 
 .ai-speech-bubble {
-
   position: absolute;
-
   right: 0;
-
   bottom: 74px;
-
   background: #FFFFFF;
-
   border: 1.5px solid #FED7AA;
-
-  /* Đổ bóng đa tầng cực kỳ rõ nét & nổi bật (box-shadow) */
-
   box-shadow: 
-
     0 16px 36px -6px rgba(15, 23, 42, 0.18),
-
     0 8px 18px -4px rgba(249, 115, 22, 0.22),
-
     0 2px 8px rgba(0, 0, 0, 0.06);
-
   border-radius: 18px;
-
-  padding: 9px 18px;
-
+  padding: 8px 16px;
   cursor: pointer;
-
   white-space: nowrap;
-
+  width: max-content;
+  max-width: min(340px, calc(100vw - 36px));
   user-select: none;
-
   z-index: 10;
-
   transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease, border-color 0.25s ease;
-
 }
 
 
@@ -12354,11 +12337,15 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
   }
 
   .ai-speech-bubble {
-    right: -10px !important;
+    right: 0 !important;
     bottom: 68px !important;
-    max-width: 260px !important;
-    white-space: normal !important;
-    font-size: 13px !important;
+    width: max-content !important;
+    max-width: min(320px, calc(100vw - 32px)) !important;
+    white-space: nowrap !important;
+    font-size: 12.5px !important;
+    padding: 8px 14px !important;
+    border-radius: 16px !important;
+    box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.16), 0 4px 12px -2px rgba(249, 115, 22, 0.2) !important;
   }
 
   .ai-chat-window {
