@@ -1376,6 +1376,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 1000;
+  padding-top: env(safe-area-inset-top, 0px);
   box-shadow: 0 2px 10px rgba(43, 27, 20, 0.03);
 }
 

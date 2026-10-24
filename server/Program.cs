@@ -63,12 +63,12 @@ builder.Services.AddFido2(options =>
     };
 });
 
-// 5. Cấu hình CORS cho phép Vue 3 Frontend (localhost:5173) gọi API
+// 5. Cấu hình CORS cho phép Vue 3 Frontend, Capacitor iOS & LAN gọi API
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowVueClient", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")
+        policy.SetIsOriginAllowed(origin => true)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -106,4 +106,6 @@ Console.WriteLine("📧 Đã nạp cấu hình gửi thư Gmail: hh9393100@gmail
 Console.WriteLine("🤖 Đã nạp cấu hình Bot Telegram: @ZoneMarttt_bot");
 Console.WriteLine("🛡️ Đã sẵn sàng hệ thống WebAuthn / Passkey Sinh trắc học!");
 
-app.Run("http://localhost:5000");
+Console.WriteLine("🌐 Lắng nghe trên tất cả cổng mạng LAN: http://0.0.0.0:5000");
+
+app.Run("http://0.0.0.0:5000");

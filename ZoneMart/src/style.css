@@ -370,3 +370,11 @@ input, select, textarea {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1rem;
 }
+
+
+/* Chống tự động phóng to màn hình trên iOS khi chạm vào ô nhập dữ liệu */
+@media (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}

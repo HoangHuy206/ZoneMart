@@ -49,6 +49,8 @@ export interface RealtimeOrder {
 export type OrderEventCallback = (order: RealtimeOrder) => void;
 export type StatusEventCallback = (payload: { orderId: string; status: string; statusText: string; order: RealtimeOrder }) => void;
 
+import { apiFetch, getApiUrl } from '../utils/apiConfig';
+
 class OrderRealtimeService {
   private channel: BroadcastChannel | null = null;
   private sseSource: EventSource | null = null;
@@ -77,7 +79,7 @@ class OrderRealtimeService {
     // 1. Kết nối SSE để nhận sự kiện tức thì
     if ("EventSource" in window) {
       try {
-        this.sseSource = new EventSource("/api/realtime/events");
+        this.sseSource = new EventSource(getApiUrl("/api/realtime/events"));
         this.sseSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
@@ -109,7 +111,7 @@ class OrderRealtimeService {
     if (this.isSyncing) return;
     this.isSyncing = true;
     try {
-      const res = await fetch("/api/realtime/orders");
+      const res = await apiFetch("/api/realtime/orders");
       if (res.ok) {
         const data = await res.json();
         if (data && Array.isArray(data.orders)) {
@@ -216,7 +218,7 @@ class OrderRealtimeService {
     try {
       this.cachedOrdersMap.clear();
       this.clearActiveOrder();
-      const res = await fetch("/api/realtime/orders/clear", { method: "POST" });
+      const res = await apiFetch("/api/realtime/orders/clear", { method: "POST" });
       this.broadcast({ type: "ORDERS_CLEARED" });
       return res.ok;
     } catch (e) {
@@ -385,7 +387,7 @@ class OrderRealtimeService {
 
     // Đồng bộ lên Server (0ms xuyên trình duyệt)
     try {
-      fetch("/api/realtime/orders", {
+      apiFetch("/api/realtime/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(order)
@@ -452,7 +454,7 @@ class OrderRealtimeService {
 
     // Đồng bộ lên Server
     try {
-      fetch("/api/realtime/orders", {
+      apiFetch("/api/realtime/orders", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -495,7 +497,7 @@ class OrderRealtimeService {
       this.updateUserOrdersHistory(order);
 
       try {
-        fetch("/api/realtime/orders", {
+        apiFetch("/api/realtime/orders", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -556,7 +558,7 @@ class OrderRealtimeService {
 
     // Đồng bộ lên Server
     try {
-      fetch("/api/realtime/orders", {
+      apiFetch("/api/realtime/orders", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -597,7 +599,7 @@ class OrderRealtimeService {
 
     // Đồng bộ lên Server
     try {
-      fetch("/api/realtime/orders", {
+      apiFetch("/api/realtime/orders", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -638,7 +640,7 @@ class OrderRealtimeService {
 
     // Đồng bộ lên Server
     try {
-      fetch("/api/realtime/orders", {
+      apiFetch("/api/realtime/orders", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

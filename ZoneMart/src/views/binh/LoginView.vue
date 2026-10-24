@@ -17,7 +17,7 @@ import {
 import { useRouter, useRoute } from 'vue-router';
 import ForgotPasswordForm from './ForgotPasswordForm.vue';
 import { useAuth, type UserRole } from '../../composables/useAuth';
-import { apiFetch } from '../../utils/apiConfig';
+import { apiFetch, getBaseApiUrl } from '../../utils/apiConfig';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
 import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
 import { useToast } from '../../composables/useToast';
@@ -25,6 +25,22 @@ import { useToast } from '../../composables/useToast';
 const router = useRouter();
 const route = useRoute();
 const auth = useAuth();
+const currentServerDisplay = ref(getBaseApiUrl() || 'http://192.168.1.16:5000');
+const promptChangeServerUrl = () => {
+  const current = localStorage.getItem('zonemart_api_server_url') || currentServerDisplay.value;
+  const newUrl = window.prompt('Nhập IP/Link máy chủ Backend (Ví dụ: http://192.168.1.16:5000 hoặc link Ngrok):', current);
+  if (newUrl !== null) {
+    if (newUrl.trim()) {
+      localStorage.setItem('zonemart_api_server_url', newUrl.trim());
+      currentServerDisplay.value = newUrl.trim();
+      toast.success('Đã lưu địa chỉ máy chủ: ' + newUrl.trim());
+    } else {
+      localStorage.removeItem('zonemart_api_server_url');
+      currentServerDisplay.value = getBaseApiUrl();
+      toast.info('Đã hoàn tác về địa chỉ mặc định.');
+    }
+  }
+};
 
 // Hàm điều hướng sau khi đăng nhập thành công
 const navigateAfterLogin = (role: string) => {
@@ -650,6 +666,11 @@ const handleLogin = async () => {
                 <router-link to="/register-seller" target="_blank" class="link-secondary"
                   >Đăng ký bán hàng với ZoneMart</router-link
                 >
+              </div>
+                            <div class="server-config-trigger" style="margin-top: 14px; text-align: center;">
+                <button type="button" @click="promptChangeServerUrl" style="background: rgba(241, 245, 249, 0.85); border: 1px dashed #cbd5e1; border-radius: 20px; padding: 5px 14px; font-size: 11px; color: #64748b; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                  <span>🌐</span> <span>Máy chủ: {{ currentServerDisplay }}</span> <span style="text-decoration: underline; color: #ea580c;">(Đổi IP)</span>
+                </button>
               </div>
               <div class="cta-sub-line" style="margin-top: 2px">
                 <span>Đăng ký làm shipper? </span>

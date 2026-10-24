@@ -12343,5 +12343,48 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
 
 }
 
+
+/* ================================================================
+   Mobile Responsive & iOS Zoom Prevention for AI Assistant
+   ================================================================ */
+@media (max-width: 768px) {
+  .ai-assistant-root {
+    right: 14px !important;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .ai-speech-bubble {
+    right: -10px !important;
+    bottom: 68px !important;
+    max-width: 260px !important;
+    white-space: normal !important;
+    font-size: 13px !important;
+  }
+
+  .ai-chat-window {
+    position: fixed !important;
+    top: calc(10px + env(safe-area-inset-top, 0px)) !important;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+    left: 10px !important;
+    right: 10px !important;
+    width: auto !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    border-radius: 20px !important;
+    z-index: 10000 !important;
+    box-shadow: 0 16px 48px rgba(15, 23, 42, 0.28) !important;
+  }
+
+  /* Chống iOS tự động phóng to (auto-zoom) khi chạm vào ô gõ tin nhắn */
+  .chat-textarea,
+  .chat-password-input {
+    font-size: 16px !important;
+  }
+
+  .chat-messages-body {
+    -webkit-overflow-scrolling: touch !important;
+  }
+}
 </style>
 
