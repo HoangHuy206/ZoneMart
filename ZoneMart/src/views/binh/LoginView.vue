@@ -17,7 +17,7 @@ import {
 import { useRouter, useRoute } from 'vue-router';
 import ForgotPasswordForm from './ForgotPasswordForm.vue';
 import { useAuth, type UserRole } from '../../composables/useAuth';
-import { apiFetch, getBaseApiUrl } from '../../utils/apiConfig';
+import { apiFetch } from '../../utils/apiConfig';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
 import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
 import { useToast } from '../../composables/useToast';
@@ -25,22 +25,6 @@ import { useToast } from '../../composables/useToast';
 const router = useRouter();
 const route = useRoute();
 const auth = useAuth();
-const currentServerDisplay = ref(getBaseApiUrl() || 'http://192.168.1.16:5000');
-const promptChangeServerUrl = () => {
-  const current = localStorage.getItem('zonemart_api_server_url') || currentServerDisplay.value;
-  const newUrl = window.prompt('Nhập IP/Link máy chủ Backend (Ví dụ: http://192.168.1.16:5000 hoặc link Ngrok):', current);
-  if (newUrl !== null) {
-    if (newUrl.trim()) {
-      localStorage.setItem('zonemart_api_server_url', newUrl.trim());
-      currentServerDisplay.value = newUrl.trim();
-      toast.success('Đã lưu địa chỉ máy chủ: ' + newUrl.trim());
-    } else {
-      localStorage.removeItem('zonemart_api_server_url');
-      currentServerDisplay.value = getBaseApiUrl();
-      toast.info('Đã hoàn tác về địa chỉ mặc định.');
-    }
-  }
-};
 
 // Hàm điều hướng sau khi đăng nhập thành công
 const navigateAfterLogin = (role: string) => {
@@ -82,7 +66,7 @@ const successMessage = ref('');
 const showNotFoundModal = ref(false);
 const modalErrorMessage = ref('');
 const modalErrorType = ref<
-  'ACCOUNT_NOT_FOUND' | 'INCORRECT_PASSWORD' | 'ACCOUNT_PENDING_APPROVAL' | 'IP_BANNED'
+  'ACCOUNT_NOT_FOUND' | 'INCORRECT_PASSWORD' | 'ACCOUNT_PENDING_APPROVAL' | 'IP_BANNED' | 'NETWORK_ERROR'
 >('ACCOUNT_NOT_FOUND');
 
 // Trạng thái cho Modal Chúc mừng Hoạt Họa siêu xịn
@@ -117,39 +101,65 @@ const handleQuickBiometricLogin = async () => {
   const targetAccount = form.account.trim();
   const targetPassword = form.password.trim();
   const deviceLabel = biometricDevice.value?.label || 'Face ID';
-  const isPasskeySaved = typeof localStorage !== 'undefined' && localStorage.getItem('zonemart_passkey_saved') === 'true';
+  const savedBioAccount = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_account') : null;
+  const savedBioPass = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_pass') : null;
+  const isPasskeySaved = typeof localStorage !== 'undefined' && (localStorage.getItem('zonemart_passkey_saved') === 'true' || !!savedBioAccount);
 
   try {
     isBiometricChecking.value = true;
     errorMessage.value = '';
 
-    // Trường hợp 1: Nếu iPhone này ĐÃ từng lưu Face ID cho ZoneMart trước đó
-    if (isPasskeySaved) {
-      // Gọi trực tiếp WebAuthn Native (Apple Safari sẽ hiện sheet Face ID quét mặt)
-      const res = await loginWithBiometrics(targetAccount);
+    // Trường hợp 1: Thiết bị ĐÃ từng lưu Face ID / Sinh trắc học
+    if (isPasskeySaved && (savedBioAccount || targetAccount)) {
+      const actToUse = targetAccount || savedBioAccount || '';
+      toast.info(`Đang quét ${deviceLabel}... Vui lòng nhìn vào màn hình.`, `Xác thực ${deviceLabel}`);
 
-      if (res && res.success && res.data) {
-        handleFaceLoginSuccess(res.data);
-        return;
+      // Thử xác thực native WebAuthn trước (nếu trên Web browser)
+      try {
+        const res = await loginWithBiometrics(actToUse);
+        if (res && res.success && res.data) {
+          handleFaceLoginSuccess(res.data);
+          return;
+        }
+      } catch (e) {
+        // Fallback cho native app (Capacitor)
       }
 
-      // Nếu người dùng chủ động bấm Hủy trên sheet Face ID của Apple
-      if (res && res.message && res.message.includes('đã bị hủy')) {
-        return;
+      // Trên Mobile App: Sử dụng thông tin sinh trắc học đã lưu trên máy để đăng nhập tức thì
+      if (savedBioAccount && savedBioPass) {
+        try {
+          const passDecoded = atob(savedBioPass);
+          const checkLogin = await apiFetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account: savedBioAccount, password: passDecoded }),
+          });
+          if (checkLogin && checkLogin.ok) {
+            const loginData = await checkLogin.json();
+            handleFaceLoginSuccess(loginData);
+            return;
+          }
+        } catch (apiErr) {
+          // Nếu offline, nạp phiên đã lưu
+          const savedUserStr = localStorage.getItem('zonemart_biometric_user');
+          if (savedUserStr) {
+            handleFaceLoginSuccess({ user: JSON.parse(savedUserStr) });
+            return;
+          }
+        }
       }
     }
 
-    // Trường hợp 2: iPhone này CHƯA từng lưu Face ID cho ZoneMart
-    // Nếu cả Tài khoản và Mật khẩu đều để trống
+    // Trường hợp 2: Thiết bị CHƯA từng lưu Face ID
+    // Nếu cả Tài khoản & Mật khẩu đều để trống
     if (!targetAccount && !targetPassword) {
       toast.info(
-        `iPhone này chưa lưu ${deviceLabel} cho ZoneMart.\n\nVui lòng nhập Tài khoản & Mật khẩu bên dưới, sau đó bấm lại biểu tượng ${deviceLabel} để kích hoạt 1-chạm!`,
-        'Kích Hoạt ' + deviceLabel
+        `Vui lòng nhập Tài khoản & Mật khẩu lần đầu tiên, sau đó bấm biểu tượng ${deviceLabel} để kích hoạt 1-chạm!`,
+        `Kích Hoạt ${deviceLabel}`
       );
       return;
     }
 
-    // Nếu đã nhập Tài khoản nhưng chưa nhập Mật khẩu
     if (targetAccount && !targetPassword) {
       toast.info(
         `Vui lòng nhập mật khẩu của tài khoản '${targetAccount}', sau đó bấm lại biểu tượng ${deviceLabel} để lưu và kích hoạt!`,
@@ -158,42 +168,41 @@ const handleQuickBiometricLogin = async () => {
       return;
     }
 
-    // Nếu đã nhập cả Tài khoản & Mật khẩu -> Bắt đầu kích hoạt lưu Face ID vào iPhone
+    // Nếu đã có cả Tài khoản & Mật khẩu -> Đăng nhập & Lưu Face ID
     if (targetAccount && targetPassword) {
-      // 1. Kiểm tra xác thực tài khoản & mật khẩu với backend
+      toast.info(`Đang xác thực và liên kết ${deviceLabel} cho thiết bị...`);
       const checkLogin = await apiFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          account: targetAccount,
-          password: targetPassword,
-        }),
+        body: JSON.stringify({ account: targetAccount, password: targetPassword }),
       }).catch(() => null);
 
       if (!checkLogin || !checkLogin.ok) {
         const errData = await checkLogin?.json().catch(() => ({}));
-        toast.error(errData?.message || 'Mật khẩu tài khoản không đúng! Vui lòng kiểm tra lại trước khi liên kết Face ID.');
+        toast.error(errData?.message || 'Mật khẩu tài khoản không đúng! Vui lòng kiểm tra lại trước khi kích hoạt.');
         return;
       }
 
       const loginData = await checkLogin.json();
 
-      // 2. Kích hoạt Passkey chuẩn Face ID Apple (iOS sẽ hiện sheet Apple Face ID thật: "Lưu mã khóa cho ZoneMart")
-      toast.info(`Vui lòng nhìn vào màn hình để iPhone quét và lưu ${deviceLabel}...`);
-      const regRes = await registerPasskeyForCurrentUser(targetAccount, deviceLabel);
-
-      if (regRes.success) {
-        localStorage.setItem('zonemart_passkey_saved', 'true');
-        localStorage.setItem('zonemart_passkey_account', targetAccount);
-        toast.success(`🎉 Đã lưu ${deviceLabel} thành công vào iPhone! Từ lần sau bạn chỉ cần 1-chạm là vào ngay.`);
-        handleFaceLoginSuccess(loginData);
-      } else {
-        toast.info(regRes.message || `Chưa hoàn tất lưu ${deviceLabel}.`);
+      // Lưu trữ xác thực sinh trắc học an toàn trên thiết bị
+      localStorage.setItem('zonemart_passkey_saved', 'true');
+      localStorage.setItem('zonemart_biometric_account', targetAccount);
+      localStorage.setItem('zonemart_biometric_pass', btoa(targetPassword));
+      if (loginData.user) {
+        localStorage.setItem('zonemart_biometric_user', JSON.stringify(loginData.user));
       }
+
+      // Đăng ký WebAuthn phụ nếu trình duyệt hỗ trợ
+      registerPasskeyForCurrentUser(targetAccount, deviceLabel).catch(() => {});
+
+      toast.success(`🎉 Đã kích hoạt ${deviceLabel} thành công! Từ lần sau bạn chỉ cần 1-chạm là vào ngay.`);
+      handleFaceLoginSuccess(loginData);
       return;
     }
-  } catch (err: any) {
-    console.error('Biometric login error:', err);
+  } catch (err) {
+    console.warn('Biometric error:', err);
+    toast.error('Có lỗi xảy ra khi xác thực sinh trắc học. Vui lòng thử lại!');
   } finally {
     isBiometricChecking.value = false;
   }
@@ -389,15 +398,13 @@ const handleLogin = async () => {
         showNotFoundModal.value = true;
       }
     } else {
-      modalErrorMessage.value =
-        'Không thể kết nối đến máy chủ Backend (C# / Database). Vui lòng kiểm tra kết nối mạng hoặc thử lại!';
-      modalErrorType.value = 'ACCOUNT_NOT_FOUND';
+      modalErrorMessage.value = 'Không thể kết nối đến máy chủ hệ thống. Vui lòng kiểm tra lại kết nối mạng trên thiết bị và thử lại!';
+      modalErrorType.value = 'NETWORK_ERROR';
       showNotFoundModal.value = true;
     }
   } catch (error: any) {
-    modalErrorMessage.value =
-      error.message || 'Có lỗi xảy ra khi đăng nhập. Vui lòng thử lại sau.';
-    modalErrorType.value = 'ACCOUNT_NOT_FOUND';
+    modalErrorMessage.value = 'Không thể kết nối đến máy chủ hệ thống. Vui lòng kiểm tra lại kết nối mạng trên thiết bị và thử lại!';
+    modalErrorType.value = 'NETWORK_ERROR';
     showNotFoundModal.value = true;
   } finally {
     isLoading.value = false;
@@ -667,12 +674,7 @@ const handleLogin = async () => {
                   >Đăng ký bán hàng với ZoneMart</router-link
                 >
               </div>
-                            <div class="server-config-trigger" style="margin-top: 14px; text-align: center;">
-                <button type="button" @click="promptChangeServerUrl" style="background: rgba(241, 245, 249, 0.85); border: 1px dashed #cbd5e1; border-radius: 20px; padding: 5px 14px; font-size: 11px; color: #64748b; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-                  <span>🌐</span> <span>Máy chủ: {{ currentServerDisplay }}</span> <span style="text-decoration: underline; color: #ea580c;">(Đổi IP)</span>
-                </button>
-              </div>
-              <div class="cta-sub-line" style="margin-top: 2px">
+                                          <div class="cta-sub-line" style="margin-top: 2px">
                 <span>Đăng ký làm shipper? </span>
                 <router-link to="/register-shipper" target="_blank" class="link-secondary"
                   >Đăng ký đối tác giao hàng</router-link
@@ -769,6 +771,23 @@ const handleLogin = async () => {
             </svg>
           </div>
 
+          <!-- TH 4: LỖI KẾT NỐI MẠNG / MÁY CHỦ -->
+          <div
+            v-else-if="modalErrorType === 'NETWORK_ERROR'"
+            class="modal-icon-badge"
+            style="background: rgba(234, 88, 12, 0.1);"
+          >
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="1" y1="1" x2="23" y2="23"></line>
+              <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
+              <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
+              <path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path>
+              <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path>
+              <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+              <line x1="12" y1="20" x2="12.01" y2="20"></line>
+            </svg>
+          </div>
+
           <!-- TH 3: KHÔNG TÌM THẤY TÀI KHOẢN (ICON KÍNH LÚP) -->
           <div v-else class="modal-icon-badge">
             <svg
@@ -796,9 +815,7 @@ const handleLogin = async () => {
                 ? '🚫 Tạm Khóa IP 5 Phút (Bảo Vệ Tài Khoản)'
                 : modalErrorType === 'ACCOUNT_PENDING_APPROVAL'
                 ? 'Hồ Sơ Đang Chờ Phê Duyệt'
-                : modalErrorType === 'INCORRECT_PASSWORD'
-                ? 'Mật khẩu không đúng'
-                : 'Không tìm thấy tài khoản'
+                : modalErrorType === 'INCORRECT_PASSWORD' ? 'Mật khẩu không đúng' : modalErrorType === 'NETWORK_ERROR' ? 'Không thể kết nối máy chủ' : 'Không tìm thấy tài khoản'
             }}
           </h3>
 

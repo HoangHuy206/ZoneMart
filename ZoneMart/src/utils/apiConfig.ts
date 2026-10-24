@@ -6,7 +6,7 @@
 export function getBaseApiUrl(): string {
   if (typeof window === 'undefined') return '';
 
-  // 1. Cấu hình tùy chọn từ localStorage (ví dụ dev hoặc người dùng đổi link Server VPS / Ngrok)
+  // 1. Cấu hình tùy chọn từ localStorage
   try {
     const savedServer = localStorage.getItem('zonemart_api_server_url');
     if (savedServer && savedServer.trim()) {
@@ -29,11 +29,11 @@ export function getBaseApiUrl(): string {
     (window.location.hostname === 'localhost' && !window.location.port);
 
   if (isCapacitor) {
-    // Kết nối đến máy chủ Backend chạy trên máy tính dev trong mạng Wi-Fi
+    // Kết nối đến máy chủ Backend dev trên máy tính qua mạng Wi-Fi
     return 'http://192.168.1.16:5000';
   }
 
-  // 4. Mặc định trên Web Desktop (Vite proxy xử lý qua relative path)
+  // 4. Mặc định trên Web Desktop (Vite proxy)
   return '';
 }
 
@@ -47,9 +47,20 @@ export function getApiUrl(path: string): string {
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const targetUrl = getApiUrl(path);
 
+  // Tạo AbortController với timeout 6 giây để không bao giờ bị treo lâu
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+  const mergedInit: RequestInit = {
+    ...init,
+    signal: init?.signal || controller.signal,
+  };
+
   try {
-    const res = await fetch(targetUrl, init);
-    // Nếu kết quả trả về 404 từ Vite dev server trên localhost, tự động fallback gọi cổng 5000
+    const res = await fetch(targetUrl, mergedInit);
+    clearTimeout(timeoutId);
+
+    // Nếu kết quả trả về 404 từ Vite dev server trên localhost, fallback gọi cổng 5000
     if (
       res.status === 404 &&
       typeof window !== 'undefined' &&
@@ -61,15 +72,23 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
       } catch (e) {}
     }
     return res;
-  } catch (err) {
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+
     // Fallback cho native app nếu URL relative gặp sự cố
     if (typeof window !== 'undefined' && !targetUrl.startsWith('http')) {
       try {
         return await fetch('http://192.168.1.16:5000' + targetUrl, init);
-      } catch (fallbackErr) {
-        throw fallbackErr;
-      }
+      } catch (fallbackErr) {}
     }
-    throw err;
+
+    // Thông báo lỗi thân thiện, bảo mật, không để lộ mã nguồn hay cơ sở dữ liệu
+    const isTimeout = err?.name === 'AbortError';
+    const friendlyMsg = isTimeout
+      ? 'Hệ thống phản hồi chậm hoặc mạng gián đoạn. Vui lòng kiểm tra lại kết nối mạng!'
+      : 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng hoặc thử lại sau!';
+
+    const cleanError = new Error(friendlyMsg);
+    throw cleanError;
   }
 }

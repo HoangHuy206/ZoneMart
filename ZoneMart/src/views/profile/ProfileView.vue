@@ -614,7 +614,7 @@ const loadOrders = () => {
         date: '01/09/2026, 00:00',
         status: 'completed',
         statusText: 'Gia hạn tự động hạ tầng',
-        items: 'Gói bảo mật đám mây và máy chủ C# ASP.NET Core',
+        items: 'Gói bảo mật và hỗ trợ tài khoản ZoneMart',
         total: 1200000,
         storeDistance: 'Cloud',
       },

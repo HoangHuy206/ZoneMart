@@ -925,7 +925,7 @@ onMounted(() => {
           <h3 class="modal-heading-title green-title">Đã gửi hồ sơ thành công</h3>
           
           <p class="modal-body-text">
-            Hồ sơ đăng ký tài xế Shipper của <b>{{ form.fullName }}</b> đã được lưu trực tiếp vào CSDL MongoDB Atlas và chuyển về hệ thống tài khoản Quản lý xét duyệt!
+            Hồ sơ đăng ký tài xế Shipper của <b>{{ form.fullName }}</b> đã được lưu vào hệ thống ZoneMart và chuyển về Ban Quản Lý xét duyệt!
           </p>
 
           <div class="modal-action-buttons">

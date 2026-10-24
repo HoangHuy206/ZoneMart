@@ -270,7 +270,7 @@ const handleLogin = async () => {
       }
     } else {
       modalErrorMessage.value =
-        'Không thể kết nối đến máy chủ Backend (C# / Database). Vui lòng kiểm tra kết nối mạng hoặc thử lại!';
+        'Không thể kết nối đến máy chủ hệ thống. Vui lòng kiểm tra kết nối mạng trên thiết bị và thử lại sau!';
       modalErrorType.value = 'ACCOUNT_NOT_FOUND';
       showNotFoundModal.value = true;
     }

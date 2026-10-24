@@ -66,6 +66,10 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>ZoneMart cần quyền truy cập Camera để xác thực khuôn mặt sinh trắc học Face ID.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>ZoneMart sử dụng Face ID để đăng nhập nhanh chóng và bảo mật tài khoản của bạn.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

@@ -153,8 +153,8 @@ const handleSendOtp = async () => {
         }
       }
     } else {
-      errorMessage.value = "Không thể kết nối đến máy chủ backend (http://localhost:5000). Vui lòng thử lại sau.";
-      errorMessage.value = "Không thể kết nối đến máy chủ backend. Vui lòng thử lại sau.";
+      errorMessage.value = "Không thể kết nối đến máy chủ. Vui lòng kiểm tra mạng và thử lại sau.";
+      errorMessage.value = "Không thể kết nối đến máy chủ. Vui lòng kiểm tra mạng và thử lại sau.";
     }
   } catch (error: any) {
     errorMessage.value = error.message || "Không thể gửi mã xác thực. Vui lòng thử lại sau.";

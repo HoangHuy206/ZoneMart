@@ -106,6 +106,7 @@ Console.WriteLine("📧 Đã nạp cấu hình gửi thư Gmail: hh9393100@gmail
 Console.WriteLine("🤖 Đã nạp cấu hình Bot Telegram: @ZoneMarttt_bot");
 Console.WriteLine("🛡️ Đã sẵn sàng hệ thống WebAuthn / Passkey Sinh trắc học!");
 
-Console.WriteLine("🌐 Lắng nghe trên tất cả cổng mạng LAN: http://0.0.0.0:5000");
+var listenUrl = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://0.0.0.0:5000";
+Console.WriteLine($"🌐 Lắng nghe Backend C# trên tất cả cổng mạng LAN: {listenUrl}");
 
-app.Run("http://0.0.0.0:5000");
+app.Run(listenUrl);
