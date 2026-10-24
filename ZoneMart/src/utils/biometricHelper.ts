@@ -268,3 +268,31 @@ export async function loginWithBiometrics(
   }
 }
 
+
+
+/**
+ * Gọi xác thực Face ID Native trên iPhone (qua WebKit Script Message Handler)
+ */
+export function verifyDeviceFaceId(reason: string = 'Xác thực Face ID để đăng nhập tài khoản ZoneMart'): Promise<{ success: boolean; message?: string }> {
+  return new Promise((resolve) => {
+    if (typeof window !== 'undefined' && (window as any).webkit?.messageHandlers?.nativeFaceId) {
+      (window as any).__handleNativeFaceIdResult = (success: boolean, errorMsg: string) => {
+        delete (window as any).__handleNativeFaceIdResult;
+        if (success) {
+          resolve({ success: true });
+        } else {
+          resolve({ success: false, message: errorMsg || 'Xác thực Face ID đã bị hủy hoặc không khớp.' });
+        }
+      };
+
+      try {
+        (window as any).webkit.messageHandlers.nativeFaceId.postMessage({ action: 'authenticate', reason });
+      } catch (err) {
+        resolve({ success: false, message: 'Lỗi gọi cảm biến Face ID của thiết bị' });
+      }
+      return;
+    }
+
+    resolve({ success: false, message: 'NO_NATIVE_BRIDGE' });
+  });
+}

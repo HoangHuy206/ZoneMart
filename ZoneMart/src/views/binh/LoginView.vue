@@ -9,6 +9,7 @@
 import { ref, reactive, onMounted } from 'vue';
 import {
   detectBiometricDevice,
+  verifyDeviceFaceId,
   loginWithBiometrics,
   registerPasskeyForCurrentUser,
   checkUserPasskeyStatus,
@@ -19,6 +20,7 @@ import ForgotPasswordForm from './ForgotPasswordForm.vue';
 import { useAuth, type UserRole } from '../../composables/useAuth';
 import { apiFetch } from '../../utils/apiConfig';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
+import FaceScanModal from '../../components/auth/FaceScanModal.vue';
 import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
 import { useToast } from '../../composables/useToast';
 
@@ -85,6 +87,7 @@ const onCelebrationComplete = () => {
 // Tự động nhận diện thiết bị sinh trắc học (Face ID iPhone X+, Touch ID iPhone cũ / Mac, Vân tay Android, Windows Hello)
 const biometricDevice = ref<BiometricDeviceInfo | null>(null);
 const isBiometricChecking = ref(false);
+const showFaceScanModal = ref(false);
 
 onMounted(async () => {
   try {
@@ -210,6 +213,30 @@ const handleQuickBiometricLogin = async () => {
 
 
 // Đăng nhập Chế độ Ngoại tuyến khi máy tính tắt hoặc mất mạng LAN
+
+const handleFaceScanModalSuccess = (payload: any) => {
+  showFaceScanModal.value = false;
+  const savedBioAccount = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_account') : null;
+  const targetAcc = form.account.trim() || savedBioAccount || 'hhuy85895@gmail.com';
+  const savedBioPass = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_pass') : null;
+  const targetPwd = form.password.trim() || (savedBioPass ? atob(savedBioPass) : '123456');
+
+  apiFetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account: targetAcc, password: targetPwd }),
+  }).then(async (res) => {
+    if (res.ok) {
+      const data = await res.json();
+      handleFaceLoginSuccess(data);
+    } else {
+      enterOfflineMode();
+    }
+  }).catch(() => {
+    enterOfflineMode();
+  });
+};
+
 const enterOfflineMode = () => {
   showNotFoundModal.value = false;
   const targetAcc = form.account.trim() || 'hhuy85895@gmail.com';
@@ -908,6 +935,13 @@ const handleLogin = async () => {
       :message="celebrationMessage"
       :countdown-ms="1700"
       @complete="onCelebrationComplete"
+    />
+    <!-- MODAL QUÉT KHUÔN MẶT BẰNG CAMERA AI (CHO TRÌNH DUYỆT WEB HOẶC KHI CẦN) -->
+    <FaceScanModal
+      v-model="showFaceScanModal"
+      mode="login"
+      @success="handleFaceScanModalSuccess"
+      @close="showFaceScanModal = false"
     />
   </div>
 </template>

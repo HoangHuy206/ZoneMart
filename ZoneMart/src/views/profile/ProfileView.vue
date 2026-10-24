@@ -17,6 +17,7 @@ import {
 } from '../../composables/useAuth';
 import {
   detectBiometricDevice,
+  verifyDeviceFaceId,
   registerPasskeyForCurrentUser,
   checkUserPasskeyStatus,
   type BiometricDeviceInfo,
