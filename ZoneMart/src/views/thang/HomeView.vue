@@ -215,10 +215,10 @@ const heroSlides: HeroSlide[] = [
       'Đưa nông sản & đặc sản địa phương lên sàn số nhanh chóng. AI kiểm duyệt an toàn, tiếp cận hàng nghìn khách hàng lân cận và tăng trưởng doanh thu vượt bậc.',
     primaryBtnText: 'ĐĂNG KÝ SHOP',
     primaryBtnRoute: '/register-seller',
-    primaryBtnNewTab: true,
+    primaryBtnNewTab: false,
     secondaryBtnText: 'CẨM NANG NGƯỜI BÁN',
     secondaryBtnRoute: '/seller-landing',
-    secondaryBtnNewTab: true,
+    secondaryBtnNewTab: false,
     bgImage:
       'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=1600&q=80',
     modelImage: '/images/anhxoanendkybanhang_clean.png',
@@ -246,10 +246,10 @@ const heroSlides: HeroSlide[] = [
       'Giao hàng siêu tốc trong bán kính 10km, nhận đơn tiện lợi gần nhà, không lo đi xa. Thu nhập minh bạch, trả thưởng nhanh chóng và linh hoạt thời gian chạy đơn.',
     primaryBtnText: 'CỔNG TÀI XẾ',
     primaryBtnRoute: '/register-shipper',
-    primaryBtnNewTab: true,
+    primaryBtnNewTab: false,
     secondaryBtnText: 'QUY CHẾ TÀI XẾ',
     secondaryBtnRoute: '/shipper-landing',
-    secondaryBtnNewTab: true,
+    secondaryBtnNewTab: false,
     bgImage:
       'https://images.unsplash.com/photo-1580674684081-7617fbf3d745?auto=format&fit=crop&w=1600&q=80',
     modelImage: '/images/anhxoanendkyshipper_clean.png',
@@ -389,7 +389,7 @@ const portalCards = [
     btnRoute: '/register-seller',
     avatar: '/images/anhxoanendkybanhang_clean.png',
     iconType: 'store',
-    openNewTab: true,
+    openNewTab: false,
   },
   {
     id: 'shipper',
@@ -402,7 +402,7 @@ const portalCards = [
     btnRoute: '/register-shipper',
     avatar: '/images/anhxoanendkyshipper_clean.png',
     iconType: 'truck',
-    openNewTab: true,
+    openNewTab: false,
   },
 ];
 
@@ -686,31 +686,8 @@ const goToStore = (storeName: string) => {
   });
 };
 
-const openNewTabRoute = (path: string) => {
-  const routeUrl = router.resolve(path).href;
-  window.open(routeUrl, '_blank');
-};
-
-const goToPortal = (btnRoute: string, openNewTab?: boolean) => {
-  const isCustomerLoggedIn = Boolean(
-    auth.currentUser.value &&
-      auth.currentUser.value.id &&
-      auth.currentUser.value.id !== 'usr_guest'
-  );
-  if (btnRoute === '/register-seller') {
-    if (isCustomerLoggedIn) {
-      router.push('/profile?tab=seller-reg');
-      return;
-    }
-  } else if (btnRoute === '/register-shipper') {
-    if (isCustomerLoggedIn) {
-      router.push('/profile?tab=shipper-reg');
-      return;
-    }
-  }
-  if (openNewTab || btnRoute === '/register-seller' || btnRoute === '/register-shipper') {
-    openNewTabRoute(btnRoute);
-  } else {
+const goToPortal = (btnRoute: string, _openNewTab?: boolean) => {
+  if (btnRoute) {
     router.push(btnRoute);
   }
 };
@@ -1250,13 +1227,13 @@ const handleAddToCartHome = (item: any) => {
           <div class="cta-btn-group">
             <button
               class="btn-partner-seller"
-              @click="goToPortal('/register-seller', true)"
+              @click="goToPortal('/register-seller')"
             >
               <i class="bi bi-shop me-2" aria-hidden="true"></i> ĐĂNG KÝ BÁN HÀNG NGAY
             </button>
             <button
               class="btn-partner-shipper"
-              @click="goToPortal('/register-shipper', true)"
+              @click="goToPortal('/register-shipper')"
             >
               <i class="bi bi-bicycle me-2" aria-hidden="true"></i> GIA NHẬP ĐỘI TÀI XẾ
             </button>

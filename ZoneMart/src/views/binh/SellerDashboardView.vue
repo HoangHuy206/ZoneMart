@@ -1984,6 +1984,15 @@ const getItemImage = (it: OrderItem) => {
         <div class="mobile-topbar-header">
           <button
             type="button"
+            class="btn-seller-back"
+            @click="$router.push('/')"
+            title="Quay về trang chủ"
+            aria-label="Quay về trang chủ"
+          >
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          <button
+            type="button"
             class="btn-toggle-mobile-sidebar"
             @click="toggleMobileSidebar"
             aria-label="Mở menu quản trị"
@@ -3650,6 +3659,26 @@ h1, h2, h3, h4, h5, h6 {
   width: calc(100% - 250px);
   max-width: calc(100% - 250px);
   overflow-x: hidden;
+}
+
+.btn-seller-back {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #0F172A;
+  cursor: pointer;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.seller-top-bar {
+  padding-top: max(6px, env(safe-area-inset-top, 0px));
 }
 
 .seller-top-bar {
@@ -7573,7 +7602,8 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   /* Thanh tiêu đề Top Bar trên điện thoại */
-  .seller-top-bar {
+  
+.seller-top-bar {
     height: auto !important;
     padding: 10px 14px !important;
     flex-direction: column !important;

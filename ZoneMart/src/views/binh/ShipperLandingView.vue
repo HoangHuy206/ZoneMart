@@ -446,16 +446,21 @@ const scrollToRegisterForm = () => {
     <!-- 1. HEADER CAO CẤP DÀNH RIÊNG CHO ZONEMART DRIVER -->
     <header class="driver-header-modern">
       <div class="header-inner">
-        <!-- LOGO ZONEMART DRIVER MỚI (CHỮ DRIVER KHÔNG KHUNG, NẰM NGAY DƯỚI CHỮ ZONEMART) -->
-        <router-link to="/" class="driver-brand-logo">
-          <img src="/logo.png" alt="ZoneMart Logo" class="brand-img" />
-          <div class="brand-text-stack">
-            <div class="main-brand-title">
-              Zone<span class="highlight-mart">Mart</span>
+        <div class="header-left-cluster">
+          <router-link to="/" class="btn-header-back" title="Quay về trang chủ">
+            <i class="bi bi-chevron-left"></i>
+          </router-link>
+          <!-- LOGO ZONEMART DRIVER -->
+          <router-link to="/" class="driver-brand-logo">
+            <img src="/logo.png" alt="ZoneMart Logo" class="brand-img" />
+            <div class="brand-text-stack">
+              <div class="main-brand-title">
+                Zone<span class="highlight-mart">Mart</span>
+              </div>
+              <div class="driver-sub-title">DRIVER</div>
             </div>
-            <div class="driver-sub-title">DRIVER</div>
-          </div>
-        </router-link>
+          </router-link>
+        </div>
 
         <!-- MENU ĐIỀU HƯỚNG -->
         <nav class="driver-nav-menu">
@@ -464,13 +469,8 @@ const scrollToRegisterForm = () => {
           <a href="#benefits" class="nav-item">Quyền Lợi Vàng</a>
           <a href="#faq" class="nav-item">Hỏi Đáp FAQ</a>
           <button @click="scrollToRegisterForm" class="btn-nav-primary">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-              <circle cx="8.5" cy="7" r="4"></circle>
-              <line x1="20" y1="8" x2="20" y2="14"></line>
-              <line x1="23" y1="11" x2="17" y2="11"></line>
-            </svg>
-            Đăng Ký Tài Xế
+            <i class="bi bi-bicycle me-1"></i>
+            Đăng Ký Shipper
           </button>
           <router-link to="/shipper-login" class="btn-nav-login">Đăng Nhập</router-link>
         </nav>
@@ -1453,23 +1453,126 @@ const scrollToRegisterForm = () => {
 }
 
 /* HEADER MODERN WITH LOGO DRIVER WITHOUT BOX BACKGROUND */
+.driver-portal-page {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
 .driver-header-modern {
   position: sticky;
   top: 0;
-  z-index: 100;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid #E2E8F0;
-  box-shadow: 0 4px 20px rgba(2, 132, 199, 0.04);
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(16px);
+  border-bottom: 1.5px solid #BAE6FD;
+  box-shadow: 0 4px 20px rgba(2, 132, 199, 0.08);
+  padding-top: max(6px, env(safe-area-inset-top, 0px));
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .header-inner {
   max-width: 1240px;
   margin: 0 auto;
-  padding: 12px 24px;
+  padding: 10px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+
+.header-left-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-header-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  text-decoration: none;
+  font-size: 16px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.btn-header-back:hover {
+  background: #e2e8f0;
+  color: #0284C7;
+}
+
+@media (max-width: 768px) {
+  .driver-header-modern {
+    padding-top: max(8px, env(safe-area-inset-top, 0px)) !important;
+  }
+  .header-inner {
+    padding: 8px 12px !important;
+    gap: 8px !important;
+  }
+  .driver-nav-menu {
+    gap: 6px !important;
+  }
+  .driver-nav-menu .nav-item {
+    display: none !important;
+  }
+  .hero-stats-card {
+    gap: 8px !important;
+    padding: 12px 14px !important;
+    width: 100% !important;
+    justify-content: space-around !important;
+  }
+  .stat-val {
+    font-size: 16px !important;
+  }
+  .stat-lbl {
+    font-size: 10.5px !important;
+    text-align: center !important;
+  }
+  .brand-img {
+    height: 32px !important;
+  }
+  .main-brand-title {
+    font-size: 17px !important;
+  }
+  .driver-sub-title {
+    font-size: 9px !important;
+    letter-spacing: 1.5px !important;
+  }
+  .btn-nav-primary {
+    padding: 7px 12px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+  }
+  .btn-nav-login {
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+  }
+  .driver-hero-wrapper {
+    padding: 18px 16px 36px !important;
+  }
+  .hero-main-title {
+    font-size: clamp(22px, 6vw, 32px) !important;
+    line-height: 1.25 !important;
+  }
+  .hero-cta-group {
+    flex-direction: column !important;
+    width: 100% !important;
+    gap: 10px !important;
+  }
+  .btn-hero-glow,
+  .btn-hero-glass {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 13px 20px !important;
+    font-size: 14px !important;
+  }
 }
 
 /* BRAND LOGO DESIGN: DRIVER IS CYAN NEON TEXT BELOW ZONEMART (NO BOX) */

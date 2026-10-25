@@ -2614,7 +2614,7 @@ onUnmounted(() => {
 
 @media (max-width: 540px) {
   .login-page-container {
-    padding: 30px 14px 20px 14px;
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 14px calc(20px + env(safe-area-inset-bottom, 0px)) 14px !important;
     height: auto;
     min-height: 100vh;
     overflow-y: auto;

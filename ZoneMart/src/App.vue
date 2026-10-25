@@ -31,14 +31,7 @@ onMounted(() => {
   catalog.refreshCatalog();
 });
 
-const handleMobileSwitchRole = (role: 'buyer' | 'seller' | 'shipper' | 'admin') => {
-  auth.switchRole(role);
-  closeDropdowns();
-  if (role === 'buyer') router.push('/products');
-  else if (role === 'seller') router.push('/seller');
-  else if (role === 'shipper') router.push('/shipper');
-  else if (role === 'admin') router.push('/admin');
-};
+
 
 const navigateToBuyerOrders = () => {
   closeDropdowns();
@@ -946,43 +939,6 @@ const handleLogout = () => {
         class="mobile-menu"
         aria-label="Menu điều hướng di động"
       >
-        <!-- Chuyển đổi vai trò linh hoạt cho App di động -->
-        <div class="mobile-role-switcher">
-          <span class="switcher-lbl"><i class="bi bi-arrow-repeat me-1"></i>Chuyển Vai Trò Nhanh:</span>
-          <div class="mobile-switch-btns">
-            <button
-              type="button"
-              :class="{ active: auth.currentRole.value === 'buyer' }"
-              @click="handleMobileSwitchRole('buyer')"
-            >
-              🛒 Mua Sắm
-            </button>
-            <button
-              type="button"
-              :class="{ active: auth.currentRole.value === 'seller' }"
-              @click="handleMobileSwitchRole('seller')"
-            >
-              🏪 Bán Hàng
-            </button>
-            <button
-              type="button"
-              :class="{ active: auth.currentRole.value === 'shipper' }"
-              @click="handleMobileSwitchRole('shipper')"
-            >
-              🛵 Giao Hàng
-            </button>
-            <button
-              type="button"
-              :class="{ active: auth.currentRole.value === 'admin' }"
-              @click="handleMobileSwitchRole('admin')"
-            >
-              🛡️ Admin
-            </button>
-          </div>
-        </div>
-
-        <div class="mobile-divider"></div>
-
         <!-- Guest Mobile Links -->
         <template v-if="!auth.isLoggedIn.value">
           <router-link

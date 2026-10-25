@@ -1237,15 +1237,11 @@ const handlePlaceOrder = () => {
               </div>
             </label>
 
-            <label class="pay-item" :class="{ active: paymentMethod === 'COD', disabled: isExpressSelected }">
-              <input type="radio" value="COD" v-model="paymentMethod" :disabled="isExpressSelected" />
+            <label class="pay-item" :class="{ active: paymentMethod === 'COD' }">
+              <input type="radio" value="COD" v-model="paymentMethod" />
               <div>
                 <strong>Tiền Mặt Khi Nhận Hàng (COD)</strong>
-                <p v-if="isExpressSelected">
-                  <i class="bi bi-exclamation-triangle-fill text-warning me-1" aria-hidden="true"></i>
-                  Không hỗ trợ COD khi chọn Giao Hỏa Tốc
-                </p>
-                <p v-else>Thanh toán trực tiếp cho Shipper khi nhận món</p>
+                <p>Thanh toán trực tiếp tiền mặt cho Shipper khi nhận món tận tay</p>
               </div>
             </label>
           </div>
@@ -1404,6 +1400,17 @@ const handlePlaceOrder = () => {
               <div class="auto-desc">Bạn chỉ cần chuyển khoản theo mã QR. Tiền vào hệ thống sẽ tự động xác nhận và chuyển trang ngay tức thì!</div>
             </div>
           </div>
+          <!-- Nút Giả Lập Thanh Toán Test Nhanh (Dành cho kiểm thử không cần chuyển khoản thật) -->
+          <button
+            v-if="paymentMethod === 'ONLINE_QR' && paymentState !== 'SUCCESS'"
+            type="button"
+            class="btn-simulate-payment mt-2"
+            @click="onPaymentConfirmed(finalTotal)"
+            title="Bấm để hoàn tất thanh toán thử nghiệm mà không cần chuyển khoản thật"
+          >
+            <i class="bi bi-lightning-charge-fill me-1 text-warning"></i>
+            ⚡ Giả Lập Chuyển Tiền Thành Công (Dành Cho Test)
+          </button>
           <button
             v-else-if="paymentMethod === 'ONLINE_QR' && paymentState === 'SUCCESS'"
             class="btn btn-success-solid btn-block"
