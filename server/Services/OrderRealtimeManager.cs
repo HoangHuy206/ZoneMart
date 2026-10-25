@@ -3,10 +3,12 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Configuration;
 
 namespace ZoneMart.Server.Services
 {
@@ -24,7 +26,12 @@ namespace ZoneMart.Server.Services
         private readonly string _paidOrdersFilePath;
         private readonly object _fileLock = new();
 
-        public OrderRealtimeManager()
+        private readonly string _sepayApiKey;
+        private readonly HttpClient _httpClient;
+        private readonly Timer? _sepayTimer;
+        private int _isPolling = 0;
+
+        public OrderRealtimeManager(IConfiguration? configuration = null, IHttpClientFactory? httpClientFactory = null)
         {
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
             var projectRoot = Directory.GetParent(baseDir)?.Parent?.Parent?.Parent?.FullName ?? baseDir;
@@ -33,7 +40,17 @@ namespace ZoneMart.Server.Services
             _registeredOrdersFilePath = Path.Combine(projectRoot, ".pending_orders.json");
             _paidOrdersFilePath = Path.Combine(projectRoot, ".paid_orders.json");
 
+            _sepayApiKey = configuration?["SepaySettings:ApiKey"]
+                ?? Environment.GetEnvironmentVariable("SEPAY_API_KEY")
+                ?? "J5P9SPVE9WO46FWFBHOWUPAIIU1VDYAMLYFDGQRBI2NQKMLEXZTOHUZWQFI7RVAD";
+
+            _httpClient = httpClientFactory?.CreateClient() ?? new HttpClient();
+            _httpClient.Timeout = TimeSpan.FromSeconds(10);
+
             LoadFromDisk();
+
+            // Khởi chạy timer tự động quét SePay giao dịch ngân hàng TPBank thật mỗi 2 giây
+            _sepayTimer = new Timer(async _ => await PollSepayTransactionsAsync(), null, 1000, 2000);
         }
 
         private void LoadFromDisk()
@@ -147,7 +164,6 @@ namespace ZoneMart.Server.Services
             var payload = isNew 
                 ? JsonSerializer.Serialize(new { type = eventType, payload = orderObj })
                 : JsonSerializer.Serialize(new { type = eventType, payload = new { orderId, order = orderObj } });
-
             BroadcastRealtimeMessage(payload);
         }
 
@@ -237,8 +253,16 @@ namespace ZoneMart.Server.Services
                 long amount = 0;
                 long time = 0;
                 string bankAccount = "";
-                if (elem.TryGetProperty("amount", out var aProp)) amount = aProp.GetInt64();
-                if (elem.TryGetProperty("time", out var tProp)) time = tProp.GetInt64();
+                if (elem.TryGetProperty("amount", out var aProp))
+                {
+                    if (aProp.ValueKind == JsonValueKind.Number) amount = aProp.GetInt64();
+                    else if (long.TryParse(aProp.GetString(), out var pa)) amount = pa;
+                }
+                if (elem.TryGetProperty("time", out var tProp))
+                {
+                    if (tProp.ValueKind == JsonValueKind.Number) time = tProp.GetInt64();
+                    else if (long.TryParse(tProp.GetString(), out var pt)) time = pt;
+                }
                 if (elem.TryGetProperty("bankAccount", out var bProp)) bankAccount = bProp.GetString() ?? "";
                 return (true, cleanCode, amount, time, bankAccount);
             }
@@ -251,8 +275,16 @@ namespace ZoneMart.Server.Services
                     long amount = 0;
                     long time = 0;
                     string bankAccount = "";
-                    if (kvp.Value.TryGetProperty("amount", out var aProp)) amount = aProp.GetInt64();
-                    if (kvp.Value.TryGetProperty("time", out var tProp)) time = tProp.GetInt64();
+                    if (kvp.Value.TryGetProperty("amount", out var aProp))
+                    {
+                        if (aProp.ValueKind == JsonValueKind.Number) amount = aProp.GetInt64();
+                        else if (long.TryParse(aProp.GetString(), out var pa)) amount = pa;
+                    }
+                    if (kvp.Value.TryGetProperty("time", out var tProp))
+                    {
+                        if (tProp.ValueKind == JsonValueKind.Number) time = tProp.GetInt64();
+                        else if (long.TryParse(tProp.GetString(), out var pt)) time = pt;
+                    }
                     if (kvp.Value.TryGetProperty("bankAccount", out var bProp)) bankAccount = bProp.GetString() ?? "";
                     return (true, cleanCode, amount, time, bankAccount);
                 }
@@ -294,6 +326,91 @@ namespace ZoneMart.Server.Services
             if (_realtimeOrders.TryGetValue(cleanCode, out _))
             {
                 UpdateOrderStatus(cleanCode, "confirmed", "Đã thanh toán - Chờ chuẩn bị hàng");
+            }
+        }
+
+        public async Task PollSepayTransactionsAsync()
+        {
+            if (Interlocked.CompareExchange(ref _isPolling, 1, 0) != 0)
+            {
+                return;
+            }
+
+            try
+            {
+                if (string.IsNullOrWhiteSpace(_sepayApiKey)) return;
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, "https://userapi.sepay.vn/v2/transactions?per_page=20");
+                request.Headers.Add("Authorization", $"Bearer {_sepayApiKey}");
+                request.Headers.Add("User-Agent", "ZoneMart/1.0");
+
+                using var response = await _httpClient.SendAsync(request);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return;
+                }
+
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                JsonElement list = default;
+                if (root.TryGetProperty("data", out var dataProp) && dataProp.ValueKind == JsonValueKind.Array)
+                {
+                    list = dataProp;
+                }
+                else if (root.TryGetProperty("transactions", out var txProp) && txProp.ValueKind == JsonValueKind.Array)
+                {
+                    list = txProp;
+                }
+
+                if (list.ValueKind != JsonValueKind.Array) return;
+
+                foreach (var item in list.EnumerateArray())
+                {
+                    string content = "";
+                    if (item.TryGetProperty("transaction_content", out var c1)) content = c1.GetString() ?? "";
+                    else if (item.TryGetProperty("content", out var c2)) content = c2.GetString() ?? "";
+
+                    long amount = 0;
+                    if (item.TryGetProperty("amount_in", out var a1))
+                    {
+                        if (a1.ValueKind == JsonValueKind.Number) amount = a1.GetInt64();
+                        else if (long.TryParse(a1.GetString(), out var pa)) amount = pa;
+                    }
+                    else if (item.TryGetProperty("amount", out var a2))
+                    {
+                        if (a2.ValueKind == JsonValueKind.Number) amount = a2.GetInt64();
+                        else if (long.TryParse(a2.GetString(), out var pa)) amount = pa;
+                    }
+
+                    string transferType = "";
+                    if (item.TryGetProperty("transfer_type", out var t1)) transferType = t1.GetString() ?? "";
+
+                    string bankAccount = "";
+                    if (item.TryGetProperty("account_number", out var b1)) bankAccount = b1.GetString() ?? "";
+
+                    if (amount <= 0 && transferType.Equals("out", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    var code = ExtractOrderCode(content);
+                    if (!string.IsNullOrWhiteSpace(code))
+                    {
+                        var check = CheckPayment(code);
+                        if (!check.Paid)
+                        {
+                            Console.WriteLine($"[SePay Realtime] Đã phát hiện giao dịch thật vào TPBank: {code} | Số tiền: {amount:N0} đ | Nội dung: {content}");
+                            RecordPaidOrder(code, amount, bankAccount, item.Clone());
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SePay Poll Error] {ex.Message}");
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _isPolling, 0);
             }
         }
 

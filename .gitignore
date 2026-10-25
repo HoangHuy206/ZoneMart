@@ -66,3 +66,9 @@ __pycache__/
 *.bat
 *.cmd
 
+
+# Telegram Antigravity Bridge (Local Automation - Do NOT push to Git)
+scripts/
+bot_config.json
+*.vbs
+*.log

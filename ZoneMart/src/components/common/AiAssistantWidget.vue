@@ -12341,12 +12341,28 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
     right: 0 !important;
     bottom: 68px !important;
     width: max-content !important;
+    min-width: max-content !important;
     max-width: min(320px, calc(100vw - 32px)) !important;
     white-space: nowrap !important;
-    font-size: 12.5px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    font-size: 12px !important;
     padding: 8px 14px !important;
     border-radius: 16px !important;
     box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.16), 0 4px 12px -2px rgba(249, 115, 22, 0.2) !important;
+    box-sizing: border-box !important;
+  }
+
+  .ai-speech-bubble .bubble-content {
+    white-space: nowrap !important;
+    display: inline-flex !important;
+    align-items: center !important;
+  }
+
+  .ai-speech-bubble .bubble-text {
+    white-space: nowrap !important;
+    display: inline-block !important;
+    word-break: keep-all !important;
   }
 
   .ai-chat-window {

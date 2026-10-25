@@ -120,7 +120,7 @@ namespace ZoneMart.Server.Controllers
         // 2. API CHECK TRẠNG THÁI: GET /api/payment/check?code=ZMxxxxxx&amount=...&bankAccount=...
         // ========================================================
         [HttpGet("/api/payment/check")]
-        public IActionResult CheckPaymentStatus([FromQuery] string? code)
+        public async Task<IActionResult> CheckPaymentStatus([FromQuery] string? code)
         {
             if (string.IsNullOrWhiteSpace(code))
             {
@@ -128,6 +128,12 @@ namespace ZoneMart.Server.Controllers
             }
 
             var result = _realtimeManager.CheckPayment(code);
+            if (!result.Paid)
+            {
+                await _realtimeManager.PollSepayTransactionsAsync();
+                result = _realtimeManager.CheckPayment(code);
+            }
+
             return Ok(new
             {
                 paid = result.Paid,

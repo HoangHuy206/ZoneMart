@@ -1510,7 +1510,7 @@ const scrollToRegisterForm = () => {
 
 @media (max-width: 768px) {
   .driver-header-modern {
-    padding-top: max(8px, env(safe-area-inset-top, 0px)) !important;
+    padding-top: max(48px, calc(env(safe-area-inset-top, 0px) + 8px)) !important;
   }
   .header-inner {
     padding: 8px 12px !important;

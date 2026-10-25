@@ -1400,17 +1400,7 @@ const handlePlaceOrder = () => {
               <div class="auto-desc">Bạn chỉ cần chuyển khoản theo mã QR. Tiền vào hệ thống sẽ tự động xác nhận và chuyển trang ngay tức thì!</div>
             </div>
           </div>
-          <!-- Nút Giả Lập Thanh Toán Test Nhanh (Dành cho kiểm thử không cần chuyển khoản thật) -->
-          <button
-            v-if="paymentMethod === 'ONLINE_QR' && paymentState !== 'SUCCESS'"
-            type="button"
-            class="btn-simulate-payment mt-2"
-            @click="onPaymentConfirmed(finalTotal)"
-            title="Bấm để hoàn tất thanh toán thử nghiệm mà không cần chuyển khoản thật"
-          >
-            <i class="bi bi-lightning-charge-fill me-1 text-warning"></i>
-            ⚡ Giả Lập Chuyển Tiền Thành Công (Dành Cho Test)
-          </button>
+
           <button
             v-else-if="paymentMethod === 'ONLINE_QR' && paymentState === 'SUCCESS'"
             class="btn btn-success-solid btn-block"
@@ -2251,26 +2241,7 @@ const handlePlaceOrder = () => {
   color: #0369a1;
 }
 
-.btn-simulate-payment {
-  background: #ffffff;
-  border: 1px dashed #ea580c;
-  color: #ea580c;
-  font-size: 11.5px;
-  font-weight: 700;
-  padding: 7px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
 
-.btn-simulate-payment:hover {
-  background: #ea580c;
-  color: #ffffff;
-}
 
 /* ANIMATION NÚT TÍCH XANH & BIÊN LAI CAO CẤP */
 .qr-success-inline-box {
