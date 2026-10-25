@@ -3826,7 +3826,7 @@ select.select-stylish {
 }
 
 .support-form-body { display: flex; flex-direction: column; gap: 16px; }
-.form-fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-fields-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .full-row { grid-column: span 2; }
 .input-label-stylish { font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px; display: block; }
 .modern-input { width: 100%; padding: 11px 14px; border-radius: 12px; border: 1.5px solid #CBD5E1; font-size: 14px; outline: none; }
@@ -3957,6 +3957,14 @@ select.select-stylish {
   .steps-flow-container { flex-direction: column; gap: 20px; }
   .step-flow-arrow { transform: rotate(90deg); }
   .upload-cards-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+  .benefits-6-grid { grid-template-columns: 1fr; }
+  .form-fields-grid { grid-template-columns: 1fr !important; }
+  .full-row { grid-column: span 1 !important; }
+  .seller-support-form-card { padding: 20px 16px !important; }
+  .support-contact-bar-orange { flex-direction: column; gap: 8px; }
 }
 
 @media (max-width: 640px) {
