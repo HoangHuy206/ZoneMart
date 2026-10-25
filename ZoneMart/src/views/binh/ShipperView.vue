@@ -16,6 +16,7 @@ import { useToast } from "../../composables/useToast";
 import { orderRealtimeService, type RealtimeOrder } from "../../services/orderRealtimeService";
 import FaceScanModal from "../../components/auth/FaceScanModal.vue";
 import { apiFetch } from "../../utils/apiConfig";
+import { getSafeCurrentLocation } from "../../composables/useSafeLocation";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -591,9 +592,34 @@ const locateAndTrackDriver = (isSilent = false) => {
       // Cập nhật lại đường đi đơn hàng nếu có
       renderOrderOnMap();
     },
-    (err) => {
+    async (err) => {
+      console.warn("Lỗi Geolocation chính xác, thử dự phòng SafeLocation:", err);
+      try {
+        const fallbackLoc = await getSafeCurrentLocation();
+        if (fallbackLoc && fallbackLoc.lat && fallbackLoc.lon) {
+          isLocating.value = false;
+          driverLocation.value.lat = fallbackLoc.lat;
+          driverLocation.value.lng = fallbackLoc.lon;
+          driverLocation.value.name = fallbackLoc.safeLocationName || "Vị trí của bạn";
+          locationAddress.value = fallbackLoc.safeLocationName || `Vị trí dự phòng: ${fallbackLoc.lat.toFixed(5)}, ${fallbackLoc.lon.toFixed(5)}`;
+          if (driverMarker) {
+            driverMarker.setLatLng([fallbackLoc.lat, fallbackLoc.lon]);
+          }
+          if (radiusCircle) {
+            radiusCircle.setLatLng([fallbackLoc.lat, fallbackLoc.lon]);
+          }
+          if (map) {
+            map.flyTo([fallbackLoc.lat, fallbackLoc.lon], 13.8, { animate: true, duration: 1.2 });
+            setTimeout(() => { driverMarker?.openPopup(); }, 1300);
+          }
+          triggerToast(`🎯 Đã định vị khu vực hoạt động: ${fallbackLoc.safeLocationName || 'Gần bạn'}`);
+          fetchAddressName(fallbackLoc.lat, fallbackLoc.lon);
+          renderOrderOnMap();
+          return;
+        }
+      } catch (e) {}
+
       isLocating.value = false;
-      console.warn("Lỗi Geolocation:", err);
       let errorMsg = "Không thể định vị GPS (Vui lòng chọn 'Cho phép' khi trình duyệt hỏi quyền vị trí)";
       if (err.code === err.PERMISSION_DENIED) {
         errorMsg = "Bạn chưa cấp quyền truy cập vị trí trên trình duyệt!";

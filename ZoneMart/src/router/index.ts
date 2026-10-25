@@ -169,6 +169,23 @@ router.beforeEach((to, _from, next) => {
     return next({ path: '/' });
   }
 
+  // 4. KIỂM TRA ĐĂNG KÝ NÂNG CẤP / THĂNG CẤP (SELLER & SHIPPER):
+  // Nếu người dùng đã đăng nhập và muốn thăng cấp lên Seller hoặc Shipper:
+  // Chuyển hướng ngay đến mục đăng ký tương ứng trong Profile (/profile?tab=seller-reg hoặc /profile?tab=shipper-reg)
+  // thay vì sang trang landing/đăng ký độc lập của Seller / Shipper.
+  // Ngược lại nếu chưa đăng nhập, cho phép truy cập trang đăng ký độc lập.
+  if (isLoggedIn) {
+    const sellerUpgradePaths = ['/register-seller', '/seller-landing', '/seller-form'];
+    if (sellerUpgradePaths.includes(to.path)) {
+      return next({ path: '/profile', query: { tab: 'seller-reg' } });
+    }
+
+    const shipperUpgradePaths = ['/register-shipper', '/shipper-landing', '/shipper-form'];
+    if (shipperUpgradePaths.includes(to.path)) {
+      return next({ path: '/profile', query: { tab: 'shipper-reg' } });
+    }
+  }
+
   next();
 });
 

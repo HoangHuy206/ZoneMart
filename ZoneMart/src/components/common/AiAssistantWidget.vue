@@ -4349,13 +4349,21 @@ function handleAction(type: string) {
 
   if (type === 'REGISTER_SELLER' || type === 'seller_manual') {
 
-    router.push('/register-seller');
+    if (auth.isLoggedIn.value) {
+      router.push({ path: '/profile', query: { tab: 'seller-reg' } });
+    } else {
+      router.push('/register-seller');
+    }
 
     isOpen.value = false;
 
   } else if (type === 'REGISTER_SHIPPER' || type === 'shipper_manual') {
 
-    router.push('/register-shipper');
+    if (auth.isLoggedIn.value) {
+      router.push({ path: '/profile', query: { tab: 'shipper-reg' } });
+    } else {
+      router.push('/register-shipper');
+    }
 
     isOpen.value = false;
 

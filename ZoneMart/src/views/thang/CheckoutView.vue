@@ -20,6 +20,7 @@ import { useAuth } from "../../composables/useAuth";
 import { useToast } from "../../composables/useToast";
 import { orderRealtimeService } from "../../services/orderRealtimeService";
 import { useProductModeration } from "../../composables/useProductModeration";
+import { getSafeCurrentLocation } from "../../composables/useSafeLocation";
 import { apiFetch, getApiUrl } from "../../utils/apiConfig";
 
 const router = useRouter();
@@ -277,36 +278,38 @@ const initOrUpdateMap = () => {
   });
 };
 
-const locateUserCurrentPosition = () => {
-  if (!navigator.geolocation) {
-    triggerToast("Trình duyệt của bạn chưa hỗ trợ định vị GPS!");
-    return;
-  }
+const locateUserCurrentPosition = async () => {
   isLocating.value = true;
-  triggerToast("Đang xác định vị trí GPS chính xác của bạn...");
+  triggerToast("Đang xác định vị trí của bạn...");
 
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      isLocating.value = false;
-      const { latitude, longitude } = pos.coords;
-      editForm.value.lat = latitude;
-      editForm.value.lng = longitude;
-
+  try {
+    const loc = await getSafeCurrentLocation();
+    isLocating.value = false;
+    if (loc && loc.lat && loc.lon) {
+      editForm.value.lat = loc.lat;
+      editForm.value.lng = loc.lon;
+      if (loc.safeLocationName) {
+        editForm.value.address = loc.safeLocationName;
+      }
       if (mapInstance) {
-        mapInstance.flyTo([latitude, longitude], 17);
+        mapInstance.flyTo([loc.lat, loc.lon], 17);
       }
       if (markerInstance) {
-        markerInstance.setLatLng([latitude, longitude]);
+        markerInstance.setLatLng([loc.lat, loc.lon]);
       }
-      resolveAddressFromCoords(latitude, longitude);
-    },
-    (err) => {
-      isLocating.value = false;
-      console.warn("Lỗi GPS:", err);
-      triggerToast("Không thể lấy GPS. Bạn hãy chạm trực tiếp trên bản đồ để chọn điểm!");
-    },
-    { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
-  );
+      if (loc.safeLocationName) {
+        triggerToast("📍 Đã định vị vị trí: " + loc.safeLocationName);
+      } else {
+        resolveAddressFromCoords(loc.lat, loc.lon);
+      }
+      return;
+    }
+  } catch (err) {
+    console.warn("Lỗi SafeLocation:", err);
+  }
+
+  isLocating.value = false;
+  triggerToast("Không thể lấy GPS. Bạn hãy chạm trực tiếp trên bản đồ để chọn điểm!");
 };
 
 const searchLocationOnMap = async () => {
@@ -847,18 +850,22 @@ const loadAddressForCurrentAccount = () => {
   } catch (e) {}
 
   const u = auth.currentUser.value;
+  const userSavedAddr = localStorage.getItem('zonemart_user_address') || localStorage.getItem('zonemart_gps_address') || (u && (u as any).address);
+  const userLat = localStorage.getItem('zonemart_lat');
+  const userLon = localStorage.getItem('zonemart_lon');
+
   if (u) {
     buyerName.value = u.fullName || u.phoneEmail?.split("@")[0] || "Khách Hàng";
     buyerPhone.value = u.phone || (u.phoneEmail && /^0\d+$/.test(u.phoneEmail) ? u.phoneEmail : "0396222614");
-    shippingAddress.value = "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội";
+    shippingAddress.value = userSavedAddr || "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội";
     deliveryNote.value = "";
-    currentCoords.value = { lat: 21.0333, lng: 105.7983 };
+    currentCoords.value = userLat && userLon ? { lat: parseFloat(userLat), lng: parseFloat(userLon) } : { lat: 21.0333, lng: 105.7983 };
   } else {
     buyerName.value = "Khách Hàng ZoneMart";
     buyerPhone.value = "0912 345 678";
-    shippingAddress.value = "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội";
+    shippingAddress.value = userSavedAddr || "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội";
     deliveryNote.value = "";
-    currentCoords.value = { lat: 21.0333, lng: 105.7983 };
+    currentCoords.value = userLat && userLon ? { lat: parseFloat(userLat), lng: parseFloat(userLon) } : { lat: 21.0333, lng: 105.7983 };
   }
 };
 
@@ -954,6 +961,14 @@ const saveAddress = () => {
 
   const key = ADDRESS_STORAGE_PREFIX + getAccountKey();
   localStorage.setItem(key, JSON.stringify(storageData));
+  localStorage.setItem('zonemart_user_address', shippingAddress.value);
+  localStorage.setItem('zonemart_lat', editForm.value.lat.toString());
+  localStorage.setItem('zonemart_lon', editForm.value.lng.toString());
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('zonemart:location-updated', {
+      detail: { safeLocationName: shippingAddress.value, lat: editForm.value.lat, lon: editForm.value.lng }
+    }));
+  }
 
   showEditAddressModal.value = false;
   triggerToast("Đã lưu địa chỉ định vị riêng cho tài khoản của bạn!");

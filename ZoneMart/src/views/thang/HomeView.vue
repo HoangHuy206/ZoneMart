@@ -4,13 +4,15 @@ import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
 import { useToast } from '../../composables/useToast';
 import { useProductCatalog } from '../../composables/useProductCatalog';
-// import { useAuth } from '../../composables/useAuth';
+import { useAuth } from '../../composables/useAuth';
+import { useSafeLocation } from '../../composables/useSafeLocation';
 
 const router = useRouter();
-// const auth = useAuth();
+const auth = useAuth();
 const cart = useCart();
 const toast = useToast();
 const catalog = useProductCatalog();
+const { safeLocationName } = useSafeLocation();
 
 const toastMessage = ref('');
 let toastTimer: any = null;
@@ -688,6 +690,16 @@ const goToStore = (storeName: string) => {
 
 const goToPortal = (btnRoute: string, _openNewTab?: boolean) => {
   if (btnRoute) {
+    if (auth.isLoggedIn.value) {
+      if (btnRoute === '/register-seller' || btnRoute === '/seller-landing' || btnRoute === '/seller-form') {
+        router.push({ path: '/profile', query: { tab: 'seller-reg' } });
+        return;
+      }
+      if (btnRoute === '/register-shipper' || btnRoute === '/shipper-landing' || btnRoute === '/shipper-form') {
+        router.push({ path: '/profile', query: { tab: 'shipper-reg' } });
+        return;
+      }
+    }
     router.push(btnRoute);
   }
 };
@@ -788,9 +800,9 @@ const handleAddToCartHome = (item: any) => {
                       <i class="bi bi-shield-check"></i>
                       <span>Chuẩn <strong>VietGAP & AI</strong></span>
                     </div>
-                    <div class="metric-pill">
-                      <i class="bi bi-geo-alt-fill"></i>
-                      <span>Bán kính <strong>10km</strong></span>
+                    <div class="metric-pill" :title="safeLocationName ? `Vị trí giao hàng: ${safeLocationName}` : 'Bán kính giao hàng 10km quanh bạn'">
+                      <i class="bi bi-geo-alt-fill text-danger"></i>
+                      <span>{{ safeLocationName ? 'Khu vực: ' : 'Bán kính ' }}<strong>{{ safeLocationName ? safeLocationName.split(',').slice(0, 2).join(',') : '10km quanh bạn' }}</strong></span>
                     </div>
                   </div>
 

@@ -5,6 +5,8 @@ import logoImg from './assets/logo.png';
 import { useAuth } from './composables/useAuth';
 import { useCart } from './composables/useCart';
 import { useProductCatalog } from './composables/useProductCatalog';
+import { useToast } from './composables/useToast';
+import { getSafeCurrentLocation, isLocating as isLocatingGps } from './composables/useSafeLocation';
 import ZoneToast from './components/common/ZoneToast.vue';
 import TopProgressBar from './components/common/TopProgressBar.vue';
 import AiAssistantWidget from './components/common/AiAssistantWidget.vue';
@@ -15,6 +17,45 @@ const route = useRoute();
 const auth = useAuth();
 const cart = useCart();
 const catalog = useProductCatalog();
+const toast = useToast();
+
+const userCurrentLocation = ref<string>(
+  (typeof window !== 'undefined' && (localStorage.getItem('zonemart_user_address') || localStorage.getItem('zonemart_gps_address'))) || ''
+);
+
+const shortCurrentLocation = computed(() => {
+  if (isLocatingGps.value) return 'Đang định vị...';
+  if (!userCurrentLocation.value) return 'Bấm để định vị';
+  const parts = userCurrentLocation.value.split(',').map(s => s.trim());
+  if (parts.length >= 2) {
+    return `${parts[0]}, ${parts[1]}`;
+  }
+  return parts[0] || 'Vị trí hiện tại';
+});
+
+const triggerGpsLocation = async () => {
+  try {
+    toast.info('Đang xác định vị trí giao hàng của bạn...', 'Định vị GPS');
+    const loc = await getSafeCurrentLocation();
+    if (loc && loc.safeLocationName) {
+      userCurrentLocation.value = loc.safeLocationName;
+      localStorage.setItem('zonemart_user_address', loc.safeLocationName);
+      localStorage.setItem('zonemart_gps_address', loc.safeLocationName);
+      toast.success(`Đã định vị: ${loc.safeLocationName}`, 'Giao Hàng ZoneMart');
+      window.dispatchEvent(new CustomEvent('zonemart:location-updated', { detail: loc }));
+    }
+  } catch (e) {
+    toast.warning('Không thể lấy vị trí tự động. Bạn có thể chọn trên bản đồ khi thanh toán.', 'Định Vị');
+  }
+};
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('zonemart:location-updated', (e: any) => {
+    if (e?.detail?.safeLocationName) {
+      userCurrentLocation.value = e.detail.safeLocationName;
+    }
+  });
+}
 const hasShownIntro = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('zonemart_intro_shown') === 'true';
 const introComplete = ref(hasShownIntro);
 const replayIntro = () => { introComplete.value = false; };
@@ -29,6 +70,17 @@ onUnmounted(() => window.removeEventListener('zonemart:replay-intro', replayIntr
 
 onMounted(() => {
   catalog.refreshCatalog();
+  if (!userCurrentLocation.value) {
+    setTimeout(() => {
+      getSafeCurrentLocation().then(loc => {
+        if (loc && loc.safeLocationName) {
+          userCurrentLocation.value = loc.safeLocationName;
+          localStorage.setItem('zonemart_user_address', loc.safeLocationName);
+          localStorage.setItem('zonemart_gps_address', loc.safeLocationName);
+        }
+      }).catch(() => {});
+    }, 1200);
+  }
 });
 
 
@@ -214,6 +266,23 @@ const handleLogout = () => {
             <span class="brand-tagline">Giao hàng hỏa tốc 5km</span>
           </div>
         </router-link>
+
+        <!-- Nút Định vị vị trí giao hàng tức thì -->
+        <button
+          type="button"
+          class="nav-location-chip"
+          :class="{ 'is-locating': isLocatingGps }"
+          :title="userCurrentLocation ? `Vị trí giao hàng: ${userCurrentLocation}` : 'Nhấn để định vị địa chỉ giao hàng'"
+          @click="triggerGpsLocation"
+        >
+          <div class="loc-chip-icon">
+            <i class="bi" :class="isLocatingGps ? 'bi-arrow-repeat spin-icon' : 'bi-geo-alt-fill'"></i>
+          </div>
+          <div class="loc-chip-info">
+            <span class="loc-chip-title">Giao đến</span>
+            <span class="loc-chip-address">{{ shortCurrentLocation }}</span>
+          </div>
+        </button>
 
         <!-- 2. Thanh tìm kiếm chính giữa: Tìm Sản Phẩm HOẶC Gian Hàng -->
         <div class="header-search-wrap" @click.stop>
@@ -527,6 +596,9 @@ const handleLogout = () => {
                   d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
                 ></path>
               </svg>
+              <span v-if="cart.totalCount.value > 0" class="cart-badge">{{
+                cart.totalCount.value
+              }}</span>
             </router-link>
             <router-link to="/register" class="btn-auth-outline">
               Đăng Ký
@@ -838,7 +910,7 @@ const handleLogout = () => {
                 d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
               ></path>
             </svg>
-            <span v-if="auth.isLoggedIn.value && cart.totalCount.value > 0" class="cart-badge">{{
+            <span v-if="cart.totalCount.value > 0" class="cart-badge">{{
               cart.totalCount.value
             }}</span>
           </router-link>
@@ -939,6 +1011,15 @@ const handleLogout = () => {
         class="mobile-menu"
         aria-label="Menu điều hướng di động"
       >
+        <!-- Thẻ vị trí giao hàng trên mobile -->
+        <div class="mobile-location-row" @click="triggerGpsLocation">
+          <i class="bi" :class="isLocatingGps ? 'bi-arrow-repeat spin-icon' : 'bi-geo-alt-fill text-danger'"></i>
+          <div class="m-loc-info">
+            <span class="m-loc-label">Vị trí giao hàng:</span>
+            <span class="m-loc-val">{{ userCurrentLocation || 'Bấm để định vị vị trí' }}</span>
+          </div>
+          <i class="bi bi-crosshair m-loc-gps-btn"></i>
+        </div>
         <!-- Guest Mobile Links -->
         <template v-if="!auth.isLoggedIn.value">
           <router-link
@@ -1039,7 +1120,7 @@ const handleLogout = () => {
               <span>Hồ Sơ Cá Nhân & Face ID</span>
             </router-link>
             <router-link
-              to="/register-seller"
+              :to="auth.isLoggedIn.value ? { path: '/profile', query: { tab: 'seller-reg' } } : '/register-seller'"
               class="mobile-link"
               @click="closeDropdowns"
             >
@@ -1047,7 +1128,7 @@ const handleLogout = () => {
               <span>Mở Gian Hàng Bán Nông Sản</span>
             </router-link>
             <router-link
-              to="/register-shipper"
+              :to="auth.isLoggedIn.value ? { path: '/profile', query: { tab: 'shipper-reg' } } : '/register-shipper'"
               class="mobile-link"
               @click="closeDropdowns"
             >
@@ -1279,7 +1360,11 @@ const handleLogout = () => {
           </h5>
           
           <div class="footer-partner-cards">
-            <router-link to="/register-seller" target="_blank" class="partner-cta-card seller-card">
+            <router-link 
+              :to="auth.isLoggedIn.value ? { path: '/profile', query: { tab: 'seller-reg' } } : '/register-seller'" 
+              :target="auth.isLoggedIn.value ? undefined : '_blank'" 
+              class="partner-cta-card seller-card"
+            >
               <div class="partner-icon-circle"><i class="bi bi-shop"></i></div>
               <div class="partner-card-texts">
                 <strong>Mở gian hàng Bán Nông Sản</strong>
@@ -1288,7 +1373,11 @@ const handleLogout = () => {
               <i class="bi bi-arrow-right partner-chevron"></i>
             </router-link>
 
-            <router-link to="/register-shipper" target="_blank" class="partner-cta-card shipper-card">
+            <router-link 
+              :to="auth.isLoggedIn.value ? { path: '/profile', query: { tab: 'shipper-reg' } } : '/register-shipper'" 
+              :target="auth.isLoggedIn.value ? undefined : '_blank'" 
+              class="partner-cta-card shipper-card"
+            >
               <div class="partner-icon-circle"><i class="bi bi-bicycle"></i></div>
               <div class="partner-card-texts">
                 <strong>Đăng ký làm Tài xế Shipper</strong>
@@ -3397,4 +3486,104 @@ body {
   opacity: 0;
   transform: translateY(-6px);
 }
+
+/* Location chip in navbar */
+.nav-location-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 9999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  max-width: 220px;
+  text-align: left;
+}
+.nav-location-chip:hover {
+  background: #fff7ed;
+  border-color: #fdba74;
+}
+.nav-location-chip.is-locating {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+.loc-chip-icon {
+  color: #ea580c;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+}
+.nav-location-chip.is-locating .loc-chip-icon {
+  color: #2563eb;
+}
+.loc-chip-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  line-height: 1.2;
+}
+.loc-chip-title {
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.loc-chip-address {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+@media (max-width: 1080px) {
+  .nav-location-chip {
+    display: none;
+  }
+}
+
+.mobile-location-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 8px 12px 14px 12px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.mobile-location-row .m-loc-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mobile-location-row .m-loc-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #c2410c;
+}
+.mobile-location-row .m-loc-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mobile-location-row .m-loc-gps-btn {
+  font-size: 16px;
+  color: #ea580c;
+}
+
 </style>
