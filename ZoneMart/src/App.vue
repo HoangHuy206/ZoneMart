@@ -70,16 +70,11 @@ onUnmounted(() => window.removeEventListener('zonemart:replay-intro', replayIntr
 
 onMounted(() => {
   catalog.refreshCatalog();
-  if (!userCurrentLocation.value) {
-    setTimeout(() => {
-      getSafeCurrentLocation().then(loc => {
-        if (loc && loc.safeLocationName) {
-          userCurrentLocation.value = loc.safeLocationName;
-          localStorage.setItem('zonemart_user_address', loc.safeLocationName);
-          localStorage.setItem('zonemart_gps_address', loc.safeLocationName);
-        }
-      }).catch(() => {});
-    }, 1200);
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('zonemart_gps_address');
+    localStorage.removeItem('zonemart_user_address');
+    localStorage.removeItem('zonemart_lat');
+    localStorage.removeItem('zonemart_lon');
   }
 });
 
@@ -267,22 +262,7 @@ const handleLogout = () => {
           </div>
         </router-link>
 
-        <!-- Nút Định vị vị trí giao hàng tức thì -->
-        <button
-          type="button"
-          class="nav-location-chip"
-          :class="{ 'is-locating': isLocatingGps }"
-          :title="userCurrentLocation ? `Vị trí giao hàng: ${userCurrentLocation}` : 'Nhấn để định vị địa chỉ giao hàng'"
-          @click="triggerGpsLocation"
-        >
-          <div class="loc-chip-icon">
-            <i class="bi" :class="isLocatingGps ? 'bi-arrow-repeat spin-icon' : 'bi-geo-alt-fill'"></i>
-          </div>
-          <div class="loc-chip-info">
-            <span class="loc-chip-title">Giao đến</span>
-            <span class="loc-chip-address">{{ shortCurrentLocation }}</span>
-          </div>
-        </button>
+
 
         <!-- 2. Thanh tìm kiếm chính giữa: Tìm Sản Phẩm HOẶC Gian Hàng -->
         <div class="header-search-wrap" @click.stop>
@@ -1011,15 +991,7 @@ const handleLogout = () => {
         class="mobile-menu"
         aria-label="Menu điều hướng di động"
       >
-        <!-- Thẻ vị trí giao hàng trên mobile -->
-        <div class="mobile-location-row" @click="triggerGpsLocation">
-          <i class="bi" :class="isLocatingGps ? 'bi-arrow-repeat spin-icon' : 'bi-geo-alt-fill text-danger'"></i>
-          <div class="m-loc-info">
-            <span class="m-loc-label">Vị trí giao hàng:</span>
-            <span class="m-loc-val">{{ userCurrentLocation || 'Bấm để định vị vị trí' }}</span>
-          </div>
-          <i class="bi bi-crosshair m-loc-gps-btn"></i>
-        </div>
+
         <!-- Guest Mobile Links -->
         <template v-if="!auth.isLoggedIn.value">
           <router-link

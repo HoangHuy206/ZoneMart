@@ -800,10 +800,7 @@ const handleAddToCartHome = (item: any) => {
                       <i class="bi bi-shield-check"></i>
                       <span>Chuẩn <strong>VietGAP & AI</strong></span>
                     </div>
-                    <div class="metric-pill" :title="safeLocationName ? `Vị trí giao hàng: ${safeLocationName}` : 'Bán kính giao hàng 10km quanh bạn'">
-                      <i class="bi bi-geo-alt-fill text-danger"></i>
-                      <span>{{ safeLocationName ? 'Khu vực: ' : 'Bán kính ' }}<strong>{{ safeLocationName ? safeLocationName.split(',').slice(0, 2).join(',') : '10km quanh bạn' }}</strong></span>
-                    </div>
+
                   </div>
 
                   <div class="hero-actions">
