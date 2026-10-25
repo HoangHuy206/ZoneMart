@@ -74,3 +74,6 @@ bot_config.json
 *.log
 .telegram_uploads/
 
+
+*.pid
+.bot.pid
