@@ -72,3 +72,5 @@ scripts/
 bot_config.json
 *.vbs
 *.log
+.telegram_uploads/
+

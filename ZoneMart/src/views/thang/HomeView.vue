@@ -4,10 +4,10 @@ import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
 import { useToast } from '../../composables/useToast';
 import { useProductCatalog } from '../../composables/useProductCatalog';
-import { useAuth } from '../../composables/useAuth';
+// import { useAuth } from '../../composables/useAuth';
 
 const router = useRouter();
-const auth = useAuth();
+// const auth = useAuth();
 const cart = useCart();
 const toast = useToast();
 const catalog = useProductCatalog();

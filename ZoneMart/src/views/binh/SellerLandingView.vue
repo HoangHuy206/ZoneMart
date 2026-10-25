@@ -2466,6 +2466,94 @@ const submitSellerSupportTicket = async () => {
     width: auto !important;
     margin: 0 auto !important;
   }
+
+  /* Mobile Fix for Hero Illustration & Misalignment */
+  .hero-content-grid {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+  .hero-right-col {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    margin-top: 14px !important;
+  }
+  .hero-image-container {
+    width: 100% !important;
+    max-width: 340px !important;
+    margin: 0 auto !important;
+    overflow: hidden !important;
+    display: flex !important;
+    justify-content: center !important;
+  }
+  .hero-large-illustration {
+    max-width: 100% !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: 260px !important;
+    transform: none !important;
+    transform-origin: center center !important;
+    margin: 0 auto !important;
+    display: block !important;
+  }
+
+  /* Mobile Optimization for Registration Form Card */
+  .form-section {
+    padding: 0 12px !important;
+    margin: 20px auto !important;
+  }
+  .form-container-card {
+    padding: 24px 14px !important;
+    border-radius: 18px !important;
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.08) !important;
+  }
+  .form-title-centered {
+    font-size: 20px !important;
+    line-height: 1.3 !important;
+  }
+  .form-subtitle-centered {
+    font-size: 12.5px !important;
+    margin-bottom: 20px !important;
+  }
+  .stepper-bar {
+    gap: 4px !important;
+    margin-bottom: 22px !important;
+  }
+  .step-item {
+    font-size: 11px !important;
+    gap: 4px !important;
+  }
+  .step-badge {
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 11px !important;
+    flex-shrink: 0 !important;
+  }
+  .step-line {
+    margin: 0 4px !important;
+  }
+  .form-row-2col {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .seller-type-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+  .seller-type-card {
+    padding: 10px 6px !important;
+    min-height: 80px !important;
+  }
+  .seller-type-card .type-title {
+    font-size: 12px !important;
+  }
+  .seller-type-card .type-desc {
+    font-size: 10px !important;
+  }
+  .field-input {
+    font-size: 14px !important;
+  }
 }
 
 .seller-brand-logo {
