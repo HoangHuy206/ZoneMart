@@ -5,8 +5,6 @@ import logoImg from './assets/logo.png';
 import { useAuth } from './composables/useAuth';
 import { useCart } from './composables/useCart';
 import { useProductCatalog } from './composables/useProductCatalog';
-import { useToast } from './composables/useToast';
-import { getSafeCurrentLocation, isLocating as isLocatingGps } from './composables/useSafeLocation';
 import ZoneToast from './components/common/ZoneToast.vue';
 import TopProgressBar from './components/common/TopProgressBar.vue';
 import AiAssistantWidget from './components/common/AiAssistantWidget.vue';
@@ -17,45 +15,7 @@ const route = useRoute();
 const auth = useAuth();
 const cart = useCart();
 const catalog = useProductCatalog();
-const toast = useToast();
 
-const userCurrentLocation = ref<string>(
-  (typeof window !== 'undefined' && (localStorage.getItem('zonemart_user_address') || localStorage.getItem('zonemart_gps_address'))) || ''
-);
-
-const shortCurrentLocation = computed(() => {
-  if (isLocatingGps.value) return 'Đang định vị...';
-  if (!userCurrentLocation.value) return 'Bấm để định vị';
-  const parts = userCurrentLocation.value.split(',').map(s => s.trim());
-  if (parts.length >= 2) {
-    return `${parts[0]}, ${parts[1]}`;
-  }
-  return parts[0] || 'Vị trí hiện tại';
-});
-
-const triggerGpsLocation = async () => {
-  try {
-    toast.info('Đang xác định vị trí giao hàng của bạn...', 'Định vị GPS');
-    const loc = await getSafeCurrentLocation();
-    if (loc && loc.safeLocationName) {
-      userCurrentLocation.value = loc.safeLocationName;
-      localStorage.setItem('zonemart_user_address', loc.safeLocationName);
-      localStorage.setItem('zonemart_gps_address', loc.safeLocationName);
-      toast.success(`Đã định vị: ${loc.safeLocationName}`, 'Giao Hàng ZoneMart');
-      window.dispatchEvent(new CustomEvent('zonemart:location-updated', { detail: loc }));
-    }
-  } catch (e) {
-    toast.warning('Không thể lấy vị trí tự động. Bạn có thể chọn trên bản đồ khi thanh toán.', 'Định Vị');
-  }
-};
-
-if (typeof window !== 'undefined') {
-  window.addEventListener('zonemart:location-updated', (e: any) => {
-    if (e?.detail?.safeLocationName) {
-      userCurrentLocation.value = e.detail.safeLocationName;
-    }
-  });
-}
 const hasShownIntro = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('zonemart_intro_shown') === 'true';
 const introComplete = ref(hasShownIntro);
 const replayIntro = () => { introComplete.value = false; };
@@ -258,7 +218,7 @@ const handleLogout = () => {
             <span class="brand-name"
               >Zone<span class="highlight">Mart</span></span
             >
-            <span class="brand-tagline">Giao hàng hỏa tốc 5km</span>
+            <span class="brand-tagline">Giao hàng hỏa tốc</span>
           </div>
         </router-link>
 

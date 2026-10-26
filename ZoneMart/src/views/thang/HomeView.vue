@@ -5,14 +5,12 @@ import { useCart } from '../../composables/useCart';
 import { useToast } from '../../composables/useToast';
 import { useProductCatalog } from '../../composables/useProductCatalog';
 import { useAuth } from '../../composables/useAuth';
-import { useSafeLocation } from '../../composables/useSafeLocation';
 
 const router = useRouter();
 const auth = useAuth();
 const cart = useCart();
 const toast = useToast();
 const catalog = useProductCatalog();
-const { safeLocationName } = useSafeLocation();
 
 const toastMessage = ref('');
 let toastTimer: any = null;

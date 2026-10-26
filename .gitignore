@@ -65,6 +65,8 @@ __pycache__/
 # Windows Batch & Command Scripts (Local only - do not push to Git)
 *.bat
 *.cmd
+!**/gradlew.bat
+!**/gradlew
 
 
 # Telegram Antigravity Bridge (Local Automation - Do NOT push to Git)

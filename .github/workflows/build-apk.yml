@@ -1,0 +1,90 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag name for release'
+        required: false
+        default: 'v-apk-latest'
+  push:
+    tags:
+      - 'apk*'
+      - 'build-apk*'
+      - 'v-apk*'
+      - 'v*-apk*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Android APK (on Ubuntu Cloud)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ZoneMart
+
+    steps:
+      - name: 1. Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: 2. Thiết lập Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: 3. Thiết lập Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 4. Thiết lập Node.js 22 (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 5. Cài đặt Dependencies Web
+        run: npm install --legacy-peer-deps
+
+      - name: 6. Biên dịch Web Vue 3 (Vite)
+        run: npx vite build
+
+      - name: 7. Đồng bộ sang Android Native (Capacitor)
+        run: npx cap sync android
+
+      - name: 8. Cấp quyền thực thi cho gradlew
+        run: chmod +x android/gradlew
+
+      - name: 9. Biên dịch và đóng gói APK (Gradle Assemble Debug)
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon --stacktrace
+          mkdir -p output
+          cp app/build/outputs/apk/debug/app-debug.apk output/ZoneMart.apk
+          echo "Build file ZoneMart.apk thanh cong!"
+
+      - name: 10. Tải lên GitHub Artifacts (Lưu trữ 14 ngày)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZoneMart-Android-APK
+          path: ZoneMart/android/output/ZoneMart.apk
+          retention-days: 14
+
+      - name: 11. Phát hành GitHub Release (Link tải trực tiếp)
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
+          name: "ZoneMart Android APK (${{ github.ref_name }})"
+          body: |
+            🚀 **ZoneMart Android APK Đã Đóng Gói Thành Công!**
+            - Phiên bản: Debug APK
+            - Mã commit: `${{ github.sha }}`
+            
+            📱 Tải file `ZoneMart.apk` đính kèm bên dưới để cài đặt vào điện thoại Android.
+          files: ZoneMart/android/output/ZoneMart.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
