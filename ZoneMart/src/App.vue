@@ -5,6 +5,7 @@ import logoImg from './assets/logo.png';
 import { useAuth } from './composables/useAuth';
 import { useCart } from './composables/useCart';
 import { useProductCatalog } from './composables/useProductCatalog';
+import { getSafeCurrentLocation } from './composables/useSafeLocation';
 import ZoneToast from './components/common/ZoneToast.vue';
 import TopProgressBar from './components/common/TopProgressBar.vue';
 import AiAssistantWidget from './components/common/AiAssistantWidget.vue';
@@ -30,12 +31,11 @@ onUnmounted(() => window.removeEventListener('zonemart:replay-intro', replayIntr
 
 onMounted(() => {
   catalog.refreshCatalog();
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem('zonemart_gps_address');
-    localStorage.removeItem('zonemart_user_address');
-    localStorage.removeItem('zonemart_lat');
-    localStorage.removeItem('zonemart_lon');
-  }
+  setTimeout(() => {
+    getSafeCurrentLocation().catch((err) => {
+      console.warn('[App] Dinh vi nen khi khoi dong:', err);
+    });
+  }, 1200);
 });
 
 

@@ -61,7 +61,7 @@
       <key>UIWindowSceneSessionRoleApplication</key>
       <array>
         <dict>
-            <key>UISceneConfigurationName</key>
+            <key>ConfigurationName</key>
             <string>Default Configuration</string>
             <key>UISceneDelegateClassName</key>
             <string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
@@ -95,13 +95,17 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>ZoneMart cần quyền truy cập Camera để xác thực khuôn mặt sinh trắc học Face ID.</string>
+	<string>ZoneMart cần quyền truy cập Camera để xác thực sinh trắc học và quét mã đơn hàng.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>ZoneMart sử dụng Face ID để đăng nhập nhanh chóng và bảo mật tài khoản của bạn.</string>
-		<key>NSLocationWhenInUseUsageDescription</key>
+	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>ZoneMart cần quyền truy cập vị trí của bạn để tự động xác định địa chỉ giao nhận hàng chính xác.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>ZoneMart cần quyền vị trí để định vị và tính toán phí vận chuyển chính xác nhất.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ZoneMart cần quyền truy cập thư viện ảnh để bạn tải ảnh đại diện hoặc đính kèm ảnh sản phẩm/đơn hàng.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>ZoneMart cần quyền lưu ảnh để lưu hóa đơn hoặc hình ảnh sản phẩm.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

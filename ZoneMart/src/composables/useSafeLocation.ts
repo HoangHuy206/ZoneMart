@@ -242,3 +242,17 @@ export function useSafeLocation() {
     getSafeCurrentLocation,
   };
 }
+
+// Tự động định vị ngay khi Android/iOS cấp quyền hoặc người dùng quay lại app
+if (typeof window !== 'undefined') {
+  window.addEventListener('zonemart:permissions-granted', () => {
+    console.log('[SafeLocation] Quyền ứng dụng đã được cấp, tự động xác định vị trí...');
+    getSafeCurrentLocation().catch(() => {});
+  });
+
+  window.addEventListener('focus', () => {
+    if (!safeLocationName.value || safeLocationName.value === 'Khu vực Cầu Giấy, Hà Nội') {
+      getSafeCurrentLocation().catch(() => {});
+    }
+  });
+}
