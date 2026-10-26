@@ -7,6 +7,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(BiometricPlugin.class);
+        registerPlugin(LocationPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

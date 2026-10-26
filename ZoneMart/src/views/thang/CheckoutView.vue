@@ -284,7 +284,6 @@ const locateUserCurrentPosition = async () => {
 
   try {
     const loc = await getSafeCurrentLocation();
-    isLocating.value = false;
     if (loc && loc.lat && loc.lon) {
       editForm.value.lat = loc.lat;
       editForm.value.lng = loc.lon;
@@ -304,12 +303,13 @@ const locateUserCurrentPosition = async () => {
       }
       return;
     }
+    triggerToast("Không thể lấy GPS chính xác. Đã hiển thị vị trí gần bạn nhất trên bản đồ!");
   } catch (err) {
     console.warn("Lỗi SafeLocation:", err);
+    triggerToast("Không thể lấy GPS. Bạn hãy chạm trực tiếp trên bản đồ để chọn điểm!");
+  } finally {
+    isLocating.value = false;
   }
-
-  isLocating.value = false;
-  triggerToast("Không thể lấy GPS. Bạn hãy chạm trực tiếp trên bản đồ để chọn điểm!");
 };
 
 const searchLocationOnMap = async () => {

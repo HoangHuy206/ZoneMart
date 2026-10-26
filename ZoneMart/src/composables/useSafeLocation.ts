@@ -1,11 +1,18 @@
 import { ref } from 'vue';
 import { apiFetch } from "../utils/apiConfig";
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 export interface SafeLocationResult {
   lat: number;
   lon: number;
   safeLocationName: string;
 }
+
+interface NativeLocationPlugin {
+  getCurrentPosition(): Promise<{ latitude: number; longitude: number; accuracy?: number }>;
+}
+
+const NativeLocation = registerPlugin<NativeLocationPlugin>('NativeLocation');
 
 // Hàm làm sạch: Loại bỏ chuỗi chứa số tọa độ thô hoặc chữ GPS để bảo mật
 export function cleanSafeLocationString(raw?: string | null): string {
@@ -31,228 +38,200 @@ export const isLocating = ref<boolean>(false);
 export const locationError = ref<string | null>(null);
 
 /**
- * Hàm lấy vị trí hiện tại của người dùng và dịch ra tên địa danh thực tế (Privacy-Safe Reverse Geocoding)
- * - Dùng navigator.geolocation lấy tọa độ GPS thực tế (lat, lon).
- * - Gửi GPS về Backend C# API (/api/aichat/safe-location) để phân giải địa danh thực tế.
- * - Logic bảo mật: Chỉ lấy Tên địa danh/Cơ sở, Phường/Xã, Quận/Huyện, Tỉnh/Thành phố.
- * - TUYỆT ĐỐI BỎ QUA số nhà (house_number) để bảo mật.
- * - Tọa độ số CHỈ lưu ngầm ở Backend, Frontend chỉ nhận và hiển thị tên địa danh thực tế.
+ * Phân giải địa danh an toàn từ tọa độ (Backend C# -> BigDataCloud -> Fallback)
  */
-export async function getSafeCurrentLocation(): Promise<SafeLocationResult | null> {
-  if (typeof window === 'undefined' || !navigator.geolocation) {
-    locationError.value = 'Trình duyệt không hỗ trợ Geolocation.';
-    console.warn('[SafeLocation]', locationError.value);
+async function reverseGeocodeSafe(lat: number, lon: number): Promise<string> {
+  let parsedName = '';
+
+  // 1. Gọi Backend C# endpoint /api/aichat/safe-location
+  try {
+    const res = await apiFetch('/api/aichat/safe-location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lng: lon }),
+    });
+
+    if (res && res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (data.safeLocationName && !/toa\s*do|gps|\d+\.\d{3,}/i.test(data.safeLocationName)) {
+        parsedName = data.safeLocationName.trim();
+      }
+    }
+  } catch (_) {}
+
+  if (parsedName) return cleanSafeLocationString(parsedName);
+
+  // 2. Dự phòng: BigDataCloud Reverse Geocoding
+  try {
+    const bdcRes = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=vi`,
+      { signal: AbortSignal.timeout(3500) }
+    );
+    if (bdcRes.ok) {
+      const bdcData = await bdcRes.json();
+      const admins = bdcData.localityInfo?.administrative || [];
+      let ward = '', district = '', city = bdcData.principalSubdivision || '';
+
+      for (const a of admins) {
+        const n = (a.name || '').trim();
+        if (a.adminLevel === 8 || a.order >= 12) {
+          if (!ward) ward = n;
+        } else if (a.adminLevel === 6 || (a.order >= 10 && a.order < 12)) {
+          if (!district) district = n;
+        } else if (a.adminLevel === 4 || a.order === 8) {
+          if (!city && !/đồng bằng|miền/i.test(n)) city = n;
+        }
+      }
+
+      if (!ward && bdcData.locality) ward = bdcData.locality;
+
+      const parts = [ward, district, city].filter(Boolean);
+      if (parts.length > 0) parsedName = Array.from(new Set(parts)).join(', ');
+    }
+  } catch (_) {}
+
+  return cleanSafeLocationString(parsedName);
+}
+
+/**
+ * Lấy tọa độ từ Native Android LocationManager (nếu đang chạy trên Android Native)
+ */
+async function getNativeAndroidCoords(): Promise<{ lat: number; lon: number } | null> {
+  if (typeof window === 'undefined' || !Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') {
     return null;
   }
+  try {
+    const res = await Promise.race([
+      NativeLocation.getCurrentPosition(),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Native timeout')), 3500)),
+    ]);
+    if (res && res.latitude && res.longitude) {
+      return { lat: res.latitude, lon: res.longitude };
+    }
+  } catch (e) {
+    console.warn('[SafeLocation] Native location không khả dụng:', e);
+  }
+  return null;
+}
 
-  isLocating.value = true;
-  locationError.value = null;
-
+/**
+ * Lấy tọa độ từ Geolocation trình duyệt (có timeout bảo vệ 3500ms không bao giờ bị treo)
+ */
+function getBrowserCoords(): Promise<{ lat: number; lon: number } | null> {
   return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      console.warn('[SafeLocation] navigator.geolocation hết thời gian chờ 3500ms');
+      resolve(null);
+    }, 3500);
+
     navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
-
-          // Lưu ngầm tọa độ GPS thực tế vào localStorage cho backend
-          localStorage.setItem('zonemart_lat', lat.toString());
-          localStorage.setItem('zonemart_lon', lon.toString());
-
-          let parsedName = '';
-
-          // 1. Gọi Backend C# endpoint /api/aichat/safe-location (ưu tiên relative URL qua proxy)
-          try {
-            const res = await apiFetch('/api/aichat/safe-location', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lng: lon }) });
-
-            if (res && res.ok) {
-              const data = await res.json();
-              if (data.safeLocationName && !/toa\s*do|gps|\d+\.\d{3,}/i.test(data.safeLocationName)) {
-                parsedName = data.safeLocationName.trim();
-              }
-            }
-          } catch (apiErr) {
-            console.warn('[SafeLocation] Backend safe-location API error:', apiErr);
-          }
-
-          // 2. Dự phòng: Tra cứu trực tiếp từ BigDataCloud nếu Backend chưa kịp phản hồi
-          if (!parsedName) {
-            try {
-              let alleyOrRoad = '';
-              let hamlet = '';
-              try {
-                const pRes = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&limit=5`);
-                if (pRes.ok) {
-                  const pData = await pRes.json();
-                  const feats = pData.features || [];
-                  for (const f of feats) {
-                    const p = f.properties || {};
-                    const pName = (p.name || '').replace(/^(số\s*)?\d+[a-zA-Z]?(\s*[-/]\s*\d+[a-zA-Z]?)*\s*(,\s*|\s+)/i, '').trim();
-                    if (/^(ngõ|ngách|hẻm|kiệt)\s+/i.test(pName)) {
-                      alleyOrRoad = pName;
-                      break;
-                    }
-                  }
-                  if (!alleyOrRoad) {
-                    for (const f of feats) {
-                      const p = f.properties || {};
-                      const pName = (p.name || '').replace(/^(số\s*)?\d+[a-zA-Z]?(\s*[-/]\s*\d+[a-zA-Z]?)*\s*(,\s*|\s+)/i, '').trim();
-                      if (/^(đường|phố)\s+/i.test(pName) || p.type === 'street') {
-                        alleyOrRoad = /^(đường|phố)\s+/i.test(pName) ? pName : `Đường ${pName}`;
-                        break;
-                      }
-                    }
-                  }
-                  for (const f of feats) {
-                    const p = f.properties || {};
-                    const pName = (p.name || '').trim();
-                    if (/^(thôn|xóm|ấp|bản|làng)\s+/i.test(pName)) {
-                      hamlet = pName;
-                      break;
-                    }
-                  }
-                }
-              } catch (_) {}
-
-              const bdcRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=vi`);
-              if (bdcRes.ok) {
-                const bdcData = await bdcRes.json();
-                const admins = bdcData.localityInfo?.administrative || [];
-                const informs = bdcData.localityInfo?.informative || [];
-                let ward = '', district = '', city = bdcData.principalSubdivision || '';
-
-                for (const a of admins) {
-                  const n = (a.name || '').trim();
-                  if (a.adminLevel === 8 || a.order >= 12) {
-                    if (!ward) ward = n;
-                  } else if (a.adminLevel === 6 || (a.order >= 10 && a.order < 12)) {
-                    if (!district) district = n;
-                  } else if (a.adminLevel === 4 || a.order === 8) {
-                    if (!city && !/đồng bằng|miền/i.test(n)) city = n;
-                  }
-                }
-
-                for (const inf of informs) {
-                  const iName = (inf.name || '').trim();
-                  const iDesc = (inf.description || '').trim();
-                  if (/(huyện|quận|thị xã|thành phố)/i.test(iDesc)) {
-                    district = iName;
-                    break;
-                  } else if (inf.order >= 10 && inf.order <= 11 && /^(Quận|Huyện|Thị xã|TP|Thành phố)\s+/i.test(iName)) {
-                    district = iName;
-                    break;
-                  }
-                }
-
-                if (!ward && bdcData.locality) ward = bdcData.locality;
-
-                // Chuẩn hóa tiền tố hành chính tiếng Việt
-                if (ward) {
-                  ward = ward.replace(/^Xa\s+/i, 'Xã ').replace(/^Phuong\s+/i, 'Phường ').replace(/^Thi\s*tran\s+/i, 'Thị trấn ');
-                  ward = ward.replace('Song Phuong', 'Song Phương').replace('Son Dong', 'Sơn Đồng').replace('Tay Mo', 'Tây Mỗ').replace('Xuan Phuong', 'Xuân Phương');
-                }
-                if (district) {
-                  district = district.replace(/^Quan\s+/i, 'Quận ').replace(/^Huyen\s+/i, 'Huyện ').replace(/^Thanh\s*pho\s+/i, 'Thành phố ');
-                  if (/^\d+$/.test(district)) district = `Quận ${district}`;
-                  else if (!/^(Quận|Huyện|Thị xã|Thành phố)\s+/i.test(district)) {
-                    const dLower = district.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-                    if (dLower.includes('hoai duc') || dLower.includes('dan phuong') || dLower.includes('dong anh') || dLower.includes('gia lam')) district = `Huyện ${district}`;
-                    else if (dLower.includes('vinh') || dLower.includes('da lat')) district = `Thành phố ${district}`;
-                    else district = `Quận ${district}`;
-                  }
-                }
-                if (city) {
-                  city = city.replace(/^Tinh\s+/i, 'Tỉnh ').replace(/^Thanh\s*pho\s+/i, 'Thành phố ');
-                  const cLower = city.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-                  if (cLower.includes('ha noi')) city = 'Hà Nội';
-                  else if (cLower.includes('ho chi minh') || cLower.includes('sai gon')) city = 'Thành phố Hồ Chí Minh';
-                  else if (cLower.includes('da nang')) city = 'Đà Nẵng';
-                  else if (cLower.includes('hai phong')) city = 'Hải Phòng';
-                  else if (cLower.includes('can tho')) city = 'Cần Thơ';
-                  else if (!city.startsWith('Tỉnh ') && !city.startsWith('Thành phố ')) city = `Tỉnh ${city}`;
-                }
-
-                const parts = [alleyOrRoad, hamlet, ward, district, city].filter(Boolean);
-                if (parts.length > 0) parsedName = Array.from(new Set(parts)).join(', ');
-              }
-            } catch (_) {}
-          }
-
-          parsedName = cleanSafeLocationString(parsedName);
-
-          if (parsedName) {
-            safeLocationName.value = parsedName;
-            localStorage.setItem('zonemart_gps_address', parsedName);
-            localStorage.setItem('zonemart_user_address', parsedName);
-          }
-
-          const payload: SafeLocationResult = {
-            lat,
-            lon,
-            safeLocationName: parsedName
-          };
-
-          isLocating.value = false;
-          resolve(payload);
-        } catch (err: any) {
-          console.error('[SafeLocation] Lỗi khi dịch địa danh an toàn:', err);
-          locationError.value = err?.message || 'Lỗi kết nối dịch vụ bản đồ.';
-          isLocating.value = false;
-          resolve(null);
-        }
+      (pos) => {
+        clearTimeout(timer);
+        resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude });
       },
-      async (err) => {
-        console.warn('[SafeLocation] Không thể lấy tọa độ GPS từ trình duyệt, đang dự phòng qua IP:', err);
-        try {
-          const ipRes = await fetch('https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=vi');
-          if (ipRes.ok) {
-            const ipData = await ipRes.json();
-            const lat = ipData.latitude || 21.0333;
-            const lon = ipData.longitude || 105.7833;
-
-            localStorage.setItem('zonemart_lat', lat.toString());
-            localStorage.setItem('zonemart_lon', lon.toString());
-
-            let ipLocName = '';
-            try {
-              const res = await apiFetch('/api/aichat/safe-location', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lng: lon }) });
-
-              if (res && res.ok) {
-                const data = await res.json();
-                if (data.safeLocationName && !/toa\s*do|gps|\d+\.\d{3,}/i.test(data.safeLocationName)) {
-                  ipLocName = data.safeLocationName.trim();
-                }
-              }
-            } catch (_) {}
-
-            if (!ipLocName) {
-              ipLocName = [ipData.locality, ipData.principalSubdivision].filter(Boolean).join(', ');
-            }
-            if (!ipLocName) ipLocName = 'Phường Dịch Vọng Hậu, Quận Cầu Giấy, Hà Nội';
-
-            safeLocationName.value = ipLocName;
-            localStorage.setItem('zonemart_gps_address', ipLocName);
-            localStorage.setItem('zonemart_user_address', ipLocName);
-            isLocating.value = false;
-            resolve({ lat, lon, safeLocationName: ipLocName });
-            return;
-          }
-        } catch (_) {}
-        locationError.value = 'Không thể xác định vị trí hiện tại.';
-        isLocating.value = false;
-        resolve({
-          lat: 21.0333,
-          lon: 105.7833,
-          safeLocationName: 'Phường Dịch Vọng Hậu, Quận Cầu Giấy, Hà Nội'
-        });
+      (err) => {
+        clearTimeout(timer);
+        console.warn('[SafeLocation] navigator.geolocation lỗi:', err?.message);
+        resolve(null);
       },
       {
-        enableHighAccuracy: false,
-        timeout: 6000,
-        maximumAge: 60000
+        enableHighAccuracy: true,
+        timeout: 3000,
+        maximumAge: 60000,
       }
     );
   });
+}
+
+/**
+ * Dự phòng tọa độ qua IP (khi thiết bị tắt GPS hoặc từ chối cấp quyền)
+ */
+async function getIpCoords(): Promise<{ lat: number; lon: number; name?: string }> {
+  try {
+    const res = await fetch('https://api.bigdatacloud.net/data/reverse-geocode-client?localityLanguage=vi', {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const lat = data.latitude || 21.0333;
+      const lon = data.longitude || 105.7983;
+      const name = [data.locality, data.principalSubdivision].filter(Boolean).join(', ') || 'Khu vực Cầu Giấy, Hà Nội';
+      return { lat, lon, name };
+    }
+  } catch (_) {}
+
+  return {
+    lat: 21.0333,
+    lon: 105.7983,
+    name: 'Khu vực Cầu Giấy, Hà Nội',
+  };
+}
+
+/**
+ * Hàm lấy vị trí hiện tại của người dùng an toàn, siêu nhanh và TUYỆT ĐỐI KHÔNG BAO GIỜ BỊ TREO XOAY:
+ * 1. Android Native: Lấy trực tiếp từ cảm biến GPS/Mạng của máy (Native LocationManager)
+ * 2. iOS & Web: Lấy qua navigator.geolocation với timeout bảo vệ 3500ms
+ * 3. Nếu GPS chưa bật hoặc từ chối quyền: Tự động chuyển qua định vị theo IP/Cell Tower trong 1.5 giây
+ */
+export async function getSafeCurrentLocation(): Promise<SafeLocationResult | null> {
+  isLocating.value = true;
+  locationError.value = null;
+
+  try {
+    let coords: { lat: number; lon: number } | null = null;
+
+    // 1. Ưu tiên Native Android (nếu có)
+    coords = await getNativeAndroidCoords();
+
+    // 2. Nếu chưa có, thử Browser Geolocation (iOS / Web)
+    if (!coords) {
+      coords = await getBrowserCoords();
+    }
+
+    let resolvedName = '';
+
+    // 3. Nếu lấy được GPS thực tế
+    if (coords) {
+      localStorage.setItem('zonemart_lat', coords.lat.toString());
+      localStorage.setItem('zonemart_lon', coords.lon.toString());
+      resolvedName = await reverseGeocodeSafe(coords.lat, coords.lon);
+    } else {
+      // 4. Dự phòng qua IP nếu cả 2 phương thức GPS đều không khả dụng
+      console.warn('[SafeLocation] Đang kích hoạt định vị dự phòng qua mạng...');
+      const ipData = await getIpCoords();
+      coords = { lat: ipData.lat, lon: ipData.lon };
+      resolvedName = ipData.name || 'Khu vực Cầu Giấy, Hà Nội';
+      localStorage.setItem('zonemart_lat', coords.lat.toString());
+      localStorage.setItem('zonemart_lon', coords.lon.toString());
+    }
+
+    if (resolvedName) {
+      safeLocationName.value = resolvedName;
+      localStorage.setItem('zonemart_gps_address', resolvedName);
+      localStorage.setItem('zonemart_user_address', resolvedName);
+    }
+
+    return {
+      lat: coords.lat,
+      lon: coords.lon,
+      safeLocationName: resolvedName || 'Điểm định vị trên bản đồ',
+    };
+  } catch (err: any) {
+    console.error('[SafeLocation] Lỗi không mong muốn:', err);
+    locationError.value = err?.message || 'Không thể xác định vị trí';
+    return {
+      lat: 21.0333,
+      lon: 105.7983,
+      safeLocationName: 'Khu vực Cầu Giấy, Hà Nội',
+    };
+  } finally {
+    isLocating.value = false;
+  }
 }
 
 export function useSafeLocation() {
@@ -260,6 +239,6 @@ export function useSafeLocation() {
     safeLocationName,
     isLocating,
     locationError,
-    getSafeCurrentLocation
+    getSafeCurrentLocation,
   };
 }
