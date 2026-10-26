@@ -118,23 +118,27 @@ const handleQuickBiometricLogin = async () => {
     isBiometricChecking.value = true;
     errorMessage.value = '';
 
-    // BƯỚC 1: BẮT BUỘC QUÉT KHUÔN MẶT BẰNG APPLE FACE ID (IPHONE) HOẶC CAMERA AI (WEB)
-    toast.info(`Vui lòng nhìn vào iPhone để quét ${deviceLabel}...`, `Xác thực ${deviceLabel}`);
+    // BƯỚC 1: BẮT BUỘC QUÉT SINH TRẮC HỌC (VÂN TAY ANDROID / FACE ID IPHONE / CAMERA AI WEB)
+    if (biometricDevice.value?.iconType === 'fingerprint' || biometricDevice.value?.type === 'android-biometric') {
+      toast.info(`Vui lòng chạm cảm biến vân tay trên thiết bị để quét ${deviceLabel}...`, `Xác thực ${deviceLabel}`);
+    } else {
+      toast.info(`Vui lòng nhìn vào thiết bị để quét ${deviceLabel}...`, `Xác thực ${deviceLabel}`);
+    }
 
-    // Gọi cảm biến Face ID của Apple trên iPhone
+    // Gọi cảm biến Native (Vân tay Android hoặc Face ID iOS)
     const nativeVerify = await verifyDeviceFaceId(`Xác thực ${deviceLabel} để đăng nhập tài khoản ZoneMart`);
 
     if (nativeVerify.message !== 'NO_NATIVE_BRIDGE') {
-      // Đang chạy trên iPhone App (Capacitor)
+      // Đang chạy trên Native App (Capacitor Android hoặc iOS)
       if (!nativeVerify.success) {
-        // BẤM HỦY HOẶC MẶT KHÔNG KHỚP -> DỪNG NGAY LẬP TỨC! TUYỆT ĐỐI KHÔNG CHO VÀO!
-        toast.error(nativeVerify.message || 'Xác thực Face ID không khớp hoặc bạn đã hủy.', 'Face ID');
+        // BẤM HỦY HOẶC KHÔNG KHỚP -> DỪNG NGAY LẬP TỨC! TUYỆT ĐỐI KHÔNG CHO VÀO!
+        toast.error(nativeVerify.message || `Xác thực ${deviceLabel} không khớp hoặc bạn đã hủy.`, deviceLabel);
         return;
       }
-      // Quét mặt Face ID của iPhone thành công 100%!
-      toast.success(`Nhận diện ${deviceLabel} thành công!`, 'Face ID Hợp Lệ');
+      // Quét sinh trắc học thành công 100%!
+      toast.success(`Nhận diện ${deviceLabel} thành công!`, `${deviceLabel} Hợp Lệ`);
     } else {
-      // Đang chạy trên Web Browser (không có Native Bridge iOS):
+      // Đang chạy trên Web Browser (không có Native Bridge):
       // Bắt buộc mở camera FaceScanModal để quét khuôn mặt!
       showFaceScanModal.value = true;
       return;
@@ -296,7 +300,7 @@ const handleFaceLoginSuccess = (data: any) => {
     admin: 'Quản Trị Viên',
   };
   celebrationRoleName.value = roleMap[detectedRole] || 'Thành Viên';
-  celebrationMessage.value = `Nhận diện sinh trắc học Face ID thành công (${data.similarity ? Math.round(data.similarity * 100) : 98}% khớp)! Đang chuyển hướng...`;
+  celebrationMessage.value = `Nhận diện sinh trắc học ${biometricDevice.value?.label || 'Face ID'} thành công (${data.similarity ? Math.round(data.similarity * 100) : 98}% khớp)! Đang chuyển hướng...`;
 
   toast.success(`Nhận diện thành công: ${celebrationUserName.value}!`, 'Đăng Nhập Face ID');
   showCelebrationModal.value = true;

@@ -6,7 +6,20 @@ import {
   type AuthenticationResponseJSON,
   type RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { apiFetch } from './apiConfig';
+
+export interface BiometricAuthPlugin {
+  isAvailable(): Promise<{ isAvailable: boolean; biometryType?: string; code?: string; message?: string }>;
+  authenticate(options?: {
+    title?: string;
+    subtitle?: string;
+    description?: string;
+    negativeButtonText?: string;
+  }): Promise<{ success: boolean; message?: string; errorCode?: number }>;
+}
+
+export const BiometricAuth = registerPlugin<BiometricAuthPlugin>('BiometricAuth');
 
 export type BiometricType =
   | 'iphone-faceid'
@@ -56,6 +69,17 @@ export async function detectBiometricDevice(): Promise<BiometricDeviceInfo> {
       }
     } catch {
       isConditionalSupported = false;
+    }
+  }
+
+  if (typeof window !== 'undefined' && Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+    try {
+      const bioInfo = await BiometricAuth.isAvailable();
+      if (bioInfo && bioInfo.isAvailable) {
+        isPlatformAvailable = true;
+      }
+    } catch {
+      isPlatformAvailable = true;
     }
   }
 
@@ -153,6 +177,19 @@ export async function registerPasskeyForCurrentUser(
   userCodeOrPhone: string,
   deviceName?: string
 ): Promise<{ success: boolean; message: string }> {
+  // Nếu đang ở trên Capacitor Android, xác thực trực tiếp qua cảm biến vân tay native
+  if (typeof window !== 'undefined' && Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+    const authVerify = await verifyDeviceBiometrics('Quét vân tay để liên kết thiết bị Android này với tài khoản ZoneMart');
+    if (authVerify.success) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('zonemart_passkey_saved', 'true');
+        if (userCodeOrPhone) localStorage.setItem('zonemart_biometric_account', userCodeOrPhone);
+      }
+      return { success: true, message: 'Đã liên kết cảm biến vân tay Android với tài khoản thành công!' };
+    } else {
+      return { success: false, message: authVerify.message || 'Xác thực vân tay không thành công hoặc bạn đã hủy.' };
+    }
+  }
   try {
     const clientOrigin = typeof window !== 'undefined' ? window.location.origin : '';
     const clientHost = typeof window !== 'undefined' ? window.location.hostname : '';
@@ -273,13 +310,54 @@ export async function loginWithBiometrics(
 /**
  * Gọi xác thực Face ID Native trên iPhone (qua WebKit Script Message Handler)
  */
-export function verifyDeviceFaceId(reason: string = 'Xác thực Face ID để đăng nhập tài khoản ZoneMart'): Promise<{ success: boolean; message?: string }> {
-  return new Promise((resolve) => {
-    if (typeof window !== 'undefined' && (window as any).webkit?.messageHandlers?.nativeFaceId) {
+/**
+ * Xác thực sinh trắc học thiết bị Native:
+ * 1. Android Native (Capacitor): Gọi trực tiếp Android BiometricPrompt (Vân tay / Khuôn mặt chính chủ)
+ * 2. iPhone Native (Capacitor / iOS WebKit): Gọi Face ID / Touch ID qua WebKit Script Message Handler
+ * 3. Trình duyệt Web: Trả về 'NO_NATIVE_BRIDGE' để giao diện kích hoạt Camera AI FaceScanModal
+ */
+export async function verifyDeviceBiometrics(
+  reason: string = 'Xác thực sinh trắc học để đăng nhập tài khoản ZoneMart'
+): Promise<{ success: boolean; message?: string }> {
+  // 1. Android Native qua Capacitor BiometricAuth Plugin
+  if (typeof window !== 'undefined' && Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+    try {
+      const checkRes = await BiometricAuth.isAvailable();
+      if (!checkRes.isAvailable) {
+        return {
+          success: false,
+          message: checkRes.message || 'Thiết bị Android chưa bật hoặc chưa cài đặt vân tay/khuôn mặt.',
+        };
+      }
+
+      const res = await BiometricAuth.authenticate({
+        title: 'Xác Thực Sinh Trắc Học ZoneMart',
+        subtitle: 'Chạm cảm biến vân tay hoặc nhìn vào camera để xác thực',
+        description: reason,
+        negativeButtonText: 'Hủy bỏ',
+      });
+
+      if (res && res.success) {
+        return { success: true, message: 'Xác thực vân tay Android thành công!' };
+      } else {
+        return {
+          success: false,
+          message: res?.message || 'Xác thực vân tay Android đã bị hủy hoặc không khớp.',
+        };
+      }
+    } catch (err: any) {
+      console.warn('Lỗi gọi BiometricAuth trên Android:', err);
+      return { success: false, message: err?.message || 'Lỗi khi kích hoạt cảm biến sinh trắc học Android.' };
+    }
+  }
+
+  // 2. iPhone Native qua WebKit Script Message Handler
+  if (typeof window !== 'undefined' && (window as any).webkit?.messageHandlers?.nativeFaceId) {
+    return new Promise((resolve) => {
       (window as any).__handleNativeFaceIdResult = (success: boolean, errorMsg: string) => {
         delete (window as any).__handleNativeFaceIdResult;
         if (success) {
-          resolve({ success: true });
+          resolve({ success: true, message: 'Xác thực Face ID thành công!' });
         } else {
           resolve({ success: false, message: errorMsg || 'Xác thực Face ID đã bị hủy hoặc không khớp.' });
         }
@@ -290,9 +368,18 @@ export function verifyDeviceFaceId(reason: string = 'Xác thực Face ID để �
       } catch (err) {
         resolve({ success: false, message: 'Lỗi gọi cảm biến Face ID của thiết bị' });
       }
-      return;
-    }
+    });
+  }
 
-    resolve({ success: false, message: 'NO_NATIVE_BRIDGE' });
-  });
+  // 3. Trình duyệt Web thông thường (không có Native Bridge)
+  return { success: false, message: 'NO_NATIVE_BRIDGE' };
+}
+
+/**
+ * Giữ nguyên tên hàm verifyDeviceFaceId cũ để bảo toàn 100% tương thích ngược
+ */
+export function verifyDeviceFaceId(
+  reason: string = 'Xác thực Face ID để đăng nhập tài khoản ZoneMart'
+): Promise<{ success: boolean; message?: string }> {
+  return verifyDeviceBiometrics(reason);
 }
