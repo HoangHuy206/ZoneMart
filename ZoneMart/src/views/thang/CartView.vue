@@ -1310,7 +1310,7 @@ const handleProceedToCheckout = () => {
     display: flex;
   }
   .cart-page-wrapper {
-    padding-bottom: 96px;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
   }
 }
 

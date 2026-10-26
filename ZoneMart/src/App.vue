@@ -205,8 +205,8 @@ const handleLogout = () => {
     <!-- Thanh tải tiến trình đỉnh trang & Toast thông báo hoạt họa toàn cục -->
     <TopProgressBar />
     <ZoneToast />
-    <!-- Trợ lý AI Chuyên Gia ZoneMart 24/7 (Khung chat góc dưới bên phải - chỉ hiển thị trên giao diện mua sắm) -->
-    <AiAssistantWidget v-if="!$route.meta.hideHeader && !$route.path.startsWith('/admin') && !$route.path.startsWith('/seller') && !$route.path.startsWith('/shipper')" />
+    <!-- Trợ lý AI Chuyên Gia ZoneMart 24/7 (Khung chat góc dưới bên phải - chỉ hiển thị trên giao diện mua sắm, ẩn ở thanh toán để tránh che nút) -->
+    <AiAssistantWidget v-if="!$route.meta.hideHeader && !$route.path.startsWith('/admin') && !$route.path.startsWith('/seller') && !$route.path.startsWith('/shipper') && $route.path !== '/checkout'" />
 
     <!-- Header chuẩn theo hình Sample Mockup (Tự động ẩn ở trang 404 qua meta.hideHeader) -->
     <header v-if="!$route.meta.hideHeader" class="navbar">

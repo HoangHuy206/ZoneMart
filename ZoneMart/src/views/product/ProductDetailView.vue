@@ -2229,8 +2229,9 @@ const relatedProducts = computed(() => {
   background: #ffffff;
   border-top: 1px solid #e2e8f0;
   padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
-  z-index: 99;
+  z-index: 999;
   justify-content: space-between;
   align-items: center;
 }
@@ -2337,7 +2338,7 @@ const relatedProducts = computed(() => {
 
 @media (max-width: 768px) {
   .product-detail-page {
-    padding: 10px 10px 84px 10px;
+    padding: 10px 10px calc(88px + env(safe-area-inset-bottom, 0px)) 10px;
   }
   .main-showcase-bento {
     padding: 12px 14px;
@@ -2590,7 +2591,7 @@ const relatedProducts = computed(() => {
 
 @media (max-width: 400px) {
   .product-detail-page {
-    padding: 8px 8px 84px 8px;
+    padding: 8px 8px calc(88px + env(safe-area-inset-bottom, 0px)) 8px;
   }
   .main-showcase-bento {
     padding: 10px 10px;
