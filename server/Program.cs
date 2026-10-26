@@ -43,6 +43,7 @@ builder.Services.AddHttpClient("FptAiClient", client =>
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ITelegramService, TelegramService>();
 builder.Services.AddScoped<IProductModerationService, ProductModerationService>();
+builder.Services.AddScoped<IHumanHandoverService, HumanHandoverService>();
 builder.Services.AddHostedService<PythonFaceServiceManager>();
 
 // 4. Cấu hình CORS cho phép Vue 3 Frontend (localhost:5173) gọi API
