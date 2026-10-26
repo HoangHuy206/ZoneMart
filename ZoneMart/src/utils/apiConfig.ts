@@ -30,7 +30,7 @@ export function getBaseApiUrl(): string {
 
   if (isCapacitor) {
     // Kết nối đến máy chủ Backend dev trên máy tính qua mạng Wi-Fi
-    return 'http://192.168.1.16:5000';
+    return 'http://172.16.24.213:5000';
   }
 
   // 4. Mặc định trên Web Desktop (Vite proxy)
@@ -78,7 +78,7 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
     // Fallback cho native app nếu URL relative gặp sự cố
     if (typeof window !== 'undefined' && !targetUrl.startsWith('http')) {
       try {
-        return await fetch('http://192.168.1.16:5000' + targetUrl, init);
+        return await fetch('http://172.16.24.213:5000' + targetUrl, init);
       } catch (fallbackErr) {}
     }
 

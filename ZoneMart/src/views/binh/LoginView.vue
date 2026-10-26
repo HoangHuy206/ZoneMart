@@ -15,7 +15,7 @@ import {
 import { useRouter, useRoute } from 'vue-router';
 import ForgotPasswordForm from './ForgotPasswordForm.vue';
 import { useAuth, type UserRole } from '../../composables/useAuth';
-import { apiFetch } from '../../utils/apiConfig';
+import { apiFetch, getBaseApiUrl } from '../../utils/apiConfig';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
 import FaceScanModal from '../../components/auth/FaceScanModal.vue';
 import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
@@ -86,6 +86,32 @@ const biometricDevice = ref<BiometricDeviceInfo | null>(null);
 const isBiometricChecking = ref(false);
 const showFaceScanModal = ref(false);
 
+// Cấu hình máy chủ IP cho Mobile App (iOS IPA / Android APK)
+const showServerConfigModal = ref(false);
+const customServerUrl = ref('');
+
+const openServerConfig = () => {
+  const current = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_api_server_url') : '';
+  customServerUrl.value = current || getBaseApiUrl() || 'http://172.16.24.213:5000';
+  showServerConfigModal.value = true;
+};
+
+const saveServerConfig = () => {
+  let url = customServerUrl.value.trim().replace(/\/+$/, '');
+  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+    url = 'http://' + url;
+  }
+  if (typeof localStorage !== 'undefined') {
+    if (url) {
+      localStorage.setItem('zonemart_api_server_url', url);
+    } else {
+      localStorage.removeItem('zonemart_api_server_url');
+    }
+  }
+  showServerConfigModal.value = false;
+  toast.success(`Đã cập nhật máy chủ: ${url || 'Mặc định (172.16.24.213:5000)'}!`, 'Cấu Hình Máy Chủ');
+};
+
 onMounted(async () => {
   try {
     biometricDevice.value = await detectBiometricDevice();
@@ -145,7 +171,14 @@ const handleQuickBiometricLogin = async () => {
     }
 
     // BƯỚC 2: CHỈ KHI ĐÃ QUÉT MẶT THÀNH CÔNG THÌ MỚI TIẾN HÀNH ĐĂNG NHẬP
-    const actToUse = targetAccount || savedBioAccount || 'hhuy85895@gmail.com';
+    const actToUse = targetAccount || savedBioAccount;
+    if (!actToUse) {
+      toast.info(
+        `Vui lòng nhập Email / SĐT và Mật khẩu trước một lần để kích hoạt ${deviceLabel} trên thiết bị này!`,
+        `Kích Hoạt ${deviceLabel}`
+      );
+      return;
+    }
     const pwdToUse = targetPassword || (savedBioPass ? atob(savedBioPass) : '123456');
 
     try {
@@ -182,10 +215,21 @@ const handleQuickBiometricLogin = async () => {
 
 // Đăng nhập Chế độ Ngoại tuyến khi máy tính tắt hoặc mất mạng LAN
 
-const handleFaceScanModalSuccess = (_payload?: any) => {
+const handleFaceScanModalSuccess = (payload?: any) => {
   showFaceScanModal.value = false;
+  // 1. ƯU TIÊN: Đăng nhập ngay bằng chính xác tài khoản AI Face Recognition đã nhận diện từ CSDL
+  if (payload && payload.user) {
+    handleFaceLoginSuccess(payload);
+    return;
+  }
+
+  // 2. Dự phòng: Đăng nhập qua tài khoản nhập trên form hoặc đã liên kết
   const savedBioAccount = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_account') : null;
-  const targetAcc = form.account.trim() || savedBioAccount || 'hhuy85895@gmail.com';
+  const targetAcc = form.account.trim() || savedBioAccount;
+  if (!targetAcc) {
+    toast.error('Không tìm thấy tài khoản tương ứng với khuôn mặt quét được.', 'Xác Thực Khuôn Mặt');
+    return;
+  }
   const savedBioPass = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_pass') : null;
   const targetPwd = form.password.trim() || (savedBioPass ? atob(savedBioPass) : '123456');
 
@@ -207,7 +251,8 @@ const handleFaceScanModalSuccess = (_payload?: any) => {
 
 const enterOfflineMode = () => {
   showNotFoundModal.value = false;
-  const targetAcc = form.account.trim() || 'hhuy85895@gmail.com';
+  const savedBioAccount = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_account') : null;
+  const targetAcc = form.account.trim() || savedBioAccount || 'khachhang@zonemart.vn';
   const isSeller = targetAcc.includes('seller') || targetAcc.includes('mai');
   const isShipper = targetAcc.includes('shipper') || targetAcc.includes('nam');
   const isAdmin = targetAcc.includes('admin');
@@ -716,6 +761,17 @@ const handleLogin = async () => {
                   >Đăng ký đối tác giao hàng</router-link
                 >
               </div>
+              <div class="cta-sub-line mt-2 pt-2 border-top" style="border-color: rgba(0,0,0,0.06) !important;">
+                <button
+                  type="button"
+                  class="btn btn-link btn-sm text-muted text-decoration-none p-0"
+                  style="font-size: 11px; opacity: 0.75;"
+                  @click="openServerConfig"
+                  title="Cấu hình địa chỉ IP máy chủ kết nối"
+                >
+                  <i class="bi bi-hdd-network me-1"></i> Máy chủ: {{ getBaseApiUrl() || '172.16.24.213:5000' }}
+                </button>
+              </div>
             </div>
           </form>
         </template>
@@ -864,6 +920,16 @@ const handleLogin = async () => {
             <button
               v-if="modalErrorType === 'NETWORK_ERROR'"
               type="button"
+              class="btn btn-outline-secondary w-100 fw-bold py-2 shadow-sm d-flex align-items-center justify-content-center gap-2"
+              style="border-radius: 12px; font-size: 13px;"
+              @click="openServerConfig"
+            >
+              <span>⚙️ Đổi IP Máy Chủ ({{ getBaseApiUrl() || '172.16.24.213:5000' }})</span>
+            </button>
+
+            <button
+              v-if="modalErrorType === 'NETWORK_ERROR'"
+              type="button"
               class="btn btn-warning w-100 fw-bold py-2 shadow-sm d-flex align-items-center justify-content-center gap-2"
               style="border-radius: 12px; background: linear-gradient(135deg, #f97316, #ea580c); color: #fff; border: none; font-size: 15px;"
               @click="enterOfflineMode"
@@ -913,6 +979,54 @@ const handleLogin = async () => {
       @success="handleFaceScanModalSuccess"
       @close="showFaceScanModal = false"
     />
+
+    <!-- MODAL CẤU HÌNH IP MÁY CHỦ CHO MOBILE APP -->
+    <div
+      v-if="showServerConfigModal"
+      class="modal-overlay"
+      style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);"
+      @click.self="showServerConfigModal = false"
+    >
+      <div class="p-4 shadow-lg text-start" style="max-width: 420px; width: 90%; border-radius: 20px; background: #fff;">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h5 class="fw-bold mb-0 text-dark d-flex align-items-center gap-2">
+            <i class="bi bi-hdd-network text-primary"></i> Cấu Hình IP Máy Chủ
+          </h5>
+          <button type="button" class="btn-close" @click="showServerConfigModal = false"></button>
+        </div>
+        <p class="text-muted small mb-3">
+          Nhập địa chỉ IP máy tính đang chạy ZoneMart Server (ví dụ Wi-Fi hiện tại: <code>http://172.16.24.213:5000</code>).
+        </p>
+        <div class="mb-3">
+          <label class="form-label small fw-bold text-secondary">Địa chỉ máy chủ (URL):</label>
+          <input
+            v-model="customServerUrl"
+            type="text"
+            class="form-control"
+            placeholder="http://172.16.24.213:5000"
+            style="border-radius: 10px; font-family: monospace; font-size: 13px;"
+          />
+        </div>
+        <div class="d-flex gap-2">
+          <button
+            type="button"
+            class="btn btn-primary flex-grow-1 fw-bold"
+            style="border-radius: 10px;"
+            @click="saveServerConfig"
+          >
+            Lưu & Thử Lại
+          </button>
+          <button
+            type="button"
+            class="btn btn-light text-secondary"
+            style="border-radius: 10px;"
+            @click="showServerConfigModal = false"
+          >
+            Hủy
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
