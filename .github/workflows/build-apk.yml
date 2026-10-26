@@ -36,8 +36,10 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: 3. Thiết lập Android SDK
-        uses: android-actions/setup-android@v3
+      - name: 3. Chấp nhận License Android SDK
+        run: |
+          echo "ANDROID_HOME: $ANDROID_HOME"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: 4. Thiết lập Node.js 22 (LTS)
         uses: actions/setup-node@v4
@@ -88,4 +90,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
