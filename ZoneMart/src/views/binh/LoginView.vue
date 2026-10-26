@@ -16,6 +16,7 @@ import { useRouter, useRoute } from 'vue-router';
 import ForgotPasswordForm from './ForgotPasswordForm.vue';
 import { useAuth, type UserRole } from '../../composables/useAuth';
 import { apiFetch, getBaseApiUrl } from '../../utils/apiConfig';
+import { Capacitor } from '@capacitor/core';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
 import FaceScanModal from '../../components/auth/FaceScanModal.vue';
 import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
@@ -92,7 +93,7 @@ const customServerUrl = ref('');
 
 const openServerConfig = () => {
   const current = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_api_server_url') : '';
-  customServerUrl.value = current || getBaseApiUrl() || 'http://172.16.24.213:5000';
+  customServerUrl.value = current || getBaseApiUrl() || 'http://192.168.5.115:5000';
   showServerConfigModal.value = true;
 };
 
@@ -109,7 +110,7 @@ const saveServerConfig = () => {
     }
   }
   showServerConfigModal.value = false;
-  toast.success(`Đã cập nhật máy chủ: ${url || 'Mặc định (172.16.24.213:5000)'}!`, 'Cấu Hình Máy Chủ');
+  toast.success(`Đã cập nhật máy chủ: ${url || 'Mặc định (192.168.5.115:5000)'}!`, 'Cấu Hình Máy Chủ');
 };
 
 onMounted(async () => {
@@ -154,18 +155,27 @@ const handleQuickBiometricLogin = async () => {
     // Gọi cảm biến Native (Vân tay Android hoặc Face ID iOS)
     const nativeVerify = await verifyDeviceFaceId(`Xác thực ${deviceLabel} để đăng nhập tài khoản ZoneMart`);
 
+    const isAndroidPlatform = typeof window !== 'undefined' && (
+      (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') ||
+      biometricDevice.value?.type === 'android-biometric'
+    );
+
     if (nativeVerify.message !== 'NO_NATIVE_BRIDGE') {
       // Đang chạy trên Native App (Capacitor Android hoặc iOS)
       if (!nativeVerify.success) {
-        // BẤM HỦY HOẶC KHÔNG KHỚP -> DỪNG NGAY LẬP TỨC! TUYỆT ĐỐI KHÔNG CHO VÀO!
+        // BẤM HỦY HOẶC KHÔNG KHỚP -> DỪNG NGAY LẬP TỨC!
         toast.error(nativeVerify.message || `Xác thực ${deviceLabel} không khớp hoặc bạn đã hủy.`, deviceLabel);
         return;
       }
       // Quét sinh trắc học thành công 100%!
-      toast.success(`Nhận diện ${deviceLabel} thành công!`, `${deviceLabel} Hợp Lệ`);
+      toast.success(`Xác thực ${deviceLabel} thành công!`, `${deviceLabel} Hợp Lệ`);
     } else {
-      // Đang chạy trên Web Browser (không có Native Bridge):
-      // Bắt buộc mở camera FaceScanModal để quét khuôn mặt!
+      // Nếu là thiết bị Android Native, tuyệt đối KHÔNG mở camera quét mặt:
+      if (isAndroidPlatform) {
+        toast.error('Thiết bị Android chưa bật cảm biến vân tay hoặc chưa cài đặt vân tay trong Cài đặt máy. Vui lòng đăng nhập bằng mật khẩu!', 'Cảm Biến Vân Tay');
+        return;
+      }
+      // Đang chạy trên Web Browser Desktop (không có Native Bridge):
       showFaceScanModal.value = true;
       return;
     }
@@ -769,7 +779,7 @@ const handleLogin = async () => {
                   @click="openServerConfig"
                   title="Cấu hình địa chỉ IP máy chủ kết nối"
                 >
-                  <i class="bi bi-hdd-network me-1"></i> Máy chủ: {{ getBaseApiUrl() || '172.16.24.213:5000' }}
+                  <i class="bi bi-hdd-network me-1"></i> Máy chủ: {{ getBaseApiUrl() || '192.168.5.115:5000' }}
                 </button>
               </div>
             </div>
@@ -924,7 +934,7 @@ const handleLogin = async () => {
               style="border-radius: 12px; font-size: 13px;"
               @click="openServerConfig"
             >
-              <span>⚙️ Đổi IP Máy Chủ ({{ getBaseApiUrl() || '172.16.24.213:5000' }})</span>
+              <span>⚙️ Đổi IP Máy Chủ ({{ getBaseApiUrl() || '192.168.5.115:5000' }})</span>
             </button>
 
             <button
@@ -995,7 +1005,7 @@ const handleLogin = async () => {
           <button type="button" class="btn-close" @click="showServerConfigModal = false"></button>
         </div>
         <p class="text-muted small mb-3">
-          Nhập địa chỉ IP máy tính đang chạy ZoneMart Server (ví dụ Wi-Fi hiện tại: <code>http://172.16.24.213:5000</code>).
+          Nhập địa chỉ IP máy tính đang chạy ZoneMart Server (ví dụ Wi-Fi hiện tại: <code>http://192.168.5.115:5000</code>).
         </p>
         <div class="mb-3">
           <label class="form-label small fw-bold text-secondary">Địa chỉ máy chủ (URL):</label>
@@ -1003,7 +1013,7 @@ const handleLogin = async () => {
             v-model="customServerUrl"
             type="text"
             class="form-control"
-            placeholder="http://172.16.24.213:5000"
+            placeholder="http://192.168.5.115:5000"
             style="border-radius: 10px; font-family: monospace; font-size: 13px;"
           />
         </div>

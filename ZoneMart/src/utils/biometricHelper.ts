@@ -125,9 +125,9 @@ export async function detectBiometricDevice(): Promise<BiometricDeviceInfo> {
     }
   } else if (isAndroid) {
     type = 'android-biometric';
-    label = 'Vân tay / Khuôn mặt Android';
-    subLabel = 'Xác thực sinh trắc học Android';
-    actionTitle = 'Đăng nhập nhanh bằng Vân tay / Khuôn mặt';
+    label = 'Vân tay Android';
+    subLabel = 'Cảm biến vân tay thiết bị';
+    actionTitle = 'Đăng nhập nhanh bằng Cảm biến vân tay';
     iconType = 'fingerprint';
   } else if (isMac) {
     type = 'mac-touchid';
@@ -331,8 +331,8 @@ export async function verifyDeviceBiometrics(
       }
 
       const res = await BiometricAuth.authenticate({
-        title: 'Xác Thực Sinh Trắc Học ZoneMart',
-        subtitle: 'Chạm cảm biến vân tay hoặc nhìn vào camera để xác thực',
+        title: 'Xác Thực Cảm Biến Vân Tay',
+        subtitle: 'Chạm vào cảm biến vân tay để tiếp tục',
         description: reason,
         negativeButtonText: 'Hủy bỏ',
       });
