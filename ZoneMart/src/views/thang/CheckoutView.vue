@@ -644,7 +644,7 @@ const onPaymentConfirmed = (paidAmount?: number) => {
       paymentMethod: "Chuyển khoản QR",
       createdAt: dateStr,
       status: "pending",
-      statusText: "Đang chờ tài xế nhận đơn",
+      statusText: "Đã thanh toán • Chờ quán xác nhận",
       customer: {
         lat: currentCoords.value?.lat || 21.0333,
         lng: currentCoords.value?.lng || 105.7983,
@@ -1308,7 +1308,7 @@ const handlePlaceOrder = () => {
       paymentMethod: "Tiền mặt COD",
       createdAt: dateStr,
       status: "pending",
-      statusText: "Đang chờ tài xế nhận đơn",
+      statusText: "Chờ quán xác nhận",
       customer: {
         lat: currentCoords.value?.lat || 21.0333,
         lng: currentCoords.value?.lng || 105.7983,

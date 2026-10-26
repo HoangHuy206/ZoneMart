@@ -204,6 +204,21 @@ function loadProducts(): ModeratedProduct[] {
     }
     let changed = false;
 
+    // Đồng bộ tồn kho từ persistent overrides nếu có
+    try {
+      const rawO = localStorage.getItem("zonemart_stock_overrides");
+      if (rawO) {
+        const overrides = JSON.parse(rawO);
+        items.forEach(it => {
+          const norm = stripAccents(it.name);
+          const low = (it.name || "").toLowerCase().trim();
+          if (typeof overrides[it.id] === "number") it.stock = overrides[it.id];
+          else if (typeof overrides[low] === "number") it.stock = overrides[low];
+          else if (typeof overrides[norm] === "number") it.stock = overrides[norm];
+        });
+      }
+    } catch {}
+
     // 1. Lọc bỏ hoàn toàn các sản phẩm đã bị Từ Chối / Gỡ bài / Xóa bỏ
     items = items.filter(item => {
       const normName = stripAccents(item.name).trim();
@@ -501,6 +516,23 @@ export async function fetchRealProductsFromBackend(): Promise<ModeratedProduct[]
             aiFlag = "Sản phẩm thực tế từ gian hàng đang chờ Ban Quản Trị đối soát và thẩm định mở bán.";
           }
 
+          let effectiveStock = bp.stockQuantity ?? 30;
+          try {
+            const rawO = localStorage.getItem("zonemart_stock_overrides");
+            if (rawO) {
+              const overrides = JSON.parse(rawO);
+              const lowName = pName.toLowerCase();
+              const normName = stripAccents(pName);
+              if (typeof overrides[bp.id] === "number") {
+                effectiveStock = Math.min(effectiveStock, overrides[bp.id]);
+              } else if (typeof overrides[lowName] === "number") {
+                effectiveStock = Math.min(effectiveStock, overrides[lowName]);
+              } else if (typeof overrides[normName] === "number") {
+                effectiveStock = Math.min(effectiveStock, overrides[normName]);
+              }
+            }
+          } catch {}
+
           mappedList.push({
             id: bp.id || `p-${Date.now()}`,
             storeId: bp.storeId || "",
@@ -508,7 +540,7 @@ export async function fetchRealProductsFromBackend(): Promise<ModeratedProduct[]
             category: bp.category || "Thực phẩm tươi",
             price: bp.price || 0,
             unit: bp.weight ? `${bp.weight} kg` : (bp.unit || "Khay / Gói"),
-            stock: bp.stockQuantity ?? 30,
+            stock: effectiveStock,
             image: realImage,
             status: prodStatus,
             isAvailable: isApproved,
@@ -1172,24 +1204,62 @@ export function useProductModeration() {
     if (!items || !items.length) return;
     let hasChanges = false;
 
+    let stockOverrides: Record<string, number> = {};
+    try {
+      const rawO = localStorage.getItem("zonemart_stock_overrides");
+      if (rawO) stockOverrides = JSON.parse(rawO);
+    } catch {}
+
     items.forEach((item) => {
       const qty = (item.quantity && item.quantity > 0) ? item.quantity : ((item.qty && item.qty > 0) ? item.qty : 1);
-      const targetId = item.id || item.productId;
-      const targetName = (item.name || "").toLowerCase().trim();
+      const targetId = (item.id || item.productId || "").trim();
+      const targetName = (item.name || "").trim();
+      const targetNameLower = targetName.toLowerCase();
+      const targetNameNorm = stripAccents(targetName);
 
-      // Tìm sản phẩm khớp theo ID hoặc Tên sản phẩm
-      const prod = allProducts.value.find((p) => {
+      // Tìm sản phẩm khớp theo ID hoặc Tên sản phẩm trong allProducts
+      const matched = allProducts.value.filter((p) => {
         if (targetId && (p.id === targetId || (p as any).productId === targetId)) return true;
-        const pName = (p.name || "").toLowerCase().trim();
-        return pName === targetName || (targetName && (pName.includes(targetName) || targetName.includes(pName)));
+        const pNameLower = (p.name || "").trim().toLowerCase();
+        const pNameNorm = stripAccents(p.name);
+        return (
+          pNameLower === targetNameLower ||
+          (targetNameLower && (pNameLower.includes(targetNameLower) || targetNameLower.includes(pNameLower))) ||
+          (targetNameNorm && (pNameNorm.includes(targetNameNorm) || targetNameNorm.includes(pNameNorm)))
+        );
       });
 
-      if (prod) {
-        const curStock = typeof prod.stock === "number" ? prod.stock : 30;
-        prod.stock = Math.max(0, curStock - qty);
+      if (matched.length > 0) {
+        matched.forEach((prod) => {
+          const curStock = typeof prod.stock === "number" ? prod.stock : 30;
+          prod.stock = Math.max(0, curStock - qty);
+          hasChanges = true;
+
+          if (prod.id) stockOverrides[prod.id] = prod.stock;
+          if (prod.name) {
+            stockOverrides[prod.name.trim().toLowerCase()] = prod.stock;
+            stockOverrides[stripAccents(prod.name)] = prod.stock;
+          }
+        });
+      } else {
+        // Lưu override ngay cả khi allProducts chưa kịp nạp xong
+        if (targetId) {
+          const cur = stockOverrides[targetId] ?? 50;
+          stockOverrides[targetId] = Math.max(0, cur - qty);
+        }
+        if (targetName) {
+          const cur = stockOverrides[targetNameLower] ?? 50;
+          const nextVal = Math.max(0, cur - qty);
+          stockOverrides[targetNameLower] = nextVal;
+          stockOverrides[targetNameNorm] = nextVal;
+        }
         hasChanges = true;
       }
     });
+
+    try {
+      localStorage.setItem("zonemart_stock_overrides", JSON.stringify(stockOverrides));
+    } catch {}
 
     if (hasChanges) {
       allProducts.value = [...allProducts.value];
@@ -1209,6 +1279,12 @@ export function useProductModeration() {
           })
         }).catch(() => {});
       } catch {}
+
+      if (typeof window !== "undefined") {
+        try {
+          window.dispatchEvent(new CustomEvent("zonemart:products-changed"));
+        } catch {}
+      }
     }
   };
 

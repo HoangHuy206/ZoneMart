@@ -38,7 +38,6 @@ let incomingTimer: any = null;
 const incomingDistance = ref(0);
 let unsubscribeOrderDispatch: (() => void) | null = null;
 let unsubscribeStatusChanged: (() => void) | null = null;
-let unsubscribeOrderCreated: (() => void) | null = null;
 const ignoredOrderIds = new Set<string>();
 
 // 1. Trạng thái hoạt động (Mặc định: Tạm nghỉ)
@@ -707,9 +706,10 @@ const triggerIncomingOrderCheck = (order: RealtimeOrder) => {
     return;
   }
 
-  // 2. Chấp nhận nổ đơn cả khi quán đã xác nhận (confirmed) hoặc đơn hỏa tốc mới tạo (pending)
-  if (order.status !== "confirmed" && order.status !== "pending") {
-    console.log("[ShipperView] Đơn không ở trạng thái chờ tài xế -> Không nổ đơn.");
+  // 2. CHỈ NỔ ĐƠN KHI GIAN HÀNG ĐÃ XÁC NHẬN (status === "confirmed")
+  // Tuyệt đối không nổ đơn khi người mua vừa đặt/thanh toán mà đơn còn pending (chờ quán xác nhận)
+  if (order.status !== "confirmed") {
+    console.log("[ShipperView] Đơn chưa được gian hàng xác nhận (status: " + order.status + ") -> Không nổ đơn cho tài xế.");
     return;
   }
 
@@ -783,7 +783,7 @@ const toggleOnline = () => {
         const orders = orderRealtimeService.getAllOrders();
         const pending = orders.find(
           (o) =>
-            (o.status === "confirmed" || o.status === "pending") &&
+            o.status === "confirmed" &&
             !ignoredOrderIds.has(o.id) &&
             currentStep.value === "idle"
         );
@@ -815,11 +815,11 @@ const toggleOnline = () => {
   });
 };
 
-// Danh sách các đơn chờ tài xế nhận trong hệ thống
+// Danh sách các đơn chờ tài xế nhận trong hệ thống (CHỈ các đơn đã được Gian Hàng bấm Xác nhận)
 const availableOrdersList = computed(() => {
   const all = orderRealtimeService.getAllOrders();
   return all.filter((o: RealtimeOrder) =>
-    (o.status === "confirmed" || o.status === "pending") &&
+    o.status === "confirmed" &&
     o.id !== activeOrder.value?.id &&
     o.id !== activeOrder.value?.orderId &&
     !ignoredOrderIds.has(o.id)
@@ -1023,20 +1023,19 @@ onMounted(() => {
 
   // 1. Lắng nghe sự kiện quán đã XÁC NHẬN đơn hàng -> Sẵn sàng nổ đơn trong bán kính 3km
   unsubscribeOrderDispatch = orderRealtimeService.onOrderDispatchReady((order) => {
-    triggerIncomingOrderCheck(order);
-  });
-
-  // 2. Lắng nghe trạng thái đơn chuyển sang 'confirmed'
-  unsubscribeStatusChanged = orderRealtimeService.onOrderStatusChanged(({ status, order }) => {
-    if ((status === "confirmed" || status === "pending") && order) {
+    if (order && order.status === "confirmed") {
       triggerIncomingOrderCheck(order);
     }
   });
 
-  // 3. Lắng nghe ngay khi có đơn hàng hỏa tốc mới tạo từ người mua
-  unsubscribeOrderCreated = orderRealtimeService.onOrderCreated((order) => {
-    triggerIncomingOrderCheck(order);
+  // 2. Lắng nghe trạng thái đơn chuyển sang 'confirmed'
+  unsubscribeStatusChanged = orderRealtimeService.onOrderStatusChanged(({ status, order }) => {
+    if (status === "confirmed" && order) {
+      triggerIncomingOrderCheck(order);
+    }
   });
+
+  // 3. Tài xế KHÔNG lắng nghe onOrderCreated (đơn mới tạo chỉ gửi về Gian Hàng để Quán duyệt)
 
   // Khóa cuộn trang toàn cục để thanh menu và nút công tắc trên di động không bao giờ bị trôi/mất
   document.documentElement.style.overflow = 'hidden';
@@ -1055,7 +1054,6 @@ onUnmounted(() => {
   if (incomingTimer) clearInterval(incomingTimer);
   if (unsubscribeOrderDispatch) unsubscribeOrderDispatch();
   if (unsubscribeStatusChanged) unsubscribeStatusChanged();
-  if (unsubscribeOrderCreated) unsubscribeOrderCreated();
   stopLocationWatch();
   if (map) {
     map.remove();

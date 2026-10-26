@@ -376,7 +376,8 @@ public class ProductsController : ControllerBase
                 var filterBuilder = Builders<Product>.Filter;
                 var filters = new List<FilterDefinition<Product>>();
 
-                if (!string.IsNullOrWhiteSpace(it.ProductId))
+                // Chỉ thêm filter Id nếu ProductId là ObjectId 24 ký tự hợp lệ để tránh FormatException
+                if (!string.IsNullOrWhiteSpace(it.ProductId) && MongoDB.Bson.ObjectId.TryParse(it.ProductId, out _))
                 {
                     filters.Add(filterBuilder.Eq(p => p.Id, it.ProductId));
                 }
@@ -388,12 +389,34 @@ public class ProductsController : ControllerBase
                     filters.Add(filterBuilder.Regex(p => p.ProductName, new BsonRegularExpression(System.Text.RegularExpressions.Regex.Escape(cleanName), "i")));
                 }
 
+                int qty = it.Quantity > 0 ? it.Quantity : 1;
+                List<Product> matchedProducts = new();
+
                 if (filters.Count > 0)
                 {
                     var filter = filterBuilder.Or(filters);
-                    int qty = it.Quantity > 0 ? it.Quantity : 1;
-                    var update = Builders<Product>.Update.Inc(p => p.StockQuantity, -qty);
-                    await _mongoService.Products.UpdateOneAsync(filter, update);
+                    matchedProducts = await _mongoService.Products.Find(filter).ToListAsync();
+                }
+
+                // Fallback nếu chưa tìm thấy: tìm kiếm mờ theo tên sản phẩm
+                if (matchedProducts.Count == 0 && !string.IsNullOrWhiteSpace(it.ProductName))
+                {
+                    string normName = it.ProductName.Trim().ToLowerInvariant();
+                    var allDbProducts = await _mongoService.Products.Find(_ => true).ToListAsync();
+                    matchedProducts = allDbProducts.Where(p =>
+                        !string.IsNullOrWhiteSpace(p.ProductName) &&
+                        (p.ProductName.Trim().ToLowerInvariant().Contains(normName) ||
+                         normName.Contains(p.ProductName.Trim().ToLowerInvariant()))
+                    ).ToList();
+                }
+
+                foreach (var prod in matchedProducts)
+                {
+                    int currentStock = prod.StockQuantity;
+                    int newStock = Math.Max(0, currentStock - qty);
+                    var update = Builders<Product>.Update.Set(p => p.StockQuantity, newStock);
+                    await _mongoService.Products.UpdateOneAsync(filterBuilder.Eq(p => p.Id, prod.Id), update);
+                    Console.WriteLine($"[ProductsController.ReduceStock] Đã trừ kho sản phẩm '{prod.ProductName}': {currentStock} -> {newStock} (SL mua: {qty})");
                 }
             }
 
