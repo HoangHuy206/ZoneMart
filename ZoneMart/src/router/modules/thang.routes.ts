@@ -27,12 +27,20 @@ export const thangRoutes: RouteRecordRaw[] = [
     path: '/checkout',
     name: 'Checkout',
     component: () => import('../../views/thang/CheckoutView.vue'),
-    meta: { title: 'Thanh Toán Đơn Hàng - ZoneMart' },
+    meta: {
+      title: 'Thanh Toán Đơn Hàng - ZoneMart',
+      requiresAuth: true,
+      roles: ['buyer'],
+    },
   },
   {
     path: '/buyer-orders',
     name: 'BuyerOrders',
     component: () => import('../../views/thang/BuyerOrdersView.vue'),
-    meta: { title: 'Đơn Mua Của Bạn - ZoneMart' },
+    meta: {
+      title: 'Đơn Mua Của Bạn - ZoneMart',
+      requiresAuth: true,
+      roles: ['buyer'],
+    },
   },
 ];

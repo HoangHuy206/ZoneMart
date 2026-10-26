@@ -45,6 +45,9 @@ public class User
     [BsonElement("is_manager")]
     public bool IsManager { get; set; } = false;
 
+    [BsonElement("permissions")]
+    public List<string> Permissions { get; set; } = new();
+
     [BsonElement("is_deleted")]
     public bool IsDeleted { get; set; } = false;
 
@@ -77,4 +80,7 @@ public class User
 
     [BsonElement("face_registered_at")]
     public DateTime? FaceRegisteredAt { get; set; }
+
+    [BsonElement("passkey_credentials")]
+    public List<PasskeyCredential> PasskeyCredentials { get; set; } = new();
 }

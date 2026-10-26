@@ -329,3 +329,52 @@ input, select, textarea {
     border-right-color: var(--border);
   }
 }
+
+
+/* ================================================================
+   ZoneMart Multi-Device & Mobile Responsive Helpers
+   ================================================================ */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+}
+
+/* Dynamic Viewport Units */
+.h-dvh {
+  height: 100vh;
+  height: 100dvh;
+}
+.min-h-dvh {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Safe Area Insets (iPhone Notch & Home Bar) */
+.safe-pt {
+  padding-top: max(12px, env(safe-area-inset-top, 12px));
+}
+.safe-pb {
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
+}
+
+/* Cuộn mượt trên màn hình cảm ứng */
+.scroll-touch {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Responsive Auto-fit Grid */
+.responsive-grid-auto {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+
+/* Chống tự động phóng to màn hình trên iOS khi chạm vào ô nhập dữ liệu */
+@media (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}

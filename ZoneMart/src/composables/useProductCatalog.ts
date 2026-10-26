@@ -1,22 +1,39 @@
 import { ref, computed } from "vue";
-import { useProductModeration } from "./useProductModeration";
+import { useProductModeration, fetchRealProductsFromBackend } from "./useProductModeration";
+import { apiFetch } from "../utils/apiConfig";
 
 const catalogVersion = ref(0);
-const apiStores = ref<any[]>([]);
+const STORAGE_KEY_DB_STORES = "zonemart_db_stores";
+
+const getInitialStores = (): any[] => {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DB_STORES);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+};
+
+const apiStores = ref<any[]>(getInitialStores());
 let isFetchingStores = false;
 
-const fetchDbStores = async () => {
+export const fetchDbStores = async () => {
   if (typeof window === "undefined" || isFetchingStores) return;
   isFetchingStores = true;
   try {
-    const res = await fetch("/api/products/stores").catch(() => null);
+    const res = await apiFetch("/api/products/stores").catch(() => null);
     if (res && res.ok) {
       const json = await res.json().catch(() => null);
       if (json && json.success && Array.isArray(json.data)) {
         apiStores.value = json.data;
+        try {
+          localStorage.setItem(STORAGE_KEY_DB_STORES, JSON.stringify(json.data));
+        } catch {}
         catalogVersion.value++;
       }
     }
+  } catch (err) {
+    console.warn("Lỗi fetchDbStores:", err);
   } finally {
     isFetchingStores = false;
   }
@@ -25,12 +42,17 @@ const fetchDbStores = async () => {
 if (typeof window !== "undefined") {
   setTimeout(() => {
     fetchDbStores();
-  }, 120);
+    fetchRealProductsFromBackend();
+  }, 50);
   window.addEventListener("zonemart:products-changed", () => {
     catalogVersion.value++;
   });
   window.addEventListener("storage", (e) => {
-    if (e.key === "zonemart_moderated_products") {
+    if (
+      e.key === "zonemart_moderated_products" ||
+      e.key === "zonemart_product_bus_event" ||
+      e.key === STORAGE_KEY_DB_STORES
+    ) {
       catalogVersion.value++;
     }
   });
@@ -1918,11 +1940,18 @@ export function useProductCatalog() {
     void catalogVersion.value;
     const dynamicActive = moderation.activeProducts.value.map((p) => {
       let cat: "food" | "veggie" | "fastfood" | "beverage" | "household" = "food";
-      if (p.category === "Rau củ quả") cat = "veggie";
-      else if (p.category === "Thịt cá tươi") cat = "food";
-      else if (p.category === "Trái cây tươi") cat = "beverage";
-      else if (p.category === "Món ăn nóng") cat = "fastfood";
-      else cat = "household";
+      const rawCat = (p.category || "").toLowerCase();
+      if (rawCat.includes("rau") || rawCat.includes("củ") || rawCat.includes("quả") || rawCat.includes("nông sản") || rawCat.includes("hữu cơ") || rawCat.includes("vietgap")) {
+        cat = "veggie";
+      } else if (rawCat.includes("món") || rawCat.includes("nóng") || rawCat.includes("cơm") || rawCat.includes("bánh mì") || rawCat.includes("ăn") || rawCat.includes("chế biến")) {
+        cat = "fastfood";
+      } else if (rawCat.includes("uống") || rawCat.includes("trái cây") || rawCat.includes("nước") || rawCat.includes("hoa quả") || rawCat.includes("trà") || rawCat.includes("sữa")) {
+        cat = "beverage";
+      } else if (rawCat.includes("gia dụng") || rawCat.includes("gia đình") || rawCat.includes("nhu yếu") || rawCat.includes("hàng ngày")) {
+        cat = "household";
+      } else {
+        cat = "food";
+      }
 
       let cleanEmail = (p.sellerEmail || "").toLowerCase().trim();
       let storeAddr = "36 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy, Hà Nội";
@@ -1992,7 +2021,7 @@ export function useProductCatalog() {
         reviewsCount: 14,
         sold: 42,
         stock: p.stock || 50,
-        description: `Sản phẩm ${p.name} tươi sạch thu hoạch trực tiếp từ ${resolvedStoreName}. Đã trải qua quy trình kiểm định AI Vision Guard của sàn thương mại điện tử ZoneMart.`,
+        description: p.description || `Sản phẩm ${p.name} tươi sạch thu hoạch trực tiếp từ ${resolvedStoreName}. Đã trải qua quy trình kiểm định an toàn chất lượng của sàn thương mại điện tử ZoneMart.`,
         highlights: [
           "Nông sản sạch thu hoạch tự nhiên trong ngày",
           "Đã vượt qua kiểm định AI an toàn thực phẩm",
@@ -2026,10 +2055,12 @@ export function useProductCatalog() {
       } as CatalogProduct;
     });
 
-    return [
-      ...dynamicActive.filter((dp) => !CATALOG_PRODUCTS.some((p) => p.id === dp.id)),
-      ...CATALOG_PRODUCTS
-    ];
+    // Ưu tiên hiển thị 100% dữ liệu sản phẩm thực từ MongoDB Atlas
+    if (dynamicActive.length > 0) {
+      return dynamicActive;
+    }
+    // Fallback chỉ khi thiết bị hoàn toàn offline và chưa từng tải được dữ liệu
+    return CATALOG_PRODUCTS;
   });
 
   // Danh sách toàn bộ gian hàng trích xuất tự động từ MongoDB và sản phẩm
@@ -2103,7 +2134,7 @@ export function useProductCatalog() {
       allProducts.value.find((p) => p.id.toLowerCase() === targetId) ||
       allProducts.value.find((p) => p.id.toLowerCase() === `p${cleanNumId}`) ||
       allProducts.value.find((p) => p.id.toLowerCase() === cleanNumId) ||
-      CATALOG_PRODUCTS[0]
+      allProducts.value[0]
     );
   };
 

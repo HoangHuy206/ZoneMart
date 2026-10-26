@@ -88,7 +88,7 @@
     "amount": 40500,
     "time": 1789369777873,
     "bankAccount": "28122068866",
-    "raw": "\u002B40.500 VND | TK: TPBank - 28122068866 | 14/09/2026 12:56:10 | 29231468198 | ND: ZM643700"
+    "raw": "+40.500 VND | TK: TPBank - 28122068866 | 14/09/2026 12:56:10 | 29231468198 | ND: ZM643700"
   },
   "ZM999111": {
     "code": "ZM999111",
@@ -108,42 +108,42 @@
     "amount": 57500,
     "time": 1789369777873,
     "bankAccount": "28122068866",
-    "raw": "\u002B57.500 VND | TK: TPBank - 28122068866 | 14/09/2026 13:09:15 | 29231703350 | ND: ZM121316"
+    "raw": "+57.500 VND | TK: TPBank - 28122068866 | 14/09/2026 13:09:15 | 29231703350 | ND: ZM121316"
   },
   "ZM418675": {
     "code": "ZM418675",
     "amount": 40500,
     "time": 1789369777872,
     "bankAccount": "28122068866",
-    "raw": "\u002B40.500 VND | TK: TPBank - 28122068866 | 14/09/2026 13:35:14 | 29232142711 | ND: ZM418675"
+    "raw": "+40.500 VND | TK: TPBank - 28122068866 | 14/09/2026 13:35:14 | 29232142711 | ND: ZM418675"
   },
   "ZM728299": {
     "code": "ZM728299",
     "amount": 58500,
     "time": 1789369777872,
     "bankAccount": "28122068866",
-    "raw": "\u002B58.500 VND | TK: TPBank - 28122068866 | 14/09/2026 13:43:12 | 29232326568 | ND: ZM728299"
+    "raw": "+58.500 VND | TK: TPBank - 28122068866 | 14/09/2026 13:43:12 | 29232326568 | ND: ZM728299"
   },
   "ZM913911": {
     "code": "ZM913911",
     "amount": 58500,
     "time": 1789372926642,
     "bankAccount": "28122068866",
-    "raw": "\u002B58.500 VND | TK: TPBank - 28122068866 | 14/09/2026 14:56:47 | 29233703709 | ND: ZM913911"
+    "raw": "+58.500 VND | TK: TPBank - 28122068866 | 14/09/2026 14:56:47 | 29233703709 | ND: ZM913911"
   },
   "ZM142844": {
     "code": "ZM142844",
     "amount": 40500,
     "time": 1789373394096,
     "bankAccount": "28122068866",
-    "raw": "\u002B40.500 VND | TK: TPBank - 28122068866 | 14/09/2026 15:05:33 | 29233869705 | ND: ZM142844"
+    "raw": "+40.500 VND | TK: TPBank - 28122068866 | 14/09/2026 15:05:33 | 29233869705 | ND: ZM142844"
   },
   "ZM585976": {
     "code": "ZM585976",
     "amount": 40500,
     "time": 1789373609690,
     "bankAccount": "28122068866",
-    "raw": "\u002B40.500 VND | TK: TPBank - 28122068866 | 14/09/2026 15:13:28 | 29234017310 | ND: ZM585976"
+    "raw": "+40.500 VND | TK: TPBank - 28122068866 | 14/09/2026 15:13:28 | 29234017310 | ND: ZM585976"
   },
   "ZM999888": {
     "code": "ZM999888",
@@ -174,7 +174,7 @@
     "amount": 40500,
     "time": 1789374997423,
     "bankAccount": "28122068866",
-    "raw": "\u002B40.500 VND | TK: TPBank - 28122068866 | 14/09/2026 15:36:34 | 29234450872 | ND: ZM116698"
+    "raw": "+40.500 VND | TK: TPBank - 28122068866 | 14/09/2026 15:36:34 | 29234450872 | ND: ZM116698"
   },
   "ZM777666": {
     "code": "ZM777666",
@@ -194,14 +194,14 @@
     "amount": 40500,
     "time": 1789378096923,
     "bankAccount": "28122068866",
-    "raw": "\u002B40.500 VND | TK: TPBank - 28122068866 | 14/09/2026 16:28:14 | 29235488019 | ND: ZM560807"
+    "raw": "+40.500 VND | TK: TPBank - 28122068866 | 14/09/2026 16:28:14 | 29235488019 | ND: ZM560807"
   },
   "ZM447358": {
     "code": "ZM447358",
     "amount": 57500,
     "time": 1789398542059,
     "bankAccount": "28122068866",
-    "raw": "\u002B57.500 VND | TK: TPBank - 28122068866 | 14/09/2026 22:09:00 | 29243898334 | ND: ZM447358"
+    "raw": "+57.500 VND | TK: TPBank - 28122068866 | 14/09/2026 22:09:00 | 29243898334 | ND: ZM447358"
   },
   "ZM888123": {
     "code": "ZM888123",
@@ -535,7 +535,23 @@
     "amount": 40000,
     "time": 1791875391478,
     "bankAccount": "28122068866",
-    "raw": "Kh\u1EDBp t\u1EEB giao d\u1ECBch TPBank SePay Telegram 40,000\u0111"
+    "raw": {
+      "id": "4a635b5b-bef8-11f1-b21a-a6006ab65aca",
+      "transaction_date": "2026-10-03 14:01:43",
+      "account_number": "28122068866",
+      "va": null,
+      "transfer_type": "in",
+      "amount_in": 40000,
+      "amount_out": 0,
+      "accumulated": 265905,
+      "transaction_content": "ZM879700",
+      "reference_number": "037ITC1262760789",
+      "code": null,
+      "bank_brand_name": "TPBank",
+      "bank_account_id": "29c62456-b2a6-11f1-b21a-a6006ab65aca",
+      "va_id": null,
+      "webhook_success": 0
+    }
   },
   "ZM755932": {
     "code": "ZM755932",
@@ -877,6 +893,75 @@
       "accumulated": 73000,
       "transaction_content": "ZM879124",
       "reference_number": "037ITC1262880605",
+      "code": null,
+      "bank_brand_name": "TPBank",
+      "bank_account_id": "29c62456-b2a6-11f1-b21a-a6006ab65aca",
+      "va_id": null,
+      "webhook_success": 0
+    }
+  },
+  "ZM482182": {
+    "code": "ZM482182",
+    "amount": 30000,
+    "time": 1792916767858,
+    "bankAccount": "28122068866",
+    "raw": {
+      "id": "ce9acd64-d026-11f1-8f53-a6006ab65aca",
+      "transaction_date": "2026-10-25 10:47:30",
+      "account_number": "28122068866",
+      "va": null,
+      "transfer_type": "in",
+      "amount_in": 30000,
+      "amount_out": 0,
+      "accumulated": 163003,
+      "transaction_content": "ZM482182",
+      "reference_number": "037ITC1262990263",
+      "code": null,
+      "bank_brand_name": "TPBank",
+      "bank_account_id": "29c62456-b2a6-11f1-b21a-a6006ab65aca",
+      "va_id": null,
+      "webhook_success": 0
+    }
+  },
+  "ZM974187": {
+    "code": "ZM974187",
+    "amount": 30000,
+    "time": 1792916768038,
+    "bankAccount": "28122068866",
+    "raw": {
+      "id": "aea161e5-d025-11f1-8f53-a6006ab65aca",
+      "transaction_date": "2026-10-25 10:39:27",
+      "account_number": "28122068866",
+      "va": null,
+      "transfer_type": "in",
+      "amount_in": 30000,
+      "amount_out": 0,
+      "accumulated": 133003,
+      "transaction_content": "ZM974187",
+      "reference_number": "037ITC1262990247",
+      "code": null,
+      "bank_brand_name": "TPBank",
+      "bank_account_id": "29c62456-b2a6-11f1-b21a-a6006ab65aca",
+      "va_id": null,
+      "webhook_success": 0
+    }
+  },
+  "ZM227557": {
+    "code": "ZM227557",
+    "amount": 30000,
+    "time": 1792916768051,
+    "bankAccount": "28122068866",
+    "raw": {
+      "id": "fbcad278-d017-11f1-8f53-a6006ab65aca",
+      "transaction_date": "2026-10-25 09:01:24",
+      "account_number": "28122068866",
+      "va": null,
+      "transfer_type": "in",
+      "amount_in": 30000,
+      "amount_out": 0,
+      "accumulated": 103003,
+      "transaction_content": "ZM227557",
+      "reference_number": "037ITC1262990134",
       "code": null,
       "bank_brand_name": "TPBank",
       "bank_account_id": "29c62456-b2a6-11f1-b21a-a6006ab65aca",

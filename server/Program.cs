@@ -1,3 +1,4 @@
+using Fido2NetLib;
 using ZoneMart.Server.Services;
 using ZoneMart.Server.Settings;
 
@@ -45,13 +46,31 @@ builder.Services.AddScoped<ITelegramService, TelegramService>();
 builder.Services.AddScoped<IProductModerationService, ProductModerationService>();
 builder.Services.AddScoped<IHumanHandoverService, HumanHandoverService>();
 builder.Services.AddHostedService<PythonFaceServiceManager>();
+builder.Services.AddSingleton<OrderRealtimeManager>();
 
-// 4. Cấu hình CORS cho phép Vue 3 Frontend (localhost:5173) gọi API
+// 4. MemoryCache & WebAuthn / Passkeys (FIDO2)
+builder.Services.AddMemoryCache();
+builder.Services.AddFido2(options =>
+{
+    options.RPID = "localhost";
+    options.RPName = "ZoneMart";
+    options.Origins = new HashSet<string>
+    {
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5000",
+        "http://127.0.0.1:5000",
+        "https://localhost:5173",
+        "https://localhost:5000"
+    };
+});
+
+// 5. Cấu hình CORS cho phép Vue 3 Frontend, Capacitor iOS & LAN gọi API
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowVueClient", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://127.0.0.1:5173")
+        policy.SetIsOriginAllowed(origin => true)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -78,6 +97,15 @@ app.UseSwaggerUI();
 
 app.UseCors("AllowVueClient");
 
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Append("X-Frame-Options", "SAMEORIGIN");
+    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    await next();
+});
+
+
+
 // app.UseHttpsRedirection();
 
 app.UseAuthorization();
@@ -87,5 +115,9 @@ app.MapControllers();
 Console.WriteLine("🚀 ZoneMart C# ASP.NET Core Web API đang khởi động...");
 Console.WriteLine("📧 Đã nạp cấu hình gửi thư Gmail: hh9393100@gmail.com");
 Console.WriteLine("🤖 Đã nạp cấu hình Bot Telegram: @ZoneMarttt_bot");
+Console.WriteLine("🛡️ Đã sẵn sàng hệ thống WebAuthn / Passkey Sinh trắc học!");
 
-app.Run("http://localhost:5000");
+var listenUrl = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://0.0.0.0:5000";
+Console.WriteLine($"🌐 Lắng nghe Backend C# trên tất cả cổng mạng LAN: {listenUrl}");
+
+app.Run(listenUrl);

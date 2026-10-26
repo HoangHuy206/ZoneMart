@@ -9,13 +9,14 @@
  * 4. Thống kê thu nhập ca làm việc hôm nay
  * ================================================================
  */
-import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
 import { useToast } from "../../composables/useToast";
 import { orderRealtimeService, type RealtimeOrder } from "../../services/orderRealtimeService";
 import FaceScanModal from "../../components/auth/FaceScanModal.vue";
 import { apiFetch } from "../../utils/apiConfig";
+import { getSafeCurrentLocation } from "../../composables/useSafeLocation";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -31,6 +32,7 @@ let incomingTimer: any = null;
 const incomingDistance = ref(0);
 let unsubscribeOrderDispatch: (() => void) | null = null;
 let unsubscribeStatusChanged: (() => void) | null = null;
+let unsubscribeOrderCreated: (() => void) | null = null;
 const ignoredOrderIds = new Set<string>();
 
 // 1. Trạng thái hoạt động (Mặc định: Tạm nghỉ)
@@ -120,7 +122,7 @@ const loadDriverProfile = async () => {
       // Query API endpoint để đồng bộ thông tin mới nhất từ CSDL MongoDB Atlas
       const accountQuery = u.phoneEmail || u.phoneNumber || driverProfile.phoneEmail;
       if (accountQuery) {
-        const res = await fetch(`/api/auth/shipper-profile?account=${encodeURIComponent(accountQuery)}`).catch(() => null);
+        const res = await apiFetch(`/api/auth/shipper-profile?account=${encodeURIComponent(accountQuery)}`).catch(() => null);
         if (res && res.ok) {
           const data = await res.json();
           if (data.success && data.shipper) {
@@ -590,9 +592,34 @@ const locateAndTrackDriver = (isSilent = false) => {
       // Cập nhật lại đường đi đơn hàng nếu có
       renderOrderOnMap();
     },
-    (err) => {
+    async (err) => {
+      console.warn("Lỗi Geolocation chính xác, thử dự phòng SafeLocation:", err);
+      try {
+        const fallbackLoc = await getSafeCurrentLocation();
+        if (fallbackLoc && fallbackLoc.lat && fallbackLoc.lon) {
+          isLocating.value = false;
+          driverLocation.value.lat = fallbackLoc.lat;
+          driverLocation.value.lng = fallbackLoc.lon;
+          driverLocation.value.name = fallbackLoc.safeLocationName || "Vị trí của bạn";
+          locationAddress.value = fallbackLoc.safeLocationName || `Vị trí dự phòng: ${fallbackLoc.lat.toFixed(5)}, ${fallbackLoc.lon.toFixed(5)}`;
+          if (driverMarker) {
+            driverMarker.setLatLng([fallbackLoc.lat, fallbackLoc.lon]);
+          }
+          if (radiusCircle) {
+            radiusCircle.setLatLng([fallbackLoc.lat, fallbackLoc.lon]);
+          }
+          if (map) {
+            map.flyTo([fallbackLoc.lat, fallbackLoc.lon], 13.8, { animate: true, duration: 1.2 });
+            setTimeout(() => { driverMarker?.openPopup(); }, 1300);
+          }
+          triggerToast(`🎯 Đã định vị khu vực hoạt động: ${fallbackLoc.safeLocationName || 'Gần bạn'}`);
+          fetchAddressName(fallbackLoc.lat, fallbackLoc.lon);
+          renderOrderOnMap();
+          return;
+        }
+      } catch (e) {}
+
       isLocating.value = false;
-      console.warn("Lỗi Geolocation:", err);
       let errorMsg = "Không thể định vị GPS (Vui lòng chọn 'Cho phép' khi trình duyệt hỏi quyền vị trí)";
       if (err.code === err.PERMISSION_DENIED) {
         errorMsg = "Bạn chưa cấp quyền truy cập vị trí trên trình duyệt!";
@@ -670,9 +697,9 @@ const triggerIncomingOrderCheck = (order: RealtimeOrder) => {
     return;
   }
 
-  // 2. Chỉ nổ đơn khi đơn đã được quán XÁC NHẬN (chờ tài xế)
-  if (order.status !== "confirmed") {
-    console.log("[ShipperView] Đơn chưa được Quán xác nhận -> Không nổ đơn.");
+  // 2. Chấp nhận nổ đơn cả khi quán đã xác nhận (confirmed) hoặc đơn hỏa tốc mới tạo (pending)
+  if (order.status !== "confirmed" && order.status !== "pending") {
+    console.log("[ShipperView] Đơn không ở trạng thái chờ tài xế -> Không nổ đơn.");
     return;
   }
 
@@ -699,30 +726,25 @@ const triggerIncomingOrderCheck = (order: RealtimeOrder) => {
 
   incomingDistance.value = dist;
 
-  // QUY TẮC: Trong vòng bán kính 3km thì LẬP TỨC NỔ ĐƠN, ngược lại nếu > 3km thì KHÔNG NỔ ĐƠN
-  if (dist <= 3.0) {
-    console.log(`[ShipperView] Đơn #${order.id} nằm trong bán kính 3km (${dist} km) -> NỔ ĐƠN!`);
-    incomingOrder.value = order;
-    showIncomingModal.value = true;
-    incomingCountdown.value = 30;
+  // Tự động nổ đơn hỏa tốc (Hỗ trợ bán kính 10km-15km toàn thành phố và đơn test)
+  console.log(`[ShipperView] Đơn #${order.id} (Cách quán ${dist} km) -> NỔ ĐƠN HỎA TỐC!`);
+  incomingOrder.value = order;
+  showIncomingModal.value = true;
+  incomingCountdown.value = 45;
 
-    // Phát chuông báo nổ đơn
-    orderRealtimeService.playOrderAlertSound();
-    triggerToast(`🚨 NỔ ĐƠN HỎA TỐC! Quán cách bạn ${dist} km (Bán kính <= 3km)`);
+  // Phát chuông báo nổ đơn
+  orderRealtimeService.playOrderAlertSound();
+  triggerToast(`🚨 NỔ ĐƠN HỎA TỐC #${order.id}! Quán cách bạn ${dist} km`);
 
-    if (incomingTimer) clearInterval(incomingTimer);
-    incomingTimer = setInterval(() => {
-      incomingCountdown.value--;
-      if (incomingCountdown.value <= 0) {
-        clearInterval(incomingTimer);
-        showIncomingModal.value = false;
-        incomingOrder.value = null;
-      }
-    }, 1000);
-  } else {
-    console.log(`[ShipperView] Đơn nằm ngoài bán kính 3km (${dist} km) -> Bỏ qua, không nổ đơn.`);
-    triggerToast(`ℹ️ Có đơn mới ngoài bán kính 3km (${dist} km) - Không nổ đơn.`);
-  }
+  if (incomingTimer) clearInterval(incomingTimer);
+  incomingTimer = setInterval(() => {
+    incomingCountdown.value--;
+    if (incomingCountdown.value <= 0) {
+      clearInterval(incomingTimer);
+      showIncomingModal.value = false;
+      incomingOrder.value = null;
+    }
+  }, 1000);
 };
 
 // Xử lý bật/tắt online
@@ -744,6 +766,22 @@ const toggleOnline = () => {
     // Tự động định vị ngay lập tức vị trí thực tế của người dùng
     locateAndTrackDriver(false);
     startLocationWatch();
+
+    // Tự động quét tức thì các đơn hỏa tốc đang chờ nhận trong hệ thống
+    setTimeout(() => {
+      orderRealtimeService.syncOrdersFromServer().then(() => {
+        const orders = orderRealtimeService.getAllOrders();
+        const pending = orders.find(
+          (o) =>
+            (o.status === "confirmed" || o.status === "pending") &&
+            !ignoredOrderIds.has(o.id) &&
+            currentStep.value === "idle"
+        );
+        if (pending && isOnline.value) {
+          triggerIncomingOrderCheck(pending);
+        }
+      });
+    }, 400);
   } else {
     stopLocationWatch();
     triggerToast("🔴 Đã TẮT nhận đơn. Bạn đang ở trạng thái tạm nghỉ.");
@@ -767,30 +805,103 @@ const toggleOnline = () => {
   });
 };
 
-// Xử lý chấp nhận đơn hàng nổ trong bán kính 3km
-const handleAcceptIncomingOrder = async () => {
-  if (!incomingOrder.value) return;
+// Danh sách các đơn chờ tài xế nhận trong hệ thống
+const availableOrdersList = computed(() => {
+  const all = orderRealtimeService.getAllOrders();
+  return all.filter((o: RealtimeOrder) =>
+    (o.status === "confirmed" || o.status === "pending") &&
+    o.id !== activeOrder.value?.id &&
+    o.id !== activeOrder.value?.orderId &&
+    !ignoredOrderIds.has(o.id)
+  );
+});
+
+// Xử lý nhận đơn cụ thể (từ modal hoặc từ danh sách chờ)
+const handleAcceptSpecificOrder = async (order: RealtimeOrder) => {
+  if (!order) return;
   if (incomingTimer) clearInterval(incomingTimer);
   showIncomingModal.value = false;
+  incomingOrder.value = null;
 
-  const order = incomingOrder.value;
+  const dist = orderRealtimeService.calculateDistanceKm(
+    driverLocation.value.lat,
+    driverLocation.value.lng,
+    order.store?.lat ?? 21.0345,
+    order.store?.lng ?? 105.7960
+  );
+
   const itemsText = Array.isArray(order.items)
-    ? order.items.map((i: any) => `${i.name} (x${i.quantity})`).join(", ")
+    ? order.items.map((i: any) => `${i.name} (x${i.quantity || i.qty || 1})`).join(", ")
     : "Sản phẩm ZoneMart";
 
   activeOrder.value = {
     ...order,
     orderId: order.id,
-    distanceKm: incomingDistance.value,
+    distanceKm: dist,
     items: itemsText
   };
   currentStep.value = "accepted";
 
   // Thông báo tới Buyer & Seller thời gian thực: "Tài xế đang đến quán lấy hàng"
   orderRealtimeService.acceptOrder(order.id, driverProfile);
-  triggerToast(`Đã nhận đơn #${order.id}! Đang tự động định vị tuyến đường ngắn nhất đến Quán...`);
+  triggerToast(`🛵 Đã nhận đơn #${order.id}! Đang tự động định vị tuyến đường ngắn nhất đến Quán...`);
 
   await renderOrderOnMap();
+};
+
+// Xử lý chấp nhận đơn hàng nổ trong bán kính 3km
+const handleAcceptIncomingOrder = async () => {
+  if (!incomingOrder.value) return;
+  await handleAcceptSpecificOrder(incomingOrder.value);
+};
+
+// Tạo nhanh đơn hàng thử nghiệm ngay tại vị trí thực tế của tài xế
+const createTestOrder = () => {
+  if (!isOnline.value) {
+    toggleOnline();
+  }
+  const randNum = Math.floor(100000 + Math.random() * 900000);
+  const testId = `ZM${randNum}`;
+  const dLat = driverLocation.value.lat || 21.0333;
+  const dLng = driverLocation.value.lng || 105.7944;
+
+  const testOrder: RealtimeOrder = {
+    id: testId,
+    orderCode: testId,
+    total: 135000,
+    shippingFee: 15000,
+    paymentMethod: "Tiền mặt COD",
+    createdAt: new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
+    status: "pending",
+    statusText: "Đang chờ tài xế nhận đơn",
+    store: {
+      lat: Number((dLat + 0.0052).toFixed(6)),
+      lng: Number((dLng + 0.0041).toFixed(6)),
+      name: "Quầy Nông Sản Sạch Ba Vì (Cách 0.6km)",
+      address: "Số 48 Cầu Giấy, Quan Hoa, Cầu Giấy, Hà Nội",
+      phone: "0988 123 456"
+    },
+    customer: {
+      lat: Number((dLat - 0.0075).toFixed(6)),
+      lng: Number((dLng - 0.0062).toFixed(6)),
+      name: "Khách Hàng Test ZoneMart",
+      address: "Số 88 Ngõ 165 Cầu Giấy, Hà Nội",
+      phone: "0396 222 614"
+    },
+    items: [
+      { name: "Cơm Gà Xối Mỡ Da Giòn Nóng Hổi", price: 50000, quantity: 2 },
+      { name: "Trà Tắc Mật Ong Khổng Lồ", price: 18000, quantity: 1 }
+    ]
+  };
+
+  orderRealtimeService.dispatchNewOrder(testOrder);
+  triggerToast(`🚀 Đã tạo đơn thử nghiệm #${testId}! Đang kích hoạt chuông nổ đơn...`);
+};
+
+const handleFinishTrip = () => {
+  currentStep.value = "idle";
+  activeOrder.value = null;
+  renderOrderOnMap();
 };
 
 const handleDeclineOrder = () => {
@@ -885,8 +996,7 @@ onMounted(() => {
   // Kiểm tra tính hợp lệ của tài khoản với backend (nếu tài khoản đã bị Admin xóa)
   const emailToCheck = auth.currentUser.value?.phoneEmail || auth.currentUser.value?.phone;
   if (emailToCheck && role !== 'admin') {
-    fetch(`http://localhost:5000/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
-    fetch(`/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
+    apiFetch(`/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
       .then((res) => {
         if (res.status === 404 || res.status === 401) {
           auth.logout();
@@ -908,9 +1018,14 @@ onMounted(() => {
 
   // 2. Lắng nghe trạng thái đơn chuyển sang 'confirmed'
   unsubscribeStatusChanged = orderRealtimeService.onOrderStatusChanged(({ status, order }) => {
-    if (status === "confirmed" && order) {
+    if ((status === "confirmed" || status === "pending") && order) {
       triggerIncomingOrderCheck(order);
     }
+  });
+
+  // 3. Lắng nghe ngay khi có đơn hàng hỏa tốc mới tạo từ người mua
+  unsubscribeOrderCreated = orderRealtimeService.onOrderCreated((order) => {
+    triggerIncomingOrderCheck(order);
   });
 
   // Khóa cuộn trang toàn cục để thanh menu và nút công tắc trên di động không bao giờ bị trôi/mất
@@ -930,6 +1045,7 @@ onUnmounted(() => {
   if (incomingTimer) clearInterval(incomingTimer);
   if (unsubscribeOrderDispatch) unsubscribeOrderDispatch();
   if (unsubscribeStatusChanged) unsubscribeStatusChanged();
+  if (unsubscribeOrderCreated) unsubscribeOrderCreated();
   stopLocationWatch();
   if (map) {
     map.remove();
@@ -1045,8 +1161,17 @@ onUnmounted(() => {
 
     <!-- 2. TOP FLOATING BAR (TRÊN CÙNG BẢN ĐỒ) -->
     <header class="top-floating-bar" v-if="currentTab === 'map'">
-      <!-- Left: Driver Mini Pill -->
-      <div class="driver-mini-pill" @click="switchTab('profile')" title="Xem chi tiết hồ sơ tài xế">
+      <div class="top-bar-left-cluster">
+        <button
+          type="button"
+          class="btn-shipper-back"
+          @click="$router.push('/')"
+          title="Quay về trang chủ ZoneMart"
+        >
+          <i class="bi bi-chevron-left"></i>
+        </button>
+        <!-- Left: Driver Mini Pill -->
+        <div class="driver-mini-pill" @click="switchTab('profile')" title="Xem chi tiết hồ sơ tài xế">
         <div class="driver-pill-avatar">
           <img v-if="driverProfile.avatarUrl" :src="driverProfile.avatarUrl" class="avatar-img-circle" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />
           <i v-else class="bi bi-bicycle text-success"></i>
@@ -1062,7 +1187,7 @@ onUnmounted(() => {
           </span>
         </div>
       </div>
-
+      </div>
 
       <!-- Right: Map Controls Stack (Traffic, Satellite, GPS Recenter) -->
       <div class="map-floating-actions">
@@ -1096,6 +1221,17 @@ onUnmounted(() => {
         >
           <i class="bi bi-wallet2 text-blue"></i>
           <span class="action-label">Thu nhập</span>
+        </button>
+
+        <!-- Nút Tạo Đơn Thử Nghiệm -->
+        <button
+          type="button"
+          class="map-action-btn btn-test-order"
+          @click="createTestOrder"
+          title="Tạo đơn hàng thử nghiệm hỏa tốc ngay tại vị trí của bạn"
+        >
+          <i class="bi bi-plus-circle-fill text-warning"></i>
+          <span class="action-label">Tạo Đơn Test</span>
         </button>
 
         <!-- GPS Recenter -->
@@ -1201,19 +1337,51 @@ onUnmounted(() => {
             <p>Đã cộng <strong>+{{ activeOrder.shippingFee.toLocaleString('vi-VN') }} ₫</strong> vào ví tài xế.</p>
           </div>
         </div>
-        <button class="btn btn-primary w-100" @click="currentStep = 'idle'">
+        <button class="btn btn-primary w-100" @click="handleFinishTrip">
           Hoàn tất cuốc xe
         </button>
       </div>
 
-      <!-- Case C: Đang tìm đơn (Radar quét đơn hỏa tốc 3km) -->
-      <div v-else-if="isOnline" class="floating-radar-chip">
-        <div class="radar-dot-pulse"></div>
-        <div class="radar-info">
-          <strong>Đang Quét Đơn Hỏa Tốc (3km)...</strong>
-          <small>Hệ thống tự động nổ chuông khi có quán xác nhận</small>
+      <!-- Case C: Danh sách đơn chờ tài xế (nếu có đơn) HOẶC Radar tìm đơn -->
+      <template v-else-if="isOnline">
+        <!-- Nếu có đơn hàng đang chờ nhận -->
+        <div v-if="availableOrdersList.length > 0" class="pending-orders-dock">
+          <div class="dock-header">
+            <div class="dock-title">
+              <span class="dock-pulse"></span>
+              <strong>{{ availableOrdersList.length }} Đơn Chờ Bạn Nhận</strong>
+            </div>
+            <button type="button" class="btn-dock-quicktest" @click="createTestOrder">+ Đơn Test</button>
+          </div>
+          <div class="dock-items-scroll">
+            <div v-for="ord in availableOrdersList" :key="ord.id" class="dock-order-row">
+              <div class="dock-row-info">
+                <div class="dock-row-top">
+                  <span class="dock-code">#{{ ord.id }}</span>
+                  <span class="dock-fee">+{{ (ord.shippingFee || 15000).toLocaleString('vi-VN') }} ₫</span>
+                </div>
+                <div class="dock-shop"><i class="bi bi-shop text-primary me-1"></i> {{ ord.store?.name || 'Quán ZoneMart' }}</div>
+                <div class="dock-cust"><i class="bi bi-geo-alt-fill text-danger me-1"></i> {{ ord.customer?.name || 'Khách' }} ({{ ord.customer?.address || 'Hà Nội' }})</div>
+              </div>
+              <button type="button" class="btn-dock-accept" @click="handleAcceptSpecificOrder(ord)">
+                <i class="bi bi-lightning-charge-fill me-1"></i> Nhận Ngay
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+
+        <!-- Radar tìm đơn nếu chưa có đơn nào -->
+        <div v-else class="floating-radar-chip">
+          <div class="radar-dot-pulse"></div>
+          <div class="radar-info">
+            <strong>Đang Quét Đơn Hỏa Tốc...</strong>
+            <small>Sẵn sàng nhận đơn mới trong khu vực</small>
+          </div>
+          <button type="button" class="btn-radar-test" @click="createTestOrder" title="Thử nghiệm tạo đơn">
+            + Đơn Test
+          </button>
+        </div>
+      </template>
     </div>
 
     <!-- 4. NÚT CÔNG TẮC BẬT / TẮT HOẠT ĐỘNG (MASTER TOGGLE BUTTON) -->
@@ -1822,9 +1990,38 @@ onUnmounted(() => {
 /* ==========================================================================
    2. TOP FLOATING BAR (TRÊN CÙNG BẢN ĐỒ)
    ========================================================================== */
+.top-bar-left-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.btn-shipper-back {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  color: #0F172A;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.btn-shipper-back:active {
+  transform: scale(0.92);
+}
+
 .top-floating-bar {
   position: absolute;
-  top: 14px;
+  top: calc(14px + env(safe-area-inset-top, 0px));
   left: 14px;
   right: 14px;
   z-index: 50;
@@ -3040,7 +3237,7 @@ onUnmounted(() => {
 /* 1. Google Maps Top Bar Controls */
 .gm-top-controls {
   position: absolute;
-  top: 14px;
+  top: calc(14px + env(safe-area-inset-top, 0px));
   left: 14px;
   right: 14px;
   display: flex;
@@ -4317,8 +4514,9 @@ onUnmounted(() => {
   }
 
   /* 1. TOP FLOATING BAR (TRÊN CÙNG BẢN ĐỒ) */
-  .top-floating-bar {
-    top: 10px !important;
+  
+.top-floating-bar {
+    top: calc(10px + env(safe-area-inset-top, 0px)) !important;
     left: 10px !important;
     right: 10px !important;
     flex-wrap: nowrap !important;
@@ -4781,7 +4979,8 @@ onUnmounted(() => {
 }
 
 @media (max-width: 380px) {
-  .top-floating-bar {
+  
+.top-floating-bar {
     gap: 4px !important;
     left: 6px !important;
     right: 6px !important;
@@ -4840,5 +5039,150 @@ onUnmounted(() => {
     width: 100% !important;
   }
 }
+
+/* PENDING ORDERS DOCK & QUICK TEST BUTTON */
+.btn-test-order {
+  background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%) !important;
+  color: #92400E !important;
+  border-color: #FCD34D !important;
+}
+
+.btn-test-order:hover {
+  background: linear-gradient(135deg, #FDE68A 0%, #F59E0B 100%) !important;
+  color: #78350F !important;
+}
+
+.pending-orders-dock {
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(16px);
+  border-radius: 20px;
+  border: 1.5px solid #CBD5E1;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  padding: 12px 14px;
+  width: 100%;
+  max-width: 460px;
+  pointer-events: auto;
+}
+
+.dock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #E2E8F0;
+}
+
+.dock-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #0F172A;
+}
+
+.dock-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.25);
+  animation: pulse-ring 1.5s infinite;
+}
+
+.btn-dock-quicktest {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 20px;
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FCD34D;
+  cursor: pointer;
+}
+
+.dock-items-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.dock-order-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+
+.dock-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.dock-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.dock-code {
+  font-weight: 800;
+  font-size: 12px;
+  color: #0284C7;
+}
+
+.dock-fee {
+  font-weight: 800;
+  font-size: 12px;
+  color: #16A34A;
+}
+
+.dock-shop, .dock-cust {
+  font-size: 11.5px;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-dock-accept {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #FFFFFF;
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);
+}
+
+.btn-dock-accept:active {
+  transform: scale(0.95);
+}
+
+.btn-radar-test {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 20px;
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FCD34D;
+  cursor: pointer;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 </style>
 

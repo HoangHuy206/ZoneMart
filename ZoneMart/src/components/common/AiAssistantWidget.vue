@@ -1,6 +1,7 @@
 <script setup lang="ts">
 
 import { ref, reactive, computed, nextTick, watch, onMounted, onUnmounted } from 'vue';
+import { apiFetch, getApiUrl } from "../../utils/apiConfig";
 
 import { useRouter } from 'vue-router';
 
@@ -80,7 +81,7 @@ const fetchAiPartnerStatus = async () => {
   const acc = auth.currentUser.value?.phoneEmail || (auth.currentUser.value as any)?.phone || '';
   if (!acc) return;
   try {
-    const res = await fetch(`/api/auth/partner-status?account=${encodeURIComponent(acc)}`);
+    const res = await apiFetch(`/api/auth/partner-status?account=${encodeURIComponent(acc)}`);
     if (res.ok) {
       const data = await res.json();
       if (data.success) {
@@ -2180,7 +2181,7 @@ const syncAiOrderToServer = async (code: string, total: number, items: any[]) =>
 
   try {
 
-    await fetch('/api/payment/register-order', {
+    await apiFetch('/api/payment/register-order', {
 
       method: 'POST',
 
@@ -2608,7 +2609,7 @@ const onAiPaymentConfirmed = async (paidAmount?: number) => {
 
   try {
 
-    await fetch('http://localhost:5000/api/aichat/confirm-bank-transfer', {
+    await apiFetch('/api/aichat/confirm-bank-transfer', {
 
       method: 'POST',
 
@@ -2996,7 +2997,7 @@ const startAiPaymentListener = (orderCode: string, amount: number) => {
 
       const sseUrl = `/api/payment/events?code=${encodeURIComponent(cleanCode)}`;
 
-      aiSseSource = new EventSource(sseUrl);
+      aiSseSource = new EventSource(getApiUrl(sseUrl));
 
       aiSseSource.onmessage = (e) => {
 
@@ -3148,7 +3149,7 @@ const startAiPaymentListener = (orderCode: string, amount: number) => {
 
       const checkUrl = `/api/payment/check?code=${encodeURIComponent(cleanCode)}&amount=${currentAiQrTotal.value}&bankAccount=28122068866`;
 
-      const res = await fetch(checkUrl);
+      const res = await apiFetch(checkUrl);
 
       if (res.ok) {
 
@@ -3174,9 +3175,9 @@ const startAiPaymentListener = (orderCode: string, amount: number) => {
 
     try {
 
-      const beRes = await fetch(`http://localhost:5000/api/aichat/check-qr-payment?orderCode=${encodeURIComponent(cleanCode)}`)
+      const beRes = await apiFetch(`/api/aichat/check-qr-payment?orderCode=${encodeURIComponent(cleanCode)}`)
 
-        .catch(() => fetch(`/api/aichat/check-qr-payment?orderCode=${encodeURIComponent(cleanCode)}`));
+        .catch(() => apiFetch(`/api/aichat/check-qr-payment?orderCode=${encodeURIComponent(cleanCode)}`));
 
       if (beRes && beRes.ok) {
 
@@ -3775,7 +3776,7 @@ async function sendMessage(customText?: string, extraPayload?: any) {
 
 
 
-            const response = await fetch('http://localhost:5000/api/aichat/chat', {
+            const response = await apiFetch('/api/aichat/chat', {
 
               method: 'POST',
 
@@ -3997,7 +3998,7 @@ async function sendMessage(customText?: string, extraPayload?: any) {
 
 
 
-    const response = await fetch('http://localhost:5000/api/aichat/chat', {
+    const response = await apiFetch('/api/aichat/chat', {
 
       method: 'POST',
 
@@ -4339,13 +4340,21 @@ function handleAction(type: string) {
 
   if (type === 'REGISTER_SELLER' || type === 'seller_manual') {
 
-    router.push('/register-seller');
+    if (auth.isLoggedIn.value) {
+      router.push({ path: '/profile', query: { tab: 'seller-reg' } });
+    } else {
+      router.push('/register-seller');
+    }
 
     isOpen.value = false;
 
   } else if (type === 'REGISTER_SHIPPER' || type === 'shipper_manual') {
 
-    router.push('/register-shipper');
+    if (auth.isLoggedIn.value) {
+      router.push({ path: '/profile', query: { tab: 'shipper-reg' } });
+    } else {
+      router.push('/register-shipper');
+    }
 
     isOpen.value = false;
 
@@ -4583,7 +4592,7 @@ async function handleOrderCombo(msg: any) {
 
   try {
 
-    await fetch('http://localhost:5000/api/aichat/create-combo-order', {
+    await apiFetch('/api/aichat/create-combo-order', {
 
       method: 'POST',
 
@@ -4625,7 +4634,7 @@ async function handleOrderCombo(msg: any) {
 
     }).catch(() => {
 
-      return fetch('/api/aichat/create-combo-order', {
+      return apiFetch('/api/aichat/create-combo-order', {
 
         method: 'POST',
 
@@ -7496,41 +7505,24 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
 /* Bong bóng lời thoại gợi ý thi thoảng xuất hiện phía trên avatar */
 
 .ai-speech-bubble {
-
   position: absolute;
-
   right: 0;
-
   bottom: 74px;
-
   background: #FFFFFF;
-
   border: 1.5px solid #FED7AA;
-
-  /* Đổ bóng đa tầng cực kỳ rõ nét & nổi bật (box-shadow) */
-
   box-shadow: 
-
     0 16px 36px -6px rgba(15, 23, 42, 0.18),
-
     0 8px 18px -4px rgba(249, 115, 22, 0.22),
-
     0 2px 8px rgba(0, 0, 0, 0.06);
-
   border-radius: 18px;
-
-  padding: 9px 18px;
-
+  padding: 8px 16px;
   cursor: pointer;
-
   white-space: nowrap;
-
+  width: max-content;
+  max-width: min(340px, calc(100vw - 36px));
   user-select: none;
-
   z-index: 10;
-
   transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease, border-color 0.25s ease;
-
 }
 
 
@@ -12334,5 +12326,68 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
 
 }
 
+
+/* ================================================================
+   Mobile Responsive & iOS Zoom Prevention for AI Assistant
+   ================================================================ */
+@media (max-width: 768px) {
+  .ai-assistant-root {
+    right: 14px !important;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .ai-speech-bubble {
+    right: 0 !important;
+    bottom: 68px !important;
+    width: max-content !important;
+    min-width: max-content !important;
+    max-width: min(320px, calc(100vw - 32px)) !important;
+    white-space: nowrap !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    font-size: 12px !important;
+    padding: 8px 14px !important;
+    border-radius: 16px !important;
+    box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.16), 0 4px 12px -2px rgba(249, 115, 22, 0.2) !important;
+    box-sizing: border-box !important;
+  }
+
+  .ai-speech-bubble .bubble-content {
+    white-space: nowrap !important;
+    display: inline-flex !important;
+    align-items: center !important;
+  }
+
+  .ai-speech-bubble .bubble-text {
+    white-space: nowrap !important;
+    display: inline-block !important;
+    word-break: keep-all !important;
+  }
+
+  .ai-chat-window {
+    position: fixed !important;
+    top: calc(10px + env(safe-area-inset-top, 0px)) !important;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+    left: 10px !important;
+    right: 10px !important;
+    width: auto !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    border-radius: 20px !important;
+    z-index: 10000 !important;
+    box-shadow: 0 16px 48px rgba(15, 23, 42, 0.28) !important;
+  }
+
+  /* Chống iOS tự động phóng to (auto-zoom) khi chạm vào ô gõ tin nhắn */
+  .chat-textarea,
+  .chat-password-input {
+    font-size: 16px !important;
+  }
+
+  .chat-messages-body {
+    -webkit-overflow-scrolling: touch !important;
+  }
+}
 </style>
 

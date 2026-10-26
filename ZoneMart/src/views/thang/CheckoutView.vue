@@ -20,6 +20,8 @@ import { useAuth } from "../../composables/useAuth";
 import { useToast } from "../../composables/useToast";
 import { orderRealtimeService } from "../../services/orderRealtimeService";
 import { useProductModeration } from "../../composables/useProductModeration";
+import { getSafeCurrentLocation } from "../../composables/useSafeLocation";
+import { apiFetch, getApiUrl } from "../../utils/apiConfig";
 
 const router = useRouter();
 const cart = useCart();
@@ -276,36 +278,38 @@ const initOrUpdateMap = () => {
   });
 };
 
-const locateUserCurrentPosition = () => {
-  if (!navigator.geolocation) {
-    triggerToast("Trình duyệt của bạn chưa hỗ trợ định vị GPS!");
-    return;
-  }
+const locateUserCurrentPosition = async () => {
   isLocating.value = true;
-  triggerToast("Đang xác định vị trí GPS chính xác của bạn...");
+  triggerToast("Đang xác định vị trí của bạn...");
 
-  navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      isLocating.value = false;
-      const { latitude, longitude } = pos.coords;
-      editForm.value.lat = latitude;
-      editForm.value.lng = longitude;
-
+  try {
+    const loc = await getSafeCurrentLocation();
+    isLocating.value = false;
+    if (loc && loc.lat && loc.lon) {
+      editForm.value.lat = loc.lat;
+      editForm.value.lng = loc.lon;
+      if (loc.safeLocationName) {
+        editForm.value.address = loc.safeLocationName;
+      }
       if (mapInstance) {
-        mapInstance.flyTo([latitude, longitude], 17);
+        mapInstance.flyTo([loc.lat, loc.lon], 17);
       }
       if (markerInstance) {
-        markerInstance.setLatLng([latitude, longitude]);
+        markerInstance.setLatLng([loc.lat, loc.lon]);
       }
-      resolveAddressFromCoords(latitude, longitude);
-    },
-    (err) => {
-      isLocating.value = false;
-      console.warn("Lỗi GPS:", err);
-      triggerToast("Không thể lấy GPS. Bạn hãy chạm trực tiếp trên bản đồ để chọn điểm!");
-    },
-    { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
-  );
+      if (loc.safeLocationName) {
+        triggerToast("📍 Đã định vị vị trí: " + loc.safeLocationName);
+      } else {
+        resolveAddressFromCoords(loc.lat, loc.lon);
+      }
+      return;
+    }
+  } catch (err) {
+    console.warn("Lỗi SafeLocation:", err);
+  }
+
+  isLocating.value = false;
+  triggerToast("Không thể lấy GPS. Bạn hãy chạm trực tiếp trên bản đồ để chọn điểm!");
 };
 
 const searchLocationOnMap = async () => {
@@ -501,6 +505,10 @@ const resolveStoreDispatchLocation = (shopName: string) => {
 
 // KHI TIỀN THỰC SỰ VÀO -> BẬT HIỆU ỨNG THÀNH CÔNG VÀ LƯU ĐƠN
 const onPaymentConfirmed = (paidAmount?: number) => {
+  if (!auth.isLoggedIn.value) {
+    console.warn("Chưa đăng nhập tài khoản, không thể lưu đơn hàng.");
+    return;
+  }
   if (paymentState.value === "SUCCESS") return;
   paymentState.value = "SUCCESS";
 
@@ -710,7 +718,7 @@ const initPaymentSSE = () => {
   try {
     if (typeof EventSource !== "undefined") {
       if (sseSource) sseSource.close();
-      const sseUrl = `/api/payment/events?code=${encodeURIComponent(orderPaymentCode.value)}`;
+      const sseUrl = getApiUrl(`/api/payment/events?code=${encodeURIComponent(orderPaymentCode.value)}`);
       sseSource = new EventSource(sseUrl);
       sseSource.onmessage = (e) => {
         try {
@@ -740,7 +748,7 @@ const syncOrderDetailsToServer = async () => {
       image: i.image,
       shop: i.shop,
     }));
-    await fetch('/api/payment/register-order', {
+    await apiFetch('/api/payment/register-order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -795,7 +803,7 @@ const startPaymentListener = () => {
     // Đối soát tự động qua API Server thời gian thực (yêu cầu khớp chính xác mã đơn)
     try {
       const checkUrl = `/api/payment/check?code=${encodeURIComponent(orderPaymentCode.value)}&amount=${finalTotal.value}&bankAccount=${encodeURIComponent(vietinBankConfig.value.accountNo)}`;
-      const res = await fetch(checkUrl);
+      const res = await apiFetch(checkUrl);
       if (res.ok) {
         const data = await res.json();
         const incomingCode = String(data?.code || "").toUpperCase();
@@ -842,22 +850,37 @@ const loadAddressForCurrentAccount = () => {
   } catch (e) {}
 
   const u = auth.currentUser.value;
+  const userSavedAddr = localStorage.getItem('zonemart_user_address') || localStorage.getItem('zonemart_gps_address') || (u && (u as any).address);
+  const userLat = localStorage.getItem('zonemart_lat');
+  const userLon = localStorage.getItem('zonemart_lon');
+
   if (u) {
     buyerName.value = u.fullName || u.phoneEmail?.split("@")[0] || "Khách Hàng";
     buyerPhone.value = u.phone || (u.phoneEmail && /^0\d+$/.test(u.phoneEmail) ? u.phoneEmail : "0396222614");
-    shippingAddress.value = "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội";
+    shippingAddress.value = userSavedAddr || "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội";
     deliveryNote.value = "";
-    currentCoords.value = { lat: 21.0333, lng: 105.7983 };
+    currentCoords.value = userLat && userLon ? { lat: parseFloat(userLat), lng: parseFloat(userLon) } : { lat: 21.0333, lng: 105.7983 };
   } else {
     buyerName.value = "Khách Hàng ZoneMart";
     buyerPhone.value = "0912 345 678";
-    shippingAddress.value = "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội";
+    shippingAddress.value = userSavedAddr || "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội";
     deliveryNote.value = "";
-    currentCoords.value = { lat: 21.0333, lng: 105.7983 };
+    currentCoords.value = userLat && userLon ? { lat: parseFloat(userLat), lng: parseFloat(userLon) } : { lat: 21.0333, lng: 105.7983 };
   }
 };
 
 onMounted(() => {
+  if (!auth.isLoggedIn.value) {
+    toast.warning("Vui lòng đăng nhập tài khoản để thanh toán đơn hàng!", "Yêu Cầu Đăng Nhập");
+    router.replace({
+      path: "/login",
+      query: {
+        redirect: "/checkout",
+        reason: "auth_required"
+      }
+    });
+    return;
+  }
   loadAddressForCurrentAccount();
   initVietQrSocket();
   startPaymentListener();
@@ -938,6 +961,14 @@ const saveAddress = () => {
 
   const key = ADDRESS_STORAGE_PREFIX + getAccountKey();
   localStorage.setItem(key, JSON.stringify(storageData));
+  localStorage.setItem('zonemart_user_address', shippingAddress.value);
+  localStorage.setItem('zonemart_lat', editForm.value.lat.toString());
+  localStorage.setItem('zonemart_lon', editForm.value.lng.toString());
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('zonemart:location-updated', {
+      detail: { safeLocationName: shippingAddress.value, lat: editForm.value.lat, lon: editForm.value.lng }
+    }));
+  }
 
   showEditAddressModal.value = false;
   triggerToast("Đã lưu địa chỉ định vị riêng cho tài khoản của bạn!");
@@ -993,6 +1024,17 @@ const handleSelectExpress = (val: boolean) => {
 
 // Đặt hàng COD
 const handlePlaceOrder = () => {
+  if (!auth.isLoggedIn.value) {
+    toast.warning("Vui lòng đăng nhập tài khoản để tiến hành đặt hàng!", "Yêu Cầu Đăng Nhập");
+    router.push({
+      path: "/login",
+      query: {
+        redirect: "/checkout",
+        reason: "auth_required"
+      }
+    });
+    return;
+  }
   if (selectedCartItems.value.length === 0) {
     toast.info("Bạn chưa chọn món nào để thanh toán! Vui lòng quay lại giỏ hàng và chọn món.", "Giỏ Hàng Rỗng");
     router.push("/cart");
@@ -1210,15 +1252,11 @@ const handlePlaceOrder = () => {
               </div>
             </label>
 
-            <label class="pay-item" :class="{ active: paymentMethod === 'COD', disabled: isExpressSelected }">
-              <input type="radio" value="COD" v-model="paymentMethod" :disabled="isExpressSelected" />
+            <label class="pay-item" :class="{ active: paymentMethod === 'COD' }">
+              <input type="radio" value="COD" v-model="paymentMethod" />
               <div>
                 <strong>Tiền Mặt Khi Nhận Hàng (COD)</strong>
-                <p v-if="isExpressSelected">
-                  <i class="bi bi-exclamation-triangle-fill text-warning me-1" aria-hidden="true"></i>
-                  Không hỗ trợ COD khi chọn Giao Hỏa Tốc
-                </p>
-                <p v-else>Thanh toán trực tiếp cho Shipper khi nhận món</p>
+                <p>Thanh toán trực tiếp tiền mặt cho Shipper khi nhận món tận tay</p>
               </div>
             </label>
           </div>
@@ -1377,6 +1415,7 @@ const handlePlaceOrder = () => {
               <div class="auto-desc">Bạn chỉ cần chuyển khoản theo mã QR. Tiền vào hệ thống sẽ tự động xác nhận và chuyển trang ngay tức thì!</div>
             </div>
           </div>
+
           <button
             v-else-if="paymentMethod === 'ONLINE_QR' && paymentState === 'SUCCESS'"
             class="btn btn-success-solid btn-block"
@@ -1697,6 +1736,8 @@ const handlePlaceOrder = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   border-bottom: 1px solid #f1f5f9;
   padding-bottom: 12px;
   margin-bottom: 16px;
@@ -1707,6 +1748,8 @@ const handlePlaceOrder = () => {
   font-size: 16px;
   font-weight: 700;
   color: #0f172a;
+  flex: 1;
+  min-width: 150px;
 }
 
 .btn-edit-addr {
@@ -1715,12 +1758,14 @@ const handlePlaceOrder = () => {
   border: 1px solid #fed7aa;
   font-size: 13px;
   font-weight: 700;
-  padding: 7px 15px;
+  padding: 7px 14px;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
   display: inline-flex;
   align-items: center;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn-edit-addr:hover {
@@ -1804,6 +1849,25 @@ const handlePlaceOrder = () => {
   cursor: pointer;
   background: #ffffff;
   transition: all 0.2s;
+  box-sizing: border-box;
+}
+
+.pay-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.pay-item > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.pay-item strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .opt-item:hover,
@@ -1826,14 +1890,24 @@ const handlePlaceOrder = () => {
 .opt-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 10px;
   margin-bottom: 4px;
+}
+
+.opt-head strong {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .opt-head .price {
   font-weight: 800;
   color: #ea580c;
   font-size: 15px;
+  white-space: nowrap !important;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .sub,
@@ -2182,26 +2256,7 @@ const handlePlaceOrder = () => {
   color: #0369a1;
 }
 
-.btn-simulate-payment {
-  background: #ffffff;
-  border: 1px dashed #ea580c;
-  color: #ea580c;
-  font-size: 11.5px;
-  font-weight: 700;
-  padding: 7px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
 
-.btn-simulate-payment:hover {
-  background: #ea580c;
-  color: #ffffff;
-}
 
 /* ANIMATION NÚT TÍCH XANH & BIÊN LAI CAO CẤP */
 .qr-success-inline-box {
@@ -3299,6 +3354,237 @@ const handlePlaceOrder = () => {
 .btn-check-status-subtle:hover {
   color: #0f172a;
   text-decoration: underline;
+}
+
+
+/* ============================================================================
+   RESPONSIVE MOBILE & IOS FIX CHO TRANG THANH TOÁN (CHECKOUT)
+   ============================================================================ */
+@media (max-width: 768px) {
+  .checkout-container {
+    margin: 14px auto 140px auto !important;
+    padding: 0 12px !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+
+  .checkout-header {
+    margin-bottom: 16px;
+  }
+
+  .checkout-header h2 {
+    font-size: 20px !important;
+  }
+
+  .checkout-header p {
+    font-size: 13px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .checkout-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 14px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .left-col,
+  .right-col {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    min-width: 0 !important;
+  }
+
+  .card-box {
+    padding: 16px 14px !important;
+    border-radius: 16px !important;
+    margin-bottom: 14px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  .card-box-header {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+    margin-bottom: 12px !important;
+    padding-bottom: 10px !important;
+  }
+
+  .card-box-header h3 {
+    font-size: 15px !important;
+    margin: 0 !important;
+    flex: 1 !important;
+    min-width: 140px !important;
+  }
+
+  .btn-edit-addr {
+    padding: 6px 11px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    border-radius: 8px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .addr-content .user-info-row {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    flex-wrap: wrap !important;
+    margin-bottom: 6px !important;
+  }
+
+  .user-fullname {
+    font-size: 15px !important;
+  }
+
+  .user-phone {
+    font-size: 13.5px !important;
+  }
+
+  .badge-account-isolated {
+    font-size: 10.5px !important;
+    padding: 2px 6px !important;
+    white-space: nowrap !important;
+  }
+
+  .addr-text {
+    font-size: 13.5px !important;
+    line-height: 1.45 !important;
+    word-break: break-word !important;
+    margin-bottom: 8px !important;
+  }
+
+  .delivery-note-tag {
+    font-size: 12px !important;
+    padding: 5px 10px !important;
+    word-break: break-word !important;
+  }
+
+  .opt-item,
+  .pay-item {
+    padding: 12px !important;
+    border-radius: 12px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+
+  .opt-head {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    margin-bottom: 4px !important;
+  }
+
+  .opt-head strong {
+    font-size: 13.5px !important;
+    line-height: 1.35 !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+    word-break: break-word !important;
+  }
+
+  .opt-head .price {
+    font-size: 14px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+    margin-left: auto !important;
+  }
+
+  .sub,
+  .pay-item p {
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+    word-break: break-word !important;
+  }
+
+  .pay-item {
+    display: flex !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .pay-item input[type="radio"] {
+    margin-top: 3px !important;
+  }
+
+  .pay-item > div {
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+
+  .pay-item strong {
+    font-size: 13.5px !important;
+    line-height: 1.35 !important;
+    word-break: break-word !important;
+  }
+
+  .sticky-box {
+    position: static !important;
+  }
+
+  .qr-checkout-card {
+    padding: 16px 12px !important;
+    border-radius: 16px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .vietqr-clean-img {
+    max-width: 180px !important;
+    height: auto !important;
+    aspect-ratio: 1 !important;
+  }
+
+  .memo-only-box {
+    padding: 10px 12px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .memo-copy-row {
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .memo-code {
+    font-size: 17px !important;
+    word-break: break-all !important;
+  }
+
+  .auto-active-banner {
+    padding: 10px 12px !important;
+    gap: 10px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+
+  .auto-title {
+    font-size: 11px !important;
+    word-break: break-word !important;
+  }
+
+  .auto-desc {
+    font-size: 10.5px !important;
+    word-break: break-word !important;
+  }
+
+  .modal-dialog-medium,
+  .modal-dialog-card {
+    width: calc(100vw - 20px) !important;
+    max-width: calc(100vw - 20px) !important;
+    margin: 10px auto !important;
+    padding: 16px !important;
+    border-radius: 16px !important;
+  }
 }
 
 </style>

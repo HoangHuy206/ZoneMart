@@ -33,17 +33,203 @@ public class MarketManagementController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Lấy danh sách Chợ địa phương (Có thể lọc theo Xã/Phường)
-    /// </summary>
-    [HttpGet("markets")]
-    public async Task<IActionResult> GetMarkets([FromQuery] string? wardId)
+    private async Task EnsureHanoiMarketsSeededAsync()
     {
         try
         {
-            var filter = string.IsNullOrWhiteSpace(wardId) 
-                ? Builders<Market>.Filter.Empty 
-                : Builders<Market>.Filter.Eq(m => m.WardId, wardId);
+            // 1. Cập nhật DistrictName cho các chợ hiện có nếu đang trống
+            await _mongoService.Markets.UpdateManyAsync(
+                m => string.IsNullOrEmpty(m.DistrictName),
+                Builders<Market>.Update.Set(m => m.DistrictName, "Quận Cầu Giấy")
+            );
+
+            var currentMarketCount = await _mongoService.Markets.CountDocumentsAsync(_ => true);
+            if (currentMarketCount >= 25) return;
+
+            // Danh sách Ban Quản Lý mở rộng theo các Quận / Huyện
+            var seedBoards = new[]
+            {
+                new { Code = "BQL_BD", Name = "Ban quản lý chợ Quận Ba Đình", Leader = "Lê Hoàng Nam", Phone = "0912111222", Email = "bql_badinh@zonemart.vn", District = "Quận Ba Đình" },
+                new { Code = "BQL_HK", Name = "Ban quản lý chợ Quận Hoàn Kiếm", Leader = "Phạm Quốc Khánh", Phone = "0903444555", Email = "bql_hoankiem@zonemart.vn", District = "Quận Hoàn Kiếm" },
+                new { Code = "BQL_DX", Name = "Công ty CP Đồng Xuân", Leader = "Vũ Đình Trọng", Phone = "0918889999", Email = "dongxuan@zonemart.vn", District = "Quận Hoàn Kiếm" },
+                new { Code = "BQL_DD", Name = "Ban quản lý chợ Quận Đống Đa", Leader = "Đỗ Văn Tuấn", Phone = "0936777888", Email = "bql_dongda@zonemart.vn", District = "Quận Đống Đa" },
+                new { Code = "BQL_HBT", Name = "Ban quản lý chợ Quận Hai Bà Trưng", Leader = "Nguyễn Thị Mai", Phone = "0912333444", Email = "bql_haibatrung@zonemart.vn", District = "Quận Hai Bà Trưng" },
+                new { Code = "BQL_MO", Name = "Ban quản lý chợ Mơ", Leader = "Ngô Quang Huy", Phone = "0988555666", Email = "bql_chomo@zonemart.vn", District = "Quận Hai Bà Trưng" },
+                new { Code = "BQL_TH", Name = "Ban quản lý chợ Quận Tây Hồ", Leader = "Bùi Văn Đức", Phone = "0904112233", Email = "bql_tayho@zonemart.vn", District = "Quận Tây Hồ" },
+                new { Code = "BQL_TX", Name = "Ban quản lý chợ Quận Thanh Xuân", Leader = "Hoàng Minh Trí", Phone = "0915667788", Email = "bql_thanhxuan@zonemart.vn", District = "Quận Thanh Xuân" },
+                new { Code = "BQL_HM", Name = "Ban quản lý chợ Quận Hoàng Mai", Leader = "Đinh Văn Cường", Phone = "0977223344", Email = "bql_hoangmai@zonemart.vn", District = "Quận Hoàng Mai" },
+                new { Code = "BQL_LB", Name = "Ban quản lý chợ Quận Long Biên", Leader = "Trần Đức Thắng", Phone = "0913889900", Email = "bql_longbien@zonemart.vn", District = "Quận Long Biên" },
+                new { Code = "BQL_NTL", Name = "Ban quản lý chợ Quận Nam Từ Liêm", Leader = "Đặng Thái Sơn", Phone = "0902998877", Email = "bql_namtuliem@zonemart.vn", District = "Quận Nam Từ Liêm" },
+                new { Code = "BQL_PK", Name = "Ban quản lý chợ Phùng Khoang", Leader = "Phan Đình Dũng", Phone = "0983114455", Email = "phungkhoang@zonemart.vn", District = "Quận Nam Từ Liêm" },
+                new { Code = "BQL_BTL", Name = "Ban quản lý chợ Quận Bắc Từ Liêm", Leader = "Vũ Hữu Bằng", Phone = "0916554433", Email = "bql_bactuliem@zonemart.vn", District = "Quận Bắc Từ Liêm" },
+                new { Code = "BQL_HD", Name = "Ban quản lý chợ Quận Hà Đông", Leader = "Tạ Đình Phong", Phone = "0934112299", Email = "bql_hadong@zonemart.vn", District = "Quận Hà Đông" },
+                new { Code = "BQL_VP", Name = "Ban quản lý làng nghề Vạn Phúc", Leader = "Nguyễn Hữu Thọ", Phone = "0908776655", Email = "vanphuc@zonemart.vn", District = "Quận Hà Đông" },
+                new { Code = "BQL_DA", Name = "Ban quản lý chợ Huyện Đông Anh", Leader = "Hoàng Kim Quy", Phone = "0912998811", Email = "bql_donganh@zonemart.vn", District = "Huyện Đông Anh" },
+                new { Code = "BQL_GL", Name = "Ban quản lý chợ Huyện Gia Lâm", Leader = "Trịnh Văn Bách", Phone = "0984332211", Email = "bql_gialam@zonemart.vn", District = "Huyện Gia Lâm" },
+                new { Code = "BQL_HDC", Name = "Ban quản lý chợ Huyện Hoài Đức", Leader = "Vương Đình Sâm", Phone = "0903221144", Email = "bql_hoaiduc@zonemart.vn", District = "Huyện Hoài Đức" },
+                new { Code = "BQL_TT", Name = "Ban quản lý chợ Huyện Thanh Trì", Leader = "Nguyễn Văn Nghiệp", Phone = "0919445566", Email = "bql_thanhtri@zonemart.vn", District = "Huyện Thanh Trì" }
+            };
+
+            var existingBoards = await _mongoService.ManagementBoards.Find(_ => true).ToListAsync();
+            var boardMap = new Dictionary<string, ManagementBoard>();
+            foreach (var eb in existingBoards)
+            {
+                if (!string.IsNullOrEmpty(eb.BoardName)) boardMap[eb.BoardName] = eb;
+            }
+
+            foreach (var sb in seedBoards)
+            {
+                if (!boardMap.ContainsKey(sb.Name))
+                {
+                    var newB = new ManagementBoard
+                    {
+                        BoardCode = sb.Code,
+                        BoardName = sb.Name,
+                        LeaderName = sb.Leader,
+                        PhoneNumber = sb.Phone,
+                        Email = sb.Email,
+                        MembersCount = 5,
+                        Status = "Active"
+                    };
+                    await _mongoService.ManagementBoards.InsertOneAsync(newB);
+                    boardMap[sb.Name] = newB;
+                }
+            }
+
+            // Danh sách chợ truyền thống nổi tiếng cần bổ sung
+            var seedMarkets = new[]
+            {
+                // Ba Đình
+                new { Code = "MKT_BD_TC", Name = "Chợ Thành Công", Ward = "Phường Thành Công", District = "Quận Ba Đình", Addr = "Khu tập thể Thành Công, Ba Đình, Hà Nội", Stalls = 150, Bql = "Ban quản lý chợ Quận Ba Đình" },
+                new { Code = "MKT_BD_CL", Name = "Chợ Châu Long", Ward = "Phường Trúc Bạch", District = "Quận Ba Đình", Addr = "Phố Châu Long, Trúc Bạch, Ba Đình, Hà Nội", Stalls = 110, Bql = "Ban quản lý chợ Quận Ba Đình" },
+                new { Code = "MKT_BD_CV", Name = "Chợ Cống Vị", Ward = "Phường Cống Vị", District = "Quận Ba Đình", Addr = "Đường Đội Cấn, Cống Vị, Ba Đình, Hà Nội", Stalls = 95, Bql = "Ban quản lý chợ Quận Ba Đình" },
+                new { Code = "MKT_BD_NH", Name = "Chợ Ngọc Hà", Ward = "Phường Ngọc Hà", District = "Quận Ba Đình", Addr = "Phố Hoàng Hoa Thám, Ngọc Hà, Ba Đình, Hà Nội", Stalls = 80, Bql = "Ban quản lý chợ Quận Ba Đình" },
+                // Hoàn Kiếm
+                new { Code = "MKT_HK_DX", Name = "Chợ Đồng Xuân", Ward = "Phường Đồng Xuân", District = "Quận Hoàn Kiếm", Addr = "Phố Đồng Xuân, Hoàn Kiếm, Hà Nội", Stalls = 350, Bql = "Công ty CP Đồng Xuân" },
+                new { Code = "MKT_HK_HB", Name = "Chợ Hàng Bè", Ward = "Phường Hàng Bạc", District = "Quận Hoàn Kiếm", Addr = "Phố Hàng Bè, Hàng Bạc, Hoàn Kiếm, Hà Nội", Stalls = 90, Bql = "Ban quản lý chợ Quận Hoàn Kiếm" },
+                new { Code = "MKT_HK_CN", Name = "Chợ Cửa Nam", Ward = "Phường Cửa Nam", District = "Quận Hoàn Kiếm", Addr = "Phố Cửa Nam, Hoàn Kiếm, Hà Nội", Stalls = 80, Bql = "Ban quản lý chợ Quận Hoàn Kiếm" },
+                // Đống Đa
+                new { Code = "MKT_DD_KL", Name = "Chợ Kim Liên", Ward = "Phường Kim Liên", District = "Quận Đống Đa", Addr = "Phố Lương Định Của, Kim Liên, Đống Đa, Hà Nội", Stalls = 140, Bql = "Ban quản lý chợ Quận Đống Đa" },
+                new { Code = "MKT_DD_ND", Name = "Chợ Nam Đồng", Ward = "Phường Nam Đồng", District = "Quận Đống Đa", Addr = "Phố Hồ Đắc Di, Nam Đồng, Đống Đa, Hà Nội", Stalls = 90, Bql = "Ban quản lý chợ Quận Đống Đa" },
+                new { Code = "MKT_DD_TH", Name = "Chợ Thái Hà", Ward = "Phường Trung Liệt", District = "Quận Đống Đa", Addr = "Phố Thái Hà, Trung Liệt, Đống Đa, Hà Nội", Stalls = 110, Bql = "Ban quản lý chợ Quận Đống Đa" },
+                new { Code = "MKT_DD_KT", Name = "Chợ Khâm Thiên", Ward = "Phường Khâm Thiên", District = "Quận Đống Đa", Addr = "Phố Khâm Thiên, Đống Đa, Hà Nội", Stalls = 85, Bql = "Ban quản lý chợ Quận Đống Đa" },
+                // Hai Bà Trưng
+                new { Code = "MKT_HBT_CH", Name = "Chợ Hôm - Đức Viên", Ward = "Phường Phố Huế", District = "Quận Hai Bà Trưng", Addr = "Phố Huế, Hai Bà Trưng, Hà Nội", Stalls = 220, Bql = "Ban quản lý chợ Quận Hai Bà Trưng" },
+                new { Code = "MKT_HBT_CM", Name = "Chợ Mơ (TTTM Chợ Mơ)", Ward = "Phường Trương Định", District = "Quận Hai Bà Trưng", Addr = "Phố Bạch Mai, Trương Định, Hai Bà Trưng, Hà Nội", Stalls = 280, Bql = "Ban quản lý chợ Mơ" },
+                // Tây Hồ
+                new { Code = "MKT_TH_B", Name = "Chợ Bưởi", Ward = "Phường Bưởi", District = "Quận Tây Hồ", Addr = "Đường Hoàng Hoa Thám, Bưởi, Tây Hồ, Hà Nội", Stalls = 160, Bql = "Ban quản lý chợ Quận Tây Hồ" },
+                new { Code = "MKT_TH_TL", Name = "Chợ Tứ Liên", Ward = "Phường Tứ Liên", District = "Quận Tây Hồ", Addr = "Phố Tứ Liên, Tây Hồ, Hà Nội", Stalls = 80, Bql = "Ban quản lý chợ Quận Tây Hồ" },
+                // Thanh Xuân
+                new { Code = "MKT_TX_NC", Name = "Chợ Nhân Chính", Ward = "Phường Nhân Chính", District = "Quận Thanh Xuân", Addr = "Đường Quan Nhân, Nhân Chính, Thanh Xuân, Hà Nội", Stalls = 130, Bql = "Ban quản lý chợ Quận Thanh Xuân" },
+                new { Code = "MKT_TX_TD", Name = "Chợ Thượng Đình", Ward = "Phường Thượng Đình", District = "Quận Thanh Xuân", Addr = "Đường Nguyễn Trãi, Thượng Đình, Thanh Xuân, Hà Nội", Stalls = 110, Bql = "Ban quản lý chợ Quận Thanh Xuân" },
+                // Hoàng Mai
+                new { Code = "MKT_HM_MD", Name = "Chợ Mai Động", Ward = "Phường Mai Động", District = "Quận Hoàng Mai", Addr = "Phố Mai Động, Hoàng Mai, Hà Nội", Stalls = 130, Bql = "Ban quản lý chợ Quận Hoàng Mai" },
+                new { Code = "MKT_HM_DC", Name = "Chợ Định Công", Ward = "Phường Định Công", District = "Quận Hoàng Mai", Addr = "Khu đô thị Định Công, Hoàng Mai, Hà Nội", Stalls = 90, Bql = "Ban quản lý chợ Quận Hoàng Mai" },
+                // Long Biên
+                new { Code = "MKT_LB_NL", Name = "Chợ Ngọc Lâm", Ward = "Phường Ngọc Lâm", District = "Quận Long Biên", Addr = "Phố Ngọc Lâm, Long Biên, Hà Nội", Stalls = 120, Bql = "Ban quản lý chợ Quận Long Biên" },
+                new { Code = "MKT_LB_GT", Name = "Chợ Gia Thụy", Ward = "Phường Gia Thụy", District = "Quận Long Biên", Addr = "Phố Gia Thụy, Long Biên, Hà Nội", Stalls = 90, Bql = "Ban quản lý chợ Quận Long Biên" },
+                new { Code = "MKT_LB_SD", Name = "Chợ Sài Đồng", Ward = "Phường Sài Đồng", District = "Quận Long Biên", Addr = "Khu đô thị Sài Đồng, Long Biên, Hà Nội", Stalls = 100, Bql = "Ban quản lý chợ Quận Long Biên" },
+                new { Code = "MKT_LB_PD", Name = "Chợ Phúc Đồng", Ward = "Phường Phúc Đồng", District = "Quận Long Biên", Addr = "Phố Chu Huy Mân, Phúc Đồng, Long Biên, Hà Nội", Stalls = 75, Bql = "Ban quản lý chợ Quận Long Biên" },
+                // Nam Từ Liêm
+                new { Code = "MKT_NTL_MD", Name = "Chợ Mỹ Đình", Ward = "Phường Mỹ Đình 1", District = "Quận Nam Từ Liêm", Addr = "Đường Mỹ Đình, Nam Từ Liêm, Hà Nội", Stalls = 160, Bql = "Ban quản lý chợ Quận Nam Từ Liêm" },
+                new { Code = "MKT_NTL_PK", Name = "Chợ Phùng Khoang", Ward = "Phường Trung Văn", District = "Quận Nam Từ Liêm", Addr = "Phố Phùng Khoang, Trung Văn, Nam Từ Liêm, Hà Nội", Stalls = 200, Bql = "Ban quản lý chợ Phùng Khoang" },
+                // Bắc Từ Liêm
+                new { Code = "MKT_BTL_CN", Name = "Chợ Cổ Nhuế", Ward = "Phường Cổ Nhuế 1", District = "Quận Bắc Từ Liêm", Addr = "Đường Cổ Nhuế, Bắc Từ Liêm, Hà Nội", Stalls = 120, Bql = "Ban quản lý chợ Quận Bắc Từ Liêm" },
+                new { Code = "MKT_BTL_XD", Name = "Chợ Xuân Đỉnh", Ward = "Phường Xuân Đỉnh", District = "Quận Bắc Từ Liêm", Addr = "Đường Xuân Đỉnh, Bắc Từ Liêm, Hà Nội", Stalls = 95, Bql = "Ban quản lý chợ Quận Bắc Từ Liêm" },
+                // Hà Đông
+                new { Code = "MKT_HD_HD", Name = "Chợ Hà Đông", Ward = "Phường Nguyễn Trãi", District = "Quận Hà Đông", Addr = "Đường Lê Lợi, Nguyễn Trãi, Hà Đông, Hà Nội", Stalls = 300, Bql = "Ban quản lý chợ Quận Hà Đông" },
+                new { Code = "MKT_HD_VP", Name = "Chợ Lụa Vạn Phúc", Ward = "Phường Vạn Phúc", District = "Quận Hà Đông", Addr = "Phố Vạn Phúc, Hà Đông, Hà Nội", Stalls = 110, Bql = "Ban quản lý làng nghề Vạn Phúc" },
+                // Đông Anh
+                new { Code = "MKT_DA_TO", Name = "Chợ Tó (Chợ Trung Tâm Đông Anh)", Ward = "Xã Uy Nỗ", District = "Huyện Đông Anh", Addr = "Đường Cao Lỗ, Uy Nỗ, Đông Anh, Hà Nội", Stalls = 220, Bql = "Ban quản lý chợ Huyện Đông Anh" },
+                new { Code = "MKT_DA_MN", Name = "Chợ Mun", Ward = "Xã Kim Chung", District = "Huyện Đông Anh", Addr = "KCN Bắc Thăng Long, Kim Chung, Đông Anh, Hà Nội", Stalls = 180, Bql = "Ban quản lý chợ Huyện Đông Anh" },
+                // Gia Lâm
+                new { Code = "MKT_GL_NH", Name = "Chợ Vải Ninh Hiệp", Ward = "Xã Ninh Hiệp", District = "Huyện Gia Lâm", Addr = "Làng Ninh Hiệp, Gia Lâm, Hà Nội", Stalls = 500, Bql = "Ban quản lý chợ Huyện Gia Lâm" },
+                new { Code = "MKT_GL_BT", Name = "Chợ Gốm Bát Tràng", Ward = "Xã Bát Tràng", District = "Huyện Gia Lâm", Addr = "Làng cổ Bát Tràng, Gia Lâm, Hà Nội", Stalls = 180, Bql = "Ban quản lý chợ Huyện Gia Lâm" },
+                // Hoài Đức
+                new { Code = "MKT_HD_SD", Name = "Chợ Sơn Đồng", Ward = "Xã Sơn Đồng", District = "Huyện Hoài Đức", Addr = "Làng nghề Sơn Đồng, Hoài Đức, Hà Nội", Stalls = 120, Bql = "Ban quản lý chợ Huyện Hoài Đức" },
+                new { Code = "MKT_HD_TT", Name = "Chợ Trạm Trôi", Ward = "Thị trấn Trạm Trôi", District = "Huyện Hoài Đức", Addr = "Khu trung tâm Trạm Trôi, Hoài Đức, Hà Nội", Stalls = 150, Bql = "Ban quản lý chợ Huyện Hoài Đức" },
+                // Thanh Trì
+                new { Code = "MKT_TT_VD", Name = "Chợ Văn Điển", Ward = "Thị trấn Văn Điển", District = "Huyện Thanh Trì", Addr = "Đường Ngọc Hồi, Văn Điển, Thanh Trì, Hà Nội", Stalls = 160, Bql = "Ban quản lý chợ Huyện Thanh Trì" }
+            };
+
+            var existingMarkets = await _mongoService.Markets.Find(_ => true).ToListAsync();
+            var marketCodeSet = new HashSet<string>(existingMarkets.Select(m => m.MarketCode).Where(c => !string.IsNullOrEmpty(c)));
+
+            var existingWards = await _mongoService.CommuneWards.Find(_ => true).ToListAsync();
+            var wardMap = new Dictionary<string, CommuneWard>();
+            foreach (var ew in existingWards)
+            {
+                if (!string.IsNullOrEmpty(ew.WardName)) wardMap[ew.WardName] = ew;
+            }
+
+            var marketsToInsert = new List<Market>();
+            foreach (var sm in seedMarkets)
+            {
+                if (marketCodeSet.Contains(sm.Code)) continue;
+
+                if (!wardMap.TryGetValue(sm.Ward, out var wObj))
+                {
+                    wObj = new CommuneWard
+                    {
+                        WardCode = "WARD_" + sm.Code,
+                        WardName = sm.Ward,
+                        DistrictName = sm.District,
+                        CityName = "Hà Nội"
+                    };
+                    await _mongoService.CommuneWards.InsertOneAsync(wObj);
+                    wardMap[sm.Ward] = wObj;
+                }
+
+                boardMap.TryGetValue(sm.Bql, out var bObj);
+
+                var mObj = new Market
+                {
+                    MarketCode = sm.Code,
+                    MarketName = sm.Name,
+                    WardId = wObj.Id!,
+                    WardName = sm.Ward,
+                    DistrictName = sm.District,
+                    ManagementBoardId = bObj?.Id,
+                    ManagementBoardName = bObj?.BoardName ?? sm.Bql,
+                    Address = sm.Addr,
+                    MarketType = "Chợ dân sinh truyền thống",
+                    TotalStalls = sm.Stalls,
+                    Status = "Active"
+                };
+                marketsToInsert.Add(mObj);
+            }
+
+            if (marketsToInsert.Count > 0)
+            {
+                await _mongoService.Markets.InsertManyAsync(marketsToInsert);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("[EnsureHanoiMarketsSeeded] Warning: " + ex.Message);
+        }
+    }
+
+
+    /// <summary>
+    /// Lấy danh sách Chợ địa phương (Có thể lọc theo Xã/Phường hoặc Quận/Huyện)
+    /// </summary>
+    [HttpGet("markets")]
+    public async Task<IActionResult> GetMarkets([FromQuery] string? wardId, [FromQuery] string? district)
+    {
+        try
+        {
+            await EnsureHanoiMarketsSeededAsync();
+            var builder = Builders<Market>.Filter;
+            var filter = builder.Empty;
+            if (!string.IsNullOrWhiteSpace(wardId))
+            {
+                filter &= builder.Eq(m => m.WardId, wardId);
+            }
+            if (!string.IsNullOrWhiteSpace(district))
+            {
+                filter &= builder.Regex(m => m.DistrictName, new MongoDB.Bson.BsonRegularExpression(district, "i"));
+            }
 
             var markets = await _mongoService.Markets.Find(filter).SortBy(m => m.MarketName).ToListAsync();
             return Ok(new { success = true, data = markets });
@@ -53,6 +239,7 @@ public class MarketManagementController : ControllerBase
             return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
+
 
     /// <summary>
     /// Lấy danh sách Ban Quản Lý Chợ
@@ -74,6 +261,7 @@ public class MarketManagementController : ControllerBase
             return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
+
 
     /// <summary>
     /// Lấy lịch sử phân công quản lý chợ (Đáp ứng Quy tắc 3)
@@ -107,6 +295,7 @@ public class MarketManagementController : ControllerBase
             return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
+
 
     public class AssignMarketRequest
     {
@@ -187,7 +376,192 @@ public class MarketManagementController : ControllerBase
         }
     }
 
+
+        /// <summary>
+    /// Lấy danh sách Chợ kèm toàn bộ thông tin các Gian Hàng / Chủ Tiệm thuộc Chợ đó
+    /// </summary>
+    [HttpGet("markets-overview")]
+    public async Task<IActionResult> GetMarketsOverview()
+    {
+        try
+        {
+            await EnsureHanoiMarketsSeededAsync();
+
+            var wardsTask = _mongoService.CommuneWards.Find(_ => true).ToListAsync();
+            var marketsTask = _mongoService.Markets.Find(_ => true).ToListAsync();
+            var boardsTask = _mongoService.ManagementBoards.Find(_ => true).ToListAsync();
+            var storesTask = _mongoService.Stores.Find(_ => true).ToListAsync();
+            var usersTask = _mongoService.Users.Find(u => u.IsSeller && !u.IsDeleted).ToListAsync();
+
+            await Task.WhenAll(wardsTask, marketsTask, boardsTask, storesTask, usersTask);
+
+            var wards = await wardsTask;
+            var markets = await marketsTask;
+            var boards = await boardsTask;
+            var stores = await storesTask;
+            var users = await usersTask;
+
+            var result = markets.Select(m =>
+            {
+                var matchedStores = stores.Where(s =>
+                    (!string.IsNullOrEmpty(s.MarketId) && s.MarketId == m.Id) ||
+                    (!string.IsNullOrEmpty(s.MarketName) && s.MarketName.Trim().ToLower() == m.MarketName.Trim().ToLower()) ||
+                    (!string.IsNullOrEmpty(s.MarketName) && (s.MarketName.ToLower().Contains(m.MarketName.ToLower()) || m.MarketName.ToLower().Contains(s.MarketName.ToLower()))) ||
+                    (!string.IsNullOrEmpty(s.MarketName) && !string.IsNullOrEmpty(m.MarketCode) && s.MarketName.ToLower().Contains(m.MarketCode.ToLower()))
+                ).ToList();
+
+                var board = boards.FirstOrDefault(b => b.Id == m.ManagementBoardId);
+                var ward = wards.FirstOrDefault(w => w.Id == m.WardId);
+
+                var storeDetailsList = matchedStores.Select(s =>
+                {
+                    var ownerUser = users.FirstOrDefault(u => 
+                        (!string.IsNullOrEmpty(s.UserId) && (u.Id == s.UserId || u.UserCode == s.UserId)) ||
+                        (!string.IsNullOrEmpty(s.PhoneEmail) && !string.IsNullOrEmpty(u.PhoneEmail) && u.PhoneEmail.Trim().ToLower() == s.PhoneEmail.Trim().ToLower()) ||
+                        (!string.IsNullOrEmpty(s.OwnerFullName) && !string.IsNullOrEmpty(u.FullName) && u.FullName.Trim().ToLower() == s.OwnerFullName.Trim().ToLower())
+                    );
+
+                    return new
+                    {
+                        storeId = s.Id,
+                        storeCode = s.StoreCode,
+                        storeName = s.StoreName,
+                        ownerFullName = !string.IsNullOrWhiteSpace(s.OwnerFullName) ? s.OwnerFullName : (ownerUser?.FullName ?? "Chủ Gian Hàng"),
+                        phoneEmail = !string.IsNullOrWhiteSpace(s.PhoneEmail) ? s.PhoneEmail : (ownerUser?.PhoneEmail ?? ""),
+                        cccdNumber = !string.IsNullOrWhiteSpace(s.CccdNumber) ? s.CccdNumber : (ownerUser?.CccdNumber ?? ""),
+                        dateOfBirth = s.DateOfBirth,
+                        gender = s.Gender,
+                        nguyenQuan = s.NguyenQuan,
+                        permanentAddress = s.PermanentAddress,
+                        stallNumber = !string.IsNullOrWhiteSpace(s.StallNumber) ? s.StallNumber : "Quầy sạp tại chợ",
+                        address = s.Address,
+                        category = s.Category,
+                        openHours = s.OpenHours,
+                        bankName = s.BankName,
+                        bankAccountNumber = s.BankAccountNumber,
+                        sellerType = s.SellerType,
+                        status = s.Status,
+                        rejectReason = s.RejectReason,
+                        createdAt = s.CreatedAt.ToString("dd/MM/yyyy HH:mm"),
+                        avatarUrl = ownerUser?.AvatarUrl ?? "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200",
+                        cccdFrontImage = s.CccdFrontImage,
+                        foodSafetyCertImage = s.FoodSafetyCertImage
+                    };
+                }).ToList();
+
+                return new
+                {
+                    id = m.Id,
+                    marketCode = m.MarketCode,
+                    marketName = m.MarketName,
+                    wardId = m.WardId,
+                    wardName = m.WardName ?? ward?.WardName ?? "Phường Dịch Vọng Hậu",
+                    districtName = !string.IsNullOrWhiteSpace(m.DistrictName) ? m.DistrictName : (ward?.DistrictName ?? "Quận Cầu Giấy"),
+                    managementBoardId = m.ManagementBoardId,
+                    managementBoardName = m.ManagementBoardName ?? board?.BoardName ?? "Chưa phân công",
+                    boardLeader = board?.LeaderName ?? "",
+                    boardPhone = board?.PhoneNumber ?? "",
+                    address = m.Address,
+                    marketType = m.MarketType,
+                    totalStalls = m.TotalStalls,
+                    registeredStallsCount = storeDetailsList.Count,
+                    occupancyRate = m.TotalStalls > 0 ? Math.Round((double)storeDetailsList.Count / m.TotalStalls * 100, 1) : 0,
+                    status = m.Status,
+                    stores = storeDetailsList
+                };
+            }).ToList();
+
+            var unassignedStores = stores.Where(s =>
+                string.IsNullOrEmpty(s.MarketId) &&
+                (string.IsNullOrEmpty(s.MarketName) || !markets.Any(m => s.MarketName.ToLower().Contains(m.MarketName.ToLower()) || m.MarketName.ToLower().Contains(s.MarketName.ToLower())))
+            ).Select(s => new
+            {
+                storeId = s.Id,
+                storeCode = s.StoreCode,
+                storeName = s.StoreName,
+                ownerFullName = s.OwnerFullName,
+                phoneEmail = s.PhoneEmail,
+                cccdNumber = s.CccdNumber,
+                ward = s.Ward,
+                district = s.District,
+                marketName = s.MarketName,
+                stallNumber = s.StallNumber ?? "Tự do",
+                address = s.Address,
+                category = s.Category,
+                status = s.Status,
+                createdAt = s.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+            }).ToList();
+
+            return Ok(new
+            {
+                success = true,
+                totalWards = wards.Count,
+                totalMarkets = markets.Count,
+                totalBoards = boards.Count,
+                totalStores = stores.Count,
+                markets = result,
+                unassignedStores
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    public class AssignStoreToMarketRequest
+    {
+        public string StoreId { get; set; } = string.Empty;
+        public string MarketId { get; set; } = string.Empty;
+        public string? StallNumber { get; set; }
+    }
+
+
     /// <summary>
+    /// Gán hoặc chuyển đổi Gian Hàng vào một Chợ cụ thể
+    /// </summary>
+    [HttpPost("assign-store-to-market")]
+    public async Task<IActionResult> AssignStoreToMarket([FromBody] AssignStoreToMarketRequest req)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(req.StoreId) || string.IsNullOrWhiteSpace(req.MarketId))
+            {
+                return BadRequest(new { success = false, message = "StoreId và MarketId không được để trống!" });
+            }
+
+            var market = await _mongoService.Markets.Find(m => m.Id == req.MarketId).FirstOrDefaultAsync();
+            if (market == null)
+            {
+                return NotFound(new { success = false, message = "Không tìm thấy Chợ tương ứng!" });
+            }
+
+            var updateDef = Builders<Store>.Update
+                .Set(s => s.MarketId, market.Id)
+                .Set(s => s.MarketName, market.MarketName);
+
+            if (!string.IsNullOrWhiteSpace(req.StallNumber))
+            {
+                updateDef = updateDef.Set(s => s.StallNumber, req.StallNumber);
+            }
+
+            var updateResult = await _mongoService.Stores.UpdateOneAsync(s => s.Id == req.StoreId, updateDef);
+            if (updateResult.ModifiedCount > 0)
+            {
+                return Ok(new { success = true, message = $"Đã gắn gian hàng vào {market.MarketName} thành công!" });
+            }
+
+            return BadRequest(new { success = false, message = "Không thể cập nhật gian hàng (có thể gian hàng đã ở chợ này)." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+
+
+/// <summary>
     /// Khởi tạo dữ liệu mẫu chuẩn theo Sơ đồ 1.2
     /// </summary>
     [HttpPost("seed-diagram-1-2")]
@@ -343,5 +717,6 @@ public class MarketManagementController : ControllerBase
             return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
+
 }
 

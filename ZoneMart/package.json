@@ -10,7 +10,13 @@
     "server": "dotnet run --project ../server"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
+    "@simplewebauthn/browser": "^14.0.0",
     "@types/three": "^0.143.0",
+    "@vueuse/core": "^15.0.0",
     "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.1",
     "firebase": "^12.19.0",

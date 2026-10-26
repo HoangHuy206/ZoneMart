@@ -15,6 +15,7 @@ const route = useRoute();
 const auth = useAuth();
 const cart = useCart();
 const catalog = useProductCatalog();
+
 const hasShownIntro = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('zonemart_intro_shown') === 'true';
 const introComplete = ref(hasShownIntro);
 const replayIntro = () => { introComplete.value = false; };
@@ -29,7 +30,15 @@ onUnmounted(() => window.removeEventListener('zonemart:replay-intro', replayIntr
 
 onMounted(() => {
   catalog.refreshCatalog();
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('zonemart_gps_address');
+    localStorage.removeItem('zonemart_user_address');
+    localStorage.removeItem('zonemart_lat');
+    localStorage.removeItem('zonemart_lon');
+  }
 });
+
+
 
 const navigateToBuyerOrders = () => {
   closeDropdowns();
@@ -209,9 +218,11 @@ const handleLogout = () => {
             <span class="brand-name"
               >Zone<span class="highlight">Mart</span></span
             >
-            <span class="brand-tagline">Giao hàng hỏa tốc 5km</span>
+            <span class="brand-tagline">Giao hàng hỏa tốc</span>
           </div>
         </router-link>
+
+
 
         <!-- 2. Thanh tìm kiếm chính giữa: Tìm Sản Phẩm HOẶC Gian Hàng -->
         <div class="header-search-wrap" @click.stop>
@@ -525,6 +536,9 @@ const handleLogout = () => {
                   d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
                 ></path>
               </svg>
+              <span v-if="cart.totalCount.value > 0" class="cart-badge">{{
+                cart.totalCount.value
+              }}</span>
             </router-link>
             <router-link to="/register" class="btn-auth-outline">
               Đăng Ký
@@ -836,7 +850,7 @@ const handleLogout = () => {
                 d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"
               ></path>
             </svg>
-            <span v-if="auth.isLoggedIn.value && cart.totalCount.value > 0" class="cart-badge">{{
+            <span v-if="cart.totalCount.value > 0" class="cart-badge">{{
               cart.totalCount.value
             }}</span>
           </router-link>
@@ -937,6 +951,7 @@ const handleLogout = () => {
         class="mobile-menu"
         aria-label="Menu điều hướng di động"
       >
+
         <!-- Guest Mobile Links -->
         <template v-if="!auth.isLoggedIn.value">
           <router-link
@@ -945,7 +960,27 @@ const handleLogout = () => {
             @click="closeDropdowns"
           >
             <i class="bi bi-grid-fill menu-icon" aria-hidden="true"></i>
-            <span>Sản Phẩm</span>
+            <span>Sản Phẩm & Nông Sản</span>
+          </router-link>
+          <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
+            <i class="bi bi-cart3 menu-icon" aria-hidden="true"></i>
+            <span>Giỏ Hàng<span v-if="cart.totalCount.value > 0"> ({{ cart.totalCount.value }})</span></span>
+          </router-link>
+          <router-link
+            to="/register-seller"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
+            <i class="bi bi-shop menu-icon" aria-hidden="true"></i>
+            <span>Đăng Ký Mở Gian Hàng</span>
+          </router-link>
+          <router-link
+            to="/register-shipper"
+            class="mobile-link"
+            @click="closeDropdowns"
+          >
+            <i class="bi bi-bicycle menu-icon" aria-hidden="true"></i>
+            <span>Đăng Ký Đối Tác Giao Hàng</span>
           </router-link>
           <router-link
             to="/contact"
@@ -953,7 +988,7 @@ const handleLogout = () => {
             @click="closeDropdowns"
           >
             <i class="bi bi-headset menu-icon" aria-hidden="true"></i>
-            <span>Liên Hệ</span>
+            <span>Trung Tâm Hỗ Trợ 24/7</span>
           </router-link>
           <div class="mobile-divider"></div>
           <div class="mobile-auth-grid">
@@ -994,7 +1029,7 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-grid-fill menu-icon"></i>
-              <span>Sản Phẩm</span>
+              <span>Sản Phẩm & Đi Chợ</span>
             </router-link>
             <router-link to="/cart" class="mobile-link" @click="closeDropdowns">
               <i class="bi bi-cart3 menu-icon"></i>
@@ -1006,7 +1041,7 @@ const handleLogout = () => {
               @click="navigateToBuyerOrders"
             >
               <i class="bi bi-bag-check menu-icon"></i>
-              <span>Đơn Mua</span>
+              <span>Đơn Mua Của Tôi</span>
             </router-link>
             <router-link
               to="/profile"
@@ -1014,7 +1049,31 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-person-circle menu-icon"></i>
-              <span>Hồ Sơ Cá Nhân</span>
+              <span>Hồ Sơ Cá Nhân & Face ID</span>
+            </router-link>
+            <router-link
+              :to="auth.isLoggedIn.value ? { path: '/profile', query: { tab: 'seller-reg' } } : '/register-seller'"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-shop menu-icon"></i>
+              <span>Mở Gian Hàng Bán Nông Sản</span>
+            </router-link>
+            <router-link
+              :to="auth.isLoggedIn.value ? { path: '/profile', query: { tab: 'shipper-reg' } } : '/register-shipper'"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-bicycle menu-icon"></i>
+              <span>Đăng Ký Tài Xế Shipper</span>
+            </router-link>
+            <router-link
+              to="/contact"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-headset menu-icon"></i>
+              <span>Tổng Đài Hỗ Trợ Khách Hàng</span>
             </router-link>
           </template>
 
@@ -1026,7 +1085,7 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-shop menu-icon"></i>
-              <span>Kênh Bán Hàng & Đơn</span>
+              <span>Kênh Gian Hàng & Đơn Mới</span>
             </router-link>
             <router-link
               to="/products"
@@ -1034,7 +1093,7 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-box-seam menu-icon"></i>
-              <span>Sản Phẩm Sàn</span>
+              <span>Sản Phẩm Trên Sàn</span>
             </router-link>
             <router-link
               to="/profile"
@@ -1042,7 +1101,15 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-cash-stack menu-icon"></i>
-              <span>Ví Doanh Thu</span>
+              <span>Ví Doanh Thu & Cài Đặt</span>
+            </router-link>
+            <router-link
+              to="/contact"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-headset menu-icon"></i>
+              <span>Hỗ Trợ Chủ Gian Hàng</span>
             </router-link>
           </template>
 
@@ -1054,7 +1121,7 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-bicycle menu-icon"></i>
-              <span>Nhận Đơn Hỏa Tốc</span>
+              <span>Bản Đồ Nhận Đơn Hỏa Tốc</span>
             </router-link>
             <router-link
               to="/profile"
@@ -1062,7 +1129,15 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-cash-coin menu-icon"></i>
-              <span>Ví Thu Nhập</span>
+              <span>Ví Thu Nhập & Tài Xế</span>
+            </router-link>
+            <router-link
+              to="/contact"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-telephone-outbound menu-icon"></i>
+              <span>Hỗ Trợ Tài Xế Khẩn Cấp</span>
             </router-link>
           </template>
 
@@ -1082,7 +1157,7 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-eye menu-icon"></i>
-              <span>Giám Sát Sàn</span>
+              <span>Giám Sát Sàn & Duyệt Tin</span>
             </router-link>
             <router-link
               to="/profile"
@@ -1090,7 +1165,7 @@ const handleLogout = () => {
               @click="closeDropdowns"
             >
               <i class="bi bi-gear menu-icon"></i>
-              <span>Hệ Thống</span>
+              <span>Cấu Hình Hệ Thống</span>
             </router-link>
           </template>
 
@@ -1104,7 +1179,7 @@ const handleLogout = () => {
     </header>
 
     <!-- Nội dung chính được điều hướng qua Router -->
-    <main class="main-content">
+    <main class="main-content" :class="{ 'has-no-header': !!$route.meta.hideHeader }">
       <router-view v-slot="{ Component }">
         <transition name="page-fade-slide" mode="out-in">
           <component :is="Component" />
@@ -1217,7 +1292,11 @@ const handleLogout = () => {
           </h5>
           
           <div class="footer-partner-cards">
-            <router-link to="/register-seller" target="_blank" class="partner-cta-card seller-card">
+            <router-link 
+              :to="auth.isLoggedIn.value ? { path: '/profile', query: { tab: 'seller-reg' } } : '/register-seller'" 
+              :target="auth.isLoggedIn.value ? undefined : '_blank'" 
+              class="partner-cta-card seller-card"
+            >
               <div class="partner-icon-circle"><i class="bi bi-shop"></i></div>
               <div class="partner-card-texts">
                 <strong>Mở gian hàng Bán Nông Sản</strong>
@@ -1226,7 +1305,11 @@ const handleLogout = () => {
               <i class="bi bi-arrow-right partner-chevron"></i>
             </router-link>
 
-            <router-link to="/register-shipper" target="_blank" class="partner-cta-card shipper-card">
+            <router-link 
+              :to="auth.isLoggedIn.value ? { path: '/profile', query: { tab: 'shipper-reg' } } : '/register-shipper'" 
+              :target="auth.isLoggedIn.value ? undefined : '_blank'" 
+              class="partner-cta-card shipper-card"
+            >
               <div class="partner-icon-circle"><i class="bi bi-bicycle"></i></div>
               <div class="partner-card-texts">
                 <strong>Đăng ký làm Tài xế Shipper</strong>
@@ -1363,6 +1446,11 @@ body {
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.main-content.has-no-header {
+  padding-top: env(safe-area-inset-top, 0px);
   overflow-x: clip;
 }
 
@@ -1376,6 +1464,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 1000;
+  padding-top: env(safe-area-inset-top, 0px);
   box-shadow: 0 2px 10px rgba(43, 27, 20, 0.03);
 }
 
@@ -3329,4 +3418,104 @@ body {
   opacity: 0;
   transform: translateY(-6px);
 }
+
+/* Location chip in navbar */
+.nav-location-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 9999px;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  max-width: 220px;
+  text-align: left;
+}
+.nav-location-chip:hover {
+  background: #fff7ed;
+  border-color: #fdba74;
+}
+.nav-location-chip.is-locating {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+.loc-chip-icon {
+  color: #ea580c;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+}
+.nav-location-chip.is-locating .loc-chip-icon {
+  color: #2563eb;
+}
+.loc-chip-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  line-height: 1.2;
+}
+.loc-chip-title {
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.loc-chip-address {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+@media (max-width: 1080px) {
+  .nav-location-chip {
+    display: none;
+  }
+}
+
+.mobile-location-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin: 8px 12px 14px 12px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.mobile-location-row .m-loc-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mobile-location-row .m-loc-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #c2410c;
+}
+.mobile-location-row .m-loc-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mobile-location-row .m-loc-gps-btn {
+  font-size: 16px;
+  color: #ea580c;
+}
+
 </style>

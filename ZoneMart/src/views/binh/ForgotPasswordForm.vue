@@ -8,6 +8,7 @@
  * ================================================================
  */
 import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { apiFetch } from "../../utils/apiConfig";
 import { useRoute } from "vue-router";
 
 const props = withDefaults(
@@ -129,7 +130,7 @@ const handleSendOtp = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("/api/forgotpassword/send-otp", {
+    const res = await apiFetch("/api/forgotpassword/send-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: form.email.trim() })
@@ -153,8 +154,8 @@ const handleSendOtp = async () => {
         }
       }
     } else {
-      errorMessage.value = "Không thể kết nối đến máy chủ backend (http://localhost:5000). Vui lòng thử lại sau.";
-      errorMessage.value = "Không thể kết nối đến máy chủ backend. Vui lòng thử lại sau.";
+      errorMessage.value = "Không thể kết nối đến máy chủ. Vui lòng kiểm tra mạng và thử lại sau.";
+      errorMessage.value = "Không thể kết nối đến máy chủ. Vui lòng kiểm tra mạng và thử lại sau.";
     }
   } catch (error: any) {
     errorMessage.value = error.message || "Không thể gửi mã xác thực. Vui lòng thử lại sau.";
@@ -181,7 +182,7 @@ const handleVerifyOtp = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("/api/forgotpassword/verify-otp", {
+    const res = await apiFetch("/api/forgotpassword/verify-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -228,7 +229,7 @@ const handleResetPassword = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("/api/forgotpassword/reset-password", {
+    const res = await apiFetch("/api/forgotpassword/reset-password", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

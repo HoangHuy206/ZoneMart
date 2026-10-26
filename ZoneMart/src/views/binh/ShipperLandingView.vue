@@ -13,6 +13,7 @@
  * ================================================================
  */
 import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { apiFetch } from "../../utils/apiConfig";
 import { useRouter, useRoute } from "vue-router";
 
 const router = useRouter();
@@ -78,7 +79,7 @@ const submitSupportTicket = async () => {
 
   isSupportLoading.value = true;
   try {
-    const res = await fetch("/api/support/ticket", {
+    const res = await apiFetch("/api/support/ticket", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -372,7 +373,7 @@ const handleSubmitShipper = async () => {
   isLoading.value = true;
 
   try {
-    const res = await fetch("/api/auth/register-shipper", {
+    const res = await apiFetch("/api/auth/register-shipper", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -445,16 +446,21 @@ const scrollToRegisterForm = () => {
     <!-- 1. HEADER CAO CẤP DÀNH RIÊNG CHO ZONEMART DRIVER -->
     <header class="driver-header-modern">
       <div class="header-inner">
-        <!-- LOGO ZONEMART DRIVER MỚI (CHỮ DRIVER KHÔNG KHUNG, NẰM NGAY DƯỚI CHỮ ZONEMART) -->
-        <router-link to="/" class="driver-brand-logo">
-          <img src="/logo.png" alt="ZoneMart Logo" class="brand-img" />
-          <div class="brand-text-stack">
-            <div class="main-brand-title">
-              Zone<span class="highlight-mart">Mart</span>
+        <div class="header-left-cluster">
+          <router-link to="/" class="btn-header-back" title="Quay về trang chủ">
+            <i class="bi bi-chevron-left"></i>
+          </router-link>
+          <!-- LOGO ZONEMART DRIVER -->
+          <router-link to="/" class="driver-brand-logo">
+            <img src="/logo.png" alt="ZoneMart Logo" class="brand-img" />
+            <div class="brand-text-stack">
+              <div class="main-brand-title">
+                Zone<span class="highlight-mart">Mart</span>
+              </div>
+              <div class="driver-sub-title">DRIVER</div>
             </div>
-            <div class="driver-sub-title">DRIVER</div>
-          </div>
-        </router-link>
+          </router-link>
+        </div>
 
         <!-- MENU ĐIỀU HƯỚNG -->
         <nav class="driver-nav-menu">
@@ -463,13 +469,8 @@ const scrollToRegisterForm = () => {
           <a href="#benefits" class="nav-item">Quyền Lợi Vàng</a>
           <a href="#faq" class="nav-item">Hỏi Đáp FAQ</a>
           <button @click="scrollToRegisterForm" class="btn-nav-primary">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-              <circle cx="8.5" cy="7" r="4"></circle>
-              <line x1="20" y1="8" x2="20" y2="14"></line>
-              <line x1="23" y1="11" x2="17" y2="11"></line>
-            </svg>
-            Đăng Ký Tài Xế
+            <i class="bi bi-bicycle me-1"></i>
+            Đăng Ký Shipper
           </button>
           <router-link to="/shipper-login" class="btn-nav-login">Đăng Nhập</router-link>
         </nav>
@@ -575,9 +576,9 @@ const scrollToRegisterForm = () => {
             />
             
             <div class="range-marks">
-              <span>4h (Bán thời gian)</span>
-              <span>8h (Toàn thời gian)</span>
-              <span>12h (Chuyên nghiệp)</span>
+              <span class="mark-item mark-start"><b>4h</b> <span class="mark-desc">(Bán thời gian)</span></span>
+              <span class="mark-item mark-mid"><b>8h</b> <span class="mark-desc">(Toàn thời gian)</span></span>
+              <span class="mark-item mark-end"><b>12h</b> <span class="mark-desc">(Chuyên nghiệp)</span></span>
             </div>
           </div>
 
@@ -1449,26 +1450,789 @@ const scrollToRegisterForm = () => {
   color: #1F2937;
   background: #F8FAFC;
   min-height: 100vh;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 /* HEADER MODERN WITH LOGO DRIVER WITHOUT BOX BACKGROUND */
+.driver-portal-page {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
 .driver-header-modern {
   position: sticky;
   top: 0;
-  z-index: 100;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid #E2E8F0;
-  box-shadow: 0 4px 20px rgba(2, 132, 199, 0.04);
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(16px);
+  border-bottom: 1.5px solid #BAE6FD;
+  box-shadow: 0 4px 20px rgba(2, 132, 199, 0.08);
+  padding-top: max(6px, env(safe-area-inset-top, 0px));
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .header-inner {
   max-width: 1240px;
   margin: 0 auto;
-  padding: 12px 24px;
+  padding: 10px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+
+.header-left-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-header-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  text-decoration: none;
+  font-size: 16px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.btn-header-back:hover {
+  background: #e2e8f0;
+  color: #0284C7;
+}
+
+/* RESPONSIVE DESIGN CHO TABLET & MOBILE (ZONEMART DRIVER PORTAL) */
+@media (max-width: 1024px) {
+  .hero-content-grid {
+    gap: 28px !important;
+  }
+  .calc-body-grid {
+    gap: 24px !important;
+  }
+  .benefits-6-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .footer-top-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  /* 1. HEADER CHUẨN ĐẸP TRÊN DI ĐỘNG */
+  .driver-header-modern {
+    padding-top: max(44px, calc(env(safe-area-inset-top, 0px) + 6px)) !important;
+  }
+  .header-inner {
+    padding: 8px 12px !important;
+    gap: 8px !important;
+  }
+  .header-left-cluster {
+    gap: 8px !important;
+    flex-shrink: 1 !important;
+    min-width: 0 !important;
+  }
+  .btn-header-back {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 14px !important;
+    flex-shrink: 0 !important;
+  }
+  .brand-img {
+    height: 30px !important;
+    width: auto !important;
+  }
+  .main-brand-title {
+    font-size: 16px !important;
+    line-height: 1.1 !important;
+  }
+  .driver-sub-title {
+    font-size: 8.5px !important;
+    letter-spacing: 1.2px !important;
+  }
+  .driver-nav-menu {
+    gap: 6px !important;
+    flex-shrink: 0 !important;
+  }
+  .driver-nav-menu .nav-item {
+    display: none !important;
+  }
+  .btn-nav-primary {
+    padding: 7px 11px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+    border-radius: 10px !important;
+    gap: 4px !important;
+  }
+  .btn-nav-login {
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+    border-radius: 10px !important;
+    white-space: nowrap !important;
+  }
+
+  /* 2. HERO BANNER */
+  .driver-hero-wrapper {
+    padding: 20px 14px 32px !important;
+    overflow: hidden !important;
+  }
+  .hero-content-grid {
+    grid-template-columns: 1fr !important;
+    gap: 24px !important;
+  }
+  .hero-left-col {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center !important;
+  }
+  .hero-badge-pill {
+    font-size: 11px !important;
+    padding: 5px 12px !important;
+    margin: 0 auto 14px auto !important;
+    line-height: 1.3 !important;
+    text-align: center !important;
+  }
+  .hero-main-title {
+    font-size: clamp(22px, 5.8vw, 28px) !important;
+    line-height: 1.28 !important;
+    margin-bottom: 14px !important;
+    text-align: center !important;
+  }
+  .hero-sub-text {
+    font-size: 13.5px !important;
+    line-height: 1.55 !important;
+    margin: 0 auto 20px auto !important;
+    text-align: center !important;
+    max-width: 100% !important;
+  }
+  .hero-action-row,
+  .hero-cta-group {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    gap: 10px !important;
+    margin-bottom: 24px !important;
+  }
+  .btn-hero-glow,
+  .btn-hero-glass {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 13px 18px !important;
+    font-size: 14px !important;
+    border-radius: 14px !important;
+    box-sizing: border-box !important;
+  }
+  .hero-stats-card {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 12px 10px !important;
+    gap: 6px !important;
+    justify-content: space-around !important;
+    border-radius: 16px !important;
+  }
+  .stat-box {
+    text-align: center !important;
+  }
+  .stat-val {
+    font-size: 16px !important;
+    line-height: 1.2 !important;
+  }
+  .stat-lbl {
+    font-size: 10px !important;
+    text-align: center !important;
+  }
+  .stat-divider {
+    height: 24px !important;
+  }
+  .hero-right-col {
+    display: flex !important;
+    justify-content: center !important;
+    width: 100% !important;
+    margin-top: 4px !important;
+  }
+  .hero-image-floating-container {
+    max-width: 280px !important;
+    margin: 0 auto !important;
+  }
+  .hero-large-illustration {
+    transform: none !important;
+    width: 100% !important;
+    max-height: 200px !important;
+    object-fit: contain !important;
+  }
+
+  /* 3. CÔNG CỤ TÍNH THU NHẬP (FIX TRIỆT ĐỂ LỖI VỠ GIAO DIỆN) */
+  .calculator-section {
+    padding: 0 12px !important;
+    margin: 24px auto !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+  .calc-card-glass {
+    padding: 22px 14px !important;
+    border-radius: 20px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+  }
+  .calc-header {
+    margin-bottom: 18px !important;
+    text-align: center !important;
+  }
+  .calc-header .section-tag-pill {
+    font-size: 11px !important;
+    padding: 4px 12px !important;
+    margin-bottom: 8px !important;
+  }
+  .calc-header .section-heading {
+    font-size: clamp(19px, 5vw, 23px) !important;
+    line-height: 1.32 !important;
+    margin-bottom: 8px !important;
+  }
+  .calc-header .section-subtext {
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+    padding: 0 4px !important;
+    margin: 0 auto !important;
+  }
+  .calc-body-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+    width: 100% !important;
+  }
+  .calc-slider-box {
+    padding: 18px 14px !important;
+    border-radius: 16px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .slider-label-row {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    font-size: 14px !important;
+    margin-bottom: 14px !important;
+  }
+  .hours-val {
+    font-size: 16px !important;
+    font-weight: 800 !important;
+    color: #0284C7 !important;
+  }
+  .custom-range-slider {
+    width: 100% !important;
+    height: 8px !important;
+    margin: 6px 0 !important;
+  }
+  .range-marks {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    margin-top: 10px !important;
+    width: 100% !important;
+    gap: 4px !important;
+  }
+  .mark-item {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  .mark-item b {
+    font-size: 12px !important;
+    color: #1E293B !important;
+  }
+  .mark-start {
+    text-align: left !important;
+    align-items: flex-start !important;
+  }
+  .mark-mid {
+    text-align: center !important;
+    align-items: center !important;
+  }
+  .mark-end {
+    text-align: right !important;
+    align-items: flex-end !important;
+  }
+  .mark-desc {
+    font-size: 10px !important;
+    color: #64748B !important;
+    margin-top: 2px !important;
+    line-height: 1.25 !important;
+    white-space: nowrap !important;
+  }
+  .calc-result-box {
+    padding: 20px 16px !important;
+    border-radius: 18px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    text-align: center !important;
+  }
+  .result-title {
+    font-size: 11px !important;
+    letter-spacing: 0.5px !important;
+    margin-bottom: 6px !important;
+  }
+  .result-amount {
+    font-size: clamp(24px, 6.5vw, 30px) !important;
+    font-weight: 900 !important;
+    line-height: 1.2 !important;
+    margin-bottom: 8px !important;
+    word-break: break-word !important;
+  }
+  .month-unit {
+    font-size: 14px !important;
+    font-weight: 600 !important;
+  }
+  .result-desc {
+    font-size: 11.5px !important;
+    line-height: 1.45 !important;
+    margin-bottom: 16px !important;
+    padding: 0 4px !important;
+  }
+  .btn-calc-apply {
+    width: 100% !important;
+    padding: 13px 16px !important;
+    font-size: 13px !important;
+    border-radius: 12px !important;
+    box-sizing: border-box !important;
+  }
+
+  /* 4. 6 LỢI ÍCH VÀNG */
+  .benefits-grid-section {
+    padding: 0 12px !important;
+    margin: 28px auto !important;
+    box-sizing: border-box !important;
+  }
+  .benefits-grid-section .section-heading {
+    font-size: clamp(19px, 5vw, 24px) !important;
+    margin-bottom: 18px !important;
+    text-align: center !important;
+  }
+  .benefits-6-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .benefit-card-modern {
+    padding: 16px 14px !important;
+    border-radius: 16px !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    gap: 12px !important;
+    box-sizing: border-box !important;
+  }
+  .benefit-card-modern .card-svg-icon-wrap {
+    width: 42px !important;
+    height: 42px !important;
+    border-radius: 12px !important;
+    margin-bottom: 0 !important;
+    flex-shrink: 0 !important;
+  }
+  .benefit-card-modern .card-svg-icon-wrap svg {
+    width: 22px !important;
+    height: 22px !important;
+  }
+  .benefit-card-modern h3 {
+    font-size: 15px !important;
+    margin-bottom: 4px !important;
+  }
+  .benefit-card-modern p {
+    font-size: 12.5px !important;
+    line-height: 1.45 !important;
+    margin: 0 !important;
+  }
+
+  /* 5. QUY TRÌNH 3 BƯỚC */
+  .steps-flow-section {
+    padding: 28px 12px !important;
+    margin: 24px 0 !important;
+    box-sizing: border-box !important;
+  }
+  .section-heading-centered-full {
+    font-size: clamp(19px, 5vw, 23px) !important;
+    line-height: 1.3 !important;
+    margin-bottom: 20px !important;
+  }
+  .steps-flow-container {
+    flex-direction: column !important;
+    gap: 10px !important;
+    width: 100% !important;
+  }
+  .step-card-box {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 22px 16px 16px !important;
+    border-radius: 18px !important;
+  }
+  .step-card-box h4 {
+    font-size: 15px !important;
+    margin-bottom: 6px !important;
+  }
+  .step-card-box p {
+    font-size: 12.5px !important;
+    margin: 0 !important;
+  }
+  .flow-connector-arrow {
+    transform: rotate(90deg) !important;
+    padding: 2px 0 !important;
+    margin: 0 auto !important;
+    opacity: 0.5 !important;
+    display: flex !important;
+    justify-content: center !important;
+  }
+  .flow-connector-arrow svg {
+    width: 22px !important;
+    height: 22px !important;
+  }
+
+  /* 6. FORM ĐĂNG KÝ SHIPPER */
+  .form-section-floating {
+    padding: 0 12px !important;
+    margin: 24px auto !important;
+    box-sizing: border-box !important;
+  }
+  .modern-form-card {
+    padding: 22px 14px !important;
+    border-radius: 20px !important;
+    box-sizing: border-box !important;
+  }
+  .form-card-title-centered {
+    font-size: 19px !important;
+    margin-bottom: 6px !important;
+  }
+  .form-card-sub-centered {
+    font-size: 12.5px !important;
+    line-height: 1.45 !important;
+    margin-bottom: 18px !important;
+  }
+  .pills-stepper-bar {
+    gap: 4px !important;
+    margin-bottom: 20px !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+  }
+  .pill-step {
+    padding: 6px 8px !important;
+    font-size: 11px !important;
+    gap: 5px !important;
+    border-radius: 18px !important;
+  }
+  .pill-num {
+    width: 20px !important;
+    height: 20px !important;
+    font-size: 10.5px !important;
+  }
+  .pill-line {
+    width: 12px !important;
+    min-width: 6px !important;
+  }
+  .form-fields-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+  .full-row {
+    grid-column: span 1 !important;
+  }
+  .input-label-stylish {
+    font-size: 12.5px !important;
+    margin-bottom: 6px !important;
+  }
+  .modern-input {
+    padding: 11px 14px 11px 40px !important;
+    font-size: 13.5px !important;
+    border-radius: 12px !important;
+  }
+  .input-with-icon > svg.input-left-icon,
+  .input-with-icon > svg:not(.eye-toggle-btn svg) {
+    left: 12px !important;
+    width: 18px !important;
+    height: 18px !important;
+  }
+  .upload-cards-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+  .upload-drop-card {
+    padding: 14px !important;
+    border-radius: 14px !important;
+  }
+  .upload-icon-circle {
+    width: 36px !important;
+    height: 36px !important;
+    margin-bottom: 6px !important;
+  }
+  .upload-txt-title {
+    font-size: 12px !important;
+  }
+  .upload-txt-sub {
+    font-size: 11px !important;
+  }
+  .custom-select-trigger-stylish {
+    padding: 11px 14px !important;
+    font-size: 13.5px !important;
+    border-radius: 12px !important;
+  }
+  .custom-dropdown-menu-stylish {
+    border-radius: 12px !important;
+    max-height: 180px !important;
+  }
+  .dropdown-item-stylish {
+    padding: 9px 14px !important;
+    font-size: 13px !important;
+  }
+  .step-btn-row-stylish {
+    flex-direction: column-reverse !important;
+    gap: 10px !important;
+    margin-top: 14px !important;
+  }
+  .btn-prev-stylish,
+  .btn-step-next-glow,
+  .btn-submit-final-glow {
+    width: 100% !important;
+    height: 46px !important;
+    font-size: 13.5px !important;
+    border-radius: 12px !important;
+    justify-content: center !important;
+  }
+  .stylish-checkbox-label {
+    font-size: 12px !important;
+    align-items: flex-start !important;
+    line-height: 1.4 !important;
+  }
+  .custom-chk-box {
+    margin-top: 2px !important;
+    flex-shrink: 0 !important;
+  }
+
+  /* 7. HỎI ĐÁP & HỖ TRỢ TRỰC TUYẾN */
+  .faq-support-split-section {
+    padding: 0 12px !important;
+    margin: 24px auto !important;
+    box-sizing: border-box !important;
+  }
+  .faq-support-split-section .section-heading {
+    font-size: clamp(19px, 5vw, 23px) !important;
+    margin-bottom: 18px !important;
+  }
+  .faq-support-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+  .shipper-support-form-card,
+  .shipper-faq-right-card {
+    padding: 18px 14px !important;
+    border-radius: 18px !important;
+    box-sizing: border-box !important;
+  }
+  .support-card-header h3,
+  .faq-card-header h3 {
+    font-size: 16.5px !important;
+  }
+  .support-card-header p,
+  .faq-card-header p {
+    font-size: 12.5px !important;
+  }
+  .support-cskh-quick-info {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+    padding: 8px 10px !important;
+  }
+  .info-pill-item {
+    font-size: 11.5px !important;
+  }
+  .form-row-2col {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .modern-input-small,
+  .modern-textarea-small {
+    font-size: 13px !important;
+    border-radius: 10px !important;
+    padding: 9px 12px !important;
+  }
+  .topic-pills-row {
+    gap: 6px !important;
+  }
+  .topic-btn-pill {
+    font-size: 11px !important;
+    padding: 5px 10px !important;
+  }
+  .btn-send-support {
+    padding: 12px !important;
+    font-size: 13px !important;
+    border-radius: 12px !important;
+  }
+  .faq-item-card {
+    padding: 13px 14px !important;
+    border-radius: 14px !important;
+  }
+  .faq-question-header h3 {
+    font-size: 13.5px !important;
+  }
+  .faq-answer-body {
+    font-size: 12.5px !important;
+  }
+  .faq-bottom-guideline-box {
+    padding: 14px 12px !important;
+    border-radius: 14px !important;
+    margin-top: 16px !important;
+  }
+  .guideline-header h4 {
+    font-size: 13.5px !important;
+  }
+  .guideline-list li {
+    font-size: 11.5px !important;
+    gap: 8px !important;
+  }
+  .guideline-footer-hotline {
+    font-size: 11.5px !important;
+    padding: 6px 10px !important;
+  }
+
+  /* 8. FOOTER DRIVER */
+  .driver-footer-rich {
+    padding: 32px 14px 20px 14px !important;
+    box-sizing: border-box !important;
+  }
+  .footer-top-grid {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+    padding-bottom: 20px !important;
+  }
+  .footer-brand-logo {
+    margin-bottom: 10px !important;
+  }
+  .f-logo-img {
+    height: 32px !important;
+  }
+  .f-brand-name {
+    font-size: 18px !important;
+  }
+  .f-brand-desc {
+    font-size: 12px !important;
+    margin-bottom: 12px !important;
+  }
+  .footer-contact-list {
+    gap: 8px !important;
+  }
+  .footer-contact-list li {
+    font-size: 12px !important;
+    white-space: normal !important;
+    line-height: 1.45 !important;
+  }
+  .f-col-heading {
+    font-size: 13px !important;
+    margin-bottom: 10px !important;
+    margin-top: 4px !important;
+    white-space: normal !important;
+  }
+  .f-links-list {
+    gap: 8px !important;
+  }
+  .f-links-list a {
+    font-size: 12px !important;
+    white-space: normal !important;
+  }
+  .payment-tags-grid {
+    gap: 6px !important;
+  }
+  .pay-tag {
+    font-size: 10.5px !important;
+    padding: 4px 8px !important;
+  }
+  .social-icons-row {
+    gap: 8px !important;
+  }
+  .social-btn {
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 8px !important;
+  }
+  .footer-bottom-line {
+    margin-top: 14px !important;
+    font-size: 11px !important;
+    line-height: 1.45 !important;
+  }
+
+  /* 9. MODAL THÀNH CÔNG */
+  .modal-backdrop-overlay {
+    padding: 12px !important;
+  }
+  .modal-success-card {
+    padding: 24px 14px !important;
+    border-radius: 20px !important;
+    box-sizing: border-box !important;
+  }
+  .modal-icon-badge-glow {
+    width: 52px !important;
+    height: 52px !important;
+    margin-bottom: 12px !important;
+  }
+  .modal-icon-badge-glow svg {
+    width: 28px !important;
+    height: 28px !important;
+  }
+  .modal-success-title {
+    font-size: 17px !important;
+    margin-bottom: 8px !important;
+  }
+  .modal-success-desc {
+    font-size: 12.5px !important;
+    margin-bottom: 18px !important;
+  }
+  .btn-modal-action-primary {
+    width: 100% !important;
+    padding: 11px 16px !important;
+    font-size: 12.5px !important;
+  }
+}
+
+@media (max-width: 400px) {
+  .header-inner {
+    padding: 6px 8px !important;
+  }
+  .main-brand-title {
+    font-size: 14px !important;
+  }
+  .driver-sub-title {
+    font-size: 7.5px !important;
+    letter-spacing: 0.8px !important;
+  }
+  .btn-nav-primary {
+    padding: 5px 8px !important;
+    font-size: 11px !important;
+  }
+  .btn-nav-login {
+    padding: 5px 7px !important;
+    font-size: 11px !important;
+  }
+  .stat-val {
+    font-size: 14px !important;
+  }
+  .stat-lbl {
+    font-size: 9.5px !important;
+  }
+  .pill-step {
+    padding: 5px 6px !important;
+    font-size: 10px !important;
+  }
+  .pill-txt {
+    max-width: 70px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 /* BRAND LOGO DESIGN: DRIVER IS CYAN NEON TEXT BELOW ZONEMART (NO BOX) */
@@ -1863,9 +2627,42 @@ const scrollToRegisterForm = () => {
 .range-marks {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   font-size: 12px;
   color: #64748B;
   margin-top: 12px;
+}
+
+.mark-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.mark-item b {
+  font-size: 12.5px;
+  color: #1E293B;
+  font-weight: 800;
+}
+
+.mark-start {
+  text-align: left;
+  align-items: flex-start;
+}
+
+.mark-mid {
+  text-align: center;
+  align-items: center;
+}
+
+.mark-end {
+  text-align: right;
+  align-items: flex-end;
+}
+
+.mark-desc {
+  font-size: 11px;
+  color: #64748B;
+  margin-top: 2px;
 }
 
 .calc-result-box {

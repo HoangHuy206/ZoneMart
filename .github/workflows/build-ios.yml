@@ -1,0 +1,76 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch: # Cho phép bấm nút "Run workflow" thủ công trên GitHub
+  push:
+    branches:
+      - main
+    paths:
+      - 'ZoneMart/**'
+      - '.github/workflows/build-ios.yml'
+
+jobs:
+  build-ios:
+    name: Build iOS IPA (on macOS Cloud)
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ZoneMart
+
+    steps:
+      - name: 1. Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: 2. Thiết lập Node.js 22 (LTS)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 3. Cài đặt Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: 4. Biên dịch Web Vue 3 (Vite)
+        run: npx vite build
+
+      - name: 5. Copy Web Assets sang iOS
+        run: npx cap copy ios
+
+      - name: 6. Build Archive & Đóng gói file .IPA
+        run: |
+          cd ios/App
+          # Build Native Xcode Archive (Bỏ qua ký chứng chỉ để người dùng tự ký qua Sideloadly)
+          xcodebuild -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/App.xcarchive \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+          
+          # Đóng gói App.app thành file IPA chuẩn
+          mkdir -p Payload
+          cp -r build/App.xcarchive/Products/Applications/App.app Payload/
+
+          # Đảm bảo biểu tượng ZoneMart hiển thị 100% trong Kho ứng dụng Esign, AltStore, Sideloadly
+          ICON_SRC="App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png"
+          if [ -f "$ICON_SRC" ]; then
+            cp "$ICON_SRC" Payload/App.app/AppIcon60x60@2x.png
+            cp "$ICON_SRC" Payload/App.app/AppIcon60x60@3x.png
+            cp "$ICON_SRC" Payload/App.app/AppIcon76x76@2x~ipad.png
+            cp "$ICON_SRC" Payload/App.app/AppIcon-512@2x.png
+            cp "$ICON_SRC" Payload/App.app/icon.png
+            cp "$ICON_SRC" iTunesArtwork
+            cp "$ICON_SRC" iTunesArtwork@2x
+          fi
+
+          zip -r -q ZoneMart.ipa Payload iTunesArtwork iTunesArtwork@2x
+          echo "Build file ZoneMart.ipa thành công!"
+
+      - name: 7. Tải lên file IPA để người dùng tải về
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZoneMart-iOS-IPA
+          path: ZoneMart/ios/App/ZoneMart.ipa
+          retention-days: 14

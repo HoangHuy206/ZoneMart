@@ -12,6 +12,7 @@
  * ================================================================
  */
 import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
+import { apiFetch } from "../../utils/apiConfig";
 import { useRouter } from "vue-router";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -980,7 +981,7 @@ const handleFileUpload = (e: Event, field: 'cccdFrontImage' | 'cccdBackImage' | 
       try {
         const formData = new FormData();
         formData.append("file", file);
-        const scanRes = await fetch("/api/ocr/scan-id-card", {
+        const scanRes = await apiFetch("/api/ocr/scan-id-card", {
           method: "POST",
           body: formData
         });
@@ -1016,7 +1017,7 @@ const handleSubmitSeller = async () => {
 
   try {
     const cleanEmail = form.phoneEmail.trim().toLowerCase();
-    await fetch("/api/auth/register-seller", {
+    await apiFetch("/api/auth/register-seller", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1158,7 +1159,7 @@ const submitSellerSupportTicket = async () => {
 
   isSupportLoading.value = true;
   try {
-    const res = await fetch("/api/support/ticket", {
+    const res = await apiFetch("/api/support/ticket", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1195,25 +1196,30 @@ const submitSellerSupportTicket = async () => {
     <!-- 1. HEADER CAO CẤP SELLER: ZONEMART SELLER (SẠCH KHÔNG KHUNG BOX) -->
     <header class="seller-header-modern">
       <div class="header-inner">
-        <!-- LOGO ZONEMART SELLER (CHỮ SELLER KHÔNG KHUNG, NẰM NGAY DƯỚI CHỮ ZONEMART) -->
-        <router-link to="/" class="seller-brand-logo">
-          <img src="/logo.png" alt="ZoneMart Logo" class="brand-img" />
-          <div class="brand-text-stack">
-            <div class="main-brand-title">
-              Zone<span class="highlight-mart">Mart</span>
+        <div class="header-left-cluster">
+          <router-link to="/" class="btn-header-back" title="Quay về trang chủ">
+            <i class="bi bi-chevron-left"></i>
+          </router-link>
+          <!-- LOGO ZONEMART SELLER -->
+          <router-link to="/" class="seller-brand-logo">
+            <img src="/logo.png" alt="ZoneMart Logo" class="brand-img" />
+            <div class="brand-text-stack">
+              <div class="main-brand-title">
+                Zone<span class="highlight-mart">Mart</span>
+              </div>
+              <div class="seller-sub-title">SELLER</div>
             </div>
-            <div class="seller-sub-title">SELLER</div>
-          </div>
-        </router-link>
+          </router-link>
+        </div>
 
-        <!-- MENU ĐIỀU HƯỚNG MỞ RỘNG (GIỐNG BÊN SHIPPER) -->
+        <!-- MENU ĐIỀU HƯỚNG MỞ RỘNG -->
         <nav class="seller-nav-menu">
           <a href="#hero" class="nav-item">Trang Chủ Seller</a>
           <a href="#revenue-calculator" class="nav-item">Tính Doanh Thu</a>
           <a href="#benefits" class="nav-item">Quyền Lợi Vàng</a>
           <a href="#steps" class="nav-item">Quy Trình Mở Shop</a>
           <a href="#faq" class="nav-item">Hỏi Đáp FAQ</a>
-          <button @click="scrollToRegisterForm" class="btn-nav-action-orange">Đăng Ký Gian Hàng</button>
+          <button @click="scrollToRegisterForm" class="btn-nav-action-orange">Đăng Ký Shop</button>
           <router-link to="/seller-login" class="btn-nav-login">Đăng Nhập</router-link>
         </nav>
       </div>
@@ -2309,23 +2315,245 @@ const submitSellerSupportTicket = async () => {
 }
 
 /* HEADER CAO CẤP SELLER (LOGO SẠCH CHỮ SELLER KHÔNG KHUNG BOX) */
+.seller-portal-page {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
 .seller-header-modern {
   position: sticky;
   top: 0;
-  z-index: 100;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(12px);
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(16px);
   border-bottom: 1.5px solid #A7F3D0;
-  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.06);
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.08);
+  padding-top: max(6px, env(safe-area-inset-top, 0px));
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .header-inner {
   max-width: 1320px;
   margin: 0 auto;
-  padding: 10px 24px;
+  padding: 10px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+
+.header-left-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-header-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  text-decoration: none;
+  font-size: 16px;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.btn-header-back:hover {
+  background: #e2e8f0;
+  color: #10B981;
+}
+
+@media (max-width: 768px) {
+  .seller-header-modern {
+    padding-top: max(48px, calc(env(safe-area-inset-top, 0px) + 8px)) !important;
+  }
+  .header-inner {
+    padding: 8px 12px !important;
+    gap: 8px !important;
+  }
+  .seller-nav-menu {
+    gap: 6px !important;
+  }
+  .seller-nav-menu .nav-item {
+    display: none !important;
+  }
+  .hero-stats-card {
+    gap: 8px !important;
+    padding: 12px 14px !important;
+    width: 100% !important;
+    justify-content: space-around !important;
+  }
+  .stat-val {
+    font-size: 16px !important;
+  }
+  .stat-lbl {
+    font-size: 10.5px !important;
+    text-align: center !important;
+  }
+  .brand-img {
+    height: 32px !important;
+  }
+  .main-brand-title {
+    font-size: 17px !important;
+  }
+  .seller-sub-title {
+    font-size: 9px !important;
+    letter-spacing: 1.5px !important;
+  }
+  .btn-nav-action-orange {
+    padding: 7px 12px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+  }
+  .btn-nav-login {
+    padding: 6px 10px !important;
+    font-size: 12px !important;
+  }
+  .seller-hero-wrapper {
+    padding: 18px 16px 36px !important;
+  }
+  .hero-badge-pill {
+    font-size: 11px !important;
+    padding: 6px 10px !important;
+    line-height: 1.3 !important;
+    text-align: center !important;
+  }
+  .hero-main-title {
+    font-size: clamp(22px, 6vw, 32px) !important;
+    line-height: 1.25 !important;
+    margin: 12px 0 10px !important;
+  }
+  .hero-sub-text {
+    font-size: 13.5px !important;
+    line-height: 1.5 !important;
+  }
+  .hero-action-row {
+    flex-direction: column !important;
+    gap: 10px !important;
+    width: 100% !important;
+  }
+  .btn-hero-glow-orange,
+  .btn-hero-glass-orange {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 13px 20px !important;
+    font-size: 14px !important;
+  }
+  .quick-stat-strip {
+    flex-wrap: wrap !important;
+    gap: 12px !important;
+    padding: 14px !important;
+  }
+  .stat-block {
+    flex: 1 1 30% !important;
+  }
+  .calc-body-grid {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+  .calc-slider-card {
+    padding: 18px !important;
+  }
+  .calc-illustration-card img {
+    max-height: 220px !important;
+    width: auto !important;
+    margin: 0 auto !important;
+  }
+
+  /* Mobile Fix for Hero Illustration & Misalignment */
+  .hero-content-grid {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+  .hero-right-col {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    margin-top: 14px !important;
+  }
+  .hero-image-container {
+    width: 100% !important;
+    max-width: 340px !important;
+    margin: 0 auto !important;
+    overflow: hidden !important;
+    display: flex !important;
+    justify-content: center !important;
+  }
+  .hero-large-illustration {
+    max-width: 100% !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: 260px !important;
+    transform: none !important;
+    transform-origin: center center !important;
+    margin: 0 auto !important;
+    display: block !important;
+  }
+
+  /* Mobile Optimization for Registration Form Card */
+  .form-section {
+    padding: 0 12px !important;
+    margin: 20px auto !important;
+  }
+  .form-container-card {
+    padding: 24px 14px !important;
+    border-radius: 18px !important;
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.08) !important;
+  }
+  .form-title-centered {
+    font-size: 20px !important;
+    line-height: 1.3 !important;
+  }
+  .form-subtitle-centered {
+    font-size: 12.5px !important;
+    margin-bottom: 20px !important;
+  }
+  .stepper-bar {
+    gap: 4px !important;
+    margin-bottom: 22px !important;
+  }
+  .step-item {
+    font-size: 11px !important;
+    gap: 4px !important;
+  }
+  .step-badge {
+    width: 22px !important;
+    height: 22px !important;
+    font-size: 11px !important;
+    flex-shrink: 0 !important;
+  }
+  .step-line {
+    margin: 0 4px !important;
+  }
+  .form-row-2col {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .seller-type-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+  .seller-type-card {
+    padding: 10px 6px !important;
+    min-height: 80px !important;
+  }
+  .seller-type-card .type-title {
+    font-size: 12px !important;
+  }
+  .seller-type-card .type-desc {
+    font-size: 10px !important;
+  }
+  .field-input {
+    font-size: 14px !important;
+  }
 }
 
 .seller-brand-logo {
@@ -3598,7 +3826,7 @@ select.select-stylish {
 }
 
 .support-form-body { display: flex; flex-direction: column; gap: 16px; }
-.form-fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-fields-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .full-row { grid-column: span 2; }
 .input-label-stylish { font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px; display: block; }
 .modern-input { width: 100%; padding: 11px 14px; border-radius: 12px; border: 1.5px solid #CBD5E1; font-size: 14px; outline: none; }
@@ -3729,6 +3957,14 @@ select.select-stylish {
   .steps-flow-container { flex-direction: column; gap: 20px; }
   .step-flow-arrow { transform: rotate(90deg); }
   .upload-cards-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+  .benefits-6-grid { grid-template-columns: 1fr; }
+  .form-fields-grid { grid-template-columns: 1fr !important; }
+  .full-row { grid-column: span 1 !important; }
+  .seller-support-form-card { padding: 20px 16px !important; }
+  .support-contact-bar-orange { flex-direction: column; gap: 8px; }
 }
 
 @media (max-width: 640px) {

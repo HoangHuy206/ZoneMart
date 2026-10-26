@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import { apiFetch } from "../utils/apiConfig";
 
 export interface SafeLocationResult {
   lat: number;
@@ -62,15 +63,7 @@ export async function getSafeCurrentLocation(): Promise<SafeLocationResult | nul
 
           // 1. Gọi Backend C# endpoint /api/aichat/safe-location (ưu tiên relative URL qua proxy)
           try {
-            const res = await fetch('/api/aichat/safe-location', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ lat, lon })
-            }).catch(() => fetch('http://localhost:5000/api/aichat/safe-location', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ lat, lon })
-            }));
+            const res = await apiFetch('/api/aichat/safe-location', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lng: lon }) });
 
             if (res && res.ok) {
               const data = await res.json();
@@ -222,15 +215,7 @@ export async function getSafeCurrentLocation(): Promise<SafeLocationResult | nul
 
             let ipLocName = '';
             try {
-              const res = await fetch('/api/aichat/safe-location', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ lat, lon })
-              }).catch(() => fetch('http://localhost:5000/api/aichat/safe-location', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ lat, lon })
-              }));
+              const res = await apiFetch('/api/aichat/safe-location', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lat, lng: lon }) });
 
               if (res && res.ok) {
                 const data = await res.json();

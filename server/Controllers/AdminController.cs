@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -422,23 +422,21 @@ public class AdminController : ControllerBase
                 var store = storeList.FirstOrDefault(s =>
                     (!string.IsNullOrEmpty(s.PhoneEmail) && !string.IsNullOrEmpty(u.PhoneEmail) && s.PhoneEmail.Trim().ToLower() == u.PhoneEmail.Trim().ToLower()) ||
                     (!string.IsNullOrEmpty(s.UserId) && (s.UserId == u.Id || (!string.IsNullOrEmpty(u.UserCode) && s.UserId == u.UserCode))) ||
-                    (!string.IsNullOrEmpty(s.StoreCode) && !string.IsNullOrEmpty(u.UserCode) && s.StoreCode == u.UserCode) ||
-                    (!string.IsNullOrEmpty(s.OwnerFullName) && !string.IsNullOrEmpty(u.FullName) && s.OwnerFullName.Trim().ToLower() == u.FullName.Trim().ToLower())
+                    (!string.IsNullOrEmpty(s.StoreCode) && !string.IsNullOrEmpty(u.UserCode) && s.StoreCode == u.UserCode)
                 );
 
                 var shipper = shipperList.FirstOrDefault(sh =>
                     (!string.IsNullOrEmpty(sh.PhoneNumber) && !string.IsNullOrEmpty(u.PhoneEmail) && sh.PhoneNumber.Trim().ToLower() == u.PhoneEmail.Trim().ToLower()) ||
                     (!string.IsNullOrEmpty(sh.UserId) && (sh.UserId == u.Id || (!string.IsNullOrEmpty(u.UserCode) && sh.UserId == u.UserCode))) ||
-                    (!string.IsNullOrEmpty(sh.ShipperCode) && !string.IsNullOrEmpty(u.UserCode) && sh.ShipperCode == u.UserCode) ||
-                    (!string.IsNullOrEmpty(sh.FullName) && !string.IsNullOrEmpty(u.FullName) && sh.FullName.Trim().ToLower() == u.FullName.Trim().ToLower())
+                    (!string.IsNullOrEmpty(sh.ShipperCode) && !string.IsNullOrEmpty(u.UserCode) && sh.ShipperCode == u.UserCode)
                 );
 
                 string primaryRole = u.IsAdmin ? "Admin" 
                     : u.IsManager ? "Manager" 
-                    : (store != null && (store.Status == "Pending" || store.Status == "pending")) ? "Seller" 
-                    : (shipper != null && (shipper.Status == "Pending" || shipper.Status == "pending")) ? "Shipper" 
-                    : (store != null && (store.Status == "Rejected" || store.Status == "rejected")) ? "RejectedSeller"
-                    : (shipper != null && (shipper.Status == "Rejected" || shipper.Status == "rejected")) ? "RejectedShipper"
+                    : (u.IsSeller && store != null && (store.Status == "Pending" || store.Status == "pending")) ? "Seller" 
+                    : (u.IsShipper && shipper != null && (shipper.Status == "Pending" || shipper.Status == "pending")) ? "Shipper" 
+                    : (u.IsSeller && store != null && (store.Status == "Rejected" || store.Status == "rejected")) ? "RejectedSeller"
+                    : (u.IsShipper && shipper != null && (shipper.Status == "Rejected" || shipper.Status == "rejected")) ? "RejectedShipper"
                     : u.IsSeller ? "Seller" 
                     : u.IsShipper ? "Shipper" 
                     : "Buyer";
@@ -474,13 +472,14 @@ public class AdminController : ControllerBase
                     id = u.Id ?? "",
                     email = u.PhoneEmail ?? "",
                     fullName = u.FullName ?? "Người Dùng",
-                    avatarUrl = (string.IsNullOrEmpty(u.AvatarUrl) || (u.AvatarUrl.StartsWith("data:") && u.AvatarUrl.Length > 2000)) ? "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200" : u.AvatarUrl,
+                    avatarUrl = !string.IsNullOrEmpty(u.AvatarUrl) ? u.AvatarUrl : (shipper != null && !string.IsNullOrEmpty(shipper.AvatarUrl) ? shipper.AvatarUrl : (store != null ? "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200" : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150")),
                     primaryRole = primaryRole,
                     isBuyer = u.IsBuyer,
                     isSeller = u.IsSeller,
                     isShipper = u.IsShipper,
                     isAdmin = u.IsAdmin,
                     isManager = u.IsManager,
+                    permissions = u.Permissions ?? new List<string>(),
                     accountStatus = accountStatus,
                     lockUntil = u.LockUntil,
                     violationCount = u.ViolationCount,
@@ -1870,6 +1869,182 @@ public class AdminController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Phân quyền vai trò và quyền hạn chi tiết cho tài khoản người dùng
+    /// </summary>
+    [HttpPost("assign-role")]
+    [HttpPost("update-role")]
+    public async Task<IActionResult> AssignRole([FromBody] AssignRoleRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.ActorRole) || (req.ActorRole.ToLower() != "admin" && req.ActorRole.ToLower() != "administrator"))
+        {
+            return StatusCode(403, new { success = false, message = "Chỉ Quản trị viên (Admin) mới có quyền phân quyền cho tài khoản!" });
+        }
+
+        if (string.IsNullOrWhiteSpace(req.UserId))
+        {
+            return BadRequest(new { success = false, message = "Vui lòng cung cấp ID tài khoản cần phân quyền!" });
+        }
+
+        try
+        {
+            string cleanId = req.UserId.Trim();
+            var user = await _mongoService.Users.Find(u => 
+                (!string.IsNullOrEmpty(u.Id) && u.Id == cleanId) ||
+                (!string.IsNullOrEmpty(u.UserCode) && u.UserCode == cleanId) ||
+                (!string.IsNullOrEmpty(u.PhoneEmail) && u.PhoneEmail.ToLower() == cleanId.ToLower())
+            ).FirstOrDefaultAsync();
+
+            // Nếu chưa có trong Users collection (ví dụ Store/Shipper độc lập), tìm và khởi tạo tài khoản User đồng bộ
+            if (user == null)
+            {
+                var store = await _mongoService.Stores.Find(s => s.Id == cleanId || s.StoreCode == cleanId || (!string.IsNullOrEmpty(s.PhoneEmail) && s.PhoneEmail.ToLower() == cleanId.ToLower())).FirstOrDefaultAsync();
+                var shipper = await _mongoService.Shippers.Find(sh => sh.Id == cleanId || sh.ShipperCode == cleanId || (!string.IsNullOrEmpty(sh.PhoneNumber) && sh.PhoneNumber.ToLower() == cleanId.ToLower())).FirstOrDefaultAsync();
+
+                if (store != null)
+                {
+                    user = new User
+                    {
+                        FullName = store.OwnerFullName ?? store.StoreName,
+                        PhoneEmail = store.PhoneEmail ?? $"seller.{cleanId}@zonemart.vn",
+                        PasswordHash = "123456",
+                        IsBuyer = true,
+                        IsSeller = true,
+                        AccountStatus = store.Status == "Rejected" ? "rejected" : "active",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await _mongoService.Users.InsertOneAsync(user);
+                    await _mongoService.Stores.UpdateOneAsync(s => s.Id == store.Id, Builders<Store>.Update.Set(s => s.UserId, user.Id));
+                }
+                else if (shipper != null)
+                {
+                    user = new User
+                    {
+                        FullName = shipper.FullName,
+                        PhoneEmail = shipper.PhoneNumber ?? $"shipper.{cleanId}@zonemart.vn",
+                        PasswordHash = "123456",
+                        IsBuyer = true,
+                        IsShipper = true,
+                        AccountStatus = shipper.Status == "Rejected" ? "rejected" : "active",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await _mongoService.Users.InsertOneAsync(user);
+                    await _mongoService.Shippers.UpdateOneAsync(sh => sh.Id == shipper.Id, Builders<Shipper>.Update.Set(sh => sh.UserId, user.Id));
+                }
+            }
+
+            if (user == null)
+            {
+                return NotFound(new { success = false, message = "Không tìm thấy tài khoản người dùng trên hệ thống!" });
+            }
+
+            // An toàn hệ thống: Không thể hạ quyền tài khoản Admin gốc (admin@zonemart.vn)
+            if (!string.IsNullOrEmpty(user.PhoneEmail) && user.PhoneEmail.ToLower() == "admin@zonemart.vn" && req.IsAdmin == false)
+            {
+                return BadRequest(new { success = false, message = "Không thể tước quyền Admin của tài khoản quản trị hệ thống gốc (admin@zonemart.vn)!" });
+            }
+
+            bool newBuyer = req.IsBuyer ?? user.IsBuyer;
+            bool newSeller = req.IsSeller ?? user.IsSeller;
+            bool newShipper = req.IsShipper ?? user.IsShipper;
+            bool newManager = req.IsManager ?? user.IsManager;
+            bool newAdmin = req.IsAdmin ?? user.IsAdmin;
+            var newPermissions = req.Permissions ?? user.Permissions ?? new List<string>();
+
+            // Nếu người dùng không chọn quyền nào, mặc định là Khách Hàng (Buyer)
+            if (!newBuyer && !newSeller && !newShipper && !newManager && !newAdmin)
+            {
+                newBuyer = true;
+            }
+
+            var updateDef = Builders<User>.Update
+                .Set(u => u.IsBuyer, newBuyer)
+                .Set(u => u.IsSeller, newSeller)
+                .Set(u => u.IsShipper, newShipper)
+                .Set(u => u.IsManager, newManager)
+                .Set(u => u.IsAdmin, newAdmin)
+                .Set(u => u.Permissions, newPermissions);
+
+            // Đồng bộ trạng thái gian hàng nếu cấp/hủy quyền Seller
+            if (newSeller)
+            {
+                var store = await _mongoService.Stores.Find(s => s.UserId == user.Id || (!string.IsNullOrEmpty(s.PhoneEmail) && s.PhoneEmail.ToLower() == user.PhoneEmail.ToLower())).FirstOrDefaultAsync();
+                if (store != null && (store.Status == "Pending" || store.Status == "pending" || store.Status == "Rejected"))
+                {
+                    await _mongoService.Stores.UpdateOneAsync(s => s.Id == store.Id, Builders<Store>.Update.Set(s => s.Status, "Approved"));
+                }
+            }
+
+            // Đồng bộ trạng thái tài xế nếu cấp/hủy quyền Shipper
+            if (newShipper)
+            {
+                var shipper = await _mongoService.Shippers.Find(sh => sh.UserId == user.Id || (!string.IsNullOrEmpty(sh.PhoneNumber) && sh.PhoneNumber.ToLower() == user.PhoneEmail.ToLower())).FirstOrDefaultAsync();
+                if (shipper != null && (shipper.Status == "Pending" || shipper.Status == "pending" || shipper.Status == "Rejected"))
+                {
+                    await _mongoService.Shippers.UpdateOneAsync(sh => sh.Id == shipper.Id, Builders<Shipper>.Update.Set(sh => sh.Status, "Approved"));
+                }
+            }
+            else
+            {
+                var shipper = await _mongoService.Shippers.Find(sh => sh.UserId == user.Id || (!string.IsNullOrEmpty(sh.PhoneNumber) && sh.PhoneNumber.ToLower() == user.PhoneEmail.ToLower())).FirstOrDefaultAsync();
+                if (shipper != null && (shipper.Status == "Approved" || shipper.Status == "Pending" || shipper.Status == "pending"))
+                {
+                    await _mongoService.Shippers.UpdateOneAsync(sh => sh.Id == shipper.Id, Builders<Shipper>.Update.Set(sh => sh.Status, "Suspended"));
+                }
+            }
+
+            await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, updateDef);
+            _usersCache = null;
+
+            string primaryRole = newAdmin ? "Admin" 
+                : newManager ? "Manager" 
+                : newSeller ? "Seller" 
+                : newShipper ? "Shipper" 
+                : "Buyer";
+
+            var rolesList = new List<string>();
+            if (newAdmin) rolesList.Add("Quản Trị Viên");
+            if (newManager) rolesList.Add("Quản Lý");
+            if (newSeller) rolesList.Add("Chủ Gian Hàng");
+            if (newShipper) rolesList.Add("Tài Xế Shipper");
+            if (newBuyer) rolesList.Add("Khách Hàng");
+
+            string rolesSummary = string.Join(", ", rolesList);
+            string note = string.IsNullOrWhiteSpace(req.Reason) ? "Quản trị viên cập nhật phân quyền tài khoản" : req.Reason.Trim();
+
+            await LogAuditAsync(
+                req.ActorEmail ?? "admin@zonemart.vn",
+                req.ActorRole ?? "Admin",
+                "Phân quyền tài khoản",
+                user.PhoneEmail,
+                $"Cập nhật vai trò [{primaryRole}] (Các vai trò: {rolesSummary}). Quyền hạn: [{string.Join(", ", newPermissions)}]. Lý do: {note}"
+            );
+
+            return Ok(new
+            {
+                success = true,
+                message = $"Đã phân quyền thành công cho tài khoản [{user.FullName}] thành [{rolesSummary}]!",
+                user = new
+                {
+                    id = user.Id,
+                    email = user.PhoneEmail,
+                    fullName = user.FullName,
+                    primaryRole,
+                    isBuyer = newBuyer,
+                    isSeller = newSeller,
+                    isShipper = newShipper,
+                    isManager = newManager,
+                    isAdmin = newAdmin,
+                    permissions = newPermissions
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = "Lỗi khi phân quyền: " + ex.Message });
+        }
+    }
+
     private async Task LogAuditAsync(string actorEmail, string actorRole, string action, string targetEmail, string details)
     {
         try
@@ -2376,6 +2551,21 @@ public class AdminUserViewDto
     public string nguyenQuan { get; set; } = string.Empty;
     public object? storeDetails { get; set; }
     public object? shipperDetails { get; set; }
+    public List<string> permissions { get; set; } = new();
+}
+
+public class AssignRoleRequest
+{
+    public string UserId { get; set; } = string.Empty;
+    public string? ActorEmail { get; set; }
+    public string? ActorRole { get; set; }
+    public bool? IsBuyer { get; set; }
+    public bool? IsSeller { get; set; }
+    public bool? IsShipper { get; set; }
+    public bool? IsManager { get; set; }
+    public bool? IsAdmin { get; set; }
+    public List<string>? Permissions { get; set; }
+    public string? Reason { get; set; }
 }
 
 public class DeleteUserPostRequest

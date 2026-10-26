@@ -270,7 +270,7 @@ const handleLogin = async () => {
       }
     } else {
       modalErrorMessage.value =
-        'Không thể kết nối đến máy chủ Backend (C# / Database). Vui lòng kiểm tra kết nối mạng hoặc thử lại!';
+        'Không thể kết nối đến máy chủ hệ thống. Vui lòng kiểm tra kết nối mạng trên thiết bị và thử lại sau!';
       modalErrorType.value = 'ACCOUNT_NOT_FOUND';
       showNotFoundModal.value = true;
     }
@@ -1535,7 +1535,7 @@ label {
    ========================================================================== */
 @media (max-width: 1024px) {
   .login-page-container {
-    padding: 24px 20px;
+    padding: calc(16px + env(safe-area-inset-top, 0px)) 20px calc(20px + env(safe-area-inset-bottom, 0px)) 20px !important;
     height: auto;
     min-height: 100vh;
     max-height: none;

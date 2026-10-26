@@ -21,7 +21,9 @@ public class ManagementBoard
 
     [BsonElement("ward_id")]
     [BsonRepresentation(BsonType.ObjectId)]
-    public string WardId { get; set; } = string.Empty; // Khóa ngoại trực thuộc Xã / Phường
+    [BsonIgnoreIfDefault]
+    [BsonIgnoreIfNull]
+    public string? WardId { get; set; } // Khóa ngoại trực thuộc Xã / Phường
 
     [BsonElement("ward_name")]
     public string WardName { get; set; } = string.Empty;

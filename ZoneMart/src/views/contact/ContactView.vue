@@ -6,6 +6,7 @@
  * ================================================================
  */
 import { ref, reactive, onMounted } from "vue";
+import { apiFetch } from "../../utils/apiConfig";
 import { useRoute } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
 
@@ -240,7 +241,7 @@ const handleSubmit = async () => {
   const fallbackTicketCode = "ZM-" + Math.floor(100000 + Math.random() * 900000);
 
   try {
-    const res = await fetch("/api/support/ticket", {
+    const res = await apiFetch("/api/support/ticket", {
       method: "POST",
       headers: {
         "Content-Type": "application/json; charset=utf-8"

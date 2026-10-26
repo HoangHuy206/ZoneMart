@@ -112,66 +112,72 @@ export function getStorageKeyForOwner(ownerKey?: string): string {
   return `zonemart_cart_${owner}`;
 }
 
-function cleanGuestCaches() {
-  try {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (
-        key &&
-        (key.startsWith('zonemart_cart_guest_') ||
-          key === 'zonemart_cart' ||
-          key === 'zonemart_guest_id')
-      ) {
-        keysToRemove.push(key);
-      }
-    }
-    keysToRemove.forEach((k) => localStorage.removeItem(k));
-  } catch (e) {
-    // ignore
-  }
-}
-
 function loadSavedCart(): CartStoreGroup[] {
-  // Dọn dẹp cache cũ và cache guest
-  cleanGuestCaches();
+  const currentOwner = getCartOwnerKey();
+  const currentKey = `zonemart_cart_${currentOwner}`;
 
-  // NẾU CHƯA ĐĂNG NHẬP: LUÔN TRẢ VỀ GIỎ HÀNG RỖNG (0 MÓN)
-  try {
-    const saved =
-      localStorage.getItem('currentUser') ||
-      localStorage.getItem('zonemart_user');
-    if (!saved) {
-      return [];
-    }
-  } catch (e) {
-    return [];
-  }
+  let rawList: CartStoreGroup[] = [];
 
   try {
-    const key = getStorageKeyForOwner();
-    const saved = localStorage.getItem(key);
+    const saved = localStorage.getItem(currentKey);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        // Tự động loại bỏ dữ liệu mock seed cũ nếu còn tồn đọng trong localStorage
-        const cleanList = parsed.filter(
-          (s: any) =>
-            s.note !== 'Chọn khay thịt tươi mới về sáng nay giúp em nhé!' &&
-            s.note !== 'Lấy dâu tây quả to mọng nhé tiệm.',
-        );
-        if (cleanList.length !== parsed.length) {
-          localStorage.setItem(key, JSON.stringify(cleanList));
-        }
-        return cleanList;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        rawList = parsed;
       }
     }
   } catch (e) {
     console.error('Lỗi đọc giỏ hàng từ localStorage:', e);
   }
 
-  // MẶC ĐỊNH LUÔN RỖNG KHI MỚI VÀO (0 MÓN)
-  return [];
+  // Nếu người dùng đã đăng nhập và giỏ hàng cá nhân trống, kiểm tra xem có giỏ hàng guest trước đó để gộp sang
+  if (rawList.length === 0 && currentOwner.startsWith('user_')) {
+    try {
+      const guestKeys = ['zonemart_cart_guest', 'zonemart_cart'];
+      const guestId = localStorage.getItem('zonemart_guest_id');
+      if (guestId) guestKeys.push(`zonemart_cart_${guestId}`);
+
+      for (const gKey of guestKeys) {
+        const guestSaved = localStorage.getItem(gKey);
+        if (guestSaved) {
+          const parsed = JSON.parse(guestSaved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            rawList = parsed;
+            // Lưu ngay vào khóa của user để lưu giữ giỏ hàng
+            localStorage.setItem(currentKey, JSON.stringify(rawList));
+            localStorage.removeItem(gKey);
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  } else if (rawList.length === 0 && !currentOwner.startsWith('user_')) {
+    // Khách vãng lai: đọc thêm từ khóa chung zonemart_cart_guest
+    try {
+      const gSaved =
+        localStorage.getItem('zonemart_cart_guest') ||
+        localStorage.getItem('zonemart_cart');
+      if (gSaved) {
+        const parsed = JSON.parse(gSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          rawList = parsed;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // Tự động loại bỏ dữ liệu mock seed cũ nếu còn tồn đọng trong localStorage
+  const cleanList = rawList.filter(
+    (s: any) =>
+      s.note !== 'Chọn khay thịt tươi mới về sáng nay giúp em nhé!' &&
+      s.note !== 'Lấy dâu tây quả to mọng nhé tiệm.',
+  );
+
+  return cleanList;
 }
 
 // Trạng thái giỏ hàng Reactive Singleton
@@ -180,10 +186,17 @@ const appliedVoucherCode = ref<string>(''); // Không tự áp dụng mã giảm
 
 function persistCart(syncToDb = true) {
   const auth = useAuth();
+  const owner = getCartOwnerKey();
 
   try {
-    const key = getStorageKeyForOwner();
-    localStorage.setItem(key, JSON.stringify(cartStores.value));
+    const key = `zonemart_cart_${owner}`;
+    const payload = JSON.stringify(cartStores.value);
+    localStorage.setItem(key, payload);
+
+    // Nếu là khách vãng lai, lưu thêm vào zonemart_cart_guest để đảm bảo dữ liệu luôn được lưu bền vững
+    if (owner.startsWith('guest_') || owner === 'guest_default') {
+      localStorage.setItem('zonemart_cart_guest', payload);
+    }
   } catch (e) {
     console.error('Lỗi lưu giỏ hàng vào localStorage:', e);
   }
@@ -207,28 +220,28 @@ async function loadCartFromDatabase(userId?: string) {
   const auth = useAuth();
   const targetId = userId || auth.currentUser.value?.id;
   if (!targetId) {
-    cartStores.value = [];
-    appliedVoucherCode.value = '';
     return;
   }
 
   try {
     const dbData = await cartService.fetchUserCart(targetId);
-    if (dbData && Array.isArray(dbData.stores)) {
-      // Loại bỏ các món mock seed cũ nếu có
+    if (dbData && Array.isArray(dbData.stores) && dbData.stores.length > 0) {
       const cleanStores = dbData.stores.filter(
         (s) =>
           s.note !== 'Chọn khay thịt tươi mới về sáng nay giúp em nhé!' &&
           s.note !== 'Lấy dâu tây quả to mọng nhé tiệm.',
       );
-      cartStores.value = cleanStores;
-      appliedVoucherCode.value =
-        cleanStores.length > 0 ? dbData.voucherCode || '' : '';
-      persistCart(false);
-    } else {
-      cartStores.value = [];
-      appliedVoucherCode.value = '';
-      persistCart(false);
+      if (cleanStores.length > 0) {
+        cartStores.value = cleanStores;
+        appliedVoucherCode.value = dbData.voucherCode || '';
+        persistCart(false);
+        return;
+      }
+    }
+
+    // Nếu DB chưa có hoặc trả về rỗng nhưng máy cục bộ đang có hàng, đồng bộ ngược lên DB để bảo toàn dữ liệu
+    if (cartStores.value.length > 0) {
+      persistCart(true);
     }
   } catch (e) {
     console.warn('Lỗi nạp giỏ hàng từ database, tiếp tục dùng local:', e);
@@ -242,10 +255,20 @@ watch(
     auth.currentUser.value
       ? `${auth.currentUser.value.id || ''}_${auth.currentUser.value.phoneEmail || ''}`
       : null,
-  (userKey) => {
-    cleanGuestCaches();
-    if (!userKey || !auth.isLoggedIn.value) {
-      cartStores.value = [];
+  (newUserKey, oldUserKey) => {
+    // Lần đầu mount
+    if (oldUserKey === undefined) {
+      cartStores.value = loadSavedCart();
+      const targetId =
+        auth.currentUser.value?.id || auth.currentUser.value?.phoneEmail;
+      if (targetId && auth.isLoggedIn.value) {
+        loadCartFromDatabase(targetId);
+      }
+      return;
+    }
+
+    if (!newUserKey || !auth.isLoggedIn.value) {
+      cartStores.value = loadSavedCart();
       appliedVoucherCode.value = '';
     } else {
       cartStores.value = loadSavedCart();
@@ -256,8 +279,9 @@ watch(
       }
     }
   },
-  { immediate: true },
+  { immediate: false },
 );
+
 
 /**
  * Ước tính trọng lượng món hàng (kg) dựa vào đơn vị quy cách và số lượng
@@ -353,11 +377,8 @@ export function calculateStoreShippingFee(store: CartStoreGroup, isExpress = fal
 }
 
 export function useCart() {
-  // Tổng số lượng tất cả món trong giỏ (dùng cho Badge Header - nếu chưa đăng nhập luôn trả về 0)
+  // Tổng số lượng tất cả món trong giỏ (dùng cho Badge Header cả Guest lẫn User đã đăng nhập)
   const totalCount = computed(() => {
-    if (!auth.isLoggedIn.value) {
-      return 0;
-    }
     return cartStores.value.reduce((total, store) => {
       return total + store.items.reduce((sum, item) => sum + item.quantity, 0);
     }, 0);

@@ -128,7 +128,7 @@ onMounted(async () => {
     // Kiểm tra tính hợp lệ của tài khoản với backend (nếu tài khoản đã bị Admin xóa khỏi hệ thống)
     const emailToCheck = parsed.phoneEmail || parsed.email;
     if (emailToCheck && parsed.role !== 'admin' && !parsed.isAdmin) {
-      fetch(`/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
+      apiFetch(`/api/auth/verify-session?email=${encodeURIComponent(emailToCheck)}`)
         .then((res) => {
           if (res.status === 404 || res.status === 401) {
             localStorage.removeItem("isLoggedIn");
@@ -740,7 +740,7 @@ const loadSellerStoreProfile = async (parsedUser: any) => {
 
   // 2. Tra cứu thêm từ backend API nếu có để đồng bộ hồ sơ đã đăng ký trong CSDL MongoDB
   try {
-    const res = await fetch(`/api/auth/seller-profile?account=${encodeURIComponent(cleanEmail)}`).catch(() => null);
+    const res = await apiFetch(`/api/auth/seller-profile?account=${encodeURIComponent(cleanEmail)}`).catch(() => null);
     if (res && res.ok) {
       const data = await res.json();
       if (data && data.store) {
@@ -1043,7 +1043,7 @@ const handleSaveStoreSettings = async () => {
   } catch {}
 
   try {
-    await fetch("/api/auth/update-store-profile", {
+    await apiFetch("/api/auth/update-store-profile", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1533,7 +1533,7 @@ const handleSaveProduct = async () => {
         formData.append("productImage", fileObj);
       }
 
-      const res = await fetch("http://localhost:5000/api/moderation/check-product", {
+      const res = await apiFetch("/api/moderation/check-product", {
         method: "POST",
         body: formData
       });
@@ -1569,8 +1569,8 @@ const handleSaveProduct = async () => {
 
           // Xóa ngay lập tức khỏi database MongoDB
           try {
-            await fetch(`http://localhost:5000/api/products/${target.id}`, { method: "DELETE" }).catch(() => {});
-            await fetch(`http://localhost:5000/api/products/${encodeURIComponent(target.name)}`, { method: "DELETE" }).catch(() => {});
+            await apiFetch(`/api/products/${target.id}`, { method: "DELETE" }).catch(() => {});
+            await apiFetch(`/api/products/${encodeURIComponent(target.name)}`, { method: "DELETE" }).catch(() => {});
           } catch {}
 
           const finalReason = reason || "Phát hiện nội dung cấm, nhạy cảm hoặc vi phạm nghiêm trọng trên sàn ZoneMart!";
@@ -1982,6 +1982,15 @@ const getItemImage = (it: OrderItem) => {
       <header class="seller-top-bar">
         <!-- HÀNG HIỂN THỊ ĐỘC QUYỀN TRÊN ĐIỆN THOẠI (MOBILE TOPBAR) -->
         <div class="mobile-topbar-header">
+          <button
+            type="button"
+            class="btn-seller-back"
+            @click="$router.push('/')"
+            title="Quay về trang chủ"
+            aria-label="Quay về trang chủ"
+          >
+            <i class="bi bi-chevron-left"></i>
+          </button>
           <button
             type="button"
             class="btn-toggle-mobile-sidebar"
@@ -3650,6 +3659,26 @@ h1, h2, h3, h4, h5, h6 {
   width: calc(100% - 250px);
   max-width: calc(100% - 250px);
   overflow-x: hidden;
+}
+
+.btn-seller-back {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #0F172A;
+  cursor: pointer;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.seller-top-bar {
+  padding-top: max(6px, env(safe-area-inset-top, 0px));
 }
 
 .seller-top-bar {
@@ -7573,7 +7602,8 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   /* Thanh tiêu đề Top Bar trên điện thoại */
-  .seller-top-bar {
+  
+.seller-top-bar {
     height: auto !important;
     padding: 10px 14px !important;
     flex-direction: column !important;

@@ -1,0 +1,14 @@
+{
+  "name": "zonemart-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ZoneMart Monorepo Root",
+  "scripts": {
+    "dev": "npm run dev --prefix ZoneMart",
+    "build": "npm run build --prefix ZoneMart",
+    "preview": "npm run preview --prefix ZoneMart",
+    "server": "dotnet run --project server",
+    "start": "npm run dev --prefix ZoneMart"
+  }
+}
+

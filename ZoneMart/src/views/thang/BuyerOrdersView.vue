@@ -8,6 +8,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
+import { apiFetch } from "../../utils/apiConfig";
 import { useProductCatalog, type CatalogProduct } from "../../composables/useProductCatalog";
 import { orderRealtimeService } from "../../services/orderRealtimeService";
 
@@ -396,7 +397,7 @@ const openTraceabilityModal = async (order: any) => {
   try {
     const rawId = String(order.orderId || order.id || "").replace(/^#/, "").trim();
     const subId = order.subOrders?.[0]?.subId || rawId;
-    const res = await fetch(`/api/orders/traceability/${subId}`);
+    const res = await apiFetch(`/api/orders/traceability/${subId}`);
     if (res.ok) {
       const data = await res.json();
       traceabilityResult.value = data.traceability;
@@ -472,7 +473,7 @@ const submitReview = async () => {
 
   isSubmittingReview.value = true;
   try {
-    const res = await fetch("/api/orders/reviews", {
+    const res = await apiFetch("/api/orders/reviews", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
