@@ -55,6 +55,32 @@ const buyerName = ref("Khách Hàng");
 const deliveryNote = ref("");
 const currentCoords = ref<{ lat: number; lng: number }>({ lat: 21.0333, lng: 105.7983 });
 
+// Interface & State Quản lý Sổ Địa Chỉ & Địa Chỉ Mặc Định
+export interface SavedAddress {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  note?: string;
+  lat: number;
+  lng: number;
+  label?: string; // "Nhà riêng" | "Văn phòng"
+  isDefault: boolean;
+}
+
+const savedAddresses = ref<SavedAddress[]>([]);
+const showAddressListModal = ref(false);
+const isEditingNew = ref(false);
+const editingAddressId = ref<string | null>(null);
+const isSetAsDefault = ref(false);
+const addressLabel = ref<'Nhà riêng' | 'Văn phòng'>('Nhà riêng');
+
+const currentSelectedAddress = computed(() => {
+  return savedAddresses.value.find(a => a.address === shippingAddress.value) ||
+         savedAddresses.value.find(a => a.isDefault) ||
+         (savedAddresses.value.length > 0 ? savedAddresses.value[0] : null);
+});
+
 // State Modal thay đổi địa chỉ
 const showEditAddressModal = ref(false);
 const editForm = ref({
@@ -171,18 +197,44 @@ const resolveAddressFromCoords = async (lat: number, lng: number) => {
   editForm.value.lat = lat;
   editForm.value.lng = lng;
 
-  const { landmark, distanceKm } = findNearestLandmark(lat, lng);
+  // Phòng vệ: Nếu kinh độ = 0 hoặc ngoài lãnh thổ Việt Nam thì đưa về Hà Nội
+  if (lng < 100 || lng > 115 || lat < 8 || lat > 24) {
+    console.warn("[CheckoutView] Tọa độ ngoài Việt Nam:", lat, lng);
+    lat = 21.0215;
+    lng = 105.7497;
+    editForm.value.lat = lat;
+    editForm.value.lng = lng;
+  }
 
+  // 1. Ưu tiên gọi Backend C# endpoint /api/aichat/safe-location
+  try {
+    const res = await apiFetch('/api/aichat/safe-location', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lon: lng, lng }),
+    });
+    if (res && res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (data.safeLocationName && !/toa\s*do|gps|\d+\.\d{3,}/i.test(data.safeLocationName)) {
+        editForm.value.address = data.safeLocationName.trim();
+        triggerToast("📍 Đã cập nhật địa chỉ: " + editForm.value.address);
+        isGeocoding.value = false;
+        return;
+      }
+    }
+  } catch (e) {}
+
+  // 2. Dự phòng qua Esri Reverse Geocode
   try {
     const esriUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/reverseGeocode?f=pjson&location=${lng},${lat}`;
-    const res = await fetch(esriUrl, { signal: AbortSignal.timeout(4500) });
+    const res = await fetch(esriUrl, { signal: AbortSignal.timeout(4000) });
     if (res.ok) {
       const data = await res.json();
       if (data && data.address) {
         const addrObj = data.address;
         const match = addrObj.Match_addr || addrObj.LongLabel || addrObj.Address;
         if (match) {
-          const cleanAddr = match.replace(/,s*(VNM|Vietnam|Việt Nam)$/i, "").trim();
+          const cleanAddr = match.replace(/,\s*(VNM|Vietnam|Việt Nam)$/i, "").trim();
           editForm.value.address = cleanAddr;
           triggerToast("📍 Đã cập nhật địa chỉ: " + cleanAddr);
           isGeocoding.value = false;
@@ -192,9 +244,10 @@ const resolveAddressFromCoords = async (lat: number, lng: number) => {
     }
   } catch (e) {}
 
+  // 3. Dự phòng BigDataCloud
   try {
     const bdcUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=vi`;
-    const bdcRes = await fetch(bdcUrl, { signal: AbortSignal.timeout(4000) });
+    const bdcRes = await fetch(bdcUrl, { signal: AbortSignal.timeout(3500) });
     if (bdcRes.ok) {
       const bdcData = await bdcRes.json();
       if (bdcData) {
@@ -204,9 +257,7 @@ const resolveAddressFromCoords = async (lat: number, lng: number) => {
           bdcData.principalSubdivision || "Hà Nội"
         ].filter(Boolean);
         if (parts.length > 0) {
-          const resolved = distanceKm < 0.8
-            ? landmark.name
-            : `${parts.join(", ")} (Tọa độ: ${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+          const resolved = parts.join(", ");
           editForm.value.address = resolved;
           triggerToast("📍 Đã cập nhật địa chỉ: " + resolved);
           isGeocoding.value = false;
@@ -217,9 +268,8 @@ const resolveAddressFromCoords = async (lat: number, lng: number) => {
   } catch (e) {}
 
   isGeocoding.value = false;
-  const fallback = distanceKm < 1.5
-    ? landmark.name
-    : `Gần ${landmark.name} (Tọa độ: ${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+  const { landmark } = findNearestLandmark(lat, lng);
+  const fallback = `Gần ${landmark.name}, Hà Nội`;
   editForm.value.address = fallback;
   triggerToast("📍 Đã định vị: " + fallback);
 };
@@ -831,42 +881,165 @@ const startPaymentListener = () => {
 // Modal giải thích & hướng dẫn kết nối API Tingo Pay
 const showApiHelpModal = ref(false);
 
-// Nạp địa chỉ riêng biệt của tài khoản hiện tại
+// Quản lý Sổ Địa Chỉ Giao Hàng & Tự Động Chọn Địa Chỉ Mặc Định
+const getAddressBookKey = () => "zonemart_address_book_" + getAccountKey();
+
+const saveAddressBookToStorage = () => {
+  const key = getAddressBookKey();
+  localStorage.setItem(key, JSON.stringify(savedAddresses.value));
+};
+
+const applyAddressToCheckout = (addr: SavedAddress) => {
+  buyerName.value = addr.name;
+  buyerPhone.value = addr.phone;
+  shippingAddress.value = addr.address;
+  deliveryNote.value = addr.note || "";
+  currentCoords.value = { lat: addr.lat, lng: addr.lng };
+  localStorage.setItem('zonemart_user_address', addr.address);
+  localStorage.setItem('zonemart_lat', addr.lat.toString());
+  localStorage.setItem('zonemart_lon', addr.lng.toString());
+};
+
 const loadAddressForCurrentAccount = () => {
-  const key = ADDRESS_STORAGE_PREFIX + getAccountKey();
+  const bookKey = getAddressBookKey();
   try {
-    const saved = localStorage.getItem(key);
+    const rawBook = localStorage.getItem(bookKey);
+    if (rawBook) {
+      const list: SavedAddress[] = JSON.parse(rawBook);
+      if (Array.isArray(list) && list.length > 0) {
+        savedAddresses.value = list;
+        // Tự động chọn địa chỉ mặc định (hoặc địa chỉ đầu tiên)
+        const defaultAddr = list.find(a => a.isDefault) || list[0];
+        applyAddressToCheckout(defaultAddr);
+        return;
+      }
+    }
+  } catch (e) {}
+
+  // Fallback từ localStorage đơn lẻ cũ hoặc thông tin user
+  const oldKey = ADDRESS_STORAGE_PREFIX + getAccountKey();
+  let initialName = "";
+  let initialPhone = "";
+  let initialAddr = "";
+  let initialNote = "";
+  let initialLat = 21.0215;
+  let initialLng = 105.7497;
+
+  try {
+    const saved = localStorage.getItem(oldKey);
     if (saved) {
       const parsed = JSON.parse(saved);
-      if (parsed.address) shippingAddress.value = parsed.address;
-      if (parsed.name) buyerName.value = parsed.name;
-      if (parsed.phone) buyerPhone.value = parsed.phone;
-      if (parsed.note !== undefined) deliveryNote.value = parsed.note;
+      if (parsed.name) initialName = parsed.name;
+      if (parsed.phone) initialPhone = parsed.phone;
+      if (parsed.address) initialAddr = parsed.address;
+      if (parsed.note) initialNote = parsed.note;
       if (parsed.lat && parsed.lng) {
-        currentCoords.value = { lat: parsed.lat, lng: parsed.lng };
+        initialLat = parsed.lat;
+        initialLng = parsed.lng;
       }
-      return;
     }
   } catch (e) {}
 
   const u = auth.currentUser.value;
-  const userSavedAddr = localStorage.getItem('zonemart_user_address') || localStorage.getItem('zonemart_gps_address') || (u && (u as any).address);
+  if (!initialName) initialName = u?.fullName || u?.phoneEmail?.split("@")[0] || "Khách Hàng ZoneMart";
+  if (!initialPhone) initialPhone = u?.phone || (u?.phoneEmail && /^0\d+$/.test(u.phoneEmail) ? u.phoneEmail : "0396222614");
+  if (!initialAddr) initialAddr = localStorage.getItem('zonemart_user_address') || localStorage.getItem('zonemart_gps_address') || (u && (u as any).address) || "Xuân Phương, Nam Từ Liêm, Hà Nội";
   const userLat = localStorage.getItem('zonemart_lat');
   const userLon = localStorage.getItem('zonemart_lon');
-
-  if (u) {
-    buyerName.value = u.fullName || u.phoneEmail?.split("@")[0] || "Khách Hàng";
-    buyerPhone.value = u.phone || (u.phoneEmail && /^0\d+$/.test(u.phoneEmail) ? u.phoneEmail : "0396222614");
-    shippingAddress.value = userSavedAddr || "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội";
-    deliveryNote.value = "";
-    currentCoords.value = userLat && userLon ? { lat: parseFloat(userLat), lng: parseFloat(userLon) } : { lat: 21.0333, lng: 105.7983 };
-  } else {
-    buyerName.value = "Khách Hàng ZoneMart";
-    buyerPhone.value = "0912 345 678";
-    shippingAddress.value = userSavedAddr || "Ngõ 165 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội";
-    deliveryNote.value = "";
-    currentCoords.value = userLat && userLon ? { lat: parseFloat(userLat), lng: parseFloat(userLon) } : { lat: 21.0333, lng: 105.7983 };
+  if (userLat && userLon) {
+    initialLat = parseFloat(userLat);
+    initialLng = parseFloat(userLon);
   }
+
+  const initialSaved: SavedAddress = {
+    id: "addr_" + Date.now(),
+    name: initialName,
+    phone: initialPhone,
+    address: initialAddr,
+    note: initialNote,
+    lat: initialLat,
+    lng: initialLng,
+    label: "Nhà riêng",
+    isDefault: true
+  };
+
+  savedAddresses.value = [initialSaved];
+  saveAddressBookToStorage();
+  applyAddressToCheckout(initialSaved);
+};
+
+const openAddressList = () => {
+  showAddressListModal.value = true;
+};
+
+const selectSavedAddress = (addr: SavedAddress) => {
+  applyAddressToCheckout(addr);
+  showAddressListModal.value = false;
+  triggerToast(`Đã chọn địa chỉ giao hàng: ${addr.address}`);
+};
+
+const setAsDefaultAddress = (addrId: string) => {
+  savedAddresses.value.forEach(a => {
+    a.isDefault = (a.id === addrId);
+  });
+  saveAddressBookToStorage();
+  const defaultAddr = savedAddresses.value.find(a => a.id === addrId);
+  if (defaultAddr) {
+    applyAddressToCheckout(defaultAddr);
+  }
+  triggerToast("Đã thiết lập làm địa chỉ giao hàng mặc định!");
+};
+
+const deleteSavedAddress = (addrId: string) => {
+  if (savedAddresses.value.length <= 1) {
+    toast.warning("Bạn cần giữ lại ít nhất 1 địa chỉ giao hàng!", "Không thể xóa");
+    return;
+  }
+  const target = savedAddresses.value.find(a => a.id === addrId);
+  const wasDefault = target?.isDefault;
+  savedAddresses.value = savedAddresses.value.filter(a => a.id !== addrId);
+  if (wasDefault && savedAddresses.value.length > 0) {
+    savedAddresses.value[0].isDefault = true;
+    applyAddressToCheckout(savedAddresses.value[0]);
+  }
+  saveAddressBookToStorage();
+  triggerToast("Đã xóa địa chỉ thành công!");
+};
+
+const openAddNewAddress = () => {
+  isEditingNew.value = true;
+  editingAddressId.value = null;
+  isSetAsDefault.value = savedAddresses.value.length === 0;
+  addressLabel.value = "Nhà riêng";
+  editForm.value = {
+    name: buyerName.value || "",
+    phone: buyerPhone.value || "",
+    address: "",
+    note: "",
+    lat: currentCoords.value?.lat || 21.0215,
+    lng: currentCoords.value?.lng || 105.7497
+  };
+  showAddressListModal.value = false;
+  showEditAddressModal.value = true;
+  initOrUpdateMap();
+};
+
+const openEditExistingAddress = (addr: SavedAddress) => {
+  isEditingNew.value = false;
+  editingAddressId.value = addr.id;
+  isSetAsDefault.value = addr.isDefault;
+  addressLabel.value = (addr.label as any) || "Nhà riêng";
+  editForm.value = {
+    name: addr.name,
+    phone: addr.phone,
+    address: addr.address,
+    note: addr.note || "",
+    lat: addr.lat,
+    lng: addr.lng
+  };
+  showAddressListModal.value = false;
+  showEditAddressModal.value = true;
+  initOrUpdateMap();
 };
 
 onMounted(() => {
@@ -909,16 +1082,13 @@ watch(
 );
 
 const openEditAddress = () => {
-  editForm.value = {
-    name: buyerName.value,
-    phone: buyerPhone.value,
-    address: shippingAddress.value,
-    note: deliveryNote.value,
-    lat: currentCoords.value.lat,
-    lng: currentCoords.value.lng
-  };
-  showEditAddressModal.value = true;
-  initOrUpdateMap();
+  // Mở sửa địa chỉ hiện tại đang chọn
+  const cur = currentSelectedAddress.value;
+  if (cur) {
+    openEditExistingAddress(cur);
+  } else {
+    openAddNewAddress();
+  }
 };
 
 const closeEditAddress = () => {
@@ -943,35 +1113,65 @@ const saveAddress = () => {
     return;
   }
 
-  buyerName.value = trimmedName;
-  buyerPhone.value = trimmedPhone;
-  shippingAddress.value = trimmedAddress;
-  deliveryNote.value = editForm.value.note.trim();
-  currentCoords.value = { lat: editForm.value.lat, lng: editForm.value.lng };
+  // Nếu người dùng chọn đặt làm mặc định
+  if (isSetAsDefault.value) {
+    savedAddresses.value.forEach(a => a.isDefault = false);
+  }
 
-  const storageData = {
-    name: buyerName.value,
-    phone: buyerPhone.value,
-    address: shippingAddress.value,
-    lat: editForm.value.lat,
-    lng: editForm.value.lng,
-    note: deliveryNote.value,
-    updatedAt: new Date().toISOString()
-  };
+  let targetAddr: SavedAddress;
 
-  const key = ADDRESS_STORAGE_PREFIX + getAccountKey();
-  localStorage.setItem(key, JSON.stringify(storageData));
-  localStorage.setItem('zonemart_user_address', shippingAddress.value);
-  localStorage.setItem('zonemart_lat', editForm.value.lat.toString());
-  localStorage.setItem('zonemart_lon', editForm.value.lng.toString());
+  if (isEditingNew.value || !editingAddressId.value) {
+    targetAddr = {
+      id: "addr_" + Date.now(),
+      name: trimmedName,
+      phone: trimmedPhone,
+      address: trimmedAddress,
+      note: editForm.value.note.trim(),
+      lat: editForm.value.lat,
+      lng: editForm.value.lng,
+      label: addressLabel.value,
+      isDefault: isSetAsDefault.value || savedAddresses.value.length === 0
+    };
+    savedAddresses.value.unshift(targetAddr);
+  } else {
+    const existing = savedAddresses.value.find(a => a.id === editingAddressId.value);
+    if (existing) {
+      existing.name = trimmedName;
+      existing.phone = trimmedPhone;
+      existing.address = trimmedAddress;
+      existing.note = editForm.value.note.trim();
+      existing.lat = editForm.value.lat;
+      existing.lng = editForm.value.lng;
+      existing.label = addressLabel.value;
+      if (isSetAsDefault.value) existing.isDefault = true;
+      targetAddr = existing;
+    } else {
+      targetAddr = {
+        id: "addr_" + Date.now(),
+        name: trimmedName,
+        phone: trimmedPhone,
+        address: trimmedAddress,
+        note: editForm.value.note.trim(),
+        lat: editForm.value.lat,
+        lng: editForm.value.lng,
+        label: addressLabel.value,
+        isDefault: isSetAsDefault.value
+      };
+      savedAddresses.value.unshift(targetAddr);
+    }
+  }
+
+  saveAddressBookToStorage();
+  applyAddressToCheckout(targetAddr);
+
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('zonemart:location-updated', {
-      detail: { safeLocationName: shippingAddress.value, lat: editForm.value.lat, lon: editForm.value.lng }
+      detail: { safeLocationName: targetAddr.address, lat: targetAddr.lat, lon: targetAddr.lng }
     }));
   }
 
   showEditAddressModal.value = false;
-  triggerToast("Đã lưu địa chỉ định vị riêng cho tài khoản của bạn!");
+  triggerToast(targetAddr.isDefault ? "Đã lưu và đặt làm địa chỉ giao hàng mặc định!" : "Đã lưu địa chỉ giao hàng thành công!");
 };
 
 // Phí giao hàng & tổng tiền (Mô hình chợ dân sinh / đi chợ gần nhà - Bán kính <= 5km)
@@ -1161,27 +1361,46 @@ const handlePlaceOrder = () => {
               <i class="bi bi-geo-alt-fill text-danger me-2" aria-hidden="true"></i>
               1. Địa Chỉ Nhận Hàng
             </h3>
-            <button
-              type="button"
-              class="btn-edit-addr"
-              @click="openEditAddress"
-              title="Chỉnh sửa & định vị địa chỉ nhận hàng"
-            >
-              <i class="bi bi-geo-alt me-1"></i> Định Vị / Thay Đổi
-            </button>
+            <div class="addr-actions-wrap">
+              <button
+                type="button"
+                class="btn-addr-book"
+                @click="openAddressList"
+                title="Quản lý sổ địa chỉ giao hàng"
+              >
+                <i class="bi bi-journal-bookmark me-1"></i> Sổ Địa Chỉ ({{ savedAddresses.length }})
+              </button>
+              <button
+                type="button"
+                class="btn-edit-addr"
+                @click="openAddNewAddress"
+                title="Thêm địa chỉ giao hàng mới"
+              >
+                <i class="bi bi-plus-circle me-1"></i> Thêm Địa Chỉ
+              </button>
+            </div>
           </div>
 
           <div class="addr-content">
             <div class="user-info-row">
               <span class="user-fullname">{{ buyerName }}</span>
               <span class="user-phone">({{ buyerPhone }})</span>
-              <span class="badge-account-isolated">
-                <i class="bi bi-shield-check"></i> Đã lưu theo tài khoản
+              <span v-if="currentSelectedAddress?.isDefault" class="badge-default-pill">
+                <i class="bi bi-check2-circle"></i> Mặc định
               </span>
+              <span v-if="currentSelectedAddress?.label" class="badge-label-pill">
+                {{ currentSelectedAddress.label }}
+              </span>
+              <button type="button" class="btn-change-addr-link" @click="openEditAddress" title="Sửa hoặc định vị lại địa chỉ này">
+                [Sửa / Định vị]
+              </button>
+              <button type="button" class="btn-change-addr-link" @click="openAddressList" title="Chọn từ danh sách địa chỉ đã lưu">
+                [Đổi địa chỉ]
+              </button>
             </div>
 
             <p class="addr-text">
-              <i class="bi bi-house-door-fill text-muted me-1"></i>
+              <i class="bi bi-geo-alt-fill text-danger me-1"></i>
               {{ shippingAddress }}
             </p>
 
@@ -1582,6 +1801,48 @@ const handlePlaceOrder = () => {
             </div>
           </div>
 
+          <!-- LỰA CHỌN NHÃN ĐỊA CHỈ & THIẾT LẬP MẶC ĐỊNH -->
+          <div class="form-row-2 label-and-default-row">
+            <div class="form-group">
+              <label class="form-label">Nhãn địa chỉ</label>
+              <div class="label-choice-group">
+                <button
+                  type="button"
+                  class="choice-btn"
+                  :class="{ active: addressLabel === 'Nhà riêng' }"
+                  @click="addressLabel = 'Nhà riêng'"
+                >
+                  <i class="bi bi-house-door-fill me-1"></i> Nhà riêng
+                </button>
+                <button
+                  type="button"
+                  class="choice-btn"
+                  :class="{ active: addressLabel === 'Văn phòng' }"
+                  @click="addressLabel = 'Văn phòng'"
+                >
+                  <i class="bi bi-building me-1"></i> Văn phòng
+                </button>
+              </div>
+            </div>
+
+            <div class="form-group d-flex align-items-center pt-2">
+              <label class="custom-checkbox-wrap">
+                <input
+                  type="checkbox"
+                  v-model="isSetAsDefault"
+                  class="real-checkbox"
+                />
+                <span class="custom-checkmark"></span>
+                <span class="checkbox-text-bold">
+                  Đặt làm địa chỉ nhận hàng mặc định
+                  <small class="d-block text-muted" style="font-size: 11px; font-weight: normal;">
+                    Tự động chọn cho các lần thanh toán sau
+                  </small>
+                </span>
+              </label>
+            </div>
+          </div>
+
           <!-- BẢN ĐỒ ĐỊNH VỊ -->
           <div class="map-section-block">
             <div class="map-toolbar-line">
@@ -1684,6 +1945,105 @@ const handlePlaceOrder = () => {
           </button>
           <button type="button" class="btn-modal-save" @click="saveAddress">
             <i class="bi bi-check2-circle me-1"></i> Lưu Địa Chỉ Này
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL SỔ ĐỊA CHỈ GIAO HÀNG (ADDRESS BOOK MODAL) -->
+    <div v-if="showAddressListModal" class="modal-backdrop-overlay" @click.self="showAddressListModal = false">
+      <div class="modal-dialog-card modal-dialog-medium">
+        <div class="modal-header-line">
+          <div class="modal-title-wrap">
+            <div class="modal-icon-badge">
+              <i class="bi bi-journal-bookmark-fill"></i>
+            </div>
+            <div>
+              <h4>Địa Chỉ Giao Hàng Của Bạn</h4>
+              <p>Chọn địa chỉ nhận hàng hoặc thêm địa chỉ mới để tự động lưu mặc định</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close-modal" @click="showAddressListModal = false" aria-label="Đóng">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+
+        <div class="modal-body-list">
+          <div v-if="savedAddresses.length === 0" class="empty-addr-box">
+            <i class="bi bi-geo-alt"></i>
+            <p>Chưa có địa chỉ nào được lưu. Hãy thêm địa chỉ đầu tiên của bạn!</p>
+          </div>
+
+          <div
+            v-for="addr in savedAddresses"
+            :key="addr.id"
+            class="saved-addr-card"
+            :class="{ active: addr.address === shippingAddress, 'is-default': addr.isDefault }"
+            @click="selectSavedAddress(addr)"
+          >
+            <div class="addr-card-header">
+              <div class="addr-card-name-row">
+                <input
+                  type="radio"
+                  name="selected_delivery_addr"
+                  :checked="addr.address === shippingAddress"
+                  class="addr-radio"
+                  @click.stop="selectSavedAddress(addr)"
+                />
+                <strong class="addr-person-name">{{ addr.name }}</strong>
+                <span class="addr-person-phone">({{ addr.phone }})</span>
+                <span v-if="addr.isDefault" class="badge-default-pill">
+                  <i class="bi bi-check-circle-fill"></i> Mặc định
+                </span>
+                <span v-if="addr.label" class="badge-label-pill">
+                  {{ addr.label }}
+                </span>
+              </div>
+              <div class="addr-card-actions" @click.stop>
+                <button
+                  type="button"
+                  class="btn-addr-action btn-edit-action"
+                  @click="openEditExistingAddress(addr)"
+                  title="Chỉnh sửa hoặc định vị lại"
+                >
+                  <i class="bi bi-pencil-square"></i> Sửa
+                </button>
+                <button
+                  v-if="!addr.isDefault"
+                  type="button"
+                  class="btn-addr-action btn-setdefault-action"
+                  @click="setAsDefaultAddress(addr.id)"
+                  title="Đặt làm địa chỉ nhận hàng mặc định"
+                >
+                  <i class="bi bi-star"></i> Đặt mặc định
+                </button>
+                <button
+                  v-if="savedAddresses.length > 1"
+                  type="button"
+                  class="btn-addr-action btn-delete-action"
+                  @click="deleteSavedAddress(addr.id)"
+                  title="Xóa địa chỉ này"
+                >
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </div>
+            </div>
+
+            <p class="addr-card-detail">
+              <i class="bi bi-geo-alt-fill text-danger me-1"></i> {{ addr.address }}
+            </p>
+            <div v-if="addr.note" class="addr-card-note">
+              <i class="bi bi-card-text text-warning me-1"></i> Ghi chú: {{ addr.note }}
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer-line d-flex justify-content-between align-items-center">
+          <button type="button" class="btn-modal-cancel" @click="showAddressListModal = false">
+            Đóng
+          </button>
+          <button type="button" class="btn-modal-save" @click="openAddNewAddress">
+            <i class="bi bi-plus-circle me-1"></i> Thêm Địa Chỉ Mới
           </button>
         </div>
       </div>
@@ -3585,6 +3945,235 @@ const handlePlaceOrder = () => {
     padding: 16px !important;
     border-radius: 16px !important;
   }
+}
+
+
+/* SỔ ĐỊA CHỈ & ĐỊA CHỈ MẶC ĐỊNH */
+.addr-actions-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-addr-book {
+  background: #fff;
+  border: 1px solid #d85a2a;
+  color: #d85a2a;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-addr-book:hover {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.badge-default-pill {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.badge-label-pill {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.btn-change-addr-link {
+  background: none;
+  border: none;
+  color: #d85a2a;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 4px;
+  text-decoration: underline;
+}
+
+.label-choice-group {
+  display: flex;
+  gap: 8px;
+}
+
+.choice-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.choice-btn.active {
+  background: #d85a2a;
+  color: #ffffff;
+  border-color: #d85a2a;
+}
+
+.checkbox-text-bold {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+/* MODAL SỔ ĐỊA CHỈ */
+.modal-dialog-medium {
+  max-width: 620px;
+  width: 95%;
+}
+
+.modal-body-list {
+  padding: 16px;
+  max-height: 480px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty-addr-box {
+  text-align: center;
+  padding: 40px 20px;
+  color: #94a3b8;
+}
+
+.empty-addr-box i {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.saved-addr-card {
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.saved-addr-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.saved-addr-card.active {
+  border-color: #d85a2a;
+  background: #fffbf9;
+}
+
+.saved-addr-card.is-default {
+  border-left: 4px solid #059669;
+}
+
+.addr-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.addr-card-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.addr-radio {
+  accent-color: #d85a2a;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.addr-person-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.addr-person-phone {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.addr-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-addr-action {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-edit-action {
+  color: #2563eb;
+}
+.btn-edit-action:hover {
+  background: #eff6ff;
+}
+
+.btn-setdefault-action {
+  color: #059669;
+}
+.btn-setdefault-action:hover {
+  background: #ecfdf5;
+}
+
+.btn-delete-action {
+  color: #ef4444;
+}
+.btn-delete-action:hover {
+  background: #fef2f2;
+}
+
+.addr-card-detail {
+  margin: 4px 0 0 26px;
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.4;
+}
+
+.addr-card-note {
+  margin: 4px 0 0 26px;
+  font-size: 12px;
+  color: #d97706;
 }
 
 </style>

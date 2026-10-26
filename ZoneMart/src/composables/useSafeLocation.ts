@@ -48,7 +48,7 @@ async function reverseGeocodeSafe(lat: number, lon: number): Promise<string> {
     const res = await apiFetch('/api/aichat/safe-location', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lat, lng: lon }),
+      body: JSON.stringify({ lat, lon, lng: lon }),
     });
 
     if (res && res.ok) {
