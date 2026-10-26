@@ -15,7 +15,7 @@ import {
 import { useRouter, useRoute } from 'vue-router';
 import ForgotPasswordForm from './ForgotPasswordForm.vue';
 import { useAuth, type UserRole } from '../../composables/useAuth';
-import { apiFetch, getBaseApiUrl } from '../../utils/apiConfig';
+import { apiFetch } from '../../utils/apiConfig';
 import { Capacitor } from '@capacitor/core';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
 import FaceScanModal from '../../components/auth/FaceScanModal.vue';
@@ -86,32 +86,6 @@ const onCelebrationComplete = () => {
 const biometricDevice = ref<BiometricDeviceInfo | null>(null);
 const isBiometricChecking = ref(false);
 const showFaceScanModal = ref(false);
-
-// Cấu hình máy chủ IP cho Mobile App (iOS IPA / Android APK)
-const showServerConfigModal = ref(false);
-const customServerUrl = ref('');
-
-const openServerConfig = () => {
-  const current = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_api_server_url') : '';
-  customServerUrl.value = current || getBaseApiUrl() || 'http://192.168.5.115:5000';
-  showServerConfigModal.value = true;
-};
-
-const saveServerConfig = () => {
-  let url = customServerUrl.value.trim().replace(/\/+$/, '');
-  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
-    url = 'http://' + url;
-  }
-  if (typeof localStorage !== 'undefined') {
-    if (url) {
-      localStorage.setItem('zonemart_api_server_url', url);
-    } else {
-      localStorage.removeItem('zonemart_api_server_url');
-    }
-  }
-  showServerConfigModal.value = false;
-  toast.success(`Đã cập nhật máy chủ: ${url || 'Mặc định (192.168.5.115:5000)'}!`, 'Cấu Hình Máy Chủ');
-};
 
 onMounted(async () => {
   try {
@@ -771,17 +745,6 @@ const handleLogin = async () => {
                   >Đăng ký đối tác giao hàng</router-link
                 >
               </div>
-              <div class="cta-sub-line mt-2 pt-2 border-top" style="border-color: rgba(0,0,0,0.06) !important;">
-                <button
-                  type="button"
-                  class="btn btn-link btn-sm text-muted text-decoration-none p-0"
-                  style="font-size: 11px; opacity: 0.75;"
-                  @click="openServerConfig"
-                  title="Cấu hình địa chỉ IP máy chủ kết nối"
-                >
-                  <i class="bi bi-hdd-network me-1"></i> Máy chủ: {{ getBaseApiUrl() || '192.168.5.115:5000' }}
-                </button>
-              </div>
             </div>
           </form>
         </template>
@@ -927,15 +890,6 @@ const handleLogin = async () => {
 
           <div class="modal-action-buttons d-flex flex-column gap-2">
             <!-- NÚT TRẢI NGHIỆM NGOẠI TUYẾN KHI SERVER CHƯA BẬT HOẶC MẤT MẠNG -->
-            <button
-              v-if="modalErrorType === 'NETWORK_ERROR'"
-              type="button"
-              class="btn btn-outline-secondary w-100 fw-bold py-2 shadow-sm d-flex align-items-center justify-content-center gap-2"
-              style="border-radius: 12px; font-size: 13px;"
-              @click="openServerConfig"
-            >
-              <span>⚙️ Đổi IP Máy Chủ ({{ getBaseApiUrl() || '192.168.5.115:5000' }})</span>
-            </button>
 
             <button
               v-if="modalErrorType === 'NETWORK_ERROR'"
@@ -990,53 +944,6 @@ const handleLogin = async () => {
       @close="showFaceScanModal = false"
     />
 
-    <!-- MODAL CẤU HÌNH IP MÁY CHỦ CHO MOBILE APP -->
-    <div
-      v-if="showServerConfigModal"
-      class="modal-overlay"
-      style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);"
-      @click.self="showServerConfigModal = false"
-    >
-      <div class="p-4 shadow-lg text-start" style="max-width: 420px; width: 90%; border-radius: 20px; background: #fff;">
-        <div class="d-flex align-items-center justify-content-between mb-3">
-          <h5 class="fw-bold mb-0 text-dark d-flex align-items-center gap-2">
-            <i class="bi bi-hdd-network text-primary"></i> Cấu Hình IP Máy Chủ
-          </h5>
-          <button type="button" class="btn-close" @click="showServerConfigModal = false"></button>
-        </div>
-        <p class="text-muted small mb-3">
-          Nhập địa chỉ IP máy tính đang chạy ZoneMart Server (ví dụ Wi-Fi hiện tại: <code>http://192.168.5.115:5000</code>).
-        </p>
-        <div class="mb-3">
-          <label class="form-label small fw-bold text-secondary">Địa chỉ máy chủ (URL):</label>
-          <input
-            v-model="customServerUrl"
-            type="text"
-            class="form-control"
-            placeholder="http://192.168.5.115:5000"
-            style="border-radius: 10px; font-family: monospace; font-size: 13px;"
-          />
-        </div>
-        <div class="d-flex gap-2">
-          <button
-            type="button"
-            class="btn btn-primary flex-grow-1 fw-bold"
-            style="border-radius: 10px;"
-            @click="saveServerConfig"
-          >
-            Lưu & Thử Lại
-          </button>
-          <button
-            type="button"
-            class="btn btn-light text-secondary"
-            style="border-radius: 10px;"
-            @click="showServerConfigModal = false"
-          >
-            Hủy
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
