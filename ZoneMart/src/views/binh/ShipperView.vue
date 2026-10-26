@@ -865,48 +865,7 @@ const handleAcceptIncomingOrder = async () => {
   await handleAcceptSpecificOrder(incomingOrder.value);
 };
 
-// Tạo nhanh đơn hàng thử nghiệm ngay tại vị trí thực tế của tài xế
-const createTestOrder = () => {
-  if (!isOnline.value) {
-    toggleOnline();
-  }
-  const randNum = Math.floor(100000 + Math.random() * 900000);
-  const testId = `ZM${randNum}`;
-  const dLat = driverLocation.value.lat || 21.0333;
-  const dLng = driverLocation.value.lng || 105.7944;
 
-  const testOrder: RealtimeOrder = {
-    id: testId,
-    orderCode: testId,
-    total: 135000,
-    shippingFee: 15000,
-    paymentMethod: "Tiền mặt COD",
-    createdAt: new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
-    status: "pending",
-    statusText: "Đang chờ tài xế nhận đơn",
-    store: {
-      lat: Number((dLat + 0.0052).toFixed(6)),
-      lng: Number((dLng + 0.0041).toFixed(6)),
-      name: "Quầy Nông Sản Sạch Ba Vì (Cách 0.6km)",
-      address: "Số 48 Cầu Giấy, Quan Hoa, Cầu Giấy, Hà Nội",
-      phone: "0988 123 456"
-    },
-    customer: {
-      lat: Number((dLat - 0.0075).toFixed(6)),
-      lng: Number((dLng - 0.0062).toFixed(6)),
-      name: "Khách Hàng Test ZoneMart",
-      address: "Số 88 Ngõ 165 Cầu Giấy, Hà Nội",
-      phone: "0396 222 614"
-    },
-    items: [
-      { name: "Cơm Gà Xối Mỡ Da Giòn Nóng Hổi", price: 50000, quantity: 2 },
-      { name: "Trà Tắc Mật Ong Khổng Lồ", price: 18000, quantity: 1 }
-    ]
-  };
-
-  orderRealtimeService.dispatchNewOrder(testOrder);
-  triggerToast(`🚀 Đã tạo đơn thử nghiệm #${testId}! Đang kích hoạt chuông nổ đơn...`);
-};
 
 const handleFinishTrip = () => {
   currentStep.value = "idle";
@@ -1231,16 +1190,7 @@ onUnmounted(() => {
           <span class="action-label">Thu nhập</span>
         </button>
 
-        <!-- Nút Tạo Đơn Thử Nghiệm -->
-        <button
-          type="button"
-          class="map-action-btn btn-test-order"
-          @click="createTestOrder"
-          title="Tạo đơn hàng thử nghiệm hỏa tốc ngay tại vị trí của bạn"
-        >
-          <i class="bi bi-plus-circle-fill text-warning"></i>
-          <span class="action-label">Tạo Đơn Test</span>
-        </button>
+
 
         <!-- GPS Recenter -->
         <button
@@ -1359,7 +1309,7 @@ onUnmounted(() => {
               <span class="dock-pulse"></span>
               <strong>{{ availableOrdersList.length }} Đơn Chờ Bạn Nhận</strong>
             </div>
-            <button type="button" class="btn-dock-quicktest" @click="createTestOrder">+ Đơn Test</button>
+
           </div>
           <div class="dock-items-scroll">
             <div v-for="ord in availableOrdersList" :key="ord.id" class="dock-order-row">
@@ -1385,9 +1335,7 @@ onUnmounted(() => {
             <strong>Đang Quét Đơn Hỏa Tốc...</strong>
             <small>Sẵn sàng nhận đơn mới trong khu vực</small>
           </div>
-          <button type="button" class="btn-radar-test" @click="createTestOrder" title="Thử nghiệm tạo đơn">
-            + Đơn Test
-          </button>
+
         </div>
       </template>
     </div>
