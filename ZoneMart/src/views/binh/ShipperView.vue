@@ -14,7 +14,13 @@ import { useRouter } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
 import { useToast } from "../../composables/useToast";
 import { orderRealtimeService, type RealtimeOrder } from "../../services/orderRealtimeService";
-import FaceScanModal from "../../components/auth/FaceScanModal.vue";
+import {
+  detectBiometricDevice,
+  registerDeviceBiometrics,
+  disableDeviceBiometrics,
+  checkDeviceBiometricStatus,
+  type BiometricDeviceInfo
+} from "../../utils/biometricHelper";
 import { apiFetch } from "../../utils/apiConfig";
 import { getSafeCurrentLocation } from "../../composables/useSafeLocation";
 import L from "leaflet";
@@ -157,7 +163,8 @@ const triggerToast = (msg: string) => {
 };
 
 // ==================== THIẾT LẬP FACE-ID CHO TÀI XẾ ====================
-const showFaceModal = ref(false);
+const biometricDevice = ref<BiometricDeviceInfo | null>(null);
+const isActivatingBiometric = ref(false);
 const isFaceAuthEnabled = ref(false);
 const faceRegisteredAt = ref("");
 const isCheckingFaceStatus = ref(false);
@@ -181,6 +188,9 @@ const getShipperUserIdentifier = () => {
 };
 
 const checkFaceStatus = async () => {
+  if (!biometricDevice.value) {
+    biometricDevice.value = await detectBiometricDevice();
+  }
   const userId = getShipperUserIdentifier();
   if (!userId || userId === "usr_guest") {
     isFaceAuthEnabled.value = false;
@@ -189,59 +199,59 @@ const checkFaceStatus = async () => {
   }
   isCheckingFaceStatus.value = true;
   try {
-    const res = await apiFetch(`/api/auth/face/status?userId=${encodeURIComponent(userId)}`);
-    if (res && res.ok) {
-      const data = await res.json();
-      if (data.success) {
-        isFaceAuthEnabled.value = Boolean(data.faceAuthEnabled);
-        faceRegisteredAt.value = data.registeredAt || "";
-      }
-    }
+    const status = await checkDeviceBiometricStatus(userId);
+    isFaceAuthEnabled.value = status.isEnabled;
+    faceRegisteredAt.value = status.registeredAt || "";
   } catch (e) {
-    console.error("Lỗi kiểm tra Face ID tài xế:", e);
+    console.error("Lỗi kiểm tra sinh trắc học tài xế:", e);
   } finally {
     isCheckingFaceStatus.value = false;
   }
 };
 
-const openFaceRegisterModal = () => {
+const handleActivateBiometric = async () => {
   const userId = getShipperUserIdentifier();
   if (!userId) {
-    triggerToast("Vui lòng đăng nhập tài khoản tài xế để thiết lập Face ID!");
+    triggerToast("Vui lòng đăng nhập tài khoản tài xế để thiết lập sinh trắc học!");
     return;
   }
-  showFaceModal.value = true;
-};
-
-const handleFaceRegisterSuccess = (payload: any) => {
-  isFaceAuthEnabled.value = true;
-  faceRegisteredAt.value = payload.registeredAt || new Date().toLocaleString("vi-VN");
-  triggerToast("🎉 Đã kích hoạt và lưu khuôn mặt thành công cho tài xế!");
+  if (isActivatingBiometric.value) return;
+  isActivatingBiometric.value = true;
+  try {
+    const res = await registerDeviceBiometrics(userId);
+    if (res.success) {
+      isFaceAuthEnabled.value = true;
+      faceRegisteredAt.value = res.registeredAt || new Date().toLocaleString("vi-VN");
+      triggerToast(`🎉 ${res.message || 'Đã kích hoạt sinh trắc học thành công!'}`);
+    } else {
+      triggerToast(res.message || 'Không thể kích hoạt sinh trắc học.');
+    }
+  } catch (e: any) {
+    triggerToast(e.message || 'Lỗi khi kích hoạt sinh trắc học.');
+  } finally {
+    isActivatingBiometric.value = false;
+  }
 };
 
 const handleDisableFace = async () => {
   const userId = getShipperUserIdentifier();
   if (!userId) return;
-  if (!confirm("Bạn có chắc chắn muốn tắt tính năng đăng nhập bằng khuôn mặt Face-ID cho tài xế này?")) {
+  const bioLabel = biometricDevice.value?.label || 'Sinh trắc học';
+  if (!confirm(`Bạn có chắc chắn muốn tắt tính năng đăng nhập bằng ${bioLabel} cho tài xế này?`)) {
     return;
   }
   isDisablingFace.value = true;
   try {
-    const res = await apiFetch("/api/auth/face/disable", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
+    const res = await disableDeviceBiometrics(userId);
+    if (res.success) {
       isFaceAuthEnabled.value = false;
       faceRegisteredAt.value = "";
-      triggerToast("Đã hủy kích hoạt Face ID cho tài xế.");
+      triggerToast(res.message || `Đã hủy kích hoạt ${bioLabel} cho tài xế.`);
     } else {
-      triggerToast(data.message || "Không thể hủy Face ID.");
+      triggerToast(res.message || `Không thể hủy ${bioLabel}.`);
     }
   } catch (e: any) {
-    triggerToast(e.message || "Lỗi khi hủy Face ID.");
+    triggerToast(e.message || "Lỗi khi hủy sinh trắc học.");
   } finally {
     isDisablingFace.value = false;
   }
@@ -1548,36 +1558,37 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 3. Cài Đặt Sinh Trắc Học Face-ID (gọn gàng 1 khối duy nhất) -->
+            <!-- 3. Cài Đặt Sinh Trắc Học Tự Động Theo Phần Cứng Máy -->
             <div class="shipper-face-card-compact">
               <div class="face-compact-left">
                 <div class="face-symbol-badge-sm" :class="{ 'is-active': isFaceAuthEnabled }">
-                  <i class="bi bi-person-bounding-box"></i>
+                  <i :class="biometricDevice?.iconType === 'fingerprint' ? 'bi bi-fingerprint' : (biometricDevice?.iconType === 'faceid' ? 'bi bi-person-bounding-box' : 'bi bi-shield-check')"></i>
                 </div>
                 <div class="face-text-group">
-                  <div class="face-title-sm">Bảo Mật AI Face-ID UniFace</div>
+                  <div class="face-title-sm">{{ biometricDevice?.label || 'Sinh Trắc Học Thiết Bị' }}</div>
                   <div class="face-desc-sm">
                     <span v-if="isFaceAuthEnabled" class="text-success fw-bold">
-                      <i class="bi bi-shield-check"></i> Đã kích hoạt 1-chạm
+                      <i class="bi bi-shield-check"></i> Đã kích hoạt ({{ faceRegisteredAt || '1-chạm' }})
                     </span>
                     <span v-else class="text-muted">
-                      Đăng nhập 1-chạm không mật khẩu
+                      Đăng nhập 1-chạm vân tay / khuôn mặt
                     </span>
                   </div>
                 </div>
               </div>
               <div class="face-compact-actions">
                 <template v-if="isFaceAuthEnabled">
-                  <button type="button" class="btn-face-rescan-sm" @click="openFaceRegisterModal" title="Quét cập nhật lại khuôn mặt">
-                    <i class="bi bi-arrow-clockwise"></i> Quét lại
+                  <button type="button" class="btn-face-rescan-sm" :disabled="isActivatingBiometric" @click="handleActivateBiometric" title="Thiết lập lại">
+                    <i class="bi bi-arrow-clockwise"></i> Cài lại
                   </button>
-                  <button type="button" class="btn-face-disable-sm" :disabled="isDisablingFace" @click="handleDisableFace" title="Hủy kích hoạt Face ID">
+                  <button type="button" class="btn-face-disable-sm" :disabled="isDisablingFace" @click="handleDisableFace" title="Hủy kích hoạt">
                     <i class="bi bi-x-circle"></i> Tắt
                   </button>
                 </template>
                 <template v-else>
-                  <button type="button" class="btn-face-activate-sm" @click="openFaceRegisterModal">
-                    <i class="bi bi-camera-fill me-1"></i> Bật Face ID
+                  <button type="button" class="btn-face-activate-sm" :disabled="isActivatingBiometric" @click="handleActivateBiometric">
+                    <i :class="biometricDevice?.iconType === 'fingerprint' ? 'bi bi-fingerprint me-1' : 'bi bi-person-bounding-box me-1'"></i>
+                    {{ biometricDevice?.actionTitle || 'Bật Sinh Trắc Học' }}
                   </button>
                 </template>
               </div>
@@ -1603,14 +1614,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Modal Quét & Kích Hoạt Khuôn Mặt (Face ID UniFace) cho Shipper -->
-    <FaceScanModal
-      v-model="showFaceModal"
-      mode="register"
-      :user-id="getShipperUserIdentifier()"
-      :user-name="driverProfile.fullName || 'Tài Xế ZoneMart'"
-      @success="handleFaceRegisterSuccess"
-    />
+
 
     <!-- 6. THANH ĐIỀU HƯỚNG ĐÁY MÀN HÌNH TRÊN ĐIỆN THOẠI (MOBILE BOTTOM NAVIGATION BAR) -->
     <nav class="shipper-bottom-nav">

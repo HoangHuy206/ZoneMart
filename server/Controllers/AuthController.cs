@@ -3136,6 +3136,51 @@ Email liên hệ: dobinh225599@gmail.com
     }
 
     /// <summary>
+    /// API Kích hoạt Sinh trắc học Native (Vân tay / Khuôn mặt gốc của thiết bị di động Android & iPhone)
+    /// </summary>
+    [HttpPost("face/register-native")]
+    [HttpPost("biometric/register-native")]
+    public async Task<IActionResult> RegisterNativeBiometric([FromBody] RegisterNativeBiometricRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.UserId))
+            {
+                return BadRequest(new { success = false, message = "Thiếu thông tin tài khoản!" });
+            }
+
+            var user = await FindUserByIdentifierAsync(request.UserId);
+            if (user == null)
+            {
+                return NotFound(new { success = false, message = "Không tìm thấy tài khoản người dùng!" });
+            }
+
+            var now = DateTime.UtcNow;
+            var update = Builders<User>.Update
+                .Set(u => u.FaceAuthEnabled, true)
+                .Set(u => u.FaceRegisteredAt, now);
+
+            await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, update);
+
+            user.FaceAuthEnabled = true;
+            user.FaceRegisteredAt = now;
+            if (!string.IsNullOrEmpty(user.PhoneEmail)) InMemoryUsers[user.PhoneEmail] = user;
+
+            string bioName = !string.IsNullOrWhiteSpace(request.BiometricType) ? request.BiometricType : "Sinh trắc học";
+            return Ok(new
+            {
+                success = true,
+                message = $"Đã kích hoạt thành công {bioName} cho tài khoản!",
+                registeredAt = now.ToString("dd/MM/yyyy HH:mm")
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = "Lỗi khi kích hoạt sinh trắc học: " + ex.Message });
+        }
+    }
+
+    /// <summary>
     /// API Kiểm tra trạng thái Face ID của tài khoản
     /// </summary>
     [HttpGet("face/status")]
@@ -3543,6 +3588,12 @@ public class RegisterFaceRequest
 {
     public string UserId { get; set; } = string.Empty;
     public string Image { get; set; } = string.Empty;
+}
+
+public class RegisterNativeBiometricRequest
+{
+    public string UserId { get; set; } = string.Empty;
+    public string? BiometricType { get; set; }
 }
 
 public class DisableFaceRequest
