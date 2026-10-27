@@ -6,7 +6,7 @@
  */
 
 const KNOWN_PORT = '5000';
-const DEFAULT_LAN_IP = '192.168.5.115';
+const DEFAULT_LAN_IP = '192.168.99.27';
 
 let cachedDiscoveredUrl: string | null = null;
 let lastDiscoveredAt = 0;
@@ -80,7 +80,14 @@ function raceCandidates(candidates: string[], timeoutMs: number): Promise<string
 function generateSubnetCandidates(): string[] {
   const list: string[] = [];
 
-  // Dải 192.168.5.x (mạng Wi-Fi hiện tại)
+  // 1. Dải 192.168.99.x (Wi-Fi HHT WIFI hiện tại của máy tính dev)
+  list.push(`http://192.168.99.27:${KNOWN_PORT}`);
+  for (let i = 2; i <= 60; i++) {
+    if (i !== 27) list.push(`http://192.168.99.${i}:${KNOWN_PORT}`);
+  }
+
+  // 2. Dải 192.168.5.x (Wi-Fi văn phòng / nhà riêng trước đó)
+  list.push(`http://192.168.5.115:${KNOWN_PORT}`);
   for (let i = 100; i <= 150; i++) {
     if (i !== 115) list.push(`http://192.168.5.${i}:${KNOWN_PORT}`);
   }
@@ -88,7 +95,7 @@ function generateSubnetCandidates(): string[] {
     list.push(`http://192.168.5.${i}:${KNOWN_PORT}`);
   }
 
-  // Dải 192.168.1.x (phổ biến nhất ở các router gia đình)
+  // 3. Dải 192.168.1.x (Router gia đình phổ biến nhất)
   for (let i = 100; i <= 140; i++) {
     list.push(`http://192.168.1.${i}:${KNOWN_PORT}`);
   }
@@ -96,12 +103,18 @@ function generateSubnetCandidates(): string[] {
     list.push(`http://192.168.1.${i}:${KNOWN_PORT}`);
   }
 
-  // Dải 192.168.0.x
+  // 4. Dải 192.168.0.x
   for (let i = 100; i <= 130; i++) {
     list.push(`http://192.168.0.${i}:${KNOWN_PORT}`);
   }
   for (let i = 2; i <= 20; i++) {
     list.push(`http://192.168.0.${i}:${KNOWN_PORT}`);
+  }
+
+  // 5. Điểm phát sóng di động (Hotspot 4G/5G)
+  for (let i = 1; i <= 15; i++) {
+    list.push(`http://172.20.10.${i}:${KNOWN_PORT}`);
+    list.push(`http://192.168.43.${i}:${KNOWN_PORT}`);
   }
 
   return list;
