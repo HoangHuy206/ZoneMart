@@ -945,21 +945,19 @@ public class AuthController : ControllerBase
         }
 
         // TỰ ĐỘNG ĐỒNG BỘ NẾU HỒ SƠ ĐÃ ĐƯỢC ADMIN PHÊ DUYỆT (Self-healing sync)
-        bool isStoreApproved = userStore != null && (userStore.Status == "Approved" || userStore.Status == "Active");
-        bool isShipperApproved = shipperInfo != null && (shipperInfo.Status == "Approved" || shipperInfo.Status == "Active");
+        bool isStoreApproved = userStore != null && (userStore.Status == "Approved" || userStore.Status == "Active") && (existingUser == null || existingUser.IsSeller);
+        bool isShipperApproved = shipperInfo != null && (shipperInfo.Status == "Approved" || shipperInfo.Status == "Active") && (existingUser == null || existingUser.IsShipper);
 
         if (existingUser != null)
         {
             bool needUserUpdate = false;
-            if (isStoreApproved && (!existingUser.IsSeller || existingUser.AccountStatus == "pending"))
+            if (isStoreApproved && existingUser.AccountStatus == "pending")
             {
-                existingUser.IsSeller = true;
                 existingUser.AccountStatus = "active";
                 needUserUpdate = true;
             }
-            if (isShipperApproved && (!existingUser.IsShipper || existingUser.AccountStatus == "pending"))
+            if (isShipperApproved && existingUser.AccountStatus == "pending")
             {
-                existingUser.IsShipper = true;
                 existingUser.AccountStatus = "active";
                 needUserUpdate = true;
             }
@@ -1068,12 +1066,22 @@ public class AuthController : ControllerBase
             }
             determinedRole = "admin";
         }
+        else if (reqRole == "manager")
+        {
+            if (existingUser == null || (!existingUser.IsManager && !existingUser.IsAdmin))
+            {
+                return BadRequest(new { success = false, message = "Tài khoản này chưa được cấp quyền Ban Quản Lý! Vui lòng liên hệ Admin để được cấp quyền." });
+            }
+            determinedRole = "manager";
+        }
         else
         {
             // Cổng Buyer (Khách hàng) hoặc đăng nhập chung:
             // Chỉ nâng vai trò thành seller/shipper nếu hồ sơ đã ĐƯỢC DUYỆT (Approved).
             // Nếu hồ sơ đang chờ duyệt (Pending), VẪN LÀ BUYER để mua sắm bình thường!
             if (existingUser != null && existingUser.IsAdmin) determinedRole = "admin";
+            else if (existingUser != null && existingUser.IsManager && !existingUser.IsAdmin && !existingUser.IsSeller && !existingUser.IsShipper) determinedRole = "manager";
+            else if (existingUser != null && existingUser.IsShipper && !existingUser.IsSeller) determinedRole = "shipper";
             else if (existingUser != null && existingUser.IsSeller && isStoreApproved) determinedRole = "seller";
             else if ((existingUser != null && existingUser.IsShipper && isShipperApproved) || (shipperInfo != null && isShipperApproved)) determinedRole = "shipper";
             else determinedRole = "buyer";
@@ -1146,8 +1154,8 @@ public class AuthController : ControllerBase
                     : (shipperInfo?.AvatarUrl ?? ""),
                 role = determinedRole,
                 isAdmin = determinedRole == "admin" || (existingUser?.IsAdmin ?? false),
-                isSeller = (existingUser?.IsSeller ?? false) || isStoreApproved || sellerStatus == "Approved",
-                isShipper = (existingUser?.IsShipper ?? false) || isShipperApproved || (shipperInfo?.Status == "Approved"),
+                isSeller = (existingUser?.IsSeller ?? false) && (isStoreApproved || sellerStatus == "Approved"),
+                isShipper = (existingUser?.IsShipper ?? false) && (isShipperApproved || (shipperInfo?.Status == "Approved")),
                 isManager = (existingUser?.IsManager ?? false) || determinedRole == "admin",
                 walletBalance = existingUser?.WalletBalance ?? 0,
                 storeName = storeName,
@@ -1643,6 +1651,7 @@ Email liên hệ: dobinh225599@gmail.com
 
     private static string GetRoleDisplayName(string role) => role switch
     {
+        "manager" => "Ban Quản Lý",
         "seller" => "Chủ cửa hàng",
         "shipper" => "Tài xế Shipper",
         "admin" => "Quản trị viên",
@@ -3313,6 +3322,7 @@ Email liên hệ: dobinh225599@gmail.com
             // 4. ĐỊNH DANH CHÍNH XÁC TÀI KHOẢN VÀ HOÀN TẤT ĐĂNG NHẬP
             string determinedRole = "buyer";
             if (matchedUser.IsAdmin) determinedRole = "admin";
+            else if (matchedUser.IsManager && !matchedUser.IsSeller && !matchedUser.IsShipper) determinedRole = "manager";
             else if (matchedUser.IsSeller) determinedRole = "seller";
             else if (matchedUser.IsShipper) determinedRole = "shipper";
 

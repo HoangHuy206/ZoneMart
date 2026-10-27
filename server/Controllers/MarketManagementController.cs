@@ -33,18 +33,15 @@ public class MarketManagementController : ControllerBase
         }
     }
 
+    private static bool _isSeeded = false;
+
     private async Task EnsureHanoiMarketsSeededAsync()
     {
+        if (_isSeeded) return;
         try
         {
-            // 1. Cập nhật DistrictName cho các chợ hiện có nếu đang trống
-            await _mongoService.Markets.UpdateManyAsync(
-                m => string.IsNullOrEmpty(m.DistrictName),
-                Builders<Market>.Update.Set(m => m.DistrictName, "Quận Cầu Giấy")
-            );
-
-            var currentMarketCount = await _mongoService.Markets.CountDocumentsAsync(_ => true);
-            if (currentMarketCount >= 25) return;
+            var existingMarkets = await _mongoService.Markets.Find(_ => true).ToListAsync();
+            var marketCodeSet = new HashSet<string>(existingMarkets.Select(m => m.MarketCode).Where(c => !string.IsNullOrEmpty(c)));
 
             // Danh sách Ban Quản Lý mở rộng theo các Quận / Huyện
             var seedBoards = new[]
@@ -149,11 +146,11 @@ public class MarketManagementController : ControllerBase
                 new { Code = "MKT_HD_SD", Name = "Chợ Sơn Đồng", Ward = "Xã Sơn Đồng", District = "Huyện Hoài Đức", Addr = "Làng nghề Sơn Đồng, Hoài Đức, Hà Nội", Stalls = 120, Bql = "Ban quản lý chợ Huyện Hoài Đức" },
                 new { Code = "MKT_HD_TT", Name = "Chợ Trạm Trôi", Ward = "Thị trấn Trạm Trôi", District = "Huyện Hoài Đức", Addr = "Khu trung tâm Trạm Trôi, Hoài Đức, Hà Nội", Stalls = 150, Bql = "Ban quản lý chợ Huyện Hoài Đức" },
                 // Thanh Trì
-                new { Code = "MKT_TT_VD", Name = "Chợ Văn Điển", Ward = "Thị trấn Văn Điển", District = "Huyện Thanh Trì", Addr = "Đường Ngọc Hồi, Văn Điển, Thanh Trì, Hà Nội", Stalls = 160, Bql = "Ban quản lý chợ Huyện Thanh Trì" }
+                new { Code = "MKT_TT_VD", Name = "Chợ Văn Điển", Ward = "Thị trấn Văn Điển", District = "Huyện Thanh Trì", Addr = "Đường Ngọc Hồi, Văn Điển, Thanh Trì, Hà Nội", Stalls = 160, Bql = "Ban quản lý chợ Huyện Thanh Trì" },
+                // Thị xã Sơn Tây (Bổ sung chợ chưa phân công để Admin phân công cho Quản lý ca trực)
+                new { Code = "MKT_ST_MIA", Name = "Chợ Mía", Ward = "Xã Đường Lâm", District = "Thị xã Sơn Tây", Addr = "Thôn Đông Sàng, Xã Đường Lâm, Thị xã Sơn Tây, Hà Nội", Stalls = 150, Bql = "Chưa phân công" },
+                new { Code = "MKT_ST_NGHE", Name = "Chợ Nghệ", Ward = "Phường Quang Trung", District = "Thị xã Sơn Tây", Addr = "Phố Quang Trung, Thị xã Sơn Tây, Hà Nội", Stalls = 200, Bql = "Chưa phân công" }
             };
-
-            var existingMarkets = await _mongoService.Markets.Find(_ => true).ToListAsync();
-            var marketCodeSet = new HashSet<string>(existingMarkets.Select(m => m.MarketCode).Where(c => !string.IsNullOrEmpty(c)));
 
             var existingWards = await _mongoService.CommuneWards.Find(_ => true).ToListAsync();
             var wardMap = new Dictionary<string, CommuneWard>();
@@ -180,7 +177,11 @@ public class MarketManagementController : ControllerBase
                     wardMap[sm.Ward] = wObj;
                 }
 
-                boardMap.TryGetValue(sm.Bql, out var bObj);
+                ManagementBoard? bObj = null;
+                if (!string.IsNullOrEmpty(sm.Bql) && sm.Bql != "Chưa phân công")
+                {
+                    boardMap.TryGetValue(sm.Bql, out bObj);
+                }
 
                 var mObj = new Market
                 {
@@ -190,7 +191,7 @@ public class MarketManagementController : ControllerBase
                     WardName = sm.Ward,
                     DistrictName = sm.District,
                     ManagementBoardId = bObj?.Id,
-                    ManagementBoardName = bObj?.BoardName ?? sm.Bql,
+                    ManagementBoardName = bObj?.BoardName ?? (sm.Bql == "Chưa phân công" ? "Chưa phân công" : sm.Bql),
                     Address = sm.Addr,
                     MarketType = "Chợ dân sinh truyền thống",
                     TotalStalls = sm.Stalls,
@@ -203,12 +204,15 @@ public class MarketManagementController : ControllerBase
             {
                 await _mongoService.Markets.InsertManyAsync(marketsToInsert);
             }
+
+            _isSeeded = true;
         }
         catch (Exception ex)
         {
             Console.WriteLine("[EnsureHanoiMarketsSeeded] Warning: " + ex.Message);
         }
-    }
+    }
+
 
 
     /// <summary>
@@ -307,7 +311,7 @@ public class MarketManagementController : ControllerBase
     }
 
     /// <summary>
-    /// Nghiệp vụ Phân công Ban Quản Lý cho Chợ & Tự động lưu lịch sử phân công
+    /// Nghiệp vụ Phân công Ban Quản Lý / Quản Lý Ca Trực cho Chợ & Tự động lưu lịch sử phân công
     /// </summary>
     [HttpPost("assign")]
     public async Task<IActionResult> AssignMarket([FromBody] AssignMarketRequest req)
@@ -317,8 +321,34 @@ public class MarketManagementController : ControllerBase
             var market = await _mongoService.Markets.Find(m => m.Id == req.MarketId).FirstOrDefaultAsync();
             if (market == null) return NotFound(new { success = false, message = "Không tìm thấy Chợ cần phân công!" });
 
+            // Tìm trong danh sách Ban Quản Lý hoặc Tài Khoản Quản Lý Ca Trực (ShiftManagers hoặc User có IsManager)
             var board = await _mongoService.ManagementBoards.Find(b => b.Id == req.ManagementBoardId).FirstOrDefaultAsync();
-            if (board == null) return NotFound(new { success = false, message = "Không tìm thấy Ban quản lý chợ!" });
+            ShiftManager? shiftManager = null;
+            User? managerUser = null;
+            if (board == null)
+            {
+                shiftManager = await _mongoService.ShiftManagers.Find(sm => sm.Id == req.ManagementBoardId || sm.ManagerCode == req.ManagementBoardId).FirstOrDefaultAsync();
+                if (shiftManager == null)
+                {
+                    managerUser = await _mongoService.Users.Find(u => u.Id == req.ManagementBoardId && (u.IsManager || u.IsAdmin)).FirstOrDefaultAsync();
+                }
+            }
+
+            if (board == null && shiftManager == null && managerUser == null)
+            {
+                return NotFound(new { success = false, message = "Không tìm thấy Ban quản lý hoặc Quản lý ca trực được chọn!" });
+            }
+
+            string assignedId = board?.Id ?? shiftManager?.Id ?? managerUser!.Id!;
+            string assignedName = board?.BoardName ?? (shiftManager != null ? $"{shiftManager.FullName} (Quản lý ca trực)" : $"{managerUser!.FullName} (Quản lý ca trực)");
+
+            if (shiftManager != null)
+            {
+                await _mongoService.ShiftManagers.UpdateOneAsync(
+                    sm => sm.Id == shiftManager.Id,
+                    Builders<ShiftManager>.Update.Inc(sm => sm.AssignedMarketsCount, 1)
+                );
+            }
 
             // 1. Chuyển trạng thái các bản ghi lịch sử phân công cũ của chợ này sang 'Transferred'
             var oldFilter = Builders<MarketAssignmentHistory>.Filter.And(
@@ -330,16 +360,16 @@ public class MarketManagementController : ControllerBase
                 .Set(h => h.EndDate, DateTime.UtcNow);
             await _mongoService.MarketAssignmentHistories.UpdateManyAsync(oldFilter, updateOld);
 
-            // 2. Cập nhật thông tin Ban quản lý hiện tại vào Chợ
+            // 2. Cập nhật thông tin Ban quản lý / Quản lý ca trực hiện tại vào Chợ
             await _mongoService.Markets.UpdateOneAsync(
                 m => m.Id == market.Id,
                 Builders<Market>.Update
-                    .Set(m => m.ManagementBoardId, board.Id)
-                    .Set(m => m.ManagementBoardName, board.BoardName)
+                    .Set(m => m.ManagementBoardId, assignedId)
+                    .Set(m => m.ManagementBoardName, assignedName)
             );
 
-            // 3. Cập nhật danh sách chợ phụ trách vào Ban quản lý
-            if (!board.ManagedMarketIds.Contains(market.Id!))
+            // 3. Cập nhật danh sách chợ phụ trách vào Ban quản lý (nếu là Ban Quản Lý)
+            if (board != null && !board.ManagedMarketIds.Contains(market.Id!))
             {
                 board.ManagedMarketIds.Add(market.Id!);
                 await _mongoService.ManagementBoards.UpdateOneAsync(
@@ -354,8 +384,8 @@ public class MarketManagementController : ControllerBase
                 DecisionNumber = !string.IsNullOrWhiteSpace(req.DecisionNumber) ? req.DecisionNumber.Trim() : $"QD-{DateTime.UtcNow:yyyyMMdd}-{market.MarketCode}",
                 MarketId = market.Id!,
                 MarketName = market.MarketName,
-                ManagementBoardId = board.Id!,
-                BoardName = board.BoardName,
+                ManagementBoardId = assignedId,
+                BoardName = assignedName,
                 AssignedBy = req.AssignedBy,
                 AssignedDate = DateTime.UtcNow,
                 Status = "Active",
@@ -366,7 +396,7 @@ public class MarketManagementController : ControllerBase
             return Ok(new
             {
                 success = true,
-                message = $"Đã phân công thành công {board.BoardName} quản lý {market.MarketName} và lưu vết lịch sử!",
+                message = $"Đã phân công thành công {assignedName} phụ trách {market.MarketName} và lưu vết lịch sử!",
                 history = historyRecord
             });
         }
@@ -377,45 +407,88 @@ public class MarketManagementController : ControllerBase
     }
 
 
-        /// <summary>
+    private static object? _cachedMarketsOverview = null;
+    private static DateTime _lastOverviewCacheTime = DateTime.MinValue;
+    private static readonly TimeSpan _overviewCacheDuration = TimeSpan.FromSeconds(60);
+
+    public static void InvalidateMarketsOverviewCache()
+    {
+        _cachedMarketsOverview = null;
+    }
+
+    /// <summary>
     /// Lấy danh sách Chợ kèm toàn bộ thông tin các Gian Hàng / Chủ Tiệm thuộc Chợ đó
     /// </summary>
     [HttpGet("markets-overview")]
-    public async Task<IActionResult> GetMarketsOverview()
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> GetMarketsOverview([FromQuery] bool force = false)
     {
         try
         {
+            if (!force && _cachedMarketsOverview != null && (DateTime.UtcNow - _lastOverviewCacheTime) < _overviewCacheDuration)
+            {
+                return Ok(_cachedMarketsOverview);
+            }
+
             await EnsureHanoiMarketsSeededAsync();
 
             var wardsTask = _mongoService.CommuneWards.Find(_ => true).ToListAsync();
-            var marketsTask = _mongoService.Markets.Find(_ => true).ToListAsync();
+            var marketsTask = _mongoService.Markets.Find(_ => true).SortBy(m => m.MarketCode).ToListAsync();
             var boardsTask = _mongoService.ManagementBoards.Find(_ => true).ToListAsync();
             var storesTask = _mongoService.Stores.Find(_ => true).ToListAsync();
+            var managersTask = _mongoService.Users.Find(u => (u.IsManager || u.IsAdmin) && !u.IsDeleted).ToListAsync();
+            var shiftManagersTask = _mongoService.ShiftManagers.Find(m => !m.IsDeleted).ToListAsync();
             var usersTask = _mongoService.Users.Find(u => u.IsSeller && !u.IsDeleted).ToListAsync();
 
-            await Task.WhenAll(wardsTask, marketsTask, boardsTask, storesTask, usersTask);
+            await Task.WhenAll(wardsTask, marketsTask, boardsTask, storesTask, managersTask, shiftManagersTask, usersTask);
 
             var wards = await wardsTask;
             var markets = await marketsTask;
             var boards = await boardsTask;
             var stores = await storesTask;
+            var managers = await managersTask;
+            var shiftManagers = await shiftManagersTask;
             var users = await usersTask;
 
             var result = markets.Select(m =>
             {
                 var matchedStores = stores.Where(s =>
-                    (!string.IsNullOrEmpty(s.MarketId) && s.MarketId == m.Id) ||
+                    (string.Equals(s.Status, "Approved", StringComparison.OrdinalIgnoreCase) || string.Equals(s.Status, "Active", StringComparison.OrdinalIgnoreCase)) &&
+                    ((!string.IsNullOrEmpty(s.MarketId) && s.MarketId == m.Id) ||
                     (!string.IsNullOrEmpty(s.MarketName) && s.MarketName.Trim().ToLower() == m.MarketName.Trim().ToLower()) ||
                     (!string.IsNullOrEmpty(s.MarketName) && (s.MarketName.ToLower().Contains(m.MarketName.ToLower()) || m.MarketName.ToLower().Contains(s.MarketName.ToLower()))) ||
-                    (!string.IsNullOrEmpty(s.MarketName) && !string.IsNullOrEmpty(m.MarketCode) && s.MarketName.ToLower().Contains(m.MarketCode.ToLower()))
+                    (!string.IsNullOrEmpty(s.MarketName) && !string.IsNullOrEmpty(m.MarketCode) && s.MarketName.ToLower().Contains(m.MarketCode.ToLower())))
                 ).ToList();
 
                 var board = boards.FirstOrDefault(b => b.Id == m.ManagementBoardId);
+                var shiftManager = shiftManagers.FirstOrDefault(sm => sm.Id == m.ManagementBoardId || sm.ManagerCode == m.ManagementBoardId);
+                var manager = board == null && shiftManager == null ? managers.FirstOrDefault(u => u.Id == m.ManagementBoardId) : null;
                 var ward = wards.FirstOrDefault(w => w.Id == m.WardId);
+
+                string bName = "Chưa phân công";
+                if (shiftManager != null)
+                {
+                    bName = $"{shiftManager.FullName} (Quản lý ca trực)";
+                }
+                else if (board != null)
+                {
+                    bName = board.BoardName;
+                }
+                else if (manager != null)
+                {
+                    bName = $"{manager.FullName} (Quản lý ca trực)";
+                }
+                else if (!string.IsNullOrWhiteSpace(m.ManagementBoardName) && m.ManagementBoardName != "Chưa phân công")
+                {
+                    bName = m.ManagementBoardName;
+                }
+
+                string bLeader = shiftManager?.FullName ?? board?.LeaderName ?? manager?.FullName ?? "";
+                string bPhone = shiftManager?.Phone ?? shiftManager?.Email ?? board?.PhoneNumber ?? manager?.Phone ?? manager?.PhoneEmail ?? "";
 
                 var storeDetailsList = matchedStores.Select(s =>
                 {
-                    var ownerUser = users.FirstOrDefault(u => 
+                    var ownerUser = users.FirstOrDefault(u =>
                         (!string.IsNullOrEmpty(s.UserId) && (u.Id == s.UserId || u.UserCode == s.UserId)) ||
                         (!string.IsNullOrEmpty(s.PhoneEmail) && !string.IsNullOrEmpty(u.PhoneEmail) && u.PhoneEmail.Trim().ToLower() == s.PhoneEmail.Trim().ToLower()) ||
                         (!string.IsNullOrEmpty(s.OwnerFullName) && !string.IsNullOrEmpty(u.FullName) && u.FullName.Trim().ToLower() == s.OwnerFullName.Trim().ToLower())
@@ -424,10 +497,16 @@ public class MarketManagementController : ControllerBase
                     return new
                     {
                         storeId = s.Id,
+                        userId = s.UserId ?? ownerUser?.Id ?? "",
                         storeCode = s.StoreCode,
                         storeName = s.StoreName,
                         ownerFullName = !string.IsNullOrWhiteSpace(s.OwnerFullName) ? s.OwnerFullName : (ownerUser?.FullName ?? "Chủ Gian Hàng"),
                         phoneEmail = !string.IsNullOrWhiteSpace(s.PhoneEmail) ? s.PhoneEmail : (ownerUser?.PhoneEmail ?? ""),
+                        isSeller = true,
+                        isShipper = ownerUser?.IsShipper ?? false,
+                        isBuyer = ownerUser?.IsBuyer ?? true,
+                        isManager = ownerUser?.IsManager ?? false,
+                        isAdmin = ownerUser?.IsAdmin ?? false,
                         cccdNumber = !string.IsNullOrWhiteSpace(s.CccdNumber) ? s.CccdNumber : (ownerUser?.CccdNumber ?? ""),
                         dateOfBirth = s.DateOfBirth,
                         gender = s.Gender,
@@ -458,9 +537,9 @@ public class MarketManagementController : ControllerBase
                     wardName = m.WardName ?? ward?.WardName ?? "Phường Dịch Vọng Hậu",
                     districtName = !string.IsNullOrWhiteSpace(m.DistrictName) ? m.DistrictName : (ward?.DistrictName ?? "Quận Cầu Giấy"),
                     managementBoardId = m.ManagementBoardId,
-                    managementBoardName = m.ManagementBoardName ?? board?.BoardName ?? "Chưa phân công",
-                    boardLeader = board?.LeaderName ?? "",
-                    boardPhone = board?.PhoneNumber ?? "",
+                    managementBoardName = bName,
+                    boardLeader = bLeader,
+                    boardPhone = bPhone,
                     address = m.Address,
                     marketType = m.MarketType,
                     totalStalls = m.TotalStalls,
@@ -473,35 +552,58 @@ public class MarketManagementController : ControllerBase
 
             var unassignedStores = stores.Where(s =>
                 string.IsNullOrEmpty(s.MarketId) &&
-                (string.IsNullOrEmpty(s.MarketName) || !markets.Any(m => s.MarketName.ToLower().Contains(m.MarketName.ToLower()) || m.MarketName.ToLower().Contains(s.MarketName.ToLower())))
-            ).Select(s => new
+                (string.IsNullOrEmpty(s.MarketName) || !markets.Any(m => s.MarketName.ToLower().Contains(m.MarketName.ToLower()) || m.MarketName.ToLower().Contains(s.MarketName.ToLower()))) &&
+                (string.Equals(s.Status, "Approved", StringComparison.OrdinalIgnoreCase) || string.Equals(s.Status, "Active", StringComparison.OrdinalIgnoreCase))
+            ).Select(s =>
             {
-                storeId = s.Id,
-                storeCode = s.StoreCode,
-                storeName = s.StoreName,
-                ownerFullName = s.OwnerFullName,
-                phoneEmail = s.PhoneEmail,
-                cccdNumber = s.CccdNumber,
-                ward = s.Ward,
-                district = s.District,
-                marketName = s.MarketName,
-                stallNumber = s.StallNumber ?? "Tự do",
-                address = s.Address,
-                category = s.Category,
-                status = s.Status,
-                createdAt = s.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+                var ownerUser = users.FirstOrDefault(u =>
+                    (!string.IsNullOrEmpty(s.UserId) && (u.Id == s.UserId || u.UserCode == s.UserId)) ||
+                    (!string.IsNullOrEmpty(s.PhoneEmail) && !string.IsNullOrEmpty(u.PhoneEmail) && u.PhoneEmail.Trim().ToLower() == s.PhoneEmail.Trim().ToLower()) ||
+                    (!string.IsNullOrEmpty(s.OwnerFullName) && !string.IsNullOrEmpty(u.FullName) && u.FullName.Trim().ToLower() == s.OwnerFullName.Trim().ToLower())
+                );
+                return new
+                {
+                    storeId = s.Id,
+                    userId = s.UserId ?? ownerUser?.Id ?? "",
+                    storeCode = s.StoreCode,
+                    storeName = s.StoreName,
+                    ownerFullName = s.OwnerFullName,
+                    phoneEmail = s.PhoneEmail,
+                    cccdNumber = s.CccdNumber,
+                    ward = s.Ward,
+                    district = s.District,
+                    marketName = s.MarketName,
+                    stallNumber = s.StallNumber ?? "Tự do",
+                    address = s.Address,
+                    category = s.Category,
+                    status = s.Status,
+                    isSeller = true,
+                    isShipper = ownerUser?.IsShipper ?? false,
+                    isBuyer = ownerUser?.IsBuyer ?? true,
+                    isManager = ownerUser?.IsManager ?? false,
+                    isAdmin = ownerUser?.IsAdmin ?? false,
+                    createdAt = s.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+                };
             }).ToList();
 
-            return Ok(new
+            var responseObj = new
             {
                 success = true,
                 totalWards = wards.Count,
                 totalMarkets = markets.Count,
-                totalBoards = boards.Count,
+                totalBoards = boards.Count + shiftManagers.Count + managers.Count,
                 totalStores = stores.Count,
                 markets = result,
+                boards = boards.Select(b => new { id = b.Id ?? "", name = b.BoardName ?? "", leader = b.LeaderName ?? "", phone = b.PhoneNumber ?? "" })
+                    .Concat(shiftManagers.Select(sm => new { id = sm.Id ?? "", name = $"{sm.FullName} ({sm.Id} - Quản lý ca trực)", leader = sm.FullName ?? "", phone = sm.Email ?? "" }))
+                    .Concat(managers.Where(m => !shiftManagers.Any(sm => sm.Email == m.PhoneEmail)).Select(m => new { id = m.Id ?? "", name = $"{m.FullName} (Quản lý ca trực)", leader = m.FullName ?? "", phone = m.PhoneEmail ?? "" })),
                 unassignedStores
-            });
+            };
+
+            _cachedMarketsOverview = responseObj;
+            _lastOverviewCacheTime = DateTime.UtcNow;
+
+            return Ok(responseObj);
         }
         catch (Exception ex)
         {
@@ -514,6 +616,11 @@ public class MarketManagementController : ControllerBase
         public string StoreId { get; set; } = string.Empty;
         public string MarketId { get; set; } = string.Empty;
         public string? StallNumber { get; set; }
+    }
+
+    public class UnassignStoreFromMarketRequest
+    {
+        public string StoreId { get; set; } = string.Empty;
     }
 
 
@@ -545,9 +652,10 @@ public class MarketManagementController : ControllerBase
                 updateDef = updateDef.Set(s => s.StallNumber, req.StallNumber);
             }
 
-            var updateResult = await _mongoService.Stores.UpdateOneAsync(s => s.Id == req.StoreId, updateDef);
+            var updateResult = await _mongoService.Stores.UpdateOneAsync(s => s.Id == req.StoreId || s.StoreCode == req.StoreId, updateDef);
             if (updateResult.ModifiedCount > 0)
             {
+                InvalidateMarketsOverviewCache();
                 return Ok(new { success = true, message = $"Đã gắn gian hàng vào {market.MarketName} thành công!" });
             }
 
@@ -560,8 +668,45 @@ public class MarketManagementController : ControllerBase
     }
 
 
+    /// <summary>
+    /// Bỏ gian hàng khỏi Chợ (gỡ liên kết MarketId, MarketName, StallNumber để trở thành gian hàng tự do)
+    /// </summary>
+    [HttpPost("unassign-store-from-market")]
+    public async Task<IActionResult> UnassignStoreFromMarket([FromBody] UnassignStoreFromMarketRequest req)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(req.StoreId))
+            {
+                return BadRequest(new { success = false, message = "StoreId không được để trống!" });
+            }
 
-/// <summary>
+            var store = await _mongoService.Stores.Find(s => s.Id == req.StoreId || s.StoreCode == req.StoreId).FirstOrDefaultAsync();
+            if (store == null)
+            {
+                return NotFound(new { success = false, message = "Không tìm thấy gian hàng tương ứng!" });
+            }
+
+            var oldMarketName = !string.IsNullOrWhiteSpace(store.MarketName) ? store.MarketName : "Chợ";
+
+            var updateDef = Builders<Store>.Update
+                .Set(s => s.MarketId, null)
+                .Set(s => s.MarketName, string.Empty)
+                .Set(s => s.StallNumber, null);
+
+            var updateResult = await _mongoService.Stores.UpdateOneAsync(s => s.Id == store.Id, updateDef);
+            InvalidateMarketsOverviewCache();
+            return Ok(new { success = true, message = $"Đã bỏ gian hàng '{store.StoreName}' khỏi {oldMarketName} thành công!" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+
+
+    /// <summary>
     /// Khởi tạo dữ liệu mẫu chuẩn theo Sơ đồ 1.2
     /// </summary>
     [HttpPost("seed-diagram-1-2")]

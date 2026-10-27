@@ -87,4 +87,5 @@ public class MongoDbService
     public IMongoCollection<Market> Markets => _database.GetCollection<Market>("markets");
     public IMongoCollection<ManagementBoard> ManagementBoards => _database.GetCollection<ManagementBoard>("management_boards");
     public IMongoCollection<MarketAssignmentHistory> MarketAssignmentHistories => _database.GetCollection<MarketAssignmentHistory>("market_assignment_histories");
+    public IMongoCollection<ShiftManager> ShiftManagers => _database.GetCollection<ShiftManager>("shift_managers");
 }

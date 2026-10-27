@@ -47,9 +47,9 @@ export function getApiUrl(path: string): string {
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const targetUrl = getApiUrl(path);
 
-  // Tạo AbortController với timeout 6 giây để không bao giờ bị treo lâu
+  // Tạo AbortController với timeout 15 giây để không bị ngắt quãng với các truy vấn Atlas
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   const mergedInit: RequestInit = {
     ...init,
@@ -75,11 +75,18 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   } catch (err: any) {
     clearTimeout(timeoutId);
 
-    // Fallback cho native app nếu URL relative gặp sự cố
+    // Fallback nếu URL relative gặp sự cố
     if (typeof window !== 'undefined' && !targetUrl.startsWith('http')) {
-      try {
-        return await fetch('http://192.168.1.16:5000' + targetUrl, init);
-      } catch (fallbackErr) {}
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (isLocalhost) {
+        try {
+          return await fetch('http://127.0.0.1:5000' + targetUrl, init);
+        } catch (fallbackErr) {}
+      } else {
+        try {
+          return await fetch('http://192.168.1.16:5000' + targetUrl, init);
+        } catch (fallbackErr) {}
+      }
     }
 
     // Thông báo lỗi thân thiện, bảo mật, không để lộ mã nguồn hay cơ sở dữ liệu

@@ -67,6 +67,17 @@ const searchTarget = ref<'product' | 'store'>('product');
 const isSearchTargetDropdownOpen = ref(false);
 const isSuggestionsOpen = ref(false);
 
+const isManagerUser = computed(() => {
+  if (!auth.isLoggedIn.value) return false;
+  if (auth.currentRole.value === 'admin') return false;
+  return (
+    auth.currentRole.value === 'manager' ||
+    Boolean(auth.currentUser.value?.isManager) ||
+    (auth.currentUser.value as any)?.primaryRole === 'Manager' ||
+    (auth.currentUser.value as any)?.role === 'manager'
+  );
+});
+
 const searchPlaceholder = computed(() => {
   return searchTarget.value === 'store'
     ? 'Tìm kiếm gian hàng, quán ăn, siêu thị gần bạn...'
@@ -550,6 +561,17 @@ const handleLogout = () => {
 
           <!-- C. Khi đã đăng nhập: Action Buttons & User Menu -->
           <div v-else class="logged-in-actions">
+            <!-- Nút Lối Tắt Vào Ban Quản Lý (Nằm giữa ô Tìm Kiếm và Giỏ Hàng khi là Ban Quản Lý) -->
+            <router-link
+              v-if="isManagerUser"
+              to="/manager"
+              class="manager-portal-tag"
+              title="Vào Trang Bảng Điều Khiển Ban Quản Lý"
+            >
+              <i class="bi bi-shield-check"></i>
+              <span>Vào Ban Quản Lý</span>
+            </router-link>
+
             <!-- Icon Giỏ hàng kèm huy hiệu số lượng -->
             <router-link
               to="/cart"
@@ -801,6 +823,42 @@ const handleLogout = () => {
                     >
                       <i class="bi bi-gear menu-icon"></i>
                       <span>Cài Đặt Hệ Thống</span>
+                    </router-link>
+                  </template>
+
+                  <!-- 5. MANAGER ITEMS (Ban Quản Lý) -->
+                  <template v-else-if="isManagerUser">
+                    <router-link
+                      to="/manager"
+                      class="dropdown-item highlight-item manager-highlight-item"
+                      @click="closeDropdowns"
+                    >
+                      <i class="bi bi-shield-check menu-icon"></i>
+                      <span>Vào Trang Ban Quản Lý</span>
+                    </router-link>
+                    <router-link
+                      to="/products"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
+                      <i class="bi bi-shop menu-icon"></i>
+                      <span>Xem Mặt Hàng Trên Sàn</span>
+                    </router-link>
+                    <router-link
+                      to="/cart"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
+                      <i class="bi bi-cart3 menu-icon"></i>
+                      <span>Giỏ Hàng<span v-if="cart.totalCount.value > 0"> ({{ cart.totalCount.value }})</span></span>
+                    </router-link>
+                    <router-link
+                      to="/contact"
+                      class="dropdown-item"
+                      @click="closeDropdowns"
+                    >
+                      <i class="bi bi-headset menu-icon"></i>
+                      <span>Trung Tâm Hỗ Trợ 24/7</span>
                     </router-link>
                   </template>
                 </div>
@@ -1166,6 +1224,42 @@ const handleLogout = () => {
             >
               <i class="bi bi-gear menu-icon"></i>
               <span>Cấu Hình Hệ Thống</span>
+            </router-link>
+          </template>
+
+          <!-- Manager Mobile (Ban Quản Lý) -->
+          <template v-else-if="isManagerUser">
+            <router-link
+              to="/manager"
+              class="mobile-link highlight-mobile-link manager-mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-shield-check menu-icon"></i>
+              <span>Vào Trang Ban Quản Lý</span>
+            </router-link>
+            <router-link
+              to="/products"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-shop menu-icon"></i>
+              <span>Xem Mặt Hàng Trên Sàn</span>
+            </router-link>
+            <router-link
+              to="/cart"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-cart3 menu-icon"></i>
+              <span>Giỏ Hàng<span v-if="auth.isLoggedIn.value && cart.totalCount.value > 0"> ({{ cart.totalCount.value }})</span></span>
+            </router-link>
+            <router-link
+              to="/contact"
+              class="mobile-link"
+              @click="closeDropdowns"
+            >
+              <i class="bi bi-headset menu-icon"></i>
+              <span>Trung Tâm Hỗ Trợ 24/7</span>
             </router-link>
           </template>
 
@@ -2040,6 +2134,36 @@ body {
   border-color: #d8b4fe;
 }
 
+/* MANAGER PORTAL TAG (NÚT LỐI TẮT GIỮA TÌM KIẾM VÀ GIỎ HÀNG - XANH NHẠT VIỀN XANH TINH TẾ) */
+.manager-portal-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f0fdfa;
+  border: 1.5px solid #99f6e4;
+  color: #0f766e !important;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 50px;
+  text-decoration: none;
+  box-shadow: 0 1px 3px rgba(13, 148, 136, 0.08);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.manager-portal-tag:hover {
+  background: #ccfbf1;
+  border-color: #14b8a6;
+  color: #115e59 !important;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(13, 148, 136, 0.16);
+}
+.manager-portal-tag i {
+  font-size: 15px;
+  color: #0d9488;
+}
+
 /* SHIPPER READY STATUS TAG */
 .shipper-ready-tag {
   display: inline-flex;
@@ -2160,6 +2284,10 @@ body {
   background: #faf5ff;
   color: #9333ea;
 }
+.badge-role-manager .user-chip-role-badge {
+  background: #ccfbf1;
+  color: #0f766e;
+}
 .chip-arrow {
   font-size: 11px;
   color: #9ca3af;
@@ -2209,6 +2337,9 @@ body {
 }
 .dropdown-header-card.badge-role-admin {
   background: linear-gradient(135deg, #faf7fe 0%, #f3ebfc 100%);
+}
+.dropdown-header-card.badge-role-manager {
+  background: linear-gradient(135deg, #f0fdfa 0%, #e6fffa 100%);
 }
 
 .dropdown-header-top {
@@ -2271,6 +2402,10 @@ body {
 .badge-role-admin .dropdown-badge-pill {
   background: #f3e8ff;
   color: #7e22ce;
+}
+.badge-role-manager .dropdown-badge-pill {
+  background: #ccfbf1;
+  color: #0f766e;
 }
 
 .dropdown-header-sub {
@@ -2344,6 +2479,26 @@ body {
 }
 .dropdown-item.highlight-item .menu-icon {
   color: #d85a2a;
+}
+.dropdown-item.manager-highlight-item {
+  font-weight: 700;
+  color: #0d9488 !important;
+  background: #f0fdfa;
+  border-left: 3px solid #0d9488;
+}
+.dropdown-item.manager-highlight-item .menu-icon {
+  color: #0d9488 !important;
+}
+.dropdown-item.manager-highlight-item:hover {
+  background: #ccfbf1 !important;
+  color: #0f766e !important;
+}
+.mobile-link.manager-mobile-link {
+  color: #0f766e !important;
+  background: #f0fdfa !important;
+}
+.badge-role-manager .mobile-role-tag {
+  background: #0d9488;
 }
 
 /* DEV ROLE SWITCHER INSIDE DROPDOWN */
@@ -3270,6 +3425,7 @@ body {
     font-size: 10px;
     display: -webkit-box;
     -webkit-line-clamp: 1;
+    line-clamp: 1;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }

@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue';
 
-export type UserRole = 'guest' | 'buyer' | 'seller' | 'shipper' | 'admin';
+export type UserRole = 'guest' | 'buyer' | 'seller' | 'shipper' | 'admin' | 'manager';
 
 export interface UserProfile {
   id: string;
@@ -13,9 +13,14 @@ export interface UserProfile {
   walletBalance?: number;
   storeName?: string;
   vehiclePlate?: string;
+  isSeller?: boolean;
+  isShipper?: boolean;
+  isAdmin?: boolean;
+  isManager?: boolean;
+  primaryRole?: string;
 }
 
-// 4 bộ tài khoản mẫu chuẩn đại diện cho 4 vai trò
+// 5 bộ tài khoản mẫu chuẩn đại diện cho các vai trò
 export const DEMO_USERS: Record<Exclude<UserRole, 'guest'>, UserProfile> = {
   buyer: {
     id: 'usr_buyer_01',
@@ -54,6 +59,15 @@ export const DEMO_USERS: Record<Exclude<UserRole, 'guest'>, UserProfile> = {
     avatarUrl:
       'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=120',
     walletBalance: 50000000,
+  },
+  manager: {
+    id: 'usr_manager_01',
+    fullName: 'Quản Lý Ca Trực BQL',
+    phoneEmail: 'manager@zonemart.vn',
+    role: 'manager',
+    avatarUrl:
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120',
+    walletBalance: 2000000,
   },
 };
 
@@ -114,6 +128,8 @@ export function useAuth() {
         return 'Tài Xế Shipper';
       case 'admin':
         return 'Quản Trị Viên';
+      case 'manager':
+        return 'Ban Quản Lý';
       default:
         return 'Khách Ghé Thăm';
     }
@@ -129,6 +145,8 @@ export function useAuth() {
         return 'badge-role-shipper';
       case 'admin':
         return 'badge-role-admin';
+      case 'manager':
+        return 'badge-role-manager';
       default:
         return 'badge-role-guest';
     }
