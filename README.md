@@ -75,7 +75,7 @@ sequenceDiagram
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/your-username/ZoneMart.git
+git clone https://github.com/HoangHuy206/ZoneMart.git
 cd ZoneMart
 
 # 2. Khởi chạy nhanh toàn bộ hệ thống bằng Docker
