@@ -98,6 +98,6 @@ Dự án được nghiên cứu, thiết kế và phát triển bởi:
 
 ## 📬 Liên Hệ & Bản Quyền
 
-* 📧 **Email dự án**: [hotrozonemart@gmail.com](mailto:hotrozonemart@gmail.com)
+* 📧 **Email hỗ trợ**: [hotrozonemart@gmail.com](mailto:hotrozonemart@gmail.com)
 * 🎯 **Mục đích**: Dự án phục vụ nghiên cứu, học tập và xây dựng giải pháp thương mại điện tử nông sản địa phương.
 * 🛡️ **Bản quyền**: © 2026 ZoneMart Team. All rights reserved.
