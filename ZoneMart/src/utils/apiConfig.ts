@@ -6,7 +6,7 @@
  */
 
 const KNOWN_PORT = '5000';
-const DEFAULT_LAN_IP = '172.16.28.71';
+const DEFAULT_LAN_IP = '192.168.1.16';
 
 let cachedDiscoveredUrl: string | null = null;
 let lastDiscoveredAt = 0;
@@ -80,33 +80,42 @@ function raceCandidates(candidates: string[], timeoutMs: number): Promise<string
 function generateSubnetCandidates(): string[] {
   const list: string[] = [];
 
-  // 1. Dải 172.16.28.x (Wi-Fi hiện tại của máy tính dev)
+  // 1. Dải 192.168.1.x (Wi-Fi hiện tại của máy tính dev & Router gia đình phổ biến nhất tại VN)
+  list.push(`http://192.168.1.16:${KNOWN_PORT}`);
+  for (let i = 2; i <= 50; i++) {
+    if (i !== 16) list.push(`http://192.168.1.${i}:${KNOWN_PORT}`);
+  }
+  for (let i = 100; i <= 150; i++) {
+    list.push(`http://192.168.1.${i}:${KNOWN_PORT}`);
+  }
+
+  // 2. Dải 192.168.0.x
+  for (let i = 2; i <= 30; i++) {
+    list.push(`http://192.168.0.${i}:${KNOWN_PORT}`);
+  }
+  for (let i = 100; i <= 130; i++) {
+    list.push(`http://192.168.0.${i}:${KNOWN_PORT}`);
+  }
+
+  // 3. Dải 172.16.28.x (Mạng trường học / văn phòng)
   list.push(`http://172.16.28.71:${KNOWN_PORT}`);
   for (let i = 1; i <= 100; i++) {
     if (i !== 71) list.push(`http://172.16.28.${i}:${KNOWN_PORT}`);
   }
 
-  // 2. Dải 192.168.99.x (Wi-Fi HHT WIFI)
+  // 4. Dải 192.168.99.x (HHT WIFI)
   list.push(`http://192.168.99.27:${KNOWN_PORT}`);
   for (let i = 2; i <= 60; i++) {
     if (i !== 27) list.push(`http://192.168.99.${i}:${KNOWN_PORT}`);
   }
 
-  // 2. Dải 192.168.5.x (Wi-Fi văn phòng / nhà riêng trước đó)
+  // 5. Dải 192.168.5.x
   list.push(`http://192.168.5.115:${KNOWN_PORT}`);
   for (let i = 100; i <= 150; i++) {
     if (i !== 115) list.push(`http://192.168.5.${i}:${KNOWN_PORT}`);
   }
   for (let i = 2; i <= 40; i++) {
     list.push(`http://192.168.5.${i}:${KNOWN_PORT}`);
-  }
-
-  // 3. Dải 192.168.1.x (Router gia đình phổ biến nhất)
-  for (let i = 100; i <= 140; i++) {
-    list.push(`http://192.168.1.${i}:${KNOWN_PORT}`);
-  }
-  for (let i = 2; i <= 30; i++) {
-    list.push(`http://192.168.1.${i}:${KNOWN_PORT}`);
   }
 
   // 4. Dải 192.168.0.x
@@ -246,19 +255,22 @@ export function getBaseApiUrl(): string {
     return cachedDiscoveredUrl;
   }
 
-  // 4. Cấu hình đã lưu trong localStorage từ lần trước
-  try {
-    const saved = localStorage.getItem('zonemart_api_server_url');
-    if (saved && saved.trim()) {
-      return saved.trim().replace(/\/+$/, '');
-    }
-  } catch {}
-
-  // 5. Biến môi trường Vite (.env)
+  // 4. Biến môi trường Vite (.env) - cấu hình chuẩn nhất từ hệ thống
   try {
     const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
     if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
       return envUrl.trim().replace(/\/+$/, '');
+    }
+  } catch {}
+
+  // 5. Cấu hình đã lưu trong localStorage từ lần trước (chỉ nhận nếu cùng dải mạng)
+  try {
+    const saved = localStorage.getItem('zonemart_api_server_url');
+    if (saved && saved.trim()) {
+      const cleanSaved = saved.trim().replace(/\/+$/, '');
+      if (cleanSaved.includes('192.168.1.') || cleanSaved.includes('10.0.2.2') || cleanSaved.includes('localhost') || cleanSaved.includes(DEFAULT_LAN_IP)) {
+        return cleanSaved;
+      }
     }
   } catch {}
 
