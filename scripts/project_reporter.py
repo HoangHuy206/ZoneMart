@@ -183,6 +183,60 @@ def parse_shortstat(stat_str):
     return res
 
 
+def extract_actionable_tasks():
+    """
+    Tự động phân tích các file đang sửa đổi (WIP), commits gần nhất và code
+    để đưa ra danh sách các công việc cụ thể CẦN LÀM TIẾP THEO (phân chia theo tính năng & thành viên).
+    """
+    tasks = []
+    uncommitted = get_uncommitted_changes()
+    all_files = uncommitted["modified_files"] + uncommitted["untracked_files"]
+    
+    # 1. Phân loại theo module nghiệp vụ cụ thể của ZoneMart
+    features_detected = {}
+    for f in all_files:
+        f_lower = f.lower()
+        if "chat" in f_lower:
+            features_detected["chat"] = "💬 **Module Chat Người Bán:** Hoàn thiện và test kết nối Chat giữa khách và chủ shop (`ChatController.cs`, `useSellerChat.ts`)"
+        elif "review" in f_lower:
+            features_detected["review"] = "⭐ **Module Đánh Giá (Review):** Tích hợp hiển thị sao và bình luận sản phẩm (`Review.cs`, `ProductDetailView.vue`)"
+        elif "sellerdashboard" in f_lower or "/binh/" in f_lower:
+            features_detected["binh"] = "📊 **Màn Hình Người Bán (Bình):** Kiểm tra hoàn thiện thống kê và giao diện `SellerDashboardView.vue`"
+        elif "buyerorders" in f_lower or "/thang/" in f_lower:
+            features_detected["thang"] = "📦 **Màn Hình Đơn Hàng (Thắng):** Tinh chỉnh danh sách đơn hàng người mua `BuyerOrdersView.vue`"
+        elif "realtime" in f_lower or "order" in f_lower:
+            features_detected["orders"] = "⚡ **Xử Lý Đơn Hàng Realtime:** Kiểm tra luồng cập nhật trạng thái đơn tức thì (`orderRealtimeService.ts`, `OrdersController.cs`)"
+        elif "catalog" in f_lower or "product" in f_lower:
+            features_detected["catalog"] = "🛍️ **Danh Mục & Sản Phẩm (Huy):** Kiểm tra bộ lọc danh mục và dữ liệu mẫu (`ProductListView.vue`, `useProductCatalog.ts`)"
+
+    for key in ["chat", "review", "binh", "thang", "orders", "catalog"]:
+        if key in features_detected:
+            tasks.append(features_detected[key])
+
+    # 2. Kiểm tra nếu có file TASKS.md trong dự án
+    tasks_file = PROJECT_ROOT / "docs" / "TASKS.md"
+    if not tasks_file.exists():
+        tasks_file = PROJECT_ROOT / "TASKS.md"
+    if tasks_file.exists():
+        try:
+            with open(tasks_file, "r", encoding="utf-8", errors="ignore") as tf:
+                for line in tf:
+                    line_s = line.strip()
+                    if line_s.startswith("- [ ]") or line_s.startswith("* [ ]"):
+                        task_item = line_s[5:].strip()
+                        if task_item and len(tasks) < 6:
+                            tasks.append(f"📌 {task_item}")
+        except Exception:
+            pass
+
+    # Fallback an toàn nếu toàn bộ working tree đã sạch 100%
+    if not tasks:
+        tasks.append("🧪 **Kiểm thử tự động:** Viết test case xác minh luồng thanh toán và xác nhận đơn hàng.")
+        tasks.append("🚀 **Chuẩn bị Release:** Rà soát lại hiệu năng tải trang và tối ưu hóa tài nguyên ảnh.")
+
+    return tasks
+
+
 def check_project_health():
     """Kiểm tra sức khỏe codebase và trả về điểm tốt, điểm cần cải thiện."""
     good_points = []
@@ -273,8 +327,11 @@ def generate_morning_report():
     for gp in good_points:
         msg.append(f"  ✅ {gp}")
         
+    actionable_tasks = extract_actionable_tasks()
     msg.append("\n📋 **ĐIỂM CẦN TRIỂN KHAI & CẢI THIỆN HÔM NAY:**")
-    for idx, ip in enumerate(improve_points, 1):
+    for idx, t in enumerate(actionable_tasks, 1):
+        msg.append(f"  [ ] {idx}. {t}")
+    for idx, ip in enumerate(improve_points, len(actionable_tasks) + 1):
         msg.append(f"  [ ] {idx}. {ip}")
         
     if uncommitted["total_uncommitted"] > 0:
@@ -329,9 +386,10 @@ def generate_midday_report():
         if stat["files"] > 0:
             msg.append(f"  • Khối lượng code đang viết: `+{stat['insertions']}` / `-{stat['deletions']}` dòng.")
             
-    msg.append("\n👉 **Kế hoạch chiều nay:**")
-    msg.append("  - Tiếp tục hoàn thiện các file đang sửa dở dang.")
-    msg.append("  - Kiểm tra chạy thử tính năng trước khi commit và push lên repository.")
+    actionable_tasks = extract_actionable_tasks()
+    msg.append("\n👉 **KẾ HOẠCH HÀNH ĐỘNG CỤ THỂ CHIỀU NAY:**")
+    for idx, t in enumerate(actionable_tasks, 1):
+        msg.append(f"  [ ] {idx}. {t}")
     return "\n".join(msg)
 
 
