@@ -12,6 +12,8 @@ export interface ModeratedProduct {
   storeId?: string;
   name: string;
   category: string;
+  subCategory?: string;
+  prepType?: string;
   price: number;
   unit: string;
   stock: number;
@@ -262,6 +264,15 @@ function loadProducts(): ModeratedProduct[] {
           changed = true;
         }
       }
+
+      // 4. Sửa ảnh nước rửa bát thật (thay ảnh găng tay trái tim cũ)
+      if (
+        (item.image && (item.image.includes("1585421514738") || item.image.includes("1584308666744"))) ||
+        (item.name && (item.name.toLowerCase().includes("nước rửa bát") || item.name.toLowerCase().includes("nuoc rua bat")))
+      ) {
+        item.image = "/images/nuoc_rua_bat_huu_co.jpg";
+        changed = true;
+      }
     }
 
     // Lọc bỏ toàn bộ sản phẩm mẫu demo cũ nếu còn lưu trong cache
@@ -503,7 +514,13 @@ export async function fetchRealProductsFromBackend(): Promise<ModeratedProduct[]
 
           const realStoreName = bp.storeName || (bp.store && bp.store.name) || "Gian hàng đối tác";
           const realSellerEmail = bp.sellerEmail || "";
-          const realImage = bp.imageUrl || bp.image || getCategoryFallbackImage(bp.category);
+          let realImage = bp.imageUrl || bp.image || getCategoryFallbackImage(bp.category);
+          if (
+            (realImage && (realImage.includes("1585421514738") || realImage.includes("1584308666744"))) ||
+            (pName && (pName.toLowerCase().includes("nước rửa bát") || pName.toLowerCase().includes("nuoc rua bat")))
+          ) {
+            realImage = "/images/nuoc_rua_bat_huu_co.jpg";
+          }
 
           const isPending = bp.aiStatus === "pending" || bp.aiStatus === "pending_review" || bp.aiStatus === "suspicious" || bp.status === "pending_review";
           const isRejected = bp.aiStatus === "rejected" || bp.status === "rejected_need_edit";

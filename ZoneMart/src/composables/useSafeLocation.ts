@@ -32,6 +32,25 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// Tọa độ người dùng thực tế lấy từ GPS trình duyệt hoặc IP
+const getInitialUserCoords = (): { lat: number; lng: number } => {
+  if (typeof window === 'undefined') return { lat: 21.0333, lng: 105.7983 };
+  try {
+    const rawLat = localStorage.getItem('zonemart_lat');
+    const rawLon = localStorage.getItem('zonemart_lon') || localStorage.getItem('zonemart_lng');
+    if (rawLat && rawLon) {
+      const lat = parseFloat(rawLat);
+      const lng = parseFloat(rawLon);
+      if (!isNaN(lat) && !isNaN(lng) && lat > 0 && lng > 0) {
+        return { lat, lng };
+      }
+    }
+  } catch {}
+  return { lat: 21.0333, lng: 105.7983 };
+};
+
+export const currentUserCoords = ref<{ lat: number; lng: number }>(getInitialUserCoords());
+
 // Biến ref toàn cục để lưu địa danh an toàn thực tế
 export const safeLocationName = ref<string>(cleanSafeLocationString(typeof window !== 'undefined' ? localStorage.getItem('zonemart_gps_address') : ''));
 export const isLocating = ref<boolean>(false);
@@ -210,6 +229,13 @@ export async function getSafeCurrentLocation(): Promise<SafeLocationResult | nul
       localStorage.setItem('zonemart_lon', coords.lon.toString());
     }
 
+    if (coords) {
+      currentUserCoords.value = { lat: coords.lat, lng: coords.lon };
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('zonemart:location-changed', { detail: { lat: coords.lat, lng: coords.lon } }));
+      }
+    }
+
     if (resolvedName) {
       safeLocationName.value = resolvedName;
       localStorage.setItem('zonemart_gps_address', resolvedName);
@@ -236,6 +262,7 @@ export async function getSafeCurrentLocation(): Promise<SafeLocationResult | nul
 
 export function useSafeLocation() {
   return {
+    currentUserCoords,
     safeLocationName,
     isLocating,
     locationError,

@@ -7,22 +7,88 @@
  * Real Buyer Reviews, Cross-sell 10km, and Tactile Micro-interactions.
  * ============================================================================
  */
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useCart } from "../../composables/useCart";
 import { useProductCatalog, type CatalogProduct } from "../../composables/useProductCatalog";
 import { useToast } from "../../composables/useToast";
 import { useAuth } from "../../composables/useAuth";
+import { useSellerChat } from "../../composables/useSellerChat";
+import { sellerChatService } from "../../services/sellerChatService";
+import { getCleanAvatar } from "../../utils/avatarHelper";
 
 const route = useRoute();
 const router = useRouter();
 const cart = useCart();
 const catalog = useProductCatalog();
 const auth = useAuth();
+const sellerChat = useSellerChat();
+
+// Kiểm tra trạng thái trực tuyến thời gian thực của Shop đang xem
+const isCurrentStoreOnline = computed(() => {
+  const store = product.value?.store;
+  if (!store) return false;
+  return sellerChatService.isPeerOnline(store.id || '') || sellerChatService.isPeerOnline(store.name || '');
+});
+
+const storePresenceLabel = computed(() => {
+  const store = product.value?.store;
+  if (!store) return '⚪ Ngoại tuyến';
+  return sellerChatService.getPeerPresenceLabel(store.id || store.name || '');
+});
+
+const handleChatWithStore = () => {
+  if (product.value?.store) {
+    sellerChat.openChatWithStore(product.value.store, product.value);
+  }
+};
+
+const resolveReviewAvatar = (rv: any) => {
+  if (auth.currentUser.value) {
+    const curName = (auth.currentUser.value.fullName || '').trim().toLowerCase();
+    const curEmail = (auth.currentUser.value.phoneEmail || '').trim().toLowerCase();
+    const rvAuthor = (rv?.author || '').trim().toLowerCase();
+    if (rvAuthor && (rvAuthor === curName || rvAuthor === curEmail || curName.includes(rvAuthor) || rvAuthor.includes(curName))) {
+      const curAvatar = auth.currentUser.value.avatarUrl || (auth.currentUser.value as any)?.avatar;
+      if (curAvatar) {
+        return getCleanAvatar(curAvatar, rv.author, 'buyer');
+      }
+    }
+  }
+  return getCleanAvatar(rv?.avatar, rv?.author, 'buyer');
+};
+
 
 // State quản lý sản phẩm
 const currentId = computed(() => (route.params.id as string) || "p1");
 const product = ref<CatalogProduct>(catalog.getProductById(currentId.value) || catalog.allProducts.value[0]);
+
+const starBreakdown = computed(() => {
+  const reviews = product.value?.reviews || [];
+  const total = reviews.length;
+  if (total === 0) {
+    return {
+      5: { count: 0, percent: 100 },
+      4: { count: 0, percent: 0 },
+      3: { count: 0, percent: 0 },
+      2: { count: 0, percent: 0 },
+      1: { count: 0, percent: 0 }
+    };
+  }
+  const counts: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+  reviews.forEach((r: any) => {
+    const s = Math.min(5, Math.max(1, Math.round(r.rating || 5)));
+    counts[s] = (counts[s] || 0) + 1;
+  });
+  return {
+    5: { count: counts[5], percent: Math.round((counts[5] / total) * 100) },
+    4: { count: counts[4], percent: Math.round((counts[4] / total) * 100) },
+    3: { count: counts[3], percent: Math.round((counts[3] / total) * 100) },
+    2: { count: counts[2], percent: Math.round((counts[2] / total) * 100) },
+    1: { count: counts[1], percent: Math.round((counts[1] / total) * 100) }
+  };
+});
+
 
 // Gallery state
 const selectedImage = ref(product.value.image);
@@ -47,13 +113,40 @@ watch(
   }
 );
 
-onMounted(() => {
+const syncProductData = () => {
   const found = catalog.getProductById(currentId.value);
   if (found) {
     product.value = found;
-    selectedImage.value = found.image;
-    document.title = `${found.name} - ZoneMart Hỏa Tốc`;
+    if (!selectedImage.value && found.image) {
+      selectedImage.value = found.image;
+    }
   }
+};
+
+watch(
+  () => catalog.allProducts.value,
+  () => syncProductData()
+);
+
+watch(
+  () => catalog.ratingsSummary.value,
+  () => syncProductData()
+);
+
+onMounted(() => {
+  catalog.fetchRatingsSummary();
+  syncProductData();
+  if (product.value) {
+    selectedImage.value = product.value.image;
+    document.title = `${product.value.name} - ZoneMart Hỏa Tốc`;
+  }
+  window.addEventListener('zonemart:ratings-updated', syncProductData);
+  window.addEventListener('zonemart:products-changed', syncProductData);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('zonemart:ratings-updated', syncProductData);
+  window.removeEventListener('zonemart:products-changed', syncProductData);
 });
 
 const selectImage = (img: string) => {
@@ -330,12 +423,16 @@ const relatedProducts = computed(() => {
             <!-- Top Header: Avatar + Store Info + Chat Button -->
             <div class="store-top-row">
               <div class="store-avatar-box">
-                <i class="bi bi-shop"></i>
+                <img :src="getCleanAvatar(product.store?.avatar, product.store?.name, 'seller')" :alt="product.store?.name" class="store-card-avatar-img" />
               </div>
               <div class="store-identity">
                 <div class="store-name-line">
                   <strong class="store-name">{{ product.store.name }}</strong>
                   <span class="verified-badge"><i class="bi bi-check-circle-fill"></i> Chính hãng</span>
+                  <span class="store-online-pill" :class="{ 'is-online': isCurrentStoreOnline }">
+                    <span class="pill-dot" :class="{ 'pulse-dot': isCurrentStoreOnline }"></span>
+                    {{ isCurrentStoreOnline ? '🟢 Online' : storePresenceLabel }}
+                  </span>
                 </div>
                 <p class="store-address-text">
                   <i class="bi bi-geo-alt-fill text-danger"></i> {{ product.store.address }}
@@ -344,11 +441,12 @@ const relatedProducts = computed(() => {
               <div class="store-actions-wrap">
                 <button
                   class="btn-store-chat"
-                  title="Chat hỏi về sản phẩm"
-                  @click="showToastMessage('Hộp thoại tư vấn với Shop đang được kết nối...')"
+                  title="Chat trực tiếp thời gian thực với Shop"
+                  @click="handleChatWithStore"
                 >
                   <i class="bi bi-chat-dots-fill"></i>
                   <span>Chat</span>
+                  <span v-if="isCurrentStoreOnline" class="mini-online-dot"></span>
                 </button>
               </div>
             </div>
@@ -680,6 +778,20 @@ const relatedProducts = computed(() => {
 
           <!-- TAB 4: ĐÁNH GIÁ KHÁCH HÀNG THỰC TẾ -->
           <div v-if="activeTab === 'reviews'" class="tab-pane-content">
+            <!-- Thông báo Chính Sách Đánh Giá Xác Thực (Chuẩn Shopee) -->
+            <div class="shopee-policy-banner">
+              <div class="policy-icon-col">
+                <i class="bi bi-shield-check"></i>
+              </div>
+              <div class="policy-text-col">
+                <strong>Chính Sách Đánh Giá Xác Thực (Chuẩn Shopee)</strong>
+                <p>Chỉ những khách hàng đã đặt mua sản phẩm này và nhận hàng thành công mới có thể gửi đánh giá trong mục <strong>Sản Phẩm Đã Mua</strong>.</p>
+              </div>
+              <router-link to="/buyer-orders?tab=purchased_products" class="btn btn-sm btn-warning text-dark fw-bold btn-to-purchased">
+                <i class="bi bi-stars text-dark me-1"></i> Sản Phẩm Đã Mua & Đánh Giá
+              </router-link>
+            </div>
+
             <div class="reviews-section-layout">
               <!-- Cột trái: Tổng kết điểm số & thanh sao -->
               <div class="review-summary-card">
@@ -697,18 +809,18 @@ const relatedProducts = computed(() => {
                 <div class="stars-breakdown">
                   <div class="star-bar-row">
                     <span>5 ★</span>
-                    <div class="progress-bar"><div class="fill" style="width: 92%"></div></div>
-                    <span>92%</span>
+                    <div class="progress-bar"><div class="fill" :style="{ width: starBreakdown[5].percent + '%' }"></div></div>
+                    <span>{{ starBreakdown[5].percent }}%</span>
                   </div>
                   <div class="star-bar-row">
                     <span>4 ★</span>
-                    <div class="progress-bar"><div class="fill" style="width: 8%"></div></div>
-                    <span>8%</span>
+                    <div class="progress-bar"><div class="fill" :style="{ width: starBreakdown[4].percent + '%' }"></div></div>
+                    <span>{{ starBreakdown[4].percent }}%</span>
                   </div>
                   <div class="star-bar-row">
                     <span>3 ★</span>
-                    <div class="progress-bar"><div class="fill" style="width: 0%"></div></div>
-                    <span>0%</span>
+                    <div class="progress-bar"><div class="fill" :style="{ width: starBreakdown[3].percent + '%' }"></div></div>
+                    <span>{{ starBreakdown[3].percent }}%</span>
                   </div>
                 </div>
               </div>
@@ -718,7 +830,7 @@ const relatedProducts = computed(() => {
                 <div v-if="product.reviews && product.reviews.length > 0" class="reviews-cards-stack">
                   <div v-for="rv in product.reviews" :key="rv.id" class="single-review-card">
                     <div class="review-author-row">
-                      <img :src="rv.avatar" :alt="rv.author" class="author-avatar" />
+                      <img :src="resolveReviewAvatar(rv)" :alt="rv.author" class="author-avatar" />
                       <div>
                         <strong>{{ rv.author }}</strong>
                         <div class="verified-buyer-tag">
@@ -732,7 +844,7 @@ const relatedProducts = computed(() => {
                       <i v-for="s in rv.rating" :key="s" class="bi bi-star-fill text-warning"></i>
                     </div>
 
-                    <p class="review-comment-text">{{ rv.comment }}</p>
+                    <p v-if="rv.comment && rv.comment.trim()" class="review-comment-text">{{ rv.comment }}</p>
 
                     <div v-if="rv.photos && rv.photos.length > 0" class="review-photos-grid">
                       <img v-for="(p, pIdx) in rv.photos" :key="pIdx" :src="p" alt="Ảnh thực tế người mua" />
@@ -746,26 +858,11 @@ const relatedProducts = computed(() => {
                   </div>
                 </div>
 
-                <!-- Trường hợp sản phẩm mới có đánh giá tự động -->
-                <div v-else class="reviews-cards-stack">
-                  <div class="single-review-card">
-                    <div class="review-author-row">
-                      <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80" alt="Khách hàng" class="author-avatar" />
-                      <div>
-                        <strong>Nguyễn Văn Tuấn (Cầu Giấy)</strong>
-                        <div class="verified-buyer-tag">
-                          <i class="bi bi-bag-check-fill text-success"></i> Đã mua tại ZoneMart
-                        </div>
-                      </div>
-                      <span class="review-date">Vừa xong</span>
-                    </div>
-                    <div class="review-stars-row">
-                      <i v-for="s in 5" :key="s" class="bi bi-star-fill text-warning"></i>
-                    </div>
-                    <p class="review-comment-text">
-                      Giao hàng siêu nhanh chỉ trong 18 phút, sản phẩm được bọc gói rất kỹ càng. Độ tươi ngon đúng như mô tả trên ứng dụng!
-                    </p>
-                  </div>
+                <!-- Trường hợp sản phẩm chưa có đánh giá -->
+                <div v-else class="empty-reviews-box text-center py-5">
+                  <i class="bi bi-chat-heart text-muted fs-1 mb-2 d-block"></i>
+                  <h6 class="fw-bold text-dark">Chưa có đánh giá nào cho sản phẩm này</h6>
+                  <p class="text-muted small">Hãy là khách hàng đầu tiên mua và trải nghiệm chất lượng tươi ngon nhé!</p>
                 </div>
               </div>
             </div>
@@ -1274,6 +1371,12 @@ const relatedProducts = computed(() => {
   width: 100%;
 }
 
+.store-card-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+}
 .store-avatar-box {
   width: 44px;
   height: 44px;
@@ -1354,6 +1457,41 @@ const relatedProducts = computed(() => {
   border-color: #ea580c;
   box-shadow: 0 2px 8px rgba(234, 88, 12, 0.25);
   transform: translateY(-1px);
+}
+
+.store-online-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.store-online-pill.is-online {
+  background: #f0fdf4;
+  color: #16a34a;
+  border-color: #bbf7d0;
+}
+
+.mini-online-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  display: inline-block;
+  margin-left: 2px;
+  animation: pulse-dot-anim 1.5s infinite;
+}
+
+@keyframes pulse-dot-anim {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.8; }
 }
 
 .store-micro-metrics {
@@ -1912,6 +2050,55 @@ const relatedProducts = computed(() => {
 }
 
 /* Tab 4: Reviews */
+.shopee-policy-banner {
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  border: 1px solid #fed7aa;
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.policy-icon-col {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #ea580c;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.25);
+}
+
+.policy-text-col {
+  flex: 1;
+  min-width: 240px;
+}
+
+.policy-text-col strong {
+  font-size: 14px;
+  color: #9a3412;
+  display: block;
+}
+
+.policy-text-col p {
+  font-size: 12.5px;
+  color: #78350f;
+  margin: 3px 0 0 0;
+}
+
+.btn-to-purchased {
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(234, 179, 8, 0.3);
+  padding: 8px 14px;
+}
+
 .reviews-section-layout {
   display: grid;
   grid-template-columns: 280px 1fr;

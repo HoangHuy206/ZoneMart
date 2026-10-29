@@ -11,10 +11,61 @@ namespace ZoneMart.Server.Controllers;
 public class OrdersController : ControllerBase
 {
     private readonly MongoDbService _mongoService;
+    private readonly OrderRealtimeManager _realtimeManager;
+    private static readonly object _reviewFileLock = new();
 
-    public OrdersController(MongoDbService mongoService)
+    public OrdersController(MongoDbService mongoService, OrderRealtimeManager realtimeManager)
     {
         _mongoService = mongoService;
+        _realtimeManager = realtimeManager;
+    }
+
+    private static string GetReviewStoragePath()
+    {
+        var baseDir = AppContext.BaseDirectory;
+        var projectRoot = Directory.GetParent(baseDir)?.Parent?.Parent?.Parent?.FullName ?? baseDir;
+        return Path.Combine(projectRoot, ".review_data.json");
+    }
+
+    private static void SaveReviewToDisk(Review review)
+    {
+        lock (_reviewFileLock)
+        {
+            try
+            {
+                var path = GetReviewStoragePath();
+                var list = new List<Review>();
+                if (System.IO.File.Exists(path))
+                {
+                    var existing = System.IO.File.ReadAllText(path);
+                    var parsed = System.Text.Json.JsonSerializer.Deserialize<List<Review>>(existing);
+                    if (parsed != null) list = parsed;
+                }
+                list.Add(review);
+                var json = System.Text.Json.JsonSerializer.Serialize(list, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                System.IO.File.WriteAllText(path, json);
+            }
+            catch { }
+        }
+    }
+
+    private static List<Review> LoadReviewsFromDisk()
+    {
+        lock (_reviewFileLock)
+        {
+            try
+            {
+                var path = GetReviewStoragePath();
+                if (System.IO.File.Exists(path))
+                {
+                    var existing = System.IO.File.ReadAllText(path);
+                    var parsed = System.Text.Json.JsonSerializer.Deserialize<List<Review>>(existing);
+                    if (parsed != null) return parsed;
+                }
+            }
+            catch { }
+            return new List<Review>();
+        }
     }
 
     // DTO cho yêu cầu Checkout
@@ -397,12 +448,28 @@ public class OrdersController : ControllerBase
         public string StoreName { get; set; } = string.Empty;
         public string BuyerId { get; set; } = string.Empty;
         public string BuyerName { get; set; } = string.Empty;
+        public string? BuyerAvatar { get; set; }
         public int Rating { get; set; } = 5;
         public string Comment { get; set; } = string.Empty;
+
+        // Phân hệ Tài xế (Shipper)
+        public string ShipperId { get; set; } = string.Empty;
+        public string ShipperName { get; set; } = string.Empty;
+        public int ShipperRating { get; set; } = 5;
+        public string ShipperComment { get; set; } = string.Empty;
+        public List<string>? ShipperTags { get; set; }
+
+        // Phân hệ Gian hàng (Store)
+        public int StoreRating { get; set; } = 5;
+        public string StoreComment { get; set; } = string.Empty;
+        public List<string>? StoreTags { get; set; }
+
+        // Phân hệ Từng Sản Phẩm (Products)
+        public List<ProductReviewItem>? ProductReviews { get; set; }
     }
 
     /// <summary>
-    /// API Gửi Đánh Giá Đơn Hàng (Sau khi hoàn tất nhận hàng và thanh toán)
+    /// API Gửi Đánh Giá Đơn Hàng (Tách biệt Tài xế, Gian hàng và Từng Sản phẩm)
     /// </summary>
     [HttpPost("reviews")]
     public async Task<IActionResult> CreateReview([FromBody] CreateReviewDto dto)
@@ -422,12 +489,44 @@ public class OrdersController : ControllerBase
                 StoreName = dto.StoreName?.Trim() ?? "Gian Hàng ZoneMart",
                 BuyerId = dto.BuyerId?.Trim() ?? string.Empty,
                 BuyerName = !string.IsNullOrWhiteSpace(dto.BuyerName) ? dto.BuyerName.Trim() : "Khách Hàng Địa Phương",
-                Rating = Math.Clamp(dto.Rating, 1, 5),
-                Comment = dto.Comment?.Trim() ?? string.Empty,
+                BuyerAvatar = dto.BuyerAvatar?.Trim() ?? string.Empty,
+                Rating = dto.StoreRating > 0 ? Math.Clamp(dto.StoreRating, 1, 5) : Math.Clamp(dto.Rating, 1, 5),
+                Comment = dto.Comment?.Trim() ?? dto.StoreComment?.Trim() ?? string.Empty,
+
+                ShipperId = dto.ShipperId?.Trim() ?? string.Empty,
+                ShipperName = !string.IsNullOrWhiteSpace(dto.ShipperName) ? dto.ShipperName.Trim() : "Tài xế ZoneMart",
+                ShipperRating = dto.ShipperRating > 0 ? Math.Clamp(dto.ShipperRating, 1, 5) : 5,
+                ShipperComment = dto.ShipperComment?.Trim() ?? string.Empty,
+                ShipperTags = dto.ShipperTags ?? new(),
+
+                StoreRating = dto.StoreRating > 0 ? Math.Clamp(dto.StoreRating, 1, 5) : Math.Clamp(dto.Rating, 1, 5),
+                StoreComment = dto.StoreComment?.Trim() ?? dto.Comment?.Trim() ?? string.Empty,
+                StoreTags = dto.StoreTags ?? new(),
+
+                ProductReviews = dto.ProductReviews ?? new(),
                 CreatedAt = DateTime.UtcNow
             };
 
-            await _mongoService.Reviews.InsertOneAsync(review);
+            try
+            {
+                await _mongoService.Reviews.InsertOneAsync(review);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("MongoDB review insert fallback to local disk: " + ex.Message);
+            }
+
+            SaveReviewToDisk(review);
+
+            try
+            {
+                _realtimeManager.BroadcastRealtimeMessage(System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    type = "ORDER_REVIEW_SUBMITTED",
+                    payload = review
+                }));
+            }
+            catch { }
 
             return Ok(new
             {
@@ -439,6 +538,126 @@ public class OrdersController : ControllerBase
         catch (Exception ex)
         {
             return StatusCode(500, new { success = false, message = "Lỗi khi lưu đánh giá: " + ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// API Tổng hợp thống kê điểm trung bình & nhận xét thực tế của Sản phẩm, Gian hàng và Tài xế
+    /// </summary>
+    [HttpGet("reviews/summary")]
+    public async Task<IActionResult> GetReviewsSummary()
+    {
+        try
+        {
+            var reviews = new List<Review>();
+            try
+            {
+                reviews = await _mongoService.Reviews.Find(_ => true).ToListAsync();
+            }
+            catch { }
+
+            if (reviews.Count == 0)
+            {
+                reviews = LoadReviewsFromDisk();
+            }
+
+            var productMap = new Dictionary<string, object>();
+            var storeMap = new Dictionary<string, object>();
+            var shipperMap = new Dictionary<string, object>();
+
+            // 1. Tổng hợp đánh giá từng sản phẩm
+            var pGroups = reviews
+                .SelectMany(r => (r.ProductReviews ?? new List<ProductReviewItem>())
+                    .Select(pr => new { Review = r, Item = pr }))
+                .Where(x => !string.IsNullOrWhiteSpace(x.Item.ProductId) || !string.IsNullOrWhiteSpace(x.Item.ProductName))
+                .GroupBy(x => (!string.IsNullOrWhiteSpace(x.Item.ProductId) ? x.Item.ProductId : x.Item.ProductName).Trim().ToLower());
+
+            foreach (var g in pGroups)
+            {
+                var ratings = g.Select(x => x.Item.Rating).ToList();
+                var sum = ratings.Sum();
+                var count = ratings.Count;
+                var avg = count > 0 ? Math.Round((double)sum / count, 1) : 5.0;
+                var comments = g.Select(x => new
+                    {
+                        author = x.Review.BuyerName,
+                        avatar = x.Review.BuyerAvatar,
+                        rating = x.Item.Rating,
+                        comment = !string.IsNullOrWhiteSpace(x.Item.Comment) ? x.Item.Comment.Trim() : string.Empty,
+                        tags = x.Item.Tags,
+                        date = x.Review.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+                    }).ToList();
+
+                productMap[g.Key] = new
+                {
+                    total = sum,
+                    count = count,
+                    averageRating = avg,
+                    comments = comments
+                };
+            }
+
+            // 2. Tổng hợp đánh giá từng gian hàng
+            var sGroups = reviews
+                .Where(r => !string.IsNullOrWhiteSpace(r.StoreId) || !string.IsNullOrWhiteSpace(r.StoreName))
+                .GroupBy(r => (!string.IsNullOrWhiteSpace(r.StoreId) ? r.StoreId : r.StoreName).Trim().ToLower());
+
+            foreach (var g in sGroups)
+            {
+                var ratings = g.Select(r => r.StoreRating > 0 ? r.StoreRating : r.Rating).ToList();
+                var sum = ratings.Sum();
+                var count = ratings.Count;
+                var avg = count > 0 ? Math.Round((double)sum / count, 1) : 5.0;
+                var comments = g.Select(r => new
+                    {
+                        author = r.BuyerName,
+                        avatar = r.BuyerAvatar,
+                        rating = r.StoreRating > 0 ? r.StoreRating : r.Rating,
+                        comment = !string.IsNullOrWhiteSpace(r.StoreComment) ? r.StoreComment : r.Comment,
+                        tags = r.StoreTags,
+                        date = r.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+                    }).ToList();
+
+                storeMap[g.Key] = new
+                {
+                    total = sum,
+                    count = count,
+                    averageRating = avg,
+                    comments = comments
+                };
+            }
+
+            // 3. Tổng hợp đánh giá tài xế
+            var shGroups = reviews
+                .Where(r => !string.IsNullOrWhiteSpace(r.ShipperName))
+                .GroupBy(r => r.ShipperName.Trim().ToLower());
+
+            foreach (var g in shGroups)
+            {
+                var ratings = g.Select(r => r.ShipperRating > 0 ? r.ShipperRating : 5).ToList();
+                var sum = ratings.Sum();
+                var count = ratings.Count;
+                var avg = count > 0 ? Math.Round((double)sum / count, 1) : 5.0;
+                shipperMap[g.Key] = new
+                {
+                    total = sum,
+                    count = count,
+                    averageRating = avg
+                };
+            }
+
+            return Ok(new
+            {
+                success = true,
+                products = productMap,
+                stores = storeMap,
+                shippers = shipperMap,
+                totalReviews = reviews.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
         }
     }
 

@@ -453,7 +453,7 @@ namespace ZoneMart.Server.Services
                 Category = "Đồ dùng gia đình",
                 Price = 48000m,
                 Description = "Nước rửa chén chiết xuất từ enzyme bồ hòn lên men tự nhiên và tinh dầu quế ấm nồng. Đánh bay dầu mỡ cứng đầu, khử tanh triệt để và an toàn cho da tay nhạy cảm.",
-                ImageUrl = "https://images.unsplash.com/photo-1585421514738-01798e348b17?auto=format&fit=crop&w=800&q=80",
+                ImageUrl = "/images/nuoc_rua_bat_huu_co.jpg",
                 StoreName = "Tổng Kho Đồ Gia Dụng & Tiêu Dùng Mỹ Đình",
                 StockQuantity = 100,
                 StockStatus = "in_stock",

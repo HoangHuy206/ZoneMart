@@ -183,6 +183,10 @@ class OrderRealtimeService {
   private handleIncomingMessage(data: any, _fromServer = false) {
     if (!data || !data.type) return;
 
+    if (typeof window !== "undefined" && typeof data.type === "string" && data.type.startsWith("CHAT_")) {
+      window.dispatchEvent(new CustomEvent("zonemart_chat_event", { detail: data }));
+    }
+
     if (data.type === "ORDERS_CLEARED") {
       this.cachedOrdersMap.clear();
       this.clearActiveOrder();

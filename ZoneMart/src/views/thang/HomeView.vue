@@ -5,6 +5,7 @@ import { useCart } from '../../composables/useCart';
 import { useToast } from '../../composables/useToast';
 import { useProductCatalog } from '../../composables/useProductCatalog';
 import { useAuth } from '../../composables/useAuth';
+import { getSafeCurrentLocation } from '../../composables/useSafeLocation';
 
 const router = useRouter();
 const auth = useAuth();
@@ -93,6 +94,7 @@ const observeNewElements = () => {
 
 onMounted(async () => {
   catalog.refreshCatalog();
+  getSafeCurrentLocation().catch(() => {});
   await nextTick();
   if (typeof window !== 'undefined' && 'IntersectionObserver' in window) {
     observer = new IntersectionObserver(

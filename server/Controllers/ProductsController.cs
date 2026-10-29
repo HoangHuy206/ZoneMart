@@ -57,6 +57,14 @@ public class ProductsController : ControllerBase
             var products = await _mongoService.Products.Find(filter).ToListAsync();
             Console.WriteLine($">>> [ProductsController.GetProducts] Loaded {products.Count} products from MongoDB");
 
+            foreach (var p in products)
+            {
+                if ((p.ProductName != null && (p.ProductName.Contains("Nước Rửa Bát") || p.ProductName.Contains("nuoc rua bat"))) || (p.ImageUrl != null && (p.ImageUrl.Contains("1585421514738") || p.ImageUrl.Contains("1584308666744"))))
+                {
+                    p.ImageUrl = "/images/nuoc_rua_bat_huu_co.jpg";
+                }
+            }
+
             // Làm giàu dữ liệu tên cửa hàng và email người bán từ bảng Stores (chỉ khi có sản phẩm thiếu)
             try
             {

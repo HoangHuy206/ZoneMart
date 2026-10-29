@@ -6,9 +6,9 @@
  * Hỗ trợ tìm kiếm linh hoạt: Sản phẩm HOẶC Gian hàng
  * ============================================================================
  */
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { useProductCatalog, type CatalogStore } from "../../composables/useProductCatalog";
+import { useProductCatalog, inferSubCategoryAndPrep, type CatalogStore } from "../../composables/useProductCatalog";
 import { useCart } from "../../composables/useCart";
 import { useToast } from "../../composables/useToast";
 
@@ -20,7 +20,8 @@ const catalog = useProductCatalog();
 // State lọc & tìm kiếm
 const searchQuery = ref("");
 const selectedCategory = ref("all");
-const maxRadiusKm = ref(10);
+const selectedSubCategory = ref("all"); // Lọc phân tầng cấp 2 (ví dụ: Thịt gà sống, Gà rán KFC...)
+const selectedPrepType = ref("all"); // Phân loại chế biến: 'all' | 'raw' (sống) | 'cooked' (chín/nóng) | 'fresh' | 'packaged'
 const sortBy = ref("popular"); // 'popular' | 'distance' | 'price-asc' | 'price-desc' | 'rating'
 const activeSearchTab = ref<"product" | "store">("product"); // Tab tìm kiếm: 'product' hoặc 'store'
 const selectedStoreFilter = ref<string>(""); // Tên gian hàng cụ thể nếu người dùng đang lọc theo gian hàng
@@ -71,6 +72,16 @@ const syncFromRoute = () => {
     // Khi người dùng tìm kiếm từ khóa mới mà URL không gán cố định danh mục, tự động reset về "all"
     selectedCategory.value = "all";
   }
+  if (route.query.subcat !== undefined) {
+    selectedSubCategory.value = String(route.query.subcat || "all");
+  } else {
+    selectedSubCategory.value = "all";
+  }
+  if (route.query.prep !== undefined) {
+    selectedPrepType.value = String(route.query.prep || "all");
+  } else {
+    selectedPrepType.value = "all";
+  }
   if (route.query.type === "store") {
     activeSearchTab.value = "store";
   } else if (route.query.type === "product") {
@@ -84,12 +95,24 @@ const syncFromRoute = () => {
   }
 };
 
+const handleCatalogRatingsUpdated = () => {
+  catalog.refreshCatalog();
+  catalog.fetchRatingsSummary();
+};
+
 onMounted(() => {
+  catalog.fetchRatingsSummary();
   catalog.refreshCatalog();
   syncFromRoute();
   triggerLoadingEffect(420);
 
-  // Catalog tự động re-compute khi có sự kiện zonemart:products-changed thông qua useProductCatalog
+  window.addEventListener('zonemart:ratings-updated', handleCatalogRatingsUpdated);
+  window.addEventListener('zonemart:products-changed', handleCatalogRatingsUpdated);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('zonemart:ratings-updated', handleCatalogRatingsUpdated);
+  window.removeEventListener('zonemart:products-changed', handleCatalogRatingsUpdated);
 });
 watch(() => route.query, () => {
   catalog.refreshCatalog();
@@ -97,13 +120,17 @@ watch(() => route.query, () => {
   triggerLoadingEffect(300);
 });
 watch(() => selectedCategory.value, () => {
+  selectedSubCategory.value = "all";
   triggerLoadingEffect(250);
+});
+watch([selectedSubCategory, selectedPrepType], () => {
+  triggerLoadingEffect(200);
 });
 watch(() => activeSearchTab.value, () => {
   triggerLoadingEffect(280);
 });
 
-// Danh mục ngành hàng gốc
+// Danh mục ngành hàng gốc (Cấp 1)
 const categoryDefinitions = [
   { id: "all", name: "Tất cả", icon: "bi-grid-fill" },
   { id: "food", name: "Thực phẩm tươi", icon: "bi-fire" },
@@ -113,12 +140,64 @@ const categoryDefinitions = [
   { id: "household", name: "Nhu yếu phẩm", icon: "bi-basket2-fill" }
 ];
 
+// Danh mục phân tầng cấp 2 (Subcategories theo từng danh mục cha)
+export interface SubCategoryDef {
+  id: string;
+  name: string;
+  icon: string;
+  parentCategory: string;
+}
+
+const subCategoryDefinitions: SubCategoryDef[] = [
+  // Thực phẩm tươi sống (food)
+  { id: "all", name: "Tất cả đồ tươi", icon: "bi-grid", parentCategory: "food" },
+  { id: "poultry", name: "Thịt gà & Gia cầm tươi", icon: "bi-egg-fill", parentCategory: "food" },
+  { id: "beef_pork", name: "Thịt bò & Thịt heo", icon: "bi-shield-check", parentCategory: "food" },
+  { id: "seafood", name: "Cá & Hải sản tươi", icon: "bi-water", parentCategory: "food" },
+  { id: "egg_tofu", name: "Trứng & Đậu phụ", icon: "bi-circle", parentCategory: "food" },
+
+  // Món ăn nóng / Đồ chín (fastfood)
+  { id: "all", name: "Tất cả món nóng", icon: "bi-grid", parentCategory: "fastfood" },
+  { id: "fried_chicken", name: "Gà rán & Fast food (KFC)", icon: "bi-fire", parentCategory: "fastfood" },
+  { id: "rice_noodle", name: "Cơm & Mì / Phở nóng", icon: "bi-cup-hot-fill", parentCategory: "fastfood" },
+  { id: "breakfast_bread", name: "Bánh mì & Ăn sáng", icon: "bi-sunset-fill", parentCategory: "fastfood" },
+  { id: "snack", name: "Đồ ăn vặt & Ăn nhanh", icon: "bi-stars", parentCategory: "fastfood" },
+
+  // Rau củ VietGAP (veggie)
+  { id: "all", name: "Tất cả rau củ", icon: "bi-grid", parentCategory: "veggie" },
+  { id: "leafy", name: "Rau ăn lá tươi", icon: "bi-flower1", parentCategory: "veggie" },
+  { id: "root_fruit", name: "Củ & Quả nấu canh", icon: "bi-apple", parentCategory: "veggie" },
+  { id: "mushroom_spices", name: "Nấm & Rau gia vị", icon: "bi-tree-fill", parentCategory: "veggie" },
+
+  // Đồ uống & Trái cây (beverage)
+  { id: "all", name: "Tất cả thức uống & quả", icon: "bi-grid", parentCategory: "beverage" },
+  { id: "fruit", name: "Trái cây tươi Đà Lạt", icon: "bi-basket", parentCategory: "beverage" },
+  { id: "tea_coffee", name: "Trà & Cà phê pha máy", icon: "bi-cup-hot", parentCategory: "beverage" },
+  { id: "juice_smoothie", name: "Nước ép & Sinh tố", icon: "bi-cup-straw", parentCategory: "beverage" },
+
+  // Nhu yếu phẩm (household)
+  { id: "all", name: "Tất cả đồ dùng", icon: "bi-grid", parentCategory: "household" },
+  { id: "kitchen", name: "Gia vị & Bếp núc", icon: "bi-box-seam", parentCategory: "household" },
+  { id: "cleaning", name: "Chăm sóc nhà cửa", icon: "bi-sparkles", parentCategory: "household" }
+];
+
+// Phân loại trạng thái chế biến (Prep Type Filter - Sống vs Chín ăn ngay)
+const prepTypeFilters = [
+  { id: "all", name: "Tất cả trạng thái", icon: "bi-layers-fill" },
+  { id: "raw", name: "Thịt tươi sống / Sơ chế", icon: "bi-snow" },
+  { id: "cooked", name: "Món chín / Ăn ngay (KFC...)", icon: "bi-fire" },
+  { id: "fresh", name: "Rau quả tươi sạch", icon: "bi-flower1" },
+  { id: "packaged", name: "Đóng gói / Khô", icon: "bi-box-seam" },
+];
+
 // Danh sách sản phẩm đầy đủ với dữ liệu chân thực
 interface ProductItem {
   id: string;
   name: string;
   category: string;
   categoryName: string;
+  subCategory: string;
+  prepType: "raw" | "cooked" | "fresh" | "packaged";
   price: number;
   oldPrice?: number;
   discountBadge?: string;
@@ -135,33 +214,44 @@ interface ProductItem {
 }
 
 const allProductItems = computed<ProductItem[]>(() => {
-  return catalog.allProducts.value.map((p) => ({
-    id: p.id,
-    name: p.name,
-    category: p.category,
-    categoryName: p.categoryName,
-    price: p.price,
-    oldPrice: p.oldPrice,
-    discountBadge: p.discountBadge,
-    storeName: p.store?.name || "ZoneMart Cầu Giấy",
-    distanceKm: p.store?.distanceKm || 1.5,
-    deliveryTime: p.store?.deliveryTime || "15 - 20 phút",
-    rating: p.rating,
-    reviews: p.reviewsCount,
-    sold: p.sold,
-    badge: p.badge,
-    unit: p.unit,
-    image: p.image,
-    description: p.description || "",
-  }));
+  return catalog.allProducts.value.map((p) => {
+    const inferred = inferSubCategoryAndPrep(p);
+    let img = p.image || "/images/nuoc_rua_bat_huu_co.jpg";
+    if (
+      (img && (img.includes("1585421514738") || img.includes("1584308666744"))) ||
+      (p.name && (p.name.toLowerCase().includes("nước rửa bát") || p.name.toLowerCase().includes("nuoc rua bat")))
+    ) {
+      img = "/images/nuoc_rua_bat_huu_co.jpg";
+    }
+    return {
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      categoryName: p.categoryName,
+      subCategory: p.subCategory || inferred.subCategory,
+      prepType: (p.prepType || inferred.prepType) as "raw" | "cooked" | "fresh" | "packaged",
+      price: p.price,
+      oldPrice: p.oldPrice,
+      discountBadge: p.discountBadge,
+      storeName: p.store?.name || "ZoneMart Cầu Giấy",
+      distanceKm: p.store?.distanceKm || 1.5,
+      deliveryTime: p.store?.deliveryTime || "15 - 20 phút",
+      rating: p.rating,
+      reviews: p.reviewsCount,
+      sold: p.sold,
+      badge: p.badge,
+      unit: p.unit,
+      image: img,
+      description: p.description || "",
+    };
+  });
 });
 
-// Danh mục ngành hàng với số lượng ĐỘNG theo đúng từ khóa tìm kiếm và bộ lọc hiện tại
+// Danh mục ngành hàng cấp 1 với số lượng ĐỘNG theo đúng từ khóa tìm kiếm và bộ lọc hiện tại
 const categories = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   const qNoTone = removeVietnameseTones(q);
 
-  // Lấy các sản phẩm thỏa mãn điều kiện tìm kiếm, bán kính và gian hàng (chưa lọc theo category)
   const baseItems = allProductItems.value.filter((p) => {
     const matchQuery =
       !q ||
@@ -172,12 +262,11 @@ const categories = computed(() => {
       removeVietnameseTones(p.categoryName).includes(qNoTone) ||
       (p.description && removeVietnameseTones(p.description).includes(qNoTone));
 
-    const matchDistance = p.distanceKm <= maxRadiusKm.value;
     const matchStore =
       !selectedStoreFilter.value ||
       p.storeName.toLowerCase() === selectedStoreFilter.value.toLowerCase();
 
-    return matchQuery && matchDistance && matchStore;
+    return matchQuery && matchStore;
   });
 
   return categoryDefinitions.map((cat) => {
@@ -190,6 +279,88 @@ const categories = computed(() => {
       count,
     };
   });
+});
+
+// Phân tầng con cấp 2 (Hiển thị động theo danh mục cha đang chọn)
+const availableSubCategories = computed(() => {
+  if (selectedCategory.value === "all") {
+    return [];
+  }
+  const q = searchQuery.value.trim().toLowerCase();
+  const qNoTone = removeVietnameseTones(q);
+
+  const baseItems = allProductItems.value.filter((p) => {
+    const matchCategory = p.category === selectedCategory.value;
+    const matchQuery =
+      !q ||
+      p.name.toLowerCase().includes(q) ||
+      p.categoryName.toLowerCase().includes(q) ||
+      (p.description && p.description.toLowerCase().includes(q)) ||
+      removeVietnameseTones(p.name).includes(qNoTone) ||
+      removeVietnameseTones(p.categoryName).includes(qNoTone) ||
+      (p.description && removeVietnameseTones(p.description).includes(qNoTone));
+
+    const matchStore =
+      !selectedStoreFilter.value ||
+      p.storeName.toLowerCase() === selectedStoreFilter.value.toLowerCase();
+
+    return matchCategory && matchQuery && matchStore;
+  });
+
+  const defs = subCategoryDefinitions.filter(
+    (s) => s.parentCategory === selectedCategory.value
+  );
+
+  return defs.map((sub) => {
+    const count =
+      sub.id === "all"
+        ? baseItems.length
+        : baseItems.filter((p) => p.subCategory === sub.id).length;
+    return {
+      ...sub,
+      count,
+    };
+  });
+});
+
+// Bộ lọc trạng thái chế biến (Prep Type: Sống vs Chín/Ăn liền)
+const availablePrepTypes = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  const qNoTone = removeVietnameseTones(q);
+
+  const baseItems = allProductItems.value.filter((p) => {
+    const matchCategory =
+      selectedCategory.value === "all" || p.category === selectedCategory.value;
+    const matchSubCategory =
+      selectedSubCategory.value === "all" || p.subCategory === selectedSubCategory.value;
+    const matchQuery =
+      !q ||
+      p.name.toLowerCase().includes(q) ||
+      p.categoryName.toLowerCase().includes(q) ||
+      (p.description && p.description.toLowerCase().includes(q)) ||
+      removeVietnameseTones(p.name).includes(qNoTone) ||
+      removeVietnameseTones(p.categoryName).includes(qNoTone) ||
+      (p.description && removeVietnameseTones(p.description).includes(qNoTone));
+
+    const matchStore =
+      !selectedStoreFilter.value ||
+      p.storeName.toLowerCase() === selectedStoreFilter.value.toLowerCase();
+
+    return matchCategory && matchSubCategory && matchQuery && matchStore;
+  });
+
+  return prepTypeFilters
+    .map((filter) => {
+      const count =
+        filter.id === "all"
+          ? baseItems.length
+          : baseItems.filter((p) => p.prepType === filter.id).length;
+      return {
+        ...filter,
+        count,
+      };
+    })
+    .filter((f) => f.id === "all" || f.count > 0);
 });
 
 // Tổng số sản phẩm khớp từ khóa nếu không bị giới hạn bởi category hiện tại
@@ -207,16 +378,15 @@ const totalMatchesWithoutCategory = computed(() => {
       removeVietnameseTones(p.categoryName).includes(qNoTone) ||
       (p.description && removeVietnameseTones(p.description).includes(qNoTone));
 
-    const matchDistance = p.distanceKm <= maxRadiusKm.value;
     const matchStore =
       !selectedStoreFilter.value ||
       p.storeName.toLowerCase() === selectedStoreFilter.value.toLowerCase();
 
-    return matchQuery && matchDistance && matchStore;
+    return matchQuery && matchStore;
   }).length;
 });
 
-// Lọc và sắp xếp sản phẩm
+// Lọc và sắp xếp sản phẩm đa tầng (Category Cấp 1 -> Subcategory Cấp 2 -> Trạng thái Chế biến -> Tìm kiếm & Bán kính)
 const filteredProducts = computed(() => {
   const q = searchQuery.value.trim().toLowerCase();
   const qNoTone = removeVietnameseTones(q);
@@ -224,6 +394,13 @@ const filteredProducts = computed(() => {
   let result = allProductItems.value.filter((p) => {
     const matchCategory =
       selectedCategory.value === "all" || p.category === selectedCategory.value;
+
+    const matchSubCategory =
+      selectedSubCategory.value === "all" || p.subCategory === selectedSubCategory.value;
+
+    const matchPrepType =
+      selectedPrepType.value === "all" || p.prepType === selectedPrepType.value;
+
     const matchQuery =
       !q ||
       p.name.toLowerCase().includes(q) ||
@@ -233,12 +410,17 @@ const filteredProducts = computed(() => {
       removeVietnameseTones(p.categoryName).includes(qNoTone) ||
       (p.description && removeVietnameseTones(p.description).includes(qNoTone));
 
-    const matchDistance = p.distanceKm <= maxRadiusKm.value;
     const matchStore =
       !selectedStoreFilter.value ||
       p.storeName.toLowerCase() === selectedStoreFilter.value.toLowerCase();
 
-    return matchCategory && matchQuery && matchDistance && matchStore;
+    return (
+      matchCategory &&
+      matchSubCategory &&
+      matchPrepType &&
+      matchQuery &&
+      matchStore
+    );
   });
 
   // Sắp xếp
@@ -249,10 +431,32 @@ const filteredProducts = computed(() => {
   } else if (sortBy.value === "distance") {
     result.sort((a, b) => a.distanceKm - b.distanceKm);
   } else if (sortBy.value === "rating") {
-    result.sort((a, b) => b.rating - a.rating);
+    result.sort((a, b) => {
+      // 1. Điểm đánh giá trung bình cao nhất xếp trước
+      const diffRating = (b.rating || 0) - (a.rating || 0);
+      if (Math.abs(diffRating) > 0.01) return diffRating;
+
+      // 2. Ưu tiên những món có lượt đánh giá thực tế từ người mua trên hệ thống
+      const bRealReviews = (b.reviews && b.reviews.length > 0) ? b.reviews.length : 0;
+      const aRealReviews = (a.reviews && a.reviews.length > 0) ? a.reviews.length : 0;
+      if (bRealReviews !== aRealReviews) return bRealReviews - aRealReviews;
+
+      // 3. Số lượt đánh giá tổng
+      const diffCount = (b.reviewsCount || 0) - (a.reviewsCount || 0);
+      if (diffCount !== 0) return diffCount;
+
+      // 4. Lượt bán
+      return (b.sold || 0) - (a.sold || 0);
+    });
   } else {
-    // popular
-    result.sort((a, b) => b.sold - a.sold);
+    // popular (Bán chạy nhất): Kết hợp lượt bán và ưu tiên đẩy mạnh món 5 sao có đánh giá thực tế lên đầu
+    result.sort((a, b) => {
+      const bRealReviews = (b.reviews && b.reviews.length > 0) ? b.reviews.length : 0;
+      const aRealReviews = (a.reviews && a.reviews.length > 0) ? a.reviews.length : 0;
+      const bScore = (b.sold || 0) + (b.rating >= 4.8 ? bRealReviews * 120 : 0);
+      const aScore = (a.sold || 0) + (a.rating >= 4.8 ? aRealReviews * 120 : 0);
+      return bScore - aScore;
+    });
   }
 
   return result;
@@ -280,14 +484,20 @@ const filteredStores = computed<CatalogStore[]>(() => {
     });
   }
 
-  list = list.filter((s) => s.distanceKm <= maxRadiusKm.value);
-
   if (sortBy.value === "distance") {
     return [...list].sort((a, b) => a.distanceKm - b.distanceKm);
   } else if (sortBy.value === "rating") {
-    return [...list].sort((a, b) => b.rating - a.rating);
+    return [...list].sort((a, b) => {
+      const diffRating = (b.rating || 0) - (a.rating || 0);
+      if (Math.abs(diffRating) > 0.01) return diffRating;
+      return (b.reviewsCount || 0) - (a.reviewsCount || 0);
+    });
   } else {
-    return [...list].sort((a, b) => b.totalProducts - a.totalProducts || b.rating - a.rating);
+    return [...list].sort((a, b) => {
+      const diffRating = (b.rating || 0) - (a.rating || 0);
+      if (Math.abs(diffRating) > 0.01) return diffRating;
+      return b.totalProducts - a.totalProducts;
+    });
   }
 });
 
@@ -364,7 +574,8 @@ const onAddToCart = (p: ProductItem) => {
 const resetFilters = () => {
   searchQuery.value = "";
   selectedCategory.value = "all";
-  maxRadiusKm.value = 10;
+  selectedSubCategory.value = "all";
+  selectedPrepType.value = "all";
   sortBy.value = "popular";
   selectedStoreFilter.value = "";
   activeSearchTab.value = "product";
@@ -400,25 +611,19 @@ const resetFilters = () => {
               Tất cả sản phẩm được chuẩn bị từ các cửa hàng uy tín gần bạn, giao tận cửa giữ trọn độ tươi nóng chỉ trong 20 phút.
             </p>
 
-            <div class="spotlight-search-bar">
-              <i class="bi bi-search lens-icon" aria-hidden="true"></i>
-              <input
-                v-model="searchQuery"
-                type="text"
-                :placeholder="activeSearchTab === 'store' ? 'Tìm tên gian hàng, quán ăn, siêu thị gần bạn...' : 'Tìm thịt tươi, rau sạch, bún chả, cơm tấm...'"
-                class="spotlight-input"
-                aria-label="Tìm kiếm sản phẩm hoặc gian hàng"
-              />
-              <button
-                v-if="searchQuery"
-                type="button"
-                class="btn-clear-search"
-                aria-label="Xóa tìm kiếm"
-                @click="searchQuery = ''"
-                title="Xóa tìm kiếm"
-              >
-                <i class="bi bi-x-circle-fill" aria-hidden="true"></i>
-              </button>
+            <div class="spotlight-features-row">
+              <div class="feature-chip">
+                <i class="bi bi-lightning-charge-fill text-warning"></i>
+                <span>Giao hỏa tốc 20 phút</span>
+              </div>
+              <div class="feature-chip">
+                <i class="bi bi-patch-check-fill text-success"></i>
+                <span>Nông sản chuẩn VietGAP</span>
+              </div>
+              <div class="feature-chip">
+                <i class="bi bi-shield-check text-primary"></i>
+                <span>Đồng kiểm khi nhận hàng</span>
+              </div>
             </div>
           </div>
 
@@ -434,37 +639,6 @@ const resetFilters = () => {
                 <strong>Cửa hàng gần bạn</strong>
                 <small>Cam kết đúng giờ</small>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Card 2 (35% width): Thẻ cam kết & tốc độ giao hàng -->
-        <div class="bento-card-sub">
-          <div class="sub-badge-speed">
-            <span><i class="bi bi-lightning-charge-fill me-1" aria-hidden="true"></i> 15 - 25 PHÚT</span>
-          </div>
-          <h3 class="sub-card-title">Càng Gần Càng Nhanh, Càng Tươi</h3>
-          <p class="sub-card-desc">
-            Shipper ZoneMart sử dụng định vị GPS để tối ưu quãng đường ngắn nhất từ gian hàng đến nhà bạn.
-          </p>
-
-          <div class="radius-slider-box">
-            <div class="radius-slider-header">
-              <span class="slider-title">Bán kính quét quán:</span>
-              <span class="slider-value">≤ {{ maxRadiusKm }} km</span>
-            </div>
-            <input
-              type="range"
-              min="1"
-              max="10"
-              step="0.5"
-              v-model.number="maxRadiusKm"
-              class="range-slider"
-            />
-            <div class="slider-ticks">
-              <span>1km (Siêu gần)</span>
-              <span>5km</span>
-              <span>10km (Tối đa)</span>
             </div>
           </div>
         </div>
@@ -495,10 +669,18 @@ const resetFilters = () => {
         </div>
 
         <!-- Thẻ hiển thị từ khóa / bộ lọc đang kích hoạt -->
-        <div class="active-query-meta" v-if="searchQuery || selectedStoreFilter">
+        <div class="active-query-meta" v-if="searchQuery || selectedStoreFilter || (selectedCategory !== 'all' && selectedSubCategory !== 'all') || selectedPrepType !== 'all'">
           <span v-if="searchQuery" class="active-query-tag">
             <span>Từ khóa: "<strong>{{ searchQuery }}</strong>"</span>
             <button class="btn-remove-tag" @click="searchQuery = ''" title="Bỏ từ khóa"><i class="bi bi-x"></i></button>
+          </span>
+          <span v-if="selectedSubCategory !== 'all'" class="active-query-tag subcat-tag">
+            <span>Nhóm hàng: <strong>{{ subCategoryDefinitions.find(s => s.id === selectedSubCategory && s.parentCategory === selectedCategory)?.name || selectedSubCategory }}</strong></span>
+            <button class="btn-remove-tag" @click="selectedSubCategory = 'all'" title="Bỏ chọn nhóm hàng"><i class="bi bi-x"></i></button>
+          </span>
+          <span v-if="selectedPrepType !== 'all'" class="active-query-tag prep-tag">
+            <span>Trạng thái: <strong>{{ prepTypeFilters.find(f => f.id === selectedPrepType)?.name || selectedPrepType }}</strong></span>
+            <button class="btn-remove-tag" @click="selectedPrepType = 'all'" title="Bỏ trạng thái"><i class="bi bi-x"></i></button>
           </span>
           <span v-if="selectedStoreFilter" class="active-query-tag store-tag">
             <span>Gian hàng: <strong>{{ selectedStoreFilter }}</strong></span>
@@ -536,7 +718,7 @@ const resetFilters = () => {
 
       <!-- 3. BỘ LỌC DANH MỤC & ĐIỀU KHIỂN SẮP XẾP (FRAMELESS BAR) -->
       <section class="filter-controls-bar">
-        <!-- Category Pills (Chỉ hiện khi ở tab Sản Phẩm) -->
+        <!-- Category Pills (Cấp 1 - Chỉ hiện khi ở tab Sản Phẩm) -->
         <div v-if="activeSearchTab === 'product'" class="category-pills-row">
           <button
             v-for="cat in categories"
@@ -550,7 +732,7 @@ const resetFilters = () => {
           </button>
         </div>
         <div v-else class="store-filter-intro">
-          <span class="store-intro-text"><i class="bi bi-geo-alt-fill text-orange me-1"></i> Các gian hàng uy tín phục vụ giao siêu tốc trong <strong>{{ maxRadiusKm }}km</strong></span>
+          <span class="store-intro-text"><i class="bi bi-geo-alt-fill text-orange me-1"></i> Các gian hàng uy tín phục vụ giao siêu tốc</span>
         </div>
 
         <!-- Sort controls -->
@@ -573,17 +755,53 @@ const resetFilters = () => {
         </div>
       </section>
 
-      <!-- 4. KẾT QUẢ ĐANG HIỂN THỊ -->
-      <div class="filter-meta-status">
-        <span v-if="activeSearchTab === 'product'" class="found-text">
-          Tìm thấy <strong>{{ filteredProducts.length }}</strong> sản phẩm phù hợp trong bán kính <strong>{{ maxRadiusKm }}km</strong>
-        </span>
-        <span v-else class="found-text">
-          Tìm thấy <strong>{{ filteredStores.length }}</strong> gian hàng uy tín trong bán kính <strong>{{ maxRadiusKm }}km</strong>
-        </span>
+      <!-- 3B. PHÂN TẦNG CẤP 2 (SUBCATEGORIES THEO DANH MỤC CON) -->
+      <transition name="fade">
+        <section v-if="activeSearchTab === 'product' && availableSubCategories.length > 0" class="subcategory-pills-row">
+          <span class="subcat-title-tag"><i class="bi bi-tags-fill text-orange"></i> Nhóm hàng:</span>
+          <div class="subcat-scroll-track">
+            <button
+              v-for="sub in availableSubCategories"
+              :key="sub.id"
+              :class="['subcat-pill-btn', { active: selectedSubCategory === sub.id }]"
+              @click="selectedSubCategory = sub.id"
+            >
+              <i class="bi" :class="sub.icon" aria-hidden="true"></i>
+              <span class="subcat-name">{{ sub.name }}</span>
+              <span class="subcat-count">{{ sub.count }}</span>
+            </button>
+          </div>
+        </section>
+      </transition>
 
+      <!-- 3C. BỘ LỌC NGỮ CẢNH: CHẾ BIẾN SỐNG / ĐỒ CHÍN ĂN LIỀN (VÍ DỤ: GÀ SỐNG VS GÀ RÁN KFC) -->
+      <transition name="fade">
+        <section
+          v-if="activeSearchTab === 'product' && availablePrepTypes.length > 1 && (searchQuery || selectedCategory !== 'all')"
+          class="prep-filter-bar"
+        >
+          <span class="prep-title-tag"><i class="bi bi-funnel-fill text-orange"></i> Trạng thái món:</span>
+          <div class="prep-chips-track">
+            <button
+              v-for="pType in availablePrepTypes"
+              :key="pType.id"
+              :class="['prep-chip-btn', { active: selectedPrepType === pType.id }]"
+              @click="selectedPrepType = pType.id"
+            >
+              <i class="bi" :class="pType.icon"></i>
+              <span>{{ pType.name }}</span>
+              <span class="prep-count">({{ pType.count }})</span>
+            </button>
+          </div>
+        </section>
+      </transition>
+
+      <!-- 4. ĐẶT LẠI BỘ LỌC (KHI CÓ BỘ LỌC ĐANG ÁP DỤNG) -->
+      <div
+        v-if="(activeSearchTab === 'product' && (selectedCategory !== 'all' || selectedSubCategory !== 'all' || selectedPrepType !== 'all')) || searchQuery || selectedStoreFilter || sortBy !== 'popular'"
+        class="filter-meta-status justify-content-end"
+      >
         <button
-          v-if="(activeSearchTab === 'product' && selectedCategory !== 'all') || searchQuery || selectedStoreFilter || maxRadiusKm < 10 || sortBy !== 'popular'"
           class="btn-reset-filter"
           @click="resetFilters"
         >
@@ -646,6 +864,12 @@ const resetFilters = () => {
                   {{ p.storeName }}
                 </span>
                 <span class="category-name-chip">{{ p.categoryName }}</span>
+                <span v-if="p.prepType === 'cooked'" class="prep-badge cooked" title="Món nóng ăn ngay, phục vụ liền">
+                  <i class="bi bi-fire"></i> Đồ chín
+                </span>
+                <span v-else-if="p.prepType === 'raw'" class="prep-badge raw" title="Thực phẩm tươi sống">
+                  <i class="bi bi-snow"></i> Tươi sống
+                </span>
               </div>
 
               <h3 class="product-item-title" :title="p.name">
@@ -690,7 +914,7 @@ const resetFilters = () => {
           </div>
           <h3>Không tìm thấy sản phẩm nào!</h3>
           <p>
-            Không có sản phẩm nào khớp với tìm kiếm "<strong>{{ searchQuery }}</strong>" hoặc trong bán kính <strong>{{ maxRadiusKm }}km</strong>.
+            Không có sản phẩm nào khớp với tìm kiếm "<strong>{{ searchQuery }}</strong>".
           </p>
           <!-- Nếu đang lọc danh mục khác mà có kết quả ở các danh mục còn lại -->
           <div v-if="selectedCategory !== 'all' && totalMatchesWithoutCategory > 0" class="empty-cross-action-box mb-3">
@@ -815,7 +1039,7 @@ const resetFilters = () => {
           </div>
           <h3>Không tìm thấy gian hàng nào!</h3>
           <p>
-            Không có gian hàng nào khớp với tìm kiếm "<strong>{{ searchQuery }}</strong>" hoặc trong bán kính <strong>{{ maxRadiusKm }}km</strong>.
+            Không có gian hàng nào khớp với tìm kiếm "<strong>{{ searchQuery }}</strong>".
           </p>
           <!-- Gợi ý xem sản phẩm nếu có sản phẩm khớp -->
           <div v-if="filteredProducts.length > 0" class="empty-cross-action-box">
@@ -891,21 +1115,18 @@ const resetFilters = () => {
    1. BENTO SPOTLIGHT
    ========================================================================== */
 .bento-spotlight-section {
-  display: grid;
-  grid-template-columns: 1.45fr 1fr;
-  gap: 20px;
+  display: block;
   margin-bottom: 28px;
-  align-items: stretch;
 }
 
 .bento-card-main {
   background: #ffffff;
   border: 1.5px solid #ebdcd3;
   border-radius: 20px;
-  padding: 28px 32px;
+  padding: 28px 36px;
   display: grid;
-  grid-template-columns: 1.25fr 0.95fr;
-  gap: 24px;
+  grid-template-columns: 1.35fr 0.95fr;
+  gap: 28px;
   align-items: center;
   box-shadow: 0 4px 18px rgba(43, 27, 20, 0.04);
 }
@@ -961,55 +1182,25 @@ const resetFilters = () => {
   margin: 0 0 18px 0;
 }
 
-.spotlight-search-bar {
+.spotlight-features-row {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.feature-chip {
+  display: inline-flex;
   align-items: center;
-  background: #ffffff;
-  border-radius: 14px;
-  padding: 8px 14px;
-  border: 1.5px solid #ebdcd3;
-  position: relative;
-  transition: all 0.25s ease;
-  box-shadow: 0 2px 10px rgba(43, 27, 20, 0.03);
-}
-
-.spotlight-search-bar:focus-within {
-  border-color: #d85a2a;
-  box-shadow: 0 0 0 3px rgba(216, 90, 42, 0.12);
-}
-
-.lens-icon {
-  font-size: 16px;
-  color: #8c776c;
-  margin-right: 10px;
-}
-
-.spotlight-input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  outline: none;
-  font-size: 13.5px;
-  color: #2b1b14;
-}
-
-.spotlight-input::placeholder {
-  color: #a49187;
-}
-
-.btn-clear-search {
-  background: none;
-  border: none;
-  font-size: 14px;
-  color: #a49187;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px;
-}
-.btn-clear-search:hover {
-  color: #d85a2a;
+  gap: 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .bento-visual-side {
@@ -1218,6 +1409,18 @@ const resetFilters = () => {
   background: #eff6ff;
   color: #1d4ed8;
   border-color: #dbeafe;
+}
+
+.active-query-tag.subcat-tag {
+  background: #fdf2f8;
+  color: #9d174d;
+  border-color: #fbcfe8;
+}
+
+.active-query-tag.prep-tag {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
 }
 
 .btn-remove-tag {
@@ -1435,15 +1638,190 @@ const resetFilters = () => {
   border-color: #d85a2a;
 }
 
+/* ==========================================================================
+   2B. SUBCATEGORY PILLS (PHÂN TẦNG CẤP 2)
+   ========================================================================== */
+.subcategory-pills-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  margin-bottom: 12px;
+  padding: 10px 16px;
+  background: #fdfaf8;
+  border: 1px dashed #eed9cf;
+  border-radius: 14px;
+  flex-wrap: wrap;
+}
+
+.subcat-title-tag {
+  font-size: 12px;
+  font-weight: 700;
+  color: #925338;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.subcat-scroll-track {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.subcat-pill-btn {
+  background: #ffffff;
+  border: 1px solid #ebdcd3;
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #5d4941;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.subcat-pill-btn:hover {
+  background: #fff3ec;
+  border-color: #f08c5c;
+  color: #d85a2a;
+  transform: translateY(-1px);
+}
+
+.subcat-pill-btn.active {
+  background: #2b1b14;
+  border-color: #2b1b14;
+  color: #ffffff;
+  box-shadow: 0 3px 8px rgba(43, 27, 20, 0.18);
+}
+
+.subcat-count {
+  font-size: 10px;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.subcat-pill-btn.active .subcat-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+/* ==========================================================================
+   2C. CONTEXTUAL PREP FILTER (LỌC TRẠNG THÁI SỐNG VS CHÍN ĂN LIỀN)
+   ========================================================================== */
+.prep-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  margin-bottom: 14px;
+  padding: 8px 14px;
+  background: #ffffff;
+  border: 1px solid #eedcd3;
+  border-radius: 12px;
+  flex-wrap: wrap;
+  box-shadow: 0 2px 8px rgba(43, 27, 20, 0.03);
+}
+
+.prep-title-tag {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #7b6960;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.prep-chips-track {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.prep-chip-btn {
+  background: #fbf9f8;
+  border: 1px solid #e7d8cf;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #55443c;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+
+.prep-chip-btn:hover {
+  background: #fff4ee;
+  border-color: #f08c5c;
+  color: #d85a2a;
+}
+
+.prep-chip-btn.active {
+  background: #d85a2a;
+  border-color: #d85a2a;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(216, 90, 42, 0.2);
+}
+
+.prep-count {
+  font-size: 10px;
+  color: #9c8a80;
+}
+
+.prep-chip-btn.active .prep-count {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Badge hiển thị trên từng Product Card */
+.prep-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+}
+
+.prep-badge.cooked {
+  background: #feece5;
+  color: #c93b12;
+  border: 1px solid #f9cdb9;
+}
+
+.prep-badge.raw {
+  background: #eef6ff;
+  color: #1971c2;
+  border: 1px solid #cfe2ff;
+}
+
 /* Meta status line */
 .filter-meta-status {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 22px;
   font-size: 13px;
   color: #64748b;
 }
+
+.filter-meta-status.justify-content-end {
+  justify-content: flex-end;
+}
+
 
 .btn-reset-filter {
   background: none;
@@ -2094,17 +2472,28 @@ const resetFilters = () => {
     font-size: 12.5px;
     margin-bottom: 12px;
   }
-  .category-pills-row {
+  .category-pills-row,
+  .subcategory-pills-row,
+  .prep-filter-bar {
     flex-wrap: nowrap;
     overflow-x: auto;
     padding-bottom: 6px;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
-  .category-pills-row::-webkit-scrollbar {
+  .category-pills-row::-webkit-scrollbar,
+  .subcategory-pills-row::-webkit-scrollbar,
+  .prep-filter-bar::-webkit-scrollbar {
     display: none;
   }
-  .cat-pill-btn {
+  .subcat-scroll-track,
+  .prep-chips-track {
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+  }
+  .cat-pill-btn,
+  .subcat-pill-btn,
+  .prep-chip-btn {
     flex-shrink: 0;
     padding: 6px 12px;
     font-size: 12px;

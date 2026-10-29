@@ -31,16 +31,21 @@ import {
 } from "../../utils/biometricHelper";
 import { apiFetch } from "../../utils/apiConfig";
 import { useAuth } from "../../composables/useAuth";
+import SellerChatDashboardTab from "../../components/chat/SellerChatDashboardTab.vue";
+import { sellerChatService } from "../../services/sellerChatService";
+import { inferSubCategoryAndPrep } from "../../composables/useProductCatalog";
 
 const router = useRouter();
 const toast = useToast();
 const auth = useAuth();
+const sellerChatUnreadCount = ref(0);
 
 // Điều hướng Tab chính trong Sidebar
 type NavKey =
   | "overview"
   | "products"
   | "customers"
+  | "messages"
   | "orders"
   | "shipment"
   | "settings"
@@ -151,6 +156,26 @@ onMounted(async () => {
 
   // Kiểm tra trạng thái Face ID của gian hàng
   checkFaceStatus();
+
+
+
+  // Đăng ký nhịp tim trực tuyến và lắng nghe tin nhắn người mua
+  sellerChatService.registerPresenceHeartbeat(storeInfo.id, 'seller', storeInfo.name);
+  if (storeInfo.name) {
+    sellerChatService.updatePresence(storeInfo.name, 'seller', storeInfo.name, true);
+  }
+
+  // Tải danh sách hội thoại & cập nhật số tin nhắn chưa đọc cho gian hàng
+  sellerChatService.fetchConversations({ storeId: storeInfo.id }).then((convs) => {
+    const unread = convs.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
+    sellerChatUnreadCount.value = unread;
+  });
+  sellerChatService.onMessage((msg) => {
+    if (msg.senderRole === 'buyer' && activeNav.value !== 'messages') {
+      sellerChatUnreadCount.value++;
+      toast.info(`Khách hàng ${msg.senderName} vừa nhắn: "${msg.content.slice(0, 35)}..."`, 'Tin Nhắn Mới');
+    }
+  });
 
   // Lắng nghe sự kiện NỔ ĐƠN HÀNG MỚI theo thời gian thực (cho Người bán)
   unsubscribeOrderCreated = orderRealtimeService.onOrderCreated((order) => {
@@ -758,7 +783,7 @@ const loadSellerStoreProfile = async (parsedUser: any) => {
         if (s.bankName) storeInfo.bankName = s.bankName;
         if (s.bankAccountNumber) storeInfo.bankAccount = s.bankAccountNumber;
         if (s.ownerFullName) storeInfo.accountHolder = s.ownerFullName;
-        if (s.storeCode || s.id) storeInfo.id = s.storeCode || s.id;
+        if (s.id || s.storeCode) storeInfo.id = s.id || s.storeCode;
         if (s.phoneEmail) storeInfo.phone = s.phoneEmail;
 
         localStorage.setItem(`zonemart_seller_store_${cleanEmail}`, JSON.stringify({
@@ -1162,6 +1187,8 @@ const handleDisableFace = async () => {
 watch(activeNav, (newNav) => {
   if (newNav === "settings") {
     checkFaceStatus();
+
+
   }
 });
 
@@ -1213,6 +1240,43 @@ const newProductForm = reactive({
   unit: "Bó 500g",
   stock: 30,
   image: ""
+});
+
+const subCategoryNameMap: Record<string, string> = {
+  poultry: "Thịt gia cầm & Gà",
+  beef_pork: "Thịt heo & Thịt bò",
+  seafood: "Thủy hải sản tươi",
+  leafy: "Rau ăn lá tươi",
+  root_fruit: "Củ, quả & Nấm",
+  fried_chicken: "Gà rán & Món gà nóng",
+  rice_noodle: "Cơm, bún & phở nóng",
+  fastfood_snack: "Đồ ăn nhanh & Ăn vặt",
+  juice_smoothie: "Nước ép & Sinh tố",
+  tea_coffee: "Trà & Cà phê",
+  kitchen: "Tẩy rửa nhà bếp",
+  home_care: "Chăm sóc nhà cửa",
+};
+
+const prepTypeNameMap: Record<string, string> = {
+  raw: "Sống / Sơ chế tươi",
+  cooked: "Món nóng / Nấu chín",
+  fresh: "Tươi sạch tự nhiên",
+  packaged: "Đóng gói / Đóng chai",
+};
+
+const currentAutoClassification = computed(() => {
+  if (!newProductForm.name || !newProductForm.name.trim()) return null;
+  const rawCategory = newProductForm.category === "Khác" ? customCategoryInput.value : newProductForm.category;
+  const inferred = inferSubCategoryAndPrep({
+    name: newProductForm.name,
+    category: rawCategory
+  });
+  return {
+    subCategory: inferred.subCategory,
+    subCategoryLabel: subCategoryNameMap[inferred.subCategory] || inferred.subCategory,
+    prepType: inferred.prepType,
+    prepTypeLabel: prepTypeNameMap[inferred.prepType] || inferred.prepType
+  };
 });
 
 const triggerFileInput = () => {
@@ -1493,6 +1557,8 @@ const handleSaveProduct = async () => {
       id: targetId,
       name: savedName,
       category: savedCategory,
+      subCategory: inferSubCategoryAndPrep({ name: savedName, category: savedCategory }).subCategory,
+      prepType: inferSubCategoryAndPrep({ name: savedName, category: savedCategory }).prepType,
       price: savedPrice,
       unit: savedUnit,
       stock: savedStock,
@@ -1907,6 +1973,18 @@ const getItemImage = (it: OrderItem) => {
         >
           <i class="bi bi-people nav-icon"></i>
           <span class="nav-label">Khách hàng</span>
+        </button>
+
+        <!-- Chat / Tin nhắn khách hàng thời gian thực -->
+        <button
+          type="button"
+          class="nav-item-btn"
+          :class="{ active: activeNav === 'messages' }"
+          @click="selectNav('messages')"
+        >
+          <i class="bi bi-chat-dots-fill nav-icon"></i>
+          <span class="nav-label">Tin nhắn</span>
+          <span v-if="sellerChatUnreadCount > 0" class="nav-badge-pill bg-danger text-white">{{ sellerChatUnreadCount }}</span>
         </button>
 
         <!-- 4. Orders -->
@@ -2657,6 +2735,16 @@ const getItemImage = (it: OrderItem) => {
           </div>
         </section>
 
+        <!-- ==================== TAB: MESSAGES (CHAT THỜI GIAN THỰC) ==================== -->
+        <section v-else-if="activeNav === 'messages'" class="tab-page-container">
+          <SellerChatDashboardTab
+            :store-id="storeInfo.id"
+            :store-name="storeInfo.name"
+            :seller-avatar="currentUser.avatar"
+            @unread-count-change="(count: number) => (sellerChatUnreadCount = count)"
+          />
+        </section>
+
         <!-- ==================== TAB 4: ORDERS ==================== -->
         <section v-else-if="activeNav === 'orders'" class="tab-page-container">
           <div class="tab-header-flex">
@@ -3035,6 +3123,11 @@ const getItemImage = (it: OrderItem) => {
 
           <div class="field-item">
             <label>{{ newProductForm.itemType === 'service' ? 'Tên dịch vụ' : 'Tên sản phẩm' }} <span class="text-danger">*</span></label>
+            <!-- Tự động phân tầng thông minh theo từ khóa sản phẩm -->
+            <div v-if="currentAutoClassification" class="mb-2 p-2 rounded-3 bg-warning-subtle border border-warning-subtle d-flex align-items-center gap-2 fs-xs text-dark">
+              <i class="bi bi-stars text-warning fs-6"></i>
+              <span>✨ Hệ thống tự động xếp vào: <strong>{{ currentAutoClassification.subCategoryLabel }}</strong> • Trạng thái: <strong>{{ currentAutoClassification.prepTypeLabel }}</strong></span>
+            </div>
             <input
               v-model="newProductForm.name"
               type="text"
