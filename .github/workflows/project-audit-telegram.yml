@@ -1,0 +1,50 @@
+name: ZoneMart Project Audit & Telegram Reporter
+
+on:
+  schedule:
+    # 06:00 Sáng VN (UTC+7) = 23:00 UTC hôm trước
+    - cron: '0 23 * * *'
+    # 12:00 Trưa VN (UTC+7) = 05:00 UTC
+    - cron: '0 5 * * *'
+    # 23:00 Tối VN (UTC+7) = 16:00 UTC
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Chế độ báo cáo (morning, midday, nightly, hoặc auto)'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - morning
+          - midday
+          - nightly
+
+jobs:
+  audit-and-report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Lấy đầy đủ lịch sử commit để phân tích chính xác tiến độ Git
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Run Project Reporter & Notify Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          ALLOWED_CHAT_ID: ${{ secrets.ALLOWED_CHAT_ID }}
+          TZ: 'Asia/Ho_Chi_Minh'
+        run: |
+          MODE="${{ github.event.inputs.mode || 'auto' }}"
+          python scripts/project_reporter.py --mode "$MODE"
