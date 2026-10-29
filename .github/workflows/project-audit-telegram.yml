@@ -1,6 +1,8 @@
 name: ZoneMart Project Audit & Telegram Reporter
 
 on:
+  push:
+    branches: [ main ]
   schedule:
     # 06:00 Sáng VN (UTC+7) = 23:00 UTC hôm trước
     - cron: '0 23 * * *'
@@ -11,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Chế độ báo cáo (morning, midday, nightly, hoặc auto)'
+        description: 'Chế độ báo cáo (morning, midday, nightly, auto, hoặc push)'
         required: true
         default: 'auto'
         type: choice
@@ -20,6 +22,7 @@ on:
           - morning
           - midday
           - nightly
+          - push
 
 jobs:
   audit-and-report:
@@ -45,6 +48,12 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           ALLOWED_CHAT_ID: ${{ secrets.ALLOWED_CHAT_ID }}
           TZ: 'Asia/Ho_Chi_Minh'
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
-          MODE="${{ github.event.inputs.mode || 'auto' }}"
-          python scripts/project_reporter.py --mode "$MODE"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            python scripts/project_reporter.py --mode push
+          else
+            MODE="${{ github.event.inputs.mode || 'auto' }}"
+            python scripts/project_reporter.py --mode "$MODE"
+          fi

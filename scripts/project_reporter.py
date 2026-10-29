@@ -121,6 +121,22 @@ def get_diff_stats_for_commits(commits):
     return parse_shortstat(diff_output)
 
 
+def get_author_contributions(commits):
+    """Thống kê đóng góp chi tiết theo từng thành viên (commits, insertions, deletions)."""
+    authors = {}
+    if not commits:
+        return authors
+    for c in commits:
+        author = c.get("author", "Unknown")
+        if author not in authors:
+            authors[author] = {"commits": 0, "insertions": 0, "deletions": 0}
+        authors[author]["commits"] += 1
+        stat = parse_shortstat(run_git_cmd(["show", "--format=", "--shortstat", c["hash"]]))
+        authors[author]["insertions"] += stat["insertions"]
+        authors[author]["deletions"] += stat["deletions"]
+    return authors
+
+
 def get_uncommitted_changes():
     """Lấy thông tin file đang sửa (chưa commit)."""
     status_output = run_git_cmd(["status", "--porcelain"])
@@ -290,9 +306,17 @@ def generate_midday_report():
         diff_stats = get_diff_stats_for_commits(today_commits)
         msg.append(f"🚀 **ĐÃ HOÀN THÀNH SÁNG NAY: {len(today_commits)} COMMITS**")
         msg.append(f"📊 *Thay đổi code:* `{diff_stats['files']}` files | `+{diff_stats['insertions']}` dòng / `-{diff_stats['deletions']}` dòng")
-        msg.append("📝 **Chi tiết commits:**")
+        
+        # Thống kê theo từng thành viên
+        author_stats = get_author_contributions(today_commits)
+        if author_stats:
+            msg.append("\n👥 **ĐÓNG GÓP THEO THÀNH VIÊN SÁNG NAY:**")
+            for author, s in author_stats.items():
+                msg.append(f"  • 👤 **{author}**: `{s['commits']}` commits (`+{s['insertions']}` / `-{s['deletions']}` dòng)")
+
+        msg.append("\n📝 **Chi tiết commits:**")
         for c in today_commits[:5]:
-            msg.append(f"  • `{c['hash']}` ({c['time']}) - {c['msg']}")
+            msg.append(f"  • `{c['hash']}` ({c['time']}) 👤 **{c['author']}**: {c['msg']}")
         if len(today_commits) > 5:
             msg.append(f"  *(và {len(today_commits)-5} commits khác...)*")
     else:
@@ -397,11 +421,63 @@ def generate_nightly_report():
     msg.append(f"   - Thay đổi: `{yesterday_stats['files']}` files | `+{yesterday_stats['insertions']}` dòng / `-{yesterday_stats['deletions']}` dòng")
     
     if today_commits:
+        author_stats = get_author_contributions(today_commits)
+        if author_stats:
+            msg.append("\n👥 **ĐÓNG GÓP THEO THÀNH VIÊN HÔM NAY (TEAM 3 NGƯỜI):**")
+            for author, s in author_stats.items():
+                msg.append(f"  • 👤 **{author}**: `{s['commits']}` commits (`+{s['insertions']}` / `-{s['deletions']}` dòng)")
+
         msg.append("\n🏆 **CÁC COMMITS ĐÃ THỰC HIỆN HÔM NAY:**")
         for c in today_commits:
-            msg.append(f"  • `{c['hash']}` ({c['time']}) - {c['msg']}")
+            msg.append(f"  • `{c['hash']}` ({c['time']}) 👤 **{c['author']}**: {c['msg']}")
             
     msg.append("\n✨ *Dự án ZoneMart đã được đồng bộ & ghi nhận an toàn. Chúc bạn ngủ ngon!*")
+    return "\n".join(msg)
+
+
+def generate_push_report():
+    """Tạo thông báo khi có lần push mới lên GitHub (phát hiện tài khoản push & commits)."""
+    now_vn = get_now_vn()
+    now_time = now_vn.strftime("%H:%M - %d/%m/%Y")
+    
+    actor = os.getenv("GITHUB_ACTOR") or os.getenv("PUSH_ACTOR") or run_git_cmd(["config", "user.name"]) or "Thành viên"
+    ref_name = os.getenv("GITHUB_REF_NAME", "main")
+    
+    # Lấy commits gần nhất (tối đa 5 commits)
+    output = run_git_cmd(["log", "-n", "5", "--no-merges", "--pretty=format:%h|%an|%ad|%s", "--date=format:%H:%M"])
+    recent_commits = []
+    if output:
+        for line in output.split("\n"):
+            parts = line.split("|", 3)
+            if len(parts) == 4:
+                recent_commits.append({
+                    "hash": parts[0],
+                    "author": parts[1],
+                    "time": parts[2],
+                    "msg": parts[3]
+                })
+                
+    diff_stats = parse_shortstat(run_git_cmd(["diff", "--shortstat", "HEAD~1..HEAD"]))
+    
+    msg = [
+        "🚀 **[ZoneMart] PHÁT HIỆN LẦN PUSH MỚI LÊN GITHUB!**",
+        f"👤 **Tài khoản push:** `@{actor}`",
+        f"🌿 **Nhánh (Branch):** `{ref_name}` | ⏱️ *Thời gian:* {now_time}\n"
+    ]
+    
+    if diff_stats["files"] > 0:
+        msg.append(f"📦 **Thay đổi mã nguồn:** `{diff_stats['files']}` files | `+{diff_stats['insertions']}` dòng / `-{diff_stats['deletions']}` dòng\n")
+        
+    if recent_commits:
+        msg.append("📝 **Commit vừa được đẩy lên:**")
+        latest = recent_commits[0]
+        msg.append(f"  • `{latest['hash']}` ({latest['time']}) 👤 **{latest['author']}**: {latest['msg']}")
+        if len(recent_commits) > 1:
+            msg.append("\n📜 **Các commit trước đó:**")
+            for c in recent_commits[1:4]:
+                msg.append(f"  • `{c['hash']}` ({c['time']}) 👤 **{c['author']}**: {c['msg']}")
+                
+    msg.append("\n💡 *Dữ liệu đã được cập nhật thành công lên kho lưu trữ GitHub.*")
     return "\n".join(msg)
 
 
@@ -432,8 +508,8 @@ def send_to_telegram(message):
 
 def main():
     parser = argparse.ArgumentParser(description="ZoneMart Daily Project Audit & Telegram Reporter")
-    parser.add_argument("--mode", choices=["morning", "midday", "nightly", "auto"], default="auto",
-                        help="Chế độ báo cáo: morning (06h), midday (12h), nightly (23h), hoặc auto")
+    parser.add_argument("--mode", choices=["morning", "midday", "nightly", "auto", "push"], default="auto",
+                        help="Chế độ báo cáo: morning (06h), midday (12h), nightly (23h), push, hoặc auto")
     parser.add_argument("--dry-run", action="store_true", help="Chỉ in nội dung ra màn hình, không gửi Telegram")
     args = parser.parse_args()
     
@@ -454,6 +530,8 @@ def main():
         report_text = generate_morning_report()
     elif mode == "midday":
         report_text = generate_midday_report()
+    elif mode == "push":
+        report_text = generate_push_report()
     else:
         report_text = generate_nightly_report()
         
