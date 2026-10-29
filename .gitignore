@@ -70,7 +70,9 @@ __pycache__/
 
 
 # Telegram Antigravity Bridge (Local Automation - Do NOT push to Git)
-scripts/
+scripts/*
+!scripts/project_reporter.py
+!scripts/notify_telegram.py
 bot_config.json
 *.vbs
 *.log
