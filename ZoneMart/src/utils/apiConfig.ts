@@ -275,7 +275,7 @@ export function getBaseApiUrl(): string {
       const saved = localStorage.getItem('zonemart_api_server_url');
       if (saved && saved.trim()) {
         const cleanSaved = saved.trim().replace(/\/+$/, '');
-        if (cleanSaved.includes('192.168.1.') || cleanSaved.includes('10.0.2.2') || cleanSaved.includes(DEFAULT_LAN_IP)) {
+        if (cleanSaved.startsWith('http://') || cleanSaved.startsWith('https://') || cleanSaved.includes('192.168.') || cleanSaved.includes('172.') || cleanSaved.includes('10.') || cleanSaved.includes('10.0.2.2') || cleanSaved.includes(DEFAULT_LAN_IP)) {
           return cleanSaved;
         }
       }
@@ -393,6 +393,28 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
 
     throw new Error(friendlyMsg);
   }
+}
+
+/**
+ * Đặt URL máy chủ thủ công (dành cho người dùng Mobile App đổi Wi-Fi)
+ */
+export function setCustomServerUrl(url: string): string {
+  let clean = url.trim().replace(/\/+$/, '');
+  if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+    clean = `http://${clean}`;
+  }
+  if (!clean.match(/:\d+$/)) {
+    clean = `${clean}:${KNOWN_PORT}`;
+  }
+  setDiscoveredServer(clean);
+  return clean;
+}
+
+/**
+ * Lấy URL máy chủ hiện hành đang áp dụng
+ */
+export function getCurrentServerUrl(): string {
+  return getBaseApiUrl() || `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`;
 }
 
 // Tự động kích hoạt dò tìm máy chủ trong nền khi ứng dụng khởi động
