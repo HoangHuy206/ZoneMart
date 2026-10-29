@@ -15,7 +15,7 @@ import {
 import { useRouter, useRoute } from 'vue-router';
 import ForgotPasswordForm from './ForgotPasswordForm.vue';
 import { useAuth, type UserRole } from '../../composables/useAuth';
-import { apiFetch, getCurrentServerUrl, setCustomServerUrl, autoDiscoverServer } from '../../utils/apiConfig';
+import { apiFetch } from '../../utils/apiConfig';
 import { Capacitor } from '@capacitor/core';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
 import FaceScanModal from '../../components/auth/FaceScanModal.vue';
@@ -88,38 +88,6 @@ const onCelebrationComplete = () => {
 const biometricDevice = ref<BiometricDeviceInfo | null>(null);
 const isBiometricChecking = ref(false);
 const showFaceScanModal = ref(false);
-
-// Cấu hình máy chủ IP linh hoạt (cho thiết bị di động đổi Wi-Fi)
-const customServerInput = ref(getCurrentServerUrl());
-const isScanningServer = ref(false);
-const showServerConfigBox = ref(false);
-
-const applyCustomServer = () => {
-  if (!customServerInput.value.trim()) return;
-  const applied = setCustomServerUrl(customServerInput.value.trim());
-  customServerInput.value = applied;
-  toast.success(`Đã cập nhật máy chủ: ${applied}`, 'Cấu Hình Máy Chủ');
-  handleLogin();
-};
-
-const triggerAutoScan = async () => {
-  isScanningServer.value = true;
-  toast.info('Đang quét tìm địa chỉ máy chủ trong mạng LAN...', 'Dò Tìm Tự Động');
-  try {
-    const found = await autoDiscoverServer(true);
-    if (found) {
-      customServerInput.value = found;
-      toast.success(`Đã tìm thấy máy chủ: ${found}`, 'Kết Nối Thành Công');
-      handleLogin();
-    } else {
-      toast.error('Không tìm thấy máy chủ ZoneMart trong mạng Wi-Fi hiện tại.', 'Dò Tìm Thất Bại');
-    }
-  } catch {
-    toast.error('Quá trình quét IP gặp sự cố.', 'Lỗi');
-  } finally {
-    isScanningServer.value = false;
-  }
-};
 
 onMounted(async () => {
   try {
@@ -563,7 +531,7 @@ const handleLogin = async () => {
         <!-- TRẠNG THÁI 1: FORM ĐĂNG NHẬP -->
         <template v-if="!isForgotPasswordMode">
           <!-- THANH ĐIỀU HƯỚNG QUAY LẠI TRANG CHỦ Ở MÉP TRÁI BẢNG -->
-          <div class="card-top-bar d-flex justify-content-between align-items-center">
+          <div class="card-top-bar">
             <button
               type="button"
               class="back-home-btn"
@@ -572,40 +540,6 @@ const handleLogin = async () => {
             >
               ← Quay lại
             </button>
-
-            <button
-              type="button"
-              class="btn btn-sm btn-light border-0 text-muted d-flex align-items-center gap-1 shadow-none"
-              style="font-size: 12px; border-radius: 8px; background: rgba(0,0,0,0.05); padding: 4px 10px;"
-              @click="showServerConfigBox = !showServerConfigBox"
-              title="Cài đặt máy chủ IP"
-            >
-              <i class="bi bi-hdd-network"></i>
-              <span>Máy chủ</span>
-            </button>
-          </div>
-
-          <!-- KHUNG CÀI ĐẶT IP MÁY CHỦ NHANH -->
-          <div v-if="showServerConfigBox" class="p-3 mb-3 bg-light rounded-3 border" style="font-size: 13px;">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <span class="fw-bold text-dark"><i class="bi bi-hdd-network text-primary"></i> IP Máy Chủ Kết Nối:</span>
-              <button type="button" class="btn-close btn-close-sm" style="font-size: 10px;" @click="showServerConfigBox = false"></button>
-            </div>
-            <div class="input-group input-group-sm mb-2">
-              <input
-                v-model="customServerInput"
-                type="text"
-                class="form-control"
-                placeholder="http://192.168.1.16:5000"
-              />
-              <button type="button" class="btn btn-primary fw-bold" @click="applyCustomServer">Lưu</button>
-            </div>
-            <div class="d-flex justify-content-between align-items-center text-muted" style="font-size: 11px;">
-              <span>Mặc định: 192.168.1.16:5000</span>
-              <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" style="font-size: 11px;" :disabled="isScanningServer" @click="triggerAutoScan">
-                <i class="bi bi-arrow-clockwise"></i> {{ isScanningServer ? 'Đang dò...' : 'Dò IP' }}
-              </button>
-            </div>
           </div>
 
           <!-- TIÊU ĐỀ ĐĂNG NHẬP -->
@@ -983,25 +917,6 @@ const handleLogin = async () => {
           </p>
 
           <div class="modal-action-buttons d-flex flex-column gap-2">
-            <!-- KHUNG ĐỔI IP MÁY CHỦ TRỰC TIẾP TRÊN MODAL LỖI MẠNG -->
-            <div v-if="modalErrorType === 'NETWORK_ERROR'" class="p-2 mb-2 bg-light rounded text-start" style="font-size: 13px; border: 1px dashed #cbd5e1;">
-              <div class="fw-bold text-dark mb-1 d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-hdd-network text-primary"></i> IP Máy Chủ ZoneMart:</span>
-                <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" style="font-size: 11px;" :disabled="isScanningServer" @click="triggerAutoScan">
-                  <i class="bi bi-arrow-clockwise"></i> {{ isScanningServer ? 'Đang dò...' : 'Dò IP' }}
-                </button>
-              </div>
-              <div class="input-group input-group-sm">
-                <input
-                  v-model="customServerInput"
-                  type="text"
-                  class="form-control"
-                  placeholder="http://192.168.1.16:5000"
-                />
-                <button type="button" class="btn btn-primary fw-bold" @click="applyCustomServer">Lưu & Thử Lại</button>
-              </div>
-            </div>
-
             <!-- NÚT TRẢI NGHIỆM NGOẠI TUYẾN KHI SERVER CHƯA BẬT HOẶC MẤT MẠNG -->
 
             <button

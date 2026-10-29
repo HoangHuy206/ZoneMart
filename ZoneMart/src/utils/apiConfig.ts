@@ -333,7 +333,8 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   const currentUrl = getApiUrl(path);
 
   try {
-    const res = await execute(currentUrl, 15);
+    const firstTimeout = isNativeMobile() ? 3.5 : 15;
+    const res = await execute(currentUrl, firstTimeout);
 
     // Xử lý fallback cho Vite proxy nếu trả về 404, 502, 504
     if (
@@ -420,6 +421,7 @@ export function getCurrentServerUrl(): string {
 // Tự động kích hoạt dò tìm máy chủ trong nền khi ứng dụng khởi động
 if (typeof window !== 'undefined') {
   setTimeout(() => {
-    autoDiscoverServer(false).catch(() => {});
+    const isMobile = isNativeMobile();
+    autoDiscoverServer(isMobile).catch(() => {});
   }, 100);
 }
