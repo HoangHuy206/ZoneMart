@@ -180,6 +180,7 @@ export async function autoDiscoverServer(force = false): Promise<string | null> 
 
       const standardCandidates = [
         `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`,
+        `http://192.168.1.10:${KNOWN_PORT}`,
         `http://10.0.2.2:${KNOWN_PORT}`,
         `http://localhost:${KNOWN_PORT}`,
         `http://127.0.0.1:${KNOWN_PORT}`,
@@ -230,61 +231,69 @@ export async function autoDiscoverServer(force = false): Promise<string | null> 
 }
 
 /**
+ * Kiểm tra xem ứng dụng có đang chạy dưới dạng Native Mobile App (Capacitor Android / iOS) hay không
+ */
+export function isNativeMobile(): boolean {
+  if (typeof window === 'undefined') return false;
+  // 1. Kiểm tra qua Capacitor runtime
+  if ((window as any).Capacitor?.isNativePlatform?.()) return true;
+  if ((window as any).Capacitor?.getPlatform?.() && (window as any).Capacitor?.getPlatform?.() !== 'web') return true;
+  // 2. Giao thức native (Capacitor iOS / Ionic)
+  if (window.location.protocol === 'capacitor:' || window.location.protocol === 'ionic:') return true;
+  // 3. Android WebView tải từ http://localhost hoặc https://localhost mà KHÔNG có số cổng (port rỗng)
+  const hostname = window.location.hostname || '';
+  const port = window.location.port || '';
+  if ((hostname === 'localhost' || hostname === '127.0.0.1') && !port) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Lấy Base API URL hiện hành
  */
 export function getBaseApiUrl(): string {
   if (typeof window === 'undefined') return '';
 
-  const hostname = window.location.hostname || '';
-  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+  // TRƯỜNG HỢP 1: Môi trường Native Mobile App (Capacitor Android APK / iOS IPA)
+  if (isNativeMobile()) {
+    // 1. URL đã dò tìm thành công gần đây
+    if (cachedDiscoveredUrl) {
+      return cachedDiscoveredUrl;
+    }
 
-  // 1. Nếu đang mở từ Localhost (Web Desktop dev): Luôn dùng relative URL '' để qua Vite Proxy tới 127.0.0.1:5000
-  // Tuyệt đối không dùng IP LAN cũ trong localStorage vì người dùng đổi mạng Wi-Fi sẽ bị treo kết nối!
-  if (isLocalhost) {
-    return '';
+    // 2. Biến môi trường Vite (.env) - cấu hình chuẩn IP Wi-Fi
+    try {
+      const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
+      if (envUrl && typeof envUrl === 'string' && envUrl.trim() && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+        return envUrl.trim().replace(/\/+$/, '');
+      }
+    } catch {}
+
+    // 3. Cấu hình đã lưu trong localStorage từ lần trước
+    try {
+      const saved = localStorage.getItem('zonemart_api_server_url');
+      if (saved && saved.trim()) {
+        const cleanSaved = saved.trim().replace(/\/+$/, '');
+        if (cleanSaved.includes('192.168.1.') || cleanSaved.includes('10.0.2.2') || cleanSaved.includes(DEFAULT_LAN_IP)) {
+          return cleanSaved;
+        }
+      }
+    } catch {}
+
+    // 4. Mặc định trỏ thẳng tới IP Wi-Fi của máy chủ Dev
+    return `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`;
   }
 
-  // 2. Nếu đang mở từ trình duyệt trên điện thoại qua IP Wi-Fi (ví dụ http://172.16.28.71:5173):
-  // Backend cùng nằm trên máy tính này nên hostname chính là IP của backend cổng 5000
+  // TRƯỜNG HỢP 2: Trình duyệt mở từ thiết bị di động qua IP LAN (ví dụ http://192.168.1.16:5173)
+  const hostname = window.location.hostname || '';
+  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
   if (hostname && !isLocalhost && !hostname.includes('capacitor')) {
     return `http://${hostname}:${KNOWN_PORT}`;
   }
 
-  // 3. URL đã được hệ thống tự động dò tìm thấy
-  if (cachedDiscoveredUrl) {
-    return cachedDiscoveredUrl;
-  }
-
-  // 4. Biến môi trường Vite (.env) - cấu hình chuẩn nhất từ hệ thống
-  try {
-    const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
-    if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
-      return envUrl.trim().replace(/\/+$/, '');
-    }
-  } catch {}
-
-  // 5. Cấu hình đã lưu trong localStorage từ lần trước (chỉ nhận nếu cùng dải mạng)
-  try {
-    const saved = localStorage.getItem('zonemart_api_server_url');
-    if (saved && saved.trim()) {
-      const cleanSaved = saved.trim().replace(/\/+$/, '');
-      if (cleanSaved.includes('192.168.1.') || cleanSaved.includes('10.0.2.2') || cleanSaved.includes('localhost') || cleanSaved.includes(DEFAULT_LAN_IP)) {
-        return cleanSaved;
-      }
-    }
-  } catch {}
-
-  // 6. Môi trường Native App (Capacitor Android / iOS)
-  const isCapacitor =
-    window.location.protocol === 'capacitor:' ||
-    window.location.protocol === 'ionic:' ||
-    (hostname === 'localhost' && !window.location.port);
-
-  if (isCapacitor) {
-    return `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`;
-  }
-
-  // 7. Mặc định trên Web Desktop (Vite proxy)
+  // TRƯỜNG HỢP 3: Mở trên Web Desktop Dev qua localhost (http://localhost:5173)
+  // Dùng relative URL '' để qua Vite Proxy chuyển tiếp tới 127.0.0.1:5000, tránh lỗi CORS
   return '';
 }
 
