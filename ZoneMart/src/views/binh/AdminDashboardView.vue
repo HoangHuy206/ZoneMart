@@ -434,7 +434,8 @@ const roleForm = reactive({
   isManager: false,
   isAdmin: false,
   permissions: [] as string[],
-  reason: ""
+  reason: "",
+  marketName: ""
 });
 
 const availablePermissions = [
@@ -1513,10 +1514,16 @@ const fetchMarketsOverview = async (isManualRefresh = false) => {
         })
       }));
       managementBoardsList.value = data.boards || [];
-      unassignedStoresList.value = (data.unassignedStores || []).filter((s: any) => {
-        const st = (s.status || "").toLowerCase();
-        return st === "approved" || st === "active";
-      });
+      unassignedStoresList.value = (data.unassignedStores || [])
+        .filter((s: any) => {
+          const st = (s.status || "").toLowerCase();
+          return st === "approved" || st === "active";
+        })
+        .sort((a: any, b: any) => {
+          if (a.isPromotedByAdmin && !b.isPromotedByAdmin) return -1;
+          if (!a.isPromotedByAdmin && b.isPromotedByAdmin) return 1;
+          return 0;
+        });
       totalWardsCount.value = data.totalWards || 1;
       totalBoardsCount.value = data.totalBoards || 2;
       if (!selectedMarketForView.value && marketsOverview.value.length > 0) {
@@ -1737,6 +1744,7 @@ const openRoleModal = (user: UserAccount) => {
   roleForm.isManager = target.isManager ?? ((user as any).isManager || false);
   roleForm.isAdmin = target.isAdmin ?? false;
   roleForm.permissions = Array.isArray(target.permissions) ? [...target.permissions] : [];
+  roleForm.marketName = (target as any).marketName || "";
 
   if ((roleForm.isAdmin || roleForm.isManager) && roleForm.permissions.length === 0) {
     if (roleForm.isAdmin) {
@@ -1819,6 +1827,7 @@ const handleSaveRoles = async () => {
         isManager: roleForm.isManager,
         isAdmin: roleForm.isAdmin,
         permissions: roleForm.permissions,
+        marketName: roleForm.marketName || "",
         reason: roleForm.reason.trim() || "Cập nhật phân quyền từ bảng quản trị Admin"
       })
     });
@@ -3763,9 +3772,12 @@ onUnmounted(() => {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr v-for="us in unassignedStoresList.slice(0, 6)" :key="us.storeId">
+                        <tr v-for="us in unassignedStoresList.slice(0, 10)" :key="us.storeId" :class="{ 'table-warning': us.isPromotedByAdmin }">
                           <td>
-                            <strong class="d-block text-truncate" style="max-width: 130px;" :title="us.storeName">{{ us.storeName }}</strong>
+                            <div class="d-flex align-items-center gap-1">
+                              <strong class="d-block text-truncate" style="max-width: 130px;" :title="us.storeName">{{ us.storeName }}</strong>
+                              <span v-if="us.isPromotedByAdmin" class="badge bg-warning text-dark flex-shrink-0" style="font-size: 9px; padding: 2px 4px;">⚡ Nhanh</span>
+                            </div>
                             <small class="text-muted">{{ us.storeCode || 'SEL-00' }}</small>
                           </td>
                           <td>
@@ -4554,6 +4566,8 @@ onUnmounted(() => {
               </label>
             </div>
           </div>
+
+
 
           <!-- PHÂN QUYỀN VẬN HÀNH CHI TIẾT (FINE-GRAINED PERMISSIONS) -->
           <div v-if="roleForm.isManager || roleForm.isAdmin" class="permissions-section-card mb-3">

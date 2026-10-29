@@ -609,6 +609,40 @@ const handleProceedToCheckout = () => {
         <span>{{ toastMessage }}</span>
       </div>
     </Transition>
+
+    <!-- THANH MUA HÀNG CỐ ĐỊNH PHÍA DƯỚI (STICKY BOTTOM BAR CHO MOBILE & TABLET) -->
+    <div v-if="cart.totalCount.value > 0" class="cart-mobile-sticky-bar">
+      <div class="sticky-bar-left">
+        <label class="custom-checkbox-wrap">
+          <input
+            type="checkbox"
+            v-model="cart.isAllSelected.value"
+            class="real-checkbox"
+          />
+          <span class="custom-checkmark"></span>
+          <span class="sticky-select-all-label">Tất cả ({{ cart.totalCount.value }})</span>
+        </label>
+        <div class="sticky-price-summary">
+          <div class="sticky-total-label">Tổng thanh toán:</div>
+          <div class="sticky-total-num">{{ cart.totalAmount.value.toLocaleString('vi-VN') }} ₫</div>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="btn-sticky-checkout"
+        :class="{ 'btn-require-login': !auth.isLoggedIn.value }"
+        :disabled="cart.selectedItemsCount.value === 0"
+        @click="handleProceedToCheckout"
+      >
+        <span v-if="!auth.isLoggedIn.value">
+          <i class="bi bi-person-lock me-1"></i> Đăng Nhập ({{ cart.selectedItemsCount.value }})
+        </span>
+        <span v-else>
+          Thanh Toán ({{ cart.selectedItemsCount.value }})
+        </span>
+        <i class="bi bi-arrow-right-short"></i>
+      </button>
+    </div>
   </div>
 </template>
 
@@ -1251,6 +1285,92 @@ const handleProceedToCheckout = () => {
   position: sticky;
   top: 86px;
   box-shadow: 0 6px 24px rgba(43, 27, 20, 0.05);
+}
+
+/* STICKY BOTTOM CHECKOUT BAR (Mobile & Tablet) */
+.cart-mobile-sticky-bar {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -6px 24px rgba(43, 27, 20, 0.12);
+  border-top: 1px solid #ebdcd3;
+  z-index: 9999;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+@media (max-width: 980px) {
+  .cart-mobile-sticky-bar {
+    display: flex;
+  }
+  .cart-page-wrapper {
+    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+.sticky-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sticky-select-all-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2b1b14;
+  white-space: nowrap;
+}
+
+.sticky-price-summary {
+  display: flex;
+  flex-direction: column;
+}
+
+.sticky-total-label {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.2;
+}
+
+.sticky-total-num {
+  font-size: 16px;
+  font-weight: 800;
+  color: #d85a2a;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.btn-sticky-checkout {
+  background: linear-gradient(135deg, #d85a2a 0%, #ea580c 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(216, 90, 42, 0.35);
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.btn-sticky-checkout:disabled {
+  background: #cbd5e1;
+  color: #64748b;
+  box-shadow: none;
+  cursor: not-allowed;
 }
 .summary-card-title {
   margin: 0 0 16px 0;

@@ -5,6 +5,7 @@ import logoImg from './assets/logo.png';
 import { useAuth } from './composables/useAuth';
 import { useCart } from './composables/useCart';
 import { useProductCatalog } from './composables/useProductCatalog';
+import { getSafeCurrentLocation } from './composables/useSafeLocation';
 import ZoneToast from './components/common/ZoneToast.vue';
 import TopProgressBar from './components/common/TopProgressBar.vue';
 import AiAssistantWidget from './components/common/AiAssistantWidget.vue';
@@ -30,12 +31,11 @@ onUnmounted(() => window.removeEventListener('zonemart:replay-intro', replayIntr
 
 onMounted(() => {
   catalog.refreshCatalog();
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem('zonemart_gps_address');
-    localStorage.removeItem('zonemart_user_address');
-    localStorage.removeItem('zonemart_lat');
-    localStorage.removeItem('zonemart_lon');
-  }
+  setTimeout(() => {
+    getSafeCurrentLocation().catch((err) => {
+      console.warn('[App] Dinh vi nen khi khoi dong:', err);
+    });
+  }, 1200);
 });
 
 
@@ -216,8 +216,8 @@ const handleLogout = () => {
     <!-- Thanh tải tiến trình đỉnh trang & Toast thông báo hoạt họa toàn cục -->
     <TopProgressBar />
     <ZoneToast />
-    <!-- Trợ lý AI Chuyên Gia ZoneMart 24/7 (Khung chat góc dưới bên phải - chỉ hiển thị trên giao diện mua sắm) -->
-    <AiAssistantWidget v-if="!$route.meta.hideHeader && !$route.path.startsWith('/admin') && !$route.path.startsWith('/seller') && !$route.path.startsWith('/shipper')" />
+    <!-- Trợ lý AI Chuyên Gia ZoneMart 24/7 (Khung chat góc dưới bên phải - chỉ hiển thị trên giao diện mua sắm, ẩn ở thanh toán để tránh che nút) -->
+    <AiAssistantWidget v-if="!$route.meta.hideHeader && !$route.path.startsWith('/admin') && !$route.path.startsWith('/seller') && !$route.path.startsWith('/shipper') && $route.path !== '/checkout'" />
 
     <!-- Header chuẩn theo hình Sample Mockup (Tự động ẩn ở trang 404 qua meta.hideHeader) -->
     <header v-if="!$route.meta.hideHeader" class="navbar">

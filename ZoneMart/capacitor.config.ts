@@ -5,9 +5,14 @@ const config: CapacitorConfig = {
   appName: 'ZoneMart',
   webDir: 'dist',
   server: {
-    androidScheme: 'https'
+    androidScheme: 'http',
+    cleartext: true
+  },
+  plugins: {
+    CapacitorHttp: {
+      enabled: true
+    }
   }
 };
 
 export default config;
-

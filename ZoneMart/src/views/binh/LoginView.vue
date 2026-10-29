@@ -16,6 +16,7 @@ import { useRouter, useRoute } from 'vue-router';
 import ForgotPasswordForm from './ForgotPasswordForm.vue';
 import { useAuth, type UserRole } from '../../composables/useAuth';
 import { apiFetch } from '../../utils/apiConfig';
+import { Capacitor } from '@capacitor/core';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
 import FaceScanModal from '../../components/auth/FaceScanModal.vue';
 import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
@@ -120,30 +121,50 @@ const handleQuickBiometricLogin = async () => {
     isBiometricChecking.value = true;
     errorMessage.value = '';
 
-    // BƯỚC 1: BẮT BUỘC QUÉT KHUÔN MẶT BẰNG APPLE FACE ID (IPHONE) HOẶC CAMERA AI (WEB)
-    toast.info(`Vui lòng nhìn vào iPhone để quét ${deviceLabel}...`, `Xác thực ${deviceLabel}`);
+    // BƯỚC 1: BẮT BUỘC QUÉT SINH TRẮC HỌC (VÂN TAY ANDROID / FACE ID IPHONE / CAMERA AI WEB)
+    if (biometricDevice.value?.iconType === 'fingerprint' || biometricDevice.value?.type === 'android-biometric') {
+      toast.info(`Vui lòng chạm cảm biến vân tay trên thiết bị để quét ${deviceLabel}...`, `Xác thực ${deviceLabel}`);
+    } else {
+      toast.info(`Vui lòng nhìn vào thiết bị để quét ${deviceLabel}...`, `Xác thực ${deviceLabel}`);
+    }
 
-    // Gọi cảm biến Face ID của Apple trên iPhone
+    // Gọi cảm biến Native (Vân tay Android hoặc Face ID iOS)
     const nativeVerify = await verifyDeviceFaceId(`Xác thực ${deviceLabel} để đăng nhập tài khoản ZoneMart`);
 
+    const isAndroidPlatform = typeof window !== 'undefined' && (
+      (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') ||
+      biometricDevice.value?.type === 'android-biometric'
+    );
+
     if (nativeVerify.message !== 'NO_NATIVE_BRIDGE') {
-      // Đang chạy trên iPhone App (Capacitor)
+      // Đang chạy trên Native App (Capacitor Android hoặc iOS)
       if (!nativeVerify.success) {
-        // BẤM HỦY HOẶC MẶT KHÔNG KHỚP -> DỪNG NGAY LẬP TỨC! TUYỆT ĐỐI KHÔNG CHO VÀO!
-        toast.error(nativeVerify.message || 'Xác thực Face ID không khớp hoặc bạn đã hủy.', 'Face ID');
+        // BẤM HỦY HOẶC KHÔNG KHỚP -> DỪNG NGAY LẬP TỨC!
+        toast.error(nativeVerify.message || `Xác thực ${deviceLabel} không khớp hoặc bạn đã hủy.`, deviceLabel);
         return;
       }
-      // Quét mặt Face ID của iPhone thành công 100%!
-      toast.success(`Nhận diện ${deviceLabel} thành công!`, 'Face ID Hợp Lệ');
+      // Quét sinh trắc học thành công 100%!
+      toast.success(`Xác thực ${deviceLabel} thành công!`, `${deviceLabel} Hợp Lệ`);
     } else {
-      // Đang chạy trên Web Browser (không có Native Bridge iOS):
-      // Bắt buộc mở camera FaceScanModal để quét khuôn mặt!
+      // Nếu là thiết bị Android Native, tuyệt đối KHÔNG mở camera quét mặt:
+      if (isAndroidPlatform) {
+        toast.error('Thiết bị Android chưa bật cảm biến vân tay hoặc chưa cài đặt vân tay trong Cài đặt máy. Vui lòng đăng nhập bằng mật khẩu!', 'Cảm Biến Vân Tay');
+        return;
+      }
+      // Đang chạy trên Web Browser Desktop (không có Native Bridge):
       showFaceScanModal.value = true;
       return;
     }
 
     // BƯỚC 2: CHỈ KHI ĐÃ QUÉT MẶT THÀNH CÔNG THÌ MỚI TIẾN HÀNH ĐĂNG NHẬP
-    const actToUse = targetAccount || savedBioAccount || 'hhuy85895@gmail.com';
+    const actToUse = targetAccount || savedBioAccount;
+    if (!actToUse) {
+      toast.info(
+        `Vui lòng nhập Email / SĐT và Mật khẩu trước một lần để kích hoạt ${deviceLabel} trên thiết bị này!`,
+        `Kích Hoạt ${deviceLabel}`
+      );
+      return;
+    }
     const pwdToUse = targetPassword || (savedBioPass ? atob(savedBioPass) : '123456');
 
     try {
@@ -180,10 +201,21 @@ const handleQuickBiometricLogin = async () => {
 
 // Đăng nhập Chế độ Ngoại tuyến khi máy tính tắt hoặc mất mạng LAN
 
-const handleFaceScanModalSuccess = (_payload?: any) => {
+const handleFaceScanModalSuccess = (payload?: any) => {
   showFaceScanModal.value = false;
+  // 1. ƯU TIÊN: Đăng nhập ngay bằng chính xác tài khoản AI Face Recognition đã nhận diện từ CSDL
+  if (payload && payload.user) {
+    handleFaceLoginSuccess(payload);
+    return;
+  }
+
+  // 2. Dự phòng: Đăng nhập qua tài khoản nhập trên form hoặc đã liên kết
   const savedBioAccount = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_account') : null;
-  const targetAcc = form.account.trim() || savedBioAccount || 'hhuy85895@gmail.com';
+  const targetAcc = form.account.trim() || savedBioAccount;
+  if (!targetAcc) {
+    toast.error('Không tìm thấy tài khoản tương ứng với khuôn mặt quét được.', 'Xác Thực Khuôn Mặt');
+    return;
+  }
   const savedBioPass = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_pass') : null;
   const targetPwd = form.password.trim() || (savedBioPass ? atob(savedBioPass) : '123456');
 
@@ -205,7 +237,8 @@ const handleFaceScanModalSuccess = (_payload?: any) => {
 
 const enterOfflineMode = () => {
   showNotFoundModal.value = false;
-  const targetAcc = form.account.trim() || 'hhuy85895@gmail.com';
+  const savedBioAccount = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_account') : null;
+  const targetAcc = form.account.trim() || savedBioAccount || 'khachhang@zonemart.vn';
   const isSeller = targetAcc.includes('seller') || targetAcc.includes('mai');
   const isShipper = targetAcc.includes('shipper') || targetAcc.includes('nam');
   const isAdmin = targetAcc.includes('admin');
@@ -252,7 +285,9 @@ const handleFaceLoginSuccess = (data: any) => {
     (loggedUser.phoneEmail || '').toLowerCase() === 'admin@zonemart.vn';
   const isManagerUser = !isAdminUser && (rawRole === 'manager' || loggedUser.isManager === true);
 
-  const detectedRole: UserRole = isAdminUser ? 'admin' : isManagerUser ? 'manager' : (rawRole as UserRole) || 'buyer';
+  const isSellerUser = !isAdminUser && !isManagerUser && (rawRole === 'seller' || loggedUser.primaryRole === 'seller' || (loggedUser.isSeller && loggedUser.sellerStatus === 'Approved'));
+  const isShipperUser = !isAdminUser && !isManagerUser && !isSellerUser && (rawRole === 'shipper' || loggedUser.primaryRole === 'shipper' || (loggedUser.isShipper && loggedUser.shipperStatus === 'Approved'));
+  const detectedRole: UserRole = isAdminUser ? 'admin' : isManagerUser ? 'manager' : isSellerUser ? 'seller' : isShipperUser ? 'shipper' : (rawRole as UserRole) || 'buyer';
 
   // Cập nhật useAuth Singleton toàn sàn
   auth.login({
@@ -281,6 +316,13 @@ const handleFaceLoginSuccess = (data: any) => {
     storeName: loggedUser.storeName,
     sellerStatus: loggedUser.sellerStatus,
     rejectReason: loggedUser.rejectReason,
+    isPromotedByAdmin: loggedUser.isPromotedByAdmin || false,
+    promotedAt: loggedUser.promotedAt,
+    promotionDeadline: loggedUser.promotionDeadline,
+    hasSeenPromotionNotice: loggedUser.hasSeenPromotionNotice || false,
+    primaryRole: loggedUser.primaryRole || detectedRole,
+    storeAddress: loggedUser.storeAddress || '',
+    marketName: loggedUser.marketName || '',
   };
   localStorage.setItem('zonemart_user', JSON.stringify(userWithStatus));
   localStorage.setItem('isLoggedIn', 'true');
@@ -303,7 +345,7 @@ const handleFaceLoginSuccess = (data: any) => {
     manager: 'Ban Quản Lý',
   };
   celebrationRoleName.value = roleMap[detectedRole] || 'Thành Viên';
-  celebrationMessage.value = `Nhận diện sinh trắc học Face ID thành công (${data.similarity ? Math.round(data.similarity * 100) : 98}% khớp)! Đang chuyển hướng...`;
+  celebrationMessage.value = `Nhận diện sinh trắc học ${biometricDevice.value?.label || 'Face ID'} thành công (${data.similarity ? Math.round(data.similarity * 100) : 98}% khớp)! Đang chuyển hướng...`;
 
   toast.success(`Nhận diện thành công: ${celebrationUserName.value}!`, 'Đăng Nhập Face ID');
   showCelebrationModal.value = true;
@@ -358,7 +400,9 @@ const handleLogin = async () => {
           form.account.trim().toLowerCase() === 'admin@zonemart.vn';
         const isManagerUser = !isAdminUser && (rawRole === 'manager' || data.user?.isManager === true);
 
-        const detectedRole: UserRole = isAdminUser ? 'admin' : isManagerUser ? 'manager' : (rawRole as UserRole) || 'buyer';
+        const isSellerUser = !isAdminUser && !isManagerUser && (rawRole === 'seller' || data.user?.primaryRole === 'seller' || (data.user?.isSeller && data.user?.sellerStatus === 'Approved'));
+        const isShipperUser = !isAdminUser && !isManagerUser && !isSellerUser && (rawRole === 'shipper' || data.user?.primaryRole === 'shipper' || (data.user?.isShipper && data.user?.shipperStatus === 'Approved'));
+        const detectedRole: UserRole = isAdminUser ? 'admin' : isManagerUser ? 'manager' : isSellerUser ? 'seller' : isShipperUser ? 'shipper' : (rawRole as UserRole) || 'buyer';
 
         // Lưu thông tin người dùng vào useAuth state & localStorage
         auth.login({
@@ -388,6 +432,13 @@ const handleLogin = async () => {
           storeName: data.user?.storeName,
           sellerStatus: data.user?.sellerStatus,
           rejectReason: data.user?.rejectReason,
+          isPromotedByAdmin: data.user?.isPromotedByAdmin || false,
+          promotedAt: data.user?.promotedAt,
+          promotionDeadline: data.user?.promotionDeadline,
+          hasSeenPromotionNotice: data.user?.hasSeenPromotionNotice || false,
+          primaryRole: data.user?.primaryRole || detectedRole,
+          storeAddress: data.user?.storeAddress || '',
+          marketName: data.user?.marketName || '',
         };
         localStorage.setItem('zonemart_user', JSON.stringify(userWithStatus));
 
@@ -867,6 +918,7 @@ const handleLogin = async () => {
 
           <div class="modal-action-buttons d-flex flex-column gap-2">
             <!-- NÚT TRẢI NGHIỆM NGOẠI TUYẾN KHI SERVER CHƯA BẬT HOẶC MẤT MẠNG -->
+
             <button
               v-if="modalErrorType === 'NETWORK_ERROR'"
               type="button"
@@ -919,6 +971,7 @@ const handleLogin = async () => {
       @success="handleFaceScanModalSuccess"
       @close="showFaceScanModal = false"
     />
+
   </div>
 </template>
 

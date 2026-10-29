@@ -62,6 +62,14 @@ const selectImage = (img: string) => {
 
 // Số lượng & Tùy chọn
 const quantity = ref(1);
+// Kiểm tra gian hàng chưa cập nhật địa chỉ (ở trạng thái Sắp Mở Bán)
+const isStorePendingAddress = computed(() => {
+  const store = product.value?.store;
+  if (!store) return false;
+  const addr = (store.address || '').trim().toLowerCase();
+  return !addr || addr === 'đang cập nhật' || addr === 'chưa cập nhật' || (store as any).isUpcoming === true;
+});
+
 const selectedUnitVariant = ref(0);
 const unitVariants = computed(() => [
   { label: product.value.unit, desc: "Quy cách chuẩn", priceDelta: 0 },
@@ -343,12 +351,20 @@ const relatedProducts = computed(() => {
               </div>
               <div class="store-actions-wrap">
                 <button
+                  v-if="!isStorePendingAddress"
                   class="btn-store-chat"
                   title="Chat hỏi về sản phẩm"
                   @click="showToastMessage('Hộp thoại tư vấn với Shop đang được kết nối...')"
                 >
                   <i class="bi bi-chat-dots-fill"></i>
                   <span>Chat</span>
+                </button>
+                <button
+                  v-else
+                  class="btn-upcoming-badge-pill"
+                  disabled
+                >
+                  <i class="bi bi-clock-history me-1"></i> SẮP MỞ BÁN
                 </button>
               </div>
             </div>
@@ -421,7 +437,18 @@ const relatedProducts = computed(() => {
               </div>
             </div>
 
-            <div class="buttons-horizontal-row">
+            <!-- NẾU GIAN HÀNG CHƯA CẬP NHẬT ĐỊA CHỈ: HIỂN THỊ NÚT TO 'SẮP MỞ BÁN' -->
+            <div v-if="isStorePendingAddress" class="upcoming-store-cta-block">
+              <button type="button" class="btn-upcoming-big-cta" disabled>
+                <i class="bi bi-shop-window me-2"></i>
+                <span>SẮP MỞ BÁN</span>
+              </button>
+              <p class="upcoming-hint-text text-muted text-center mt-2 small">
+                <i class="bi bi-info-circle me-1"></i> Gian hàng đang trong thời gian bổ sung địa chỉ & hoàn thiện hồ sơ. Sản phẩm sẽ sớm được mở bán!
+              </p>
+            </div>
+            <!-- NẾU ĐÃ CÓ ĐỊA CHỈ: HIỂN THỊ NÚT MUA BÌNH THƯỜNG -->
+            <div v-else class="buttons-horizontal-row">
               <button class="btn-add-cart-tactile" @click="handleAddToCart">
                 <i class="bi bi-bag-plus-fill"></i>
                 <span>Thêm Vào Giỏ</span>
@@ -2229,8 +2256,9 @@ const relatedProducts = computed(() => {
   background: #ffffff;
   border-top: 1px solid #e2e8f0;
   padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
-  z-index: 99;
+  z-index: 999;
   justify-content: space-between;
   align-items: center;
 }
@@ -2337,7 +2365,7 @@ const relatedProducts = computed(() => {
 
 @media (max-width: 768px) {
   .product-detail-page {
-    padding: 10px 10px 84px 10px;
+    padding: 10px 10px calc(88px + env(safe-area-inset-bottom, 0px)) 10px;
   }
   .main-showcase-bento {
     padding: 12px 14px;
@@ -2590,7 +2618,7 @@ const relatedProducts = computed(() => {
 
 @media (max-width: 400px) {
   .product-detail-page {
-    padding: 8px 8px 84px 8px;
+    padding: 8px 8px calc(88px + env(safe-area-inset-bottom, 0px)) 8px;
   }
   .main-showcase-bento {
     padding: 10px 10px;
@@ -2654,4 +2682,51 @@ const relatedProducts = computed(() => {
     font-size: 10px;
   }
 }
+</style>
+
+<style scoped>
+
+/* ==================== SẮP MỞ BÁN BUTTON CHO GIAN HÀNG CHƯA CÓ ĐỊA CHỈ ==================== */
+.btn-upcoming-badge-pill {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+  font-weight: 700;
+  font-size: 11.5px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.upcoming-store-cta-block {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.btn-upcoming-big-cta {
+  width: 100%;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff !important;
+  border: none;
+  border-radius: 14px;
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 18px rgba(245, 158, 11, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: not-allowed;
+  opacity: 0.95;
+}
+
+.upcoming-hint-text {
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 0;
+}
+
 </style>

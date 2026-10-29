@@ -12,7 +12,7 @@ on:
 jobs:
   build-ios:
     name: Build iOS IPA (on macOS Cloud)
-    runs-on: macos-15
+    runs-on: macos-14 # macOS 14 Sonoma (Apple Silicon M1) ổn định nhất, runner dồi dào, không bị nghẽn queue như macos-15
     defaults:
       run:
         working-directory: ZoneMart
@@ -38,7 +38,7 @@ jobs:
       - name: 6. Build Archive & Đóng gói file .IPA
         run: |
           cd ios/App
-          # Build Native Xcode Archive (Bỏ qua ký chứng chỉ để người dùng tự ký qua Sideloadly)
+          # Build Native Xcode Archive (Bỏ qua ký chứng chỉ để người dùng tự ký qua Sideloadly/Esign/AltStore)
           xcodebuild -project App.xcodeproj \
             -scheme App \
             -configuration Release \

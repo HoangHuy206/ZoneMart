@@ -14,9 +14,16 @@ import { useRouter } from "vue-router";
 import { useAuth } from "../../composables/useAuth";
 import { useToast } from "../../composables/useToast";
 import { orderRealtimeService, type RealtimeOrder } from "../../services/orderRealtimeService";
-import FaceScanModal from "../../components/auth/FaceScanModal.vue";
+import {
+  detectBiometricDevice,
+  registerDeviceBiometrics,
+  disableDeviceBiometrics,
+  checkDeviceBiometricStatus,
+  type BiometricDeviceInfo
+} from "../../utils/biometricHelper";
 import { apiFetch } from "../../utils/apiConfig";
 import { getSafeCurrentLocation } from "../../composables/useSafeLocation";
+import { HANOI_48_MARKETS } from "../../data/hanoiAdminUnits";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -32,7 +39,6 @@ let incomingTimer: any = null;
 const incomingDistance = ref(0);
 let unsubscribeOrderDispatch: (() => void) | null = null;
 let unsubscribeStatusChanged: (() => void) | null = null;
-let unsubscribeOrderCreated: (() => void) | null = null;
 const ignoredOrderIds = new Set<string>();
 
 // 1. Trạng thái hoạt động (Mặc định: Tạm nghỉ)
@@ -84,18 +90,485 @@ const shiftStats = ref({
   totalKm: 0.0
 });
 
+// Thăng cấp nhanh từ Admin (Quick promotion logic)
+const isPromotedByAdmin = ref(false);
+const showPromotionNoticeModal = ref(false);
+const showRequiredVehicleModal = ref(false);
+const isSavingVehicle = ref(false);
+
+
+// 48 Khu vực Chợ truyền thống Hà Nội + Lựa chọn Chạy xuyên
+const allMarketsList = ref<{ name: string; district: string }[]>([...HANOI_48_MARKETS]);
+
+const groupedMarkets = computed(() => {
+  const groups: Record<string, { name: string; district: string }[]> = {};
+  for (const m of allMarketsList.value) {
+    const d = m.district || "Khu vực khác";
+    if (!groups[d]) groups[d] = [];
+    groups[d].push(m);
+  }
+  return groups;
+});
+
+const vehicleForm = reactive({
+  vehicleType: "Xe máy xăng",
+  licensePlate: "",
+  operatingArea: "Chợ Trạm Trôi, Huyện Hoài Đức",
+  vehicleModel: ""
+});
+
+// Modal Chỉnh Sửa Hồ Sơ Cá Nhân & Phương Tiện (DÀNH RIÊNG CHO TÀI KHOẢN ĐƯỢC ADMIN PHÂN QUYỀN NHANH)
+const showEditProfileModal = ref(false);
+const avatarInputRef = ref<HTMLInputElement | null>(null);
+const triggerAvatarUpload = () => {
+  avatarInputRef.value?.click();
+};
+
+const isSavingProfile = ref(false);
+watch([showPromotionNoticeModal, showEditProfileModal, showRequiredVehicleModal], ([m1, m2, m3]) => {
+  if (typeof document !== 'undefined') {
+    if (m1 || m2 || m3) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+  }
+});
+
+
+const profileEditForm = reactive({
+  fullName: "",
+  phoneNumber: "",
+  avatarUrl: "",
+  cccdNumber: "",
+  drivingLicenseImage: "",
+  bankName: "Vietcombank",
+  bankAccountNumber: "",
+  vehicleType: "Xe máy xăng",
+  vehicleModel: "",
+  licensePlate: "",
+  operatingArea: "Chợ Trạm Trôi, Huyện Hoài Đức"
+});
+
+const openEditProfileModal = () => {
+  if (!isPromotedByAdmin.value) {
+    triggerToast("Chỉ tài khoản được Admin phân quyền nhanh mới được phép tự sửa hồ sơ!");
+    return;
+  }
+  const savedUserStr = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+  let phoneFromStorage = "";
+  if (savedUserStr) {
+    try {
+      const u = JSON.parse(savedUserStr);
+      phoneFromStorage = u.phone || u.phoneNumber || u.phoneEmail || "";
+    } catch {}
+  }
+  profileEditForm.fullName = driverProfile.fullName || "";
+  profileEditForm.phoneNumber = driverProfile.phoneNumber || phoneFromStorage || driverProfile.phoneEmail || "";
+  profileEditForm.avatarUrl = driverProfile.avatarUrl || "";
+  profileEditForm.cccdNumber = (driverProfile.cccdNumber && !isPlaceholderOrMissing(driverProfile.cccdNumber)) ? driverProfile.cccdNumber : "";
+  profileEditForm.drivingLicenseImage = (driverProfile.drivingLicenseImage && !isPlaceholderOrMissing(driverProfile.drivingLicenseImage)) ? driverProfile.drivingLicenseImage : "";
+  profileEditForm.bankName = (driverProfile.bankName && !isPlaceholderOrMissing(driverProfile.bankName)) ? driverProfile.bankName : "Vietcombank";
+  profileEditForm.bankAccountNumber = (driverProfile.bankAccountNumber && !isPlaceholderOrMissing(driverProfile.bankAccountNumber)) ? driverProfile.bankAccountNumber : "";
+  profileEditForm.vehicleType = (driverProfile.vehicleType && !isPlaceholderOrMissing(driverProfile.vehicleType)) ? driverProfile.vehicleType : "Xe máy xăng";
+  profileEditForm.vehicleModel = (driverProfile.vehicleModel && !isPlaceholderOrMissing(driverProfile.vehicleModel)) ? driverProfile.vehicleModel : "";
+  profileEditForm.licensePlate = (driverProfile.licensePlate && !isPlaceholderOrMissing(driverProfile.licensePlate)) ? driverProfile.licensePlate : "";
+  profileEditForm.operatingArea = (driverProfile.operatingArea && !isPlaceholderOrMissing(driverProfile.operatingArea)) ? driverProfile.operatingArea : "Chợ Trạm Trôi, Huyện Hoài Đức";
+
+    const currentArea = (driverProfile.operatingArea || "").trim();
+  if (!currentArea || isPlaceholderOrMissing(currentArea) || currentArea.includes("HÃ")) {
+    profileEditForm.operatingArea = "Chạy xuyên (Tất cả 48 khu vực)";
+  } else if (currentArea.toLowerCase().includes("xuyên") || currentArea.toLowerCase().includes("tất cả")) {
+    profileEditForm.operatingArea = "Chạy xuyên (Tất cả 48 khu vực)";
+  } else {
+    const matched = allMarketsList.value.find(m =>
+      currentArea.toLowerCase().includes(m.name.toLowerCase()) ||
+      m.name.toLowerCase().includes(currentArea.toLowerCase())
+    );
+    if (matched) {
+      profileEditForm.operatingArea = `${matched.name} (${matched.district})`;
+    } else {
+      profileEditForm.operatingArea = currentArea;
+    }
+  }
+  showEditProfileModal.value = true;
+};
+
+const handleAvatarFileChange = (e: Event) => {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (file) {
+    if (file.size > 5 * 1024 * 1024) {
+      triggerToast("Ảnh không được vượt quá 5MB!");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      if (evt.target?.result) {
+        profileEditForm.avatarUrl = evt.target.result as string;
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+};
+
+const handleSaveProfile = async () => {
+  if (!profileEditForm.fullName.trim()) {
+    triggerToast("Vui lòng nhập Họ và tên tài xế!");
+    return;
+  }
+  if (!profileEditForm.vehicleType.trim() || !profileEditForm.licensePlate.trim() || !profileEditForm.operatingArea.trim() ||
+      isPlaceholderOrMissing(profileEditForm.vehicleType) || isPlaceholderOrMissing(profileEditForm.licensePlate) || isPlaceholderOrMissing(profileEditForm.operatingArea)) {
+    triggerToast("Vui lòng điền thông tin thực tế: Loại xe, Biển số xe và Khu vực chạy!");
+    return;
+  }
+
+  isSavingProfile.value = true;
+  try {
+    const savedUserStr = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+    let accountQuery = "";
+    if (savedUserStr) {
+      try {
+        const u = JSON.parse(savedUserStr);
+        accountQuery = u.phoneEmail || u.email || u.phoneNumber || u.id || "";
+      } catch {}
+    }
+    const cleanAccount = accountQuery || driverProfile.phoneEmail || driverProfile.shipperCode || "";
+    const res = await apiFetch("/api/auth/update-shipper-profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        account: cleanAccount,
+        fullName: profileEditForm.fullName.trim(),
+        phoneNumber: profileEditForm.phoneNumber.trim(),
+        avatarUrl: profileEditForm.avatarUrl.trim(),
+        cccdNumber: profileEditForm.cccdNumber.trim(),
+        drivingLicenseImage: profileEditForm.drivingLicenseImage.trim(),
+        bankName: profileEditForm.bankName.trim(),
+        bankAccountNumber: profileEditForm.bankAccountNumber.trim(),
+        vehicleType: profileEditForm.vehicleType.trim(),
+        vehicleModel: profileEditForm.vehicleModel.trim(),
+        licensePlate: profileEditForm.licensePlate.trim().toUpperCase(),
+        operatingArea: profileEditForm.operatingArea.trim()
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      driverProfile.fullName = profileEditForm.fullName.trim();
+      if (profileEditForm.avatarUrl) driverProfile.avatarUrl = profileEditForm.avatarUrl.trim();
+      driverProfile.licensePlate = profileEditForm.licensePlate.trim().toUpperCase();
+      driverProfile.vehicleType = profileEditForm.vehicleType.trim();
+      driverProfile.vehicleModel = profileEditForm.vehicleModel.trim();
+      driverProfile.operatingArea = profileEditForm.operatingArea.trim();
+      driverProfile.cccdNumber = profileEditForm.cccdNumber.trim();
+      driverProfile.bankName = profileEditForm.bankName.trim();
+      driverProfile.bankAccountNumber = profileEditForm.bankAccountNumber.trim();
+
+      try {
+        const uStr = localStorage.getItem("currentUser");
+        if (uStr) {
+          const u = JSON.parse(uStr);
+          u.fullName = driverProfile.fullName;
+          if (driverProfile.avatarUrl) u.avatarUrl = driverProfile.avatarUrl;
+          if (!u.shipperDetails) u.shipperDetails = {};
+          u.shipperDetails.fullName = driverProfile.fullName;
+          u.shipperDetails.avatarUrl = driverProfile.avatarUrl;
+          u.shipperDetails.vehicleType = driverProfile.vehicleType;
+          u.shipperDetails.vehicleModel = driverProfile.vehicleModel;
+          u.shipperDetails.licensePlate = driverProfile.licensePlate;
+          u.shipperDetails.operatingArea = driverProfile.operatingArea;
+          u.shipperDetails.cccdNumber = driverProfile.cccdNumber;
+          u.shipperDetails.bankName = driverProfile.bankName;
+          u.shipperDetails.bankAccountNumber = driverProfile.bankAccountNumber;
+          localStorage.setItem("currentUser", JSON.stringify(u));
+        }
+        const zmStr = localStorage.getItem("zonemart_user");
+        if (zmStr) {
+          const zm = JSON.parse(zmStr);
+          zm.fullName = driverProfile.fullName;
+          if (driverProfile.avatarUrl) zm.avatarUrl = driverProfile.avatarUrl;
+          if (!zm.shipperDetails) zm.shipperDetails = {};
+          zm.shipperDetails.fullName = driverProfile.fullName;
+          zm.shipperDetails.avatarUrl = driverProfile.avatarUrl;
+          zm.shipperDetails.vehicleType = driverProfile.vehicleType;
+          zm.shipperDetails.vehicleModel = driverProfile.vehicleModel;
+          zm.shipperDetails.licensePlate = driverProfile.licensePlate;
+          zm.shipperDetails.operatingArea = driverProfile.operatingArea;
+          zm.shipperDetails.cccdNumber = driverProfile.cccdNumber;
+          zm.shipperDetails.bankName = driverProfile.bankName;
+          zm.shipperDetails.bankAccountNumber = driverProfile.bankAccountNumber;
+          localStorage.setItem("zonemart_user", JSON.stringify(zm));
+        }
+      } catch {}
+
+      showEditProfileModal.value = false;
+      showPromotionNoticeModal.value = false;
+      showRequiredVehicleModal.value = false;
+      triggerToast("Đã lưu cập nhật hồ sơ cá nhân tài xế thành công!");
+    } else {
+      triggerToast(data.message || "Không thể cập nhật hồ sơ");
+    }
+  } catch (err: any) {
+    triggerToast("Lỗi kết nối: " + (err.message || err));
+  } finally {
+    isSavingProfile.value = false;
+  }
+};
+
+
+const handleSaveVehicle = async () => {
+  if (
+    !vehicleForm.vehicleType.trim() ||
+    !vehicleForm.licensePlate.trim() ||
+    !vehicleForm.operatingArea.trim() ||
+    isPlaceholderOrMissing(vehicleForm.vehicleType) ||
+    isPlaceholderOrMissing(vehicleForm.licensePlate) ||
+    isPlaceholderOrMissing(vehicleForm.operatingArea)
+  ) {
+    triggerToast("Vui lòng điền thông tin thực tế: Loại xe, Biển số xe và Khu vực chạy!");
+    return;
+  }
+  isSavingVehicle.value = true;
+  try {
+    const savedUserStr = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+    let accountQuery = "";
+    if (savedUserStr) {
+      try {
+        const u = JSON.parse(savedUserStr);
+        accountQuery = u.phoneEmail || u.email || u.phoneNumber || u.id || "";
+      } catch {}
+    }
+    const cleanAccount = accountQuery || driverProfile.phoneEmail || driverProfile.shipperCode || "";
+    const res = await apiFetch("/api/auth/update-shipper-vehicle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        account: cleanAccount,
+        vehicleType: vehicleForm.vehicleType.trim(),
+        licensePlate: vehicleForm.licensePlate.trim().toUpperCase(),
+        operatingArea: vehicleForm.operatingArea.trim(),
+        vehicleModel: vehicleForm.vehicleModel?.trim() || vehicleForm.vehicleType.trim()
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      driverProfile.vehicleType = vehicleForm.vehicleType.trim();
+      driverProfile.licensePlate = vehicleForm.licensePlate.trim().toUpperCase();
+      driverProfile.operatingArea = vehicleForm.operatingArea.trim();
+      if (vehicleForm.vehicleModel) driverProfile.vehicleModel = vehicleForm.vehicleModel.trim();
+
+      try {
+        const uStr = localStorage.getItem("currentUser");
+        if (uStr) {
+          const u = JSON.parse(uStr);
+          if (!u.shipperDetails) u.shipperDetails = {};
+          u.shipperDetails.vehicleType = driverProfile.vehicleType;
+          u.shipperDetails.licensePlate = driverProfile.licensePlate;
+          u.shipperDetails.operatingArea = driverProfile.operatingArea;
+          localStorage.setItem("currentUser", JSON.stringify(u));
+        }
+        const zmStr = localStorage.getItem("zonemart_user");
+        if (zmStr) {
+          const zm = JSON.parse(zmStr);
+          if (!zm.shipperDetails) zm.shipperDetails = {};
+          zm.shipperDetails.vehicleType = driverProfile.vehicleType;
+          zm.shipperDetails.licensePlate = driverProfile.licensePlate;
+          zm.shipperDetails.operatingArea = driverProfile.operatingArea;
+          localStorage.setItem("zonemart_user", JSON.stringify(zm));
+        }
+      } catch {}
+
+      showRequiredVehicleModal.value = false;
+      showPromotionNoticeModal.value = false;
+      triggerToast("Đã lưu thông tin xe! Đang BẬT nhận đơn...");
+
+      isOnline.value = true;
+      currentTab.value = 'map';
+      if (radiusCircle) {
+        radiusCircle.setStyle({ color: "#2563eb", fillColor: "#3b82f6", fillOpacity: 0.12, weight: 2.5, dashArray: "8, 6" });
+        radiusCircle.bringToBack();
+      }
+      locateAndTrackDriver(false);
+      startLocationWatch();
+    } else {
+      triggerToast(data.message || "Không thể cập nhật phương tiện");
+    }
+  } catch (err: any) {
+    triggerToast("Lỗi kết nối: " + (err.message || err));
+  } finally {
+    isSavingVehicle.value = false;
+  }
+};
+
+const handleDismissPromotionNotice = async () => {
+  showPromotionNoticeModal.value = false;
+  const cleanAccount = driverProfile.phoneEmail || "";
+  try {
+    await apiFetch("/api/auth/dismiss-promotion-notice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account: cleanAccount })
+    }).catch(() => {});
+  } catch {}
+  localStorage.setItem(`zonemart_seen_shipper_promotion_${cleanAccount}`, "true");
+};
+
 // Dynamic thông tin tài xế shipper đăng nhập từ localStorage & Backend MongoDB
 const driverProfile = reactive({
   fullName: "Tài xế ZoneMart",
   phoneEmail: "",
-  licensePlate: "Chưa cập nhật",
-  vehicleType: "Xe máy xăng",
-  vehicleModel: "Xe máy",
-  operatingArea: "Quận Cầu Giấy, Hà Nội (Bán kính 5km)",
+  phoneNumber: "",
+  licensePlate: "",
+  vehicleType: "",
+  vehicleModel: "",
+  operatingArea: "",
   avatarUrl: "",
   shipperCode: "00001",
-  status: "Pending"
+  status: "Pending",
+  cccdNumber: "",
+  drivingLicenseImage: "",
+  bankName: "",
+  bankAccountNumber: ""
 });
+
+const promotionDeadline = ref<string>("");
+
+// Đếm ngược 7 ngày theo thời gian thực (giống Seller)
+const remainingPromotionDays = computed(() => {
+  const rawUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+  let deadlineStr = promotionDeadline.value || "";
+  if (!deadlineStr && rawUser) {
+    try {
+      const u = JSON.parse(rawUser);
+      deadlineStr = u.promotionDeadline || "";
+    } catch {}
+  }
+  if (!deadlineStr) return 7;
+  const deadline = new Date(deadlineStr).getTime();
+  const now = Date.now();
+  const diffMs = deadline - now;
+  if (diffMs <= 0) return 0;
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+});
+
+const remainingPromotionTime = computed(() => {
+  const rawUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+  let deadlineStr = promotionDeadline.value || "";
+  if (!deadlineStr && rawUser) {
+    try {
+      const u = JSON.parse(rawUser);
+      deadlineStr = u.promotionDeadline || "";
+    } catch {}
+  }
+  if (!deadlineStr) return "7 ngày";
+  const deadline = new Date(deadlineStr).getTime();
+  const now = Date.now();
+  const diffMs = deadline - now;
+  if (diffMs <= 0) return "0 giờ (Hết hạn)";
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  if (days > 0) {
+    return `${days} ngày ${hours} giờ`;
+  }
+  const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+  return `${hours} giờ ${mins} phút`;
+});
+
+// Helper kiểm tra giá trị placeholder hoặc chưa cập nhật (hỗ trợ cả có dấu, không dấu, chữ hoa, thường)
+const isPlaceholderOrMissing = (val?: string | null): boolean => {
+  if (!val) return true;
+  const s = val.trim().toLowerCase();
+  if (!s) return true;
+  if (
+    s === "chưa cập nhật" ||
+    s === "chua cap nhat" ||
+    s === "đang cập nhật" ||
+    s === "dang cap nhat" ||
+    s === "được admin duyệt" ||
+    s === "duoc admin duyet" ||
+    s.includes("admin duyệt") ||
+    s.includes("admin duyet") ||
+    s.includes("duyet") ||
+    s.includes("duyệt")
+  ) {
+    return true;
+  }
+  return false;
+};
+
+// Kiểm tra shipper thăng cấp nhanh đã bổ sung 3 thông tin cần thiết chưa
+const isVehicleInfoMissing = computed(() => {
+  if (!isPromotedByAdmin.value) return false;
+  const plate = driverProfile.licensePlate;
+  const vType = driverProfile.vehicleModel || driverProfile.vehicleType;
+  const area = driverProfile.operatingArea;
+
+  const hasNoPlate = isPlaceholderOrMissing(plate);
+  const hasNoType = isPlaceholderOrMissing(vType);
+  const hasNoArea = isPlaceholderOrMissing(area);
+
+  return hasNoPlate || hasNoType || hasNoArea;
+});
+
+// Tự động ép tắt trạng thái nhận đơn nếu tài khoản chưa hoàn tất thông tin xe
+watch([isVehicleInfoMissing, isPromotedByAdmin], ([missing, promo]) => {
+  if (promo && missing && isOnline.value) {
+    isOnline.value = false;
+  }
+});
+
+// Hiển thị các trường thông tin Profile
+const displayVehicleType = computed(() => {
+  const v = (driverProfile.vehicleModel || driverProfile.vehicleType || "").trim();
+  if (isPlaceholderOrMissing(v)) {
+    return isPromotedByAdmin.value ? "Được admin duyệt" : (v || "Xe máy");
+  }
+  return v;
+});
+const isVehicleTypeDuyet = computed(() => isPlaceholderOrMissing(driverProfile.vehicleModel || driverProfile.vehicleType) || displayVehicleType.value === "Được admin duyệt");
+
+const displayLicensePlate = computed(() => {
+  const p = (driverProfile.licensePlate || "").trim();
+  if (isPlaceholderOrMissing(p)) {
+    return isPromotedByAdmin.value ? "Được admin duyệt" : (p || "Chưa cập nhật");
+  }
+  return p;
+});
+const isLicensePlateDuyet = computed(() => isPlaceholderOrMissing(driverProfile.licensePlate) || displayLicensePlate.value === "Được admin duyệt");
+
+const displayOperatingArea = computed(() => {
+  const a = (driverProfile.operatingArea || "").trim();
+  if (isPlaceholderOrMissing(a)) {
+    return isPromotedByAdmin.value ? "Được admin duyệt" : (a || "Chạy xuyên (48 chợ)");
+  }
+  if (a.toLowerCase().includes("xuyên") || a.toLowerCase().includes("tất cả")) {
+    return "Chạy xuyên (48 chợ)";
+  }
+  return a.length > 30 ? a.slice(0, 27) + '...' : a;
+});
+const isOperatingAreaDuyet = computed(() => isPlaceholderOrMissing(driverProfile.operatingArea) || displayOperatingArea.value === "Được admin duyệt");
+
+const openVehicleModal = () => {
+  vehicleForm.vehicleType = (driverProfile.vehicleType && !isPlaceholderOrMissing(driverProfile.vehicleType)) ? driverProfile.vehicleType : "Xe máy xăng";
+  vehicleForm.licensePlate = (driverProfile.licensePlate && !isPlaceholderOrMissing(driverProfile.licensePlate)) ? driverProfile.licensePlate : "";
+  const curVehicleArea = (driverProfile.operatingArea || "").trim();
+  if (!curVehicleArea || isPlaceholderOrMissing(curVehicleArea) || curVehicleArea.includes("HÃ")) {
+    vehicleForm.operatingArea = "Chạy xuyên (Tất cả 48 khu vực)";
+  } else if (curVehicleArea.toLowerCase().includes("xuyên") || curVehicleArea.toLowerCase().includes("tất cả")) {
+    vehicleForm.operatingArea = "Chạy xuyên (Tất cả 48 khu vực)";
+  } else {
+    const matched = allMarketsList.value.find(m =>
+      curVehicleArea.toLowerCase().includes(m.name.toLowerCase()) ||
+      m.name.toLowerCase().includes(curVehicleArea.toLowerCase())
+    );
+    if (matched) {
+      vehicleForm.operatingArea = `${matched.name} (${matched.district})`;
+    } else {
+      vehicleForm.operatingArea = curVehicleArea;
+    }
+  }
+  vehicleForm.vehicleModel = (driverProfile.vehicleModel && !isPlaceholderOrMissing(driverProfile.vehicleModel)) ? driverProfile.vehicleModel : "";
+  showRequiredVehicleModal.value = true;
+};
 
 const loadDriverProfile = async () => {
   const savedUserStr = localStorage.getItem("currentUser");
@@ -108,6 +581,13 @@ const loadDriverProfile = async () => {
       const resolvedAvatar = u.avatarUrl || u.avatar || (u.shipperDetails && (u.shipperDetails.avatarUrl || u.shipperDetails.avatar));
       if (resolvedAvatar) driverProfile.avatarUrl = resolvedAvatar;
 
+      if (u.isPromotedByAdmin || u.promotionDeadline) {
+        isPromotedByAdmin.value = true;
+        if (u.promotionDeadline) {
+          promotionDeadline.value = u.promotionDeadline;
+        }
+      }
+
       if (u.shipperDetails) {
         if (u.shipperDetails.fullName || u.shipperDetails.name) driverProfile.fullName = u.shipperDetails.fullName || u.shipperDetails.name;
         if (u.shipperDetails.licensePlate) driverProfile.licensePlate = u.shipperDetails.licensePlate;
@@ -119,15 +599,74 @@ const loadDriverProfile = async () => {
         if (u.shipperDetails.avatarUrl || u.shipperDetails.avatar) driverProfile.avatarUrl = u.shipperDetails.avatarUrl || u.shipperDetails.avatar;
       }
 
-      // Query API endpoint để đồng bộ thông tin mới nhất từ CSDL MongoDB Atlas
-      const accountQuery = u.phoneEmail || u.phoneNumber || driverProfile.phoneEmail;
+      // Đánh giá tức thì ngay từ localStorage để modal hiện lập tức khi mới đăng nhập / mở trang:
+      if (isPromotedByAdmin.value && isVehicleInfoMissing.value) {
+        showPromotionNoticeModal.value = true;
+        isOnline.value = false;
+      }
+
+      // Query API endpoint để đồng bộ trạng thái mới nhất từ CSDL MongoDB Atlas
+      const accountQuery = u.phoneEmail || u.phoneNumber || driverProfile.phoneEmail || '';
       if (accountQuery) {
+        apiFetch(`/api/auth/check-promotion-status?account=${encodeURIComponent(accountQuery)}`)
+          .then(async (res) => {
+            if (res.ok) {
+              const statusData = await res.json();
+              if (statusData.isDemoted) {
+                triggerToast("Thời hạn thử nghiệm 7 ngày đã kết thúc do chưa bổ sung đủ hồ sơ. Tài khoản đã quay về Khách Hàng.");
+                setTimeout(() => { router.replace('/'); }, 2500);
+                return;
+              }
+              if (statusData.isPromotedByAdmin) {
+                isPromotedByAdmin.value = true;
+                if (statusData.promotionDeadline) {
+                  promotionDeadline.value = statusData.promotionDeadline;
+                }
+              }
+              if (statusData.shipperDetails) {
+                const sh = statusData.shipperDetails;
+                if (sh.licensePlate) driverProfile.licensePlate = sh.licensePlate;
+                if (sh.vehicleType) driverProfile.vehicleType = sh.vehicleType;
+                if (sh.operatingArea) driverProfile.operatingArea = sh.operatingArea;
+                if (sh.vehicleModel) driverProfile.vehicleModel = sh.vehicleModel;
+                if (sh.cccdNumber) driverProfile.cccdNumber = sh.cccdNumber;
+                if (sh.drivingLicenseImage) driverProfile.drivingLicenseImage = sh.drivingLicenseImage;
+                if (sh.bankName) driverProfile.bankName = sh.bankName;
+                if (sh.bankAccountNumber) driverProfile.bankAccountNumber = sh.bankAccountNumber;
+              }
+
+              // Luôn hiện bảng thông báo khi mới đăng nhập nếu chưa cập nhật đủ thông tin xe
+              if (isPromotedByAdmin.value && isVehicleInfoMissing.value) {
+                showPromotionNoticeModal.value = true;
+                isOnline.value = false;
+              } else if (isPromotedByAdmin.value) {
+                const seen = u.hasSeenPromotionNotice || localStorage.getItem(`zonemart_seen_shipper_promotion_${accountQuery}`) === 'true';
+                if (!seen) {
+                  showPromotionNoticeModal.value = true;
+                }
+              }
+            }
+          })
+          .catch(() => {});
+
         const res = await apiFetch(`/api/auth/shipper-profile?account=${encodeURIComponent(accountQuery)}`).catch(() => null);
         if (res && res.ok) {
           const data = await res.json();
           if (data.success && data.shipper) {
             const sh = data.shipper;
             if (sh.fullName) driverProfile.fullName = sh.fullName;
+
+            if (sh.phoneNumber) {
+
+              driverProfile.phoneNumber = sh.phoneNumber;
+
+              if (!driverProfile.phoneEmail) driverProfile.phoneEmail = sh.phoneNumber;
+
+            }
+            if (sh.phoneNumber) {
+              driverProfile.phoneNumber = sh.phoneNumber;
+              if (!driverProfile.phoneEmail) driverProfile.phoneEmail = sh.phoneNumber;
+            }
             if (sh.licensePlate) driverProfile.licensePlate = sh.licensePlate;
             if (sh.vehicleModel) driverProfile.vehicleModel = sh.vehicleModel;
             if (sh.vehicleType) driverProfile.vehicleType = sh.vehicleType;
@@ -135,6 +674,15 @@ const loadDriverProfile = async () => {
             if (sh.shipperCode) driverProfile.shipperCode = sh.shipperCode;
             if (sh.status) driverProfile.status = sh.status;
             if (sh.avatarUrl) driverProfile.avatarUrl = sh.avatarUrl;
+            if (sh.cccdNumber) driverProfile.cccdNumber = sh.cccdNumber;
+            if (sh.drivingLicenseImage) driverProfile.drivingLicenseImage = sh.drivingLicenseImage;
+            if (sh.bankName) driverProfile.bankName = sh.bankName;
+            if (sh.bankAccountNumber) driverProfile.bankAccountNumber = sh.bankAccountNumber;
+
+            if (isPromotedByAdmin.value && isVehicleInfoMissing.value) {
+              showPromotionNoticeModal.value = true;
+              isOnline.value = false;
+            }
           }
         }
       }
@@ -157,7 +705,8 @@ const triggerToast = (msg: string) => {
 };
 
 // ==================== THIẾT LẬP FACE-ID CHO TÀI XẾ ====================
-const showFaceModal = ref(false);
+const biometricDevice = ref<BiometricDeviceInfo | null>(null);
+const isActivatingBiometric = ref(false);
 const isFaceAuthEnabled = ref(false);
 const faceRegisteredAt = ref("");
 const isCheckingFaceStatus = ref(false);
@@ -181,6 +730,9 @@ const getShipperUserIdentifier = () => {
 };
 
 const checkFaceStatus = async () => {
+  if (!biometricDevice.value) {
+    biometricDevice.value = await detectBiometricDevice();
+  }
   const userId = getShipperUserIdentifier();
   if (!userId || userId === "usr_guest") {
     isFaceAuthEnabled.value = false;
@@ -189,59 +741,59 @@ const checkFaceStatus = async () => {
   }
   isCheckingFaceStatus.value = true;
   try {
-    const res = await apiFetch(`/api/auth/face/status?userId=${encodeURIComponent(userId)}`);
-    if (res && res.ok) {
-      const data = await res.json();
-      if (data.success) {
-        isFaceAuthEnabled.value = Boolean(data.faceAuthEnabled);
-        faceRegisteredAt.value = data.registeredAt || "";
-      }
-    }
+    const status = await checkDeviceBiometricStatus(userId);
+    isFaceAuthEnabled.value = status.isEnabled;
+    faceRegisteredAt.value = status.registeredAt || "";
   } catch (e) {
-    console.error("Lỗi kiểm tra Face ID tài xế:", e);
+    console.error("Lỗi kiểm tra sinh trắc học tài xế:", e);
   } finally {
     isCheckingFaceStatus.value = false;
   }
 };
 
-const openFaceRegisterModal = () => {
+const handleActivateBiometric = async () => {
   const userId = getShipperUserIdentifier();
   if (!userId) {
-    triggerToast("Vui lòng đăng nhập tài khoản tài xế để thiết lập Face ID!");
+    triggerToast("Vui lòng đăng nhập tài khoản tài xế để thiết lập sinh trắc học!");
     return;
   }
-  showFaceModal.value = true;
-};
-
-const handleFaceRegisterSuccess = (payload: any) => {
-  isFaceAuthEnabled.value = true;
-  faceRegisteredAt.value = payload.registeredAt || new Date().toLocaleString("vi-VN");
-  triggerToast("🎉 Đã kích hoạt và lưu khuôn mặt thành công cho tài xế!");
+  if (isActivatingBiometric.value) return;
+  isActivatingBiometric.value = true;
+  try {
+    const res = await registerDeviceBiometrics(userId);
+    if (res.success) {
+      isFaceAuthEnabled.value = true;
+      faceRegisteredAt.value = res.registeredAt || new Date().toLocaleString("vi-VN");
+      triggerToast(`🎉 ${res.message || 'Đã kích hoạt sinh trắc học thành công!'}`);
+    } else {
+      triggerToast(res.message || 'Không thể kích hoạt sinh trắc học.');
+    }
+  } catch (e: any) {
+    triggerToast(e.message || 'Lỗi khi kích hoạt sinh trắc học.');
+  } finally {
+    isActivatingBiometric.value = false;
+  }
 };
 
 const handleDisableFace = async () => {
   const userId = getShipperUserIdentifier();
   if (!userId) return;
-  if (!confirm("Bạn có chắc chắn muốn tắt tính năng đăng nhập bằng khuôn mặt Face-ID cho tài xế này?")) {
+  const bioLabel = biometricDevice.value?.label || 'Sinh trắc học';
+  if (!confirm(`Bạn có chắc chắn muốn tắt tính năng đăng nhập bằng ${bioLabel} cho tài xế này?`)) {
     return;
   }
   isDisablingFace.value = true;
   try {
-    const res = await apiFetch("/api/auth/face/disable", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId }),
-    });
-    const data = await res.json();
-    if (res.ok && data.success) {
+    const res = await disableDeviceBiometrics(userId);
+    if (res.success) {
       isFaceAuthEnabled.value = false;
       faceRegisteredAt.value = "";
-      triggerToast("Đã hủy kích hoạt Face ID cho tài xế.");
+      triggerToast(res.message || `Đã hủy kích hoạt ${bioLabel} cho tài xế.`);
     } else {
-      triggerToast(data.message || "Không thể hủy Face ID.");
+      triggerToast(res.message || `Không thể hủy ${bioLabel}.`);
     }
   } catch (e: any) {
-    triggerToast(e.message || "Lỗi khi hủy Face ID.");
+    triggerToast(e.message || "Lỗi khi hủy sinh trắc học.");
   } finally {
     isDisablingFace.value = false;
   }
@@ -697,9 +1249,10 @@ const triggerIncomingOrderCheck = (order: RealtimeOrder) => {
     return;
   }
 
-  // 2. Chấp nhận nổ đơn cả khi quán đã xác nhận (confirmed) hoặc đơn hỏa tốc mới tạo (pending)
-  if (order.status !== "confirmed" && order.status !== "pending") {
-    console.log("[ShipperView] Đơn không ở trạng thái chờ tài xế -> Không nổ đơn.");
+  // 2. CHỈ NỔ ĐƠN KHI GIAN HÀNG ĐÃ XÁC NHẬN (status === "confirmed")
+  // Tuyệt đối không nổ đơn khi người mua vừa đặt/thanh toán mà đơn còn pending (chờ quán xác nhận)
+  if (order.status !== "confirmed") {
+    console.log("[ShipperView] Đơn chưa được gian hàng xác nhận (status: " + order.status + ") -> Không nổ đơn cho tài xế.");
     return;
   }
 
@@ -749,6 +1302,14 @@ const triggerIncomingOrderCheck = (order: RealtimeOrder) => {
 
 // Xử lý bật/tắt online
 const toggleOnline = () => {
+  // Nếu là tài khoản thăng cấp nhanh mà chưa bổ sung đủ thông tin phương tiện -> TUYỆT ĐỐI CHẶN BẬT VÀ HIỆN BẢNG THÔNG BÁO
+  if (isVehicleInfoMissing.value) {
+    isOnline.value = false;
+    showPromotionNoticeModal.value = true;
+    triggerToast("Bạn chưa bổ sung Loại xe & Biển số xe! Vui lòng cập nhật để mở khóa nhận đơn.");
+    return;
+  }
+
   isOnline.value = !isOnline.value;
   if (isOnline.value) {
     currentTab.value = 'map';
@@ -773,7 +1334,7 @@ const toggleOnline = () => {
         const orders = orderRealtimeService.getAllOrders();
         const pending = orders.find(
           (o) =>
-            (o.status === "confirmed" || o.status === "pending") &&
+            o.status === "confirmed" &&
             !ignoredOrderIds.has(o.id) &&
             currentStep.value === "idle"
         );
@@ -805,11 +1366,11 @@ const toggleOnline = () => {
   });
 };
 
-// Danh sách các đơn chờ tài xế nhận trong hệ thống
+// Danh sách các đơn chờ tài xế nhận trong hệ thống (CHỈ các đơn đã được Gian Hàng bấm Xác nhận)
 const availableOrdersList = computed(() => {
   const all = orderRealtimeService.getAllOrders();
   return all.filter((o: RealtimeOrder) =>
-    (o.status === "confirmed" || o.status === "pending") &&
+    o.status === "confirmed" &&
     o.id !== activeOrder.value?.id &&
     o.id !== activeOrder.value?.orderId &&
     !ignoredOrderIds.has(o.id)
@@ -855,48 +1416,7 @@ const handleAcceptIncomingOrder = async () => {
   await handleAcceptSpecificOrder(incomingOrder.value);
 };
 
-// Tạo nhanh đơn hàng thử nghiệm ngay tại vị trí thực tế của tài xế
-const createTestOrder = () => {
-  if (!isOnline.value) {
-    toggleOnline();
-  }
-  const randNum = Math.floor(100000 + Math.random() * 900000);
-  const testId = `ZM${randNum}`;
-  const dLat = driverLocation.value.lat || 21.0333;
-  const dLng = driverLocation.value.lng || 105.7944;
 
-  const testOrder: RealtimeOrder = {
-    id: testId,
-    orderCode: testId,
-    total: 135000,
-    shippingFee: 15000,
-    paymentMethod: "Tiền mặt COD",
-    createdAt: new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }),
-    status: "pending",
-    statusText: "Đang chờ tài xế nhận đơn",
-    store: {
-      lat: Number((dLat + 0.0052).toFixed(6)),
-      lng: Number((dLng + 0.0041).toFixed(6)),
-      name: "Quầy Nông Sản Sạch Ba Vì (Cách 0.6km)",
-      address: "Số 48 Cầu Giấy, Quan Hoa, Cầu Giấy, Hà Nội",
-      phone: "0988 123 456"
-    },
-    customer: {
-      lat: Number((dLat - 0.0075).toFixed(6)),
-      lng: Number((dLng - 0.0062).toFixed(6)),
-      name: "Khách Hàng Test ZoneMart",
-      address: "Số 88 Ngõ 165 Cầu Giấy, Hà Nội",
-      phone: "0396 222 614"
-    },
-    items: [
-      { name: "Cơm Gà Xối Mỡ Da Giòn Nóng Hổi", price: 50000, quantity: 2 },
-      { name: "Trà Tắc Mật Ong Khổng Lồ", price: 18000, quantity: 1 }
-    ]
-  };
-
-  orderRealtimeService.dispatchNewOrder(testOrder);
-  triggerToast(`🚀 Đã tạo đơn thử nghiệm #${testId}! Đang kích hoạt chuông nổ đơn...`);
-};
 
 const handleFinishTrip = () => {
   currentStep.value = "idle";
@@ -1013,24 +1533,28 @@ onMounted(() => {
 
   // 1. Lắng nghe sự kiện quán đã XÁC NHẬN đơn hàng -> Sẵn sàng nổ đơn trong bán kính 3km
   unsubscribeOrderDispatch = orderRealtimeService.onOrderDispatchReady((order) => {
-    triggerIncomingOrderCheck(order);
-  });
-
-  // 2. Lắng nghe trạng thái đơn chuyển sang 'confirmed'
-  unsubscribeStatusChanged = orderRealtimeService.onOrderStatusChanged(({ status, order }) => {
-    if ((status === "confirmed" || status === "pending") && order) {
+    if (order && order.status === "confirmed") {
       triggerIncomingOrderCheck(order);
     }
   });
 
-  // 3. Lắng nghe ngay khi có đơn hàng hỏa tốc mới tạo từ người mua
-  unsubscribeOrderCreated = orderRealtimeService.onOrderCreated((order) => {
-    triggerIncomingOrderCheck(order);
+  // 2. Lắng nghe trạng thái đơn chuyển sang 'confirmed'
+  unsubscribeStatusChanged = orderRealtimeService.onOrderStatusChanged(({ status, order }) => {
+    if (status === "confirmed" && order) {
+      triggerIncomingOrderCheck(order);
+    }
   });
+
+  // 3. Tài xế KHÔNG lắng nghe onOrderCreated (đơn mới tạo chỉ gửi về Gian Hàng để Quán duyệt)
 
   // Khóa cuộn trang toàn cục để thanh menu và nút công tắc trên di động không bao giờ bị trôi/mất
   document.documentElement.style.overflow = 'hidden';
   document.body.style.overflow = 'hidden';
+
+  // Nếu là tài khoản thăng cấp nhanh chưa có thông tin xe, ép trạng thái ngoại tuyến
+  if (isVehicleInfoMissing.value) {
+    isOnline.value = false;
+  }
 
   // Nếu đang mở hoạt động sẵn, tự động định vị vị trí người dùng & kiểm tra đơn chờ
   if (isOnline.value) {
@@ -1045,7 +1569,6 @@ onUnmounted(() => {
   if (incomingTimer) clearInterval(incomingTimer);
   if (unsubscribeOrderDispatch) unsubscribeOrderDispatch();
   if (unsubscribeStatusChanged) unsubscribeStatusChanged();
-  if (unsubscribeOrderCreated) unsubscribeOrderCreated();
   stopLocationWatch();
   if (map) {
     map.remove();
@@ -1160,6 +1683,34 @@ onUnmounted(() => {
     </div>
 
     <!-- 2. TOP FLOATING BAR (TRÊN CÙNG BẢN ĐỒ) -->
+    <!-- BANNER ĐẾM NGƯỢC 7 NGÀY CHO SHIPPER ĐƯỢC ADMIN THĂNG CẤP NHANH (GIỐNG SELLER) -->
+    <div v-if="isPromotedByAdmin" class="shipper-promoted-banner">
+      <div class="banner-left-meta">
+        <div class="countdown-badge-pill">
+          <i class="bi bi-stopwatch-fill me-1"></i> Còn {{ remainingPromotionDays }} ngày
+        </div>
+        <div class="banner-text-info">
+          <div class="banner-main-title">
+            Tài khoản được Admin thăng cấp nhanh lên Tài Xế Shipper
+          </div>
+          <div class="banner-sub-desc">
+            Hồ sơ tạm ghi <em>"Được admin duyệt"</em>. Thời hạn còn: <b class="text-danger fw-bold">{{ remainingPromotionTime }}</b>.
+            <span v-if="isVehicleInfoMissing" class="text-danger fw-bold ms-1">
+              <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> Chưa có biển số & loại xe - Cần bổ sung để bật nhận đơn!
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="banner-actions-group">
+        <button type="button" class="btn-view-notice-pill" @click="showPromotionNoticeModal = true">
+          <i class="bi bi-info-circle me-1"></i> Chi tiết
+        </button>
+        <button type="button" class="btn-boost-profile-gradient" @click="isPromotedByAdmin ? openEditProfileModal() : openVehicleModal()">
+          <i class="bi bi-pencil-square me-1"></i> Bổ sung hồ sơ
+        </button>
+      </div>
+    </div>
+
     <header class="top-floating-bar" v-if="currentTab === 'map'">
       <div class="top-bar-left-cluster">
         <button
@@ -1223,16 +1774,7 @@ onUnmounted(() => {
           <span class="action-label">Thu nhập</span>
         </button>
 
-        <!-- Nút Tạo Đơn Thử Nghiệm -->
-        <button
-          type="button"
-          class="map-action-btn btn-test-order"
-          @click="createTestOrder"
-          title="Tạo đơn hàng thử nghiệm hỏa tốc ngay tại vị trí của bạn"
-        >
-          <i class="bi bi-plus-circle-fill text-warning"></i>
-          <span class="action-label">Tạo Đơn Test</span>
-        </button>
+
 
         <!-- GPS Recenter -->
         <button
@@ -1351,7 +1893,7 @@ onUnmounted(() => {
               <span class="dock-pulse"></span>
               <strong>{{ availableOrdersList.length }} Đơn Chờ Bạn Nhận</strong>
             </div>
-            <button type="button" class="btn-dock-quicktest" @click="createTestOrder">+ Đơn Test</button>
+
           </div>
           <div class="dock-items-scroll">
             <div v-for="ord in availableOrdersList" :key="ord.id" class="dock-order-row">
@@ -1377,9 +1919,7 @@ onUnmounted(() => {
             <strong>Đang Quét Đơn Hỏa Tốc...</strong>
             <small>Sẵn sàng nhận đơn mới trong khu vực</small>
           </div>
-          <button type="button" class="btn-radar-test" @click="createTestOrder" title="Thử nghiệm tạo đơn">
-            + Đơn Test
-          </button>
+
         </div>
       </template>
     </div>
@@ -1517,12 +2057,27 @@ onUnmounted(() => {
           <div class="profile-card">
             <!-- 1. Hàng thông tin đại diện -->
             <div class="profile-avatar-row">
-              <div class="p-avatar">
+              <div class="p-avatar position-relative" :style="{ cursor: isPromotedByAdmin ? 'pointer' : 'default' }" @click="isPromotedByAdmin && openEditProfileModal()">
                 <img v-if="driverProfile.avatarUrl" :src="driverProfile.avatarUrl" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;" />
                 <i v-else class="bi bi-bicycle"></i>
+                <div v-if="isPromotedByAdmin" class="avatar-camera-overlay" title="Bấm để thay đổi avatar">
+                  <i class="bi bi-camera-fill text-white" style="font-size: 11px;"></i>
+                </div>
               </div>
               <div class="p-info">
-                <h3>{{ driverProfile.fullName }}</h3>
+                <div class="d-flex align-items-center gap-2">
+                  <h3 class="mb-0">{{ driverProfile.fullName }}</h3>
+                  <button
+                    v-if="isPromotedByAdmin"
+                    type="button"
+                    class="btn btn-sm btn-link p-0 text-primary"
+                    @click="openEditProfileModal"
+                    title="Chỉnh sửa hồ sơ cá nhân"
+                    style="font-size: 15px;"
+                  >
+                    <i class="bi bi-pencil-square"></i>
+                  </button>
+                </div>
                 <p>Tài xế Hỏa Tốc • Mã ID: <b style="color: #0284C7;">#{{ driverProfile.shipperCode }}</b> • <i class="bi bi-star-fill text-warning"></i> 5.0</p>
                 <span class="verified-badge"><i class="bi bi-patch-check-fill text-primary me-1"></i> Đã xác thực CCCD & Bằng lái</span>
               </div>
@@ -1532,15 +2087,15 @@ onUnmounted(() => {
             <div class="profile-details-grid">
               <div class="detail-item">
                 <span class="dt-label">Phương tiện</span>
-                <strong>{{ driverProfile.vehicleModel || driverProfile.vehicleType || "Xe máy" }}</strong>
+                <strong :class="{ 'text-muted fst-italic': isVehicleTypeDuyet }">{{ displayVehicleType }}</strong>
               </div>
               <div class="detail-item">
                 <span class="dt-label">Biển số</span>
-                <strong>{{ driverProfile.licensePlate || "Chưa cập nhật" }}</strong>
+                <strong :class="{ 'text-muted fst-italic': isLicensePlateDuyet }">{{ displayLicensePlate }}</strong>
               </div>
               <div class="detail-item">
                 <span class="dt-label">Khu vực</span>
-                <strong :title="driverProfile.operatingArea">{{ driverProfile.operatingArea ? (driverProfile.operatingArea.length > 28 ? driverProfile.operatingArea.slice(0, 25) + '...' : driverProfile.operatingArea) : "Quận Cầu Giấy (5km)" }}</strong>
+                <strong :title="displayOperatingArea" :class="{ 'text-muted fst-italic': isOperatingAreaDuyet }">{{ displayOperatingArea }}</strong>
               </div>
               <div class="detail-item">
                 <span class="dt-label">Trạng thái</span>
@@ -1548,36 +2103,58 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 3. Cài Đặt Sinh Trắc Học Face-ID (gọn gàng 1 khối duy nhất) -->
+            <!-- Nút chỉnh sửa hồ sơ DÀNH RIÊNG CHO TÀI KHOẢN ĐƯỢC ADMIN PHÂN QUYỀN NHANH -->
+            <div v-if="isPromotedByAdmin" class="mt-3 d-flex flex-column gap-2">
+              <button
+                type="button"
+                class="btn w-100 fw-bold py-2 d-flex align-items-center justify-content-center gap-2 shadow-sm rounded-3 text-white"
+                style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border: none;"
+                @click="openEditProfileModal"
+              >
+                <i class="bi bi-person-lines-fill"></i>
+                <span>Chỉnh Sửa Hồ Sơ Cá Nhân & Xe</span>
+              </button>
+            </div>
+
+            <!-- THÔNG BÁO CHO TÀI KHOẢN ĐĂNG KÝ FORM (KHÔNG ĐƯỢC TỰ SỬA) -->
+            <div v-else class="mt-3">
+              <div class="alert alert-light border small text-muted p-2 text-center rounded-3 mb-0" style="font-size: 11.5px;">
+                <i class="bi bi-shield-lock-fill text-secondary me-1"></i>
+                Hồ sơ tài xế đã được phê duyệt chính thức qua form đăng ký. Mọi thay đổi thông tin vui lòng liên hệ Ban Quản Trị.
+              </div>
+            </div>
+
+            <!-- 3. Cài Đặt Sinh Trắc Học Tự Động Theo Phần Cứng Máy -->
             <div class="shipper-face-card-compact">
               <div class="face-compact-left">
                 <div class="face-symbol-badge-sm" :class="{ 'is-active': isFaceAuthEnabled }">
-                  <i class="bi bi-person-bounding-box"></i>
+                  <i :class="biometricDevice?.iconType === 'fingerprint' ? 'bi bi-fingerprint' : (biometricDevice?.iconType === 'faceid' ? 'bi bi-person-bounding-box' : 'bi bi-shield-check')"></i>
                 </div>
                 <div class="face-text-group">
-                  <div class="face-title-sm">Bảo Mật AI Face-ID UniFace</div>
+                  <div class="face-title-sm">{{ biometricDevice?.label || 'Sinh Trắc Học Thiết Bị' }}</div>
                   <div class="face-desc-sm">
                     <span v-if="isFaceAuthEnabled" class="text-success fw-bold">
-                      <i class="bi bi-shield-check"></i> Đã kích hoạt 1-chạm
+                      <i class="bi bi-shield-check"></i> Đã kích hoạt ({{ faceRegisteredAt || '1-chạm' }})
                     </span>
                     <span v-else class="text-muted">
-                      Đăng nhập 1-chạm không mật khẩu
+                      Đăng nhập 1-chạm vân tay / khuôn mặt
                     </span>
                   </div>
                 </div>
               </div>
               <div class="face-compact-actions">
                 <template v-if="isFaceAuthEnabled">
-                  <button type="button" class="btn-face-rescan-sm" @click="openFaceRegisterModal" title="Quét cập nhật lại khuôn mặt">
-                    <i class="bi bi-arrow-clockwise"></i> Quét lại
+                  <button type="button" class="btn-face-rescan-sm" :disabled="isActivatingBiometric" @click="handleActivateBiometric" title="Thiết lập lại">
+                    <i class="bi bi-arrow-clockwise"></i> Cài lại
                   </button>
-                  <button type="button" class="btn-face-disable-sm" :disabled="isDisablingFace" @click="handleDisableFace" title="Hủy kích hoạt Face ID">
+                  <button type="button" class="btn-face-disable-sm" :disabled="isDisablingFace" @click="handleDisableFace" title="Hủy kích hoạt">
                     <i class="bi bi-x-circle"></i> Tắt
                   </button>
                 </template>
                 <template v-else>
-                  <button type="button" class="btn-face-activate-sm" @click="openFaceRegisterModal">
-                    <i class="bi bi-camera-fill me-1"></i> Bật Face ID
+                  <button type="button" class="btn-face-activate-sm" :disabled="isActivatingBiometric" @click="handleActivateBiometric">
+                    <i :class="biometricDevice?.iconType === 'fingerprint' ? 'bi bi-fingerprint me-1' : 'bi bi-person-bounding-box me-1'"></i>
+                    {{ biometricDevice?.actionTitle || 'Bật Sinh Trắc Học' }}
                   </button>
                 </template>
               </div>
@@ -1603,14 +2180,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Modal Quét & Kích Hoạt Khuôn Mặt (Face ID UniFace) cho Shipper -->
-    <FaceScanModal
-      v-model="showFaceModal"
-      mode="register"
-      :user-id="getShipperUserIdentifier()"
-      :user-name="driverProfile.fullName || 'Tài Xế ZoneMart'"
-      @success="handleFaceRegisterSuccess"
-    />
+
 
     <!-- 6. THANH ĐIỀU HƯỚNG ĐÁY MÀN HÌNH TRÊN ĐIỆN THOẠI (MOBILE BOTTOM NAVIGATION BAR) -->
     <nav class="shipper-bottom-nav">
@@ -1665,6 +2235,487 @@ onUnmounted(() => {
       </button>
     </nav>
   </div>
+
+  <!-- ==================== MODAL THÔNG BÁO THĂNG CẤP SHIPPER LẦN ĐẦU (CHUẨN FORM COMPACT GIỐNG SELLER) ==================== -->
+  <Teleport to="body">
+  <div
+    v-if="showPromotionNoticeModal"
+    class="modal-backdrop-overlay"
+    @click.self="showPromotionNoticeModal = false"
+    @wheel.self.prevent
+    @touchmove.self.prevent
+  >
+    <div class="modal-card-box modal-promotion-compact">
+      <!-- HEADER -->
+      <div class="promo-compact-header">
+        <div class="d-flex align-items-center gap-3">
+          <div class="promo-header-icon-wrap" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);">
+            <i class="bi bi-bicycle"></i>
+          </div>
+          <div>
+            <h5 class="promo-modal-title mb-0">Chúc Mừng Lên Tài Xế Shipper!</h5>
+            <span class="badge bg-warning text-dark fw-bold mt-1 d-inline-flex align-items-center" style="font-size: 11px;">
+              <i class="bi bi-lightning-charge-fill me-1"></i> Admin Phân Cấp Nhanh
+            </span>
+          </div>
+        </div>
+        <button type="button" class="btn-close-compact" @click="showPromotionNoticeModal = false" title="Đóng thông báo">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <!-- BODY -->
+      <div class="promo-compact-body">
+        <div class="promo-welcome-card">
+          <p class="mb-2 text-dark" style="font-size: 13.5px; line-height: 1.5;">
+            Xin chào <strong>{{ driverProfile.fullName }}</strong>! Tài khoản của bạn đã được Admin phân cấp nhanh từ Khách Hàng lên <b>Tài Xế Giao Hàng (Shipper)</b>.
+          </p>
+          <div class="promo-meta-list">
+            <div class="promo-meta-item">
+              <i class="bi bi-person-check-fill text-primary me-2 flex-shrink-0"></i>
+              <span class="meta-label">Tên tài xế & avatar:</span>
+              <span class="meta-val ms-1">Lấy từ tài khoản người dùng</span>
+            </div>
+            <div class="promo-meta-item">
+              <i class="bi bi-shield-check text-success me-2 flex-shrink-0"></i>
+              <span class="meta-label">Giấy tờ & bằng lái (CCCD, GPLX):</span>
+              <span class="meta-val ms-1">Tạm ghi nhận "Được admin duyệt"</span>
+            </div>
+            <div class="promo-meta-item">
+              <i class="bi bi-bicycle text-warning me-2 flex-shrink-0"></i>
+              <span class="meta-label">Phương tiện & Biển số:</span>
+              <span class="meta-val ms-1 fw-bold text-dark">{{ isVehicleInfoMissing ? 'Tạm ghi nhận "Được admin duyệt"' : (driverProfile.licensePlate + ' • ' + (driverProfile.vehicleModel || driverProfile.vehicleType)) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="promo-deadline-box">
+          <div class="d-flex align-items-center justify-content-between mb-1">
+            <span class="fw-bold text-dark small d-flex align-items-center">
+              <i class="bi bi-alarm-fill text-danger me-1"></i> Thời hạn hoàn tất:
+            </span>
+            <span class="badge bg-danger text-white fw-bold px-2 py-1 text-nowrap">Còn {{ remainingPromotionDays }} ngày</span>
+          </div>
+          <p class="small text-muted mb-0" style="font-size: 12px; line-height: 1.45;">
+            Bạn có <b>1 tuần theo thời gian thực</b> để vào mục <em>Bổ sung hồ sơ</em> cập nhật đầy đủ thông tin phương tiện. Quá 1 tuần nếu chưa bổ sung, tài khoản sẽ <b>tự động hạ cấp trở lại vai trò Khách Hàng</b>.
+          </p>
+        </div>
+
+        <div class="promo-rule-note">
+          <div class="small text-dark fw-bold mb-1 d-flex align-items-center">
+            <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> Lưu ý bắt buộc khi bật nhận đơn:
+          </div>
+          <p class="small text-muted mb-0" style="font-size: 12px; line-height: 1.45;">
+            Bạn <b>BẮT BUỘC phải cập nhật Loại xe, Biển số xe và Khu vực chạy</b> để có thể bật trạng thái trực tuyến và nhận đơn hỏa tốc từ các gian hàng xung quanh.
+          </p>
+        </div>
+      </div>
+
+      <!-- FOOTER -->
+      <div class="promo-compact-footer">
+        <div class="promo-countdown-text text-danger fw-bold text-nowrap">
+          <i class="bi bi-stopwatch-fill me-1"></i> Còn {{ remainingPromotionDays }} ngày ({{ remainingPromotionTime }})
+        </div>
+        <div class="promo-buttons-wrap d-flex align-items-center gap-3">
+          <button type="button" class="btn-dismiss-pill" @click="handleDismissPromotionNotice">
+            Để sau
+          </button>
+          <button type="button" class="btn-boost-pill fw-bold" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);" @click="handleDismissPromotionNotice(); (isPromotedByAdmin ? openEditProfileModal() : openVehicleModal());">
+            <i class="bi bi-pencil-square me-1"></i> Bổ sung hồ sơ ngay
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  </Teleport>
+
+    <!-- ==================== MODAL CHỈNH SỬA HỒ SƠ CÁ NHÂN & PHƯƠNG TIỆN (DÀNH CHO SHIPPER ĐƯỢC PHÂN CẤP NHANH) ==================== -->
+  <Teleport to="body">
+  <div
+    v-if="showEditProfileModal"
+    class="modal-backdrop-overlay"
+    @click.self="showEditProfileModal = false"
+    @wheel.self.prevent
+    @touchmove.self.prevent
+  >
+    <div class="modal-edit-profile-card">
+      <!-- HEADER -->
+      <div class="modal-edit-header">
+        <div class="header-left-cluster">
+          <div class="header-icon-box">
+            <i class="bi bi-person-gear"></i>
+          </div>
+          <div class="header-text-meta">
+            <div class="header-title-row">
+              <h4 class="modal-edit-title">Chỉnh Sửa Hồ Sơ Tài Xế</h4>
+              <span class="admin-fast-pill">
+                <i class="bi bi-lightning-charge-fill me-1"></i> Admin Phân Cấp Nhanh
+              </span>
+            </div>
+            <p class="modal-edit-subtitle">Cập nhật thông tin thực tế để mở khóa nhận đơn hỏa tốc 3km</p>
+          </div>
+        </div>
+        <button type="button" class="btn-close-modal" @click="showEditProfileModal = false" title="Đóng">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <!-- BODY (CUỘN RIÊNG) -->
+      <div class="modal-edit-body">
+        <!-- CARD 1: THÔNG TIN CÁ NHÂN -->
+        <div class="edit-group-card">
+          <div class="group-card-header">
+            <div class="group-title-wrap">
+              <div class="group-icon-circle blue">
+                <i class="bi bi-person-badge"></i>
+              </div>
+              <span class="group-card-title">1. Thông Tin Cá Nhân</span>
+            </div>
+          </div>
+
+          <!-- Avatar Uploader Box -->
+          <div class="avatar-upload-card">
+            <div class="avatar-preview-wrapper" @click="triggerAvatarUpload" title="Bấm để chọn ảnh đại diện">
+              <img v-if="profileEditForm.avatarUrl" :src="profileEditForm.avatarUrl" class="avatar-img-preview" />
+              <div v-else class="avatar-fallback-icon">
+                <i class="bi bi-person-fill"></i>
+              </div>
+              <div class="avatar-camera-badge">
+                <i class="bi bi-camera-fill"></i>
+              </div>
+            </div>
+            <div class="avatar-info-cluster">
+              <div class="avatar-label-title">Ảnh đại diện nhận diện tài xế</div>
+              <div class="avatar-sub-guide">Ảnh rõ khuôn mặt giúp người mua và chủ quán nhận biết bạn khi nhận hàng</div>
+              <input
+                type="file"
+                ref="avatarInputRef"
+                accept="image/*"
+                style="display: none;"
+                @change="handleAvatarFileChange"
+              />
+              <button type="button" class="btn-pick-avatar" @click="triggerAvatarUpload">
+                <i class="bi bi-image me-1"></i> Chọn ảnh mới từ máy
+              </button>
+            </div>
+          </div>
+
+          <!-- Grid inputs cá nhân -->
+          <div class="form-fields-grid">
+            <div class="form-field-item">
+              <label class="form-field-label">
+                <span>Họ và tên tài xế</span>
+                <span class="text-danger fw-bold">(*)</span>
+              </label>
+              <div class="input-with-icon">
+                <i class="bi bi-person input-leading-icon"></i>
+                <input
+                  type="text"
+                  v-model="profileEditForm.fullName"
+                  class="custom-form-input"
+                  placeholder="VD: Nguyễn Văn A"
+                />
+              </div>
+            </div>
+
+            <div class="form-field-item">
+              <label class="form-field-label">
+                <span>Số điện thoại liên hệ</span>
+                <span class="text-danger fw-bold">(*)</span>
+              </label>
+              <div class="input-with-icon">
+                <i class="bi bi-telephone input-leading-icon"></i>
+                <input
+                  type="text"
+                  v-model="profileEditForm.phoneNumber"
+                  class="custom-form-input"
+                  placeholder="VD: 0912345678"
+                />
+              </div>
+            </div>
+
+            <div class="form-field-item full-width">
+              <label class="form-field-label">
+                <span>Số CCCD / Định danh cá nhân</span>
+                <span class="text-muted small fw-normal">(Để kích hoạt tài khoản)</span>
+              </label>
+              <div class="input-with-icon">
+                <i class="bi bi-card-heading input-leading-icon"></i>
+                <input
+                  type="text"
+                  v-model="profileEditForm.cccdNumber"
+                  class="custom-form-input"
+                  placeholder="VD: 001201008899"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 2: PHƯƠNG TIỆN & KHU VỰC CHẠY -->
+        <div class="edit-group-card">
+          <div class="group-card-header">
+            <div class="group-title-wrap">
+              <div class="group-icon-circle amber">
+                <i class="bi bi-bicycle"></i>
+              </div>
+              <span class="group-card-title">2. Phương Tiện & Khu Vực Chạy</span>
+            </div>
+            <span class="required-badge-pill">
+              <i class="bi bi-exclamation-circle-fill me-1"></i> Bắt buộc để nổ đơn
+            </span>
+          </div>
+
+          <div class="form-fields-grid">
+            <div class="form-field-item">
+              <label class="form-field-label">
+                <span>Loại phương tiện</span>
+                <span class="text-danger fw-bold">(*)</span>
+              </label>
+              <div class="input-with-icon">
+                <i class="bi bi-speedometer2 input-leading-icon"></i>
+                <select v-model="profileEditForm.vehicleType" class="custom-form-select">
+                  <option value="Xe máy xăng">Xe máy xăng</option>
+                  <option value="Xe máy điện">Xe máy điện</option>
+                  <option value="Xe tay ga">Xe tay ga</option>
+                  <option value="Xe số">Xe số</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-field-item">
+              <label class="form-field-label">
+                <span>Dòng xe / Tên xe</span>
+              </label>
+              <div class="input-with-icon">
+                <i class="bi bi-tag input-leading-icon"></i>
+                <input
+                  type="text"
+                  v-model="profileEditForm.vehicleModel"
+                  class="custom-form-input"
+                  placeholder="VD: Wave Alpha / Vision"
+                />
+              </div>
+            </div>
+
+            <div class="form-field-item">
+              <label class="form-field-label">
+                <span>Biển số xe</span>
+                <span class="text-danger fw-bold">(*)</span>
+              </label>
+              <div class="input-with-icon">
+                <i class="bi bi-123 input-leading-icon"></i>
+                <input
+                  type="text"
+                  v-model="profileEditForm.licensePlate"
+                  class="custom-form-input uppercase-text fw-bold"
+                  placeholder="VD: 29-X1 678.90"
+                />
+              </div>
+            </div>
+
+            <div class="form-field-item">
+              <label class="form-field-label">
+                <span>Khu vực hoạt động</span>
+                <span class="text-danger fw-bold">(*)</span>
+              </label>
+              <div class="input-with-icon">
+                <i class="bi bi-geo-alt input-leading-icon"></i>
+                <select v-model="profileEditForm.operatingArea" class="custom-form-select">
+                  <option value="Chạy xuyên (Tất cả 48 khu vực)">
+                    🚀 Chạy xuyên (Tất cả 48 khu vực chợ)
+                  </option>
+                  <option
+                    v-if="profileEditForm.operatingArea &&
+                           profileEditForm.operatingArea !== 'Chạy xuyên (Tất cả 48 khu vực)' &&
+                           !allMarketsList.some(m => (m.name + ' (' + m.district + ')') === profileEditForm.operatingArea)"
+                    :value="profileEditForm.operatingArea"
+                  >
+                    📍 {{ profileEditForm.operatingArea }}
+                  </option>
+                  <optgroup
+                    v-for="(markets, district) in groupedMarkets"
+                    :key="district"
+                    :label="district + ' (' + markets.length + ' chợ)'"
+                  >
+                    <option
+                      v-for="m in markets"
+                      :key="m.name"
+                      :value="m.name + ' (' + m.district + ')'"
+                    >
+                      {{ m.name }} ({{ m.district }})
+                    </option>
+                  </optgroup>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CARD 3: TÀI KHOẢN NGÂN HÀNG -->
+        <div class="edit-group-card">
+          <div class="group-card-header">
+            <div class="group-title-wrap">
+              <div class="group-icon-circle green">
+                <i class="bi bi-bank"></i>
+              </div>
+              <span class="group-card-title">3. Tài Khoản Ngân Hàng Nhận Tiền</span>
+            </div>
+          </div>
+
+          <div class="form-fields-grid">
+            <div class="form-field-item">
+              <label class="form-field-label">
+                <span>Tên ngân hàng</span>
+              </label>
+              <div class="input-with-icon">
+                <i class="bi bi-building input-leading-icon"></i>
+                <select v-model="profileEditForm.bankName" class="custom-form-select">
+                  <option value="Vietcombank">Vietcombank</option>
+                  <option value="Techcombank">Techcombank</option>
+                  <option value="MB Bank">MB Bank</option>
+                  <option value="BIDV">BIDV</option>
+                  <option value="Agribank">Agribank</option>
+                  <option value="VietinBank">VietinBank</option>
+                  <option value="VPBank">VPBank</option>
+                  <option value="ACB">ACB</option>
+                  <option value="TPBank">TPBank</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-field-item">
+              <label class="form-field-label">
+                <span>Số tài khoản</span>
+              </label>
+              <div class="input-with-icon">
+                <i class="bi bi-credit-card input-leading-icon"></i>
+                <input
+                  type="text"
+                  v-model="profileEditForm.bankAccountNumber"
+                  class="custom-form-input fw-bold"
+                  placeholder="VD: 1029384756"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FOOTER -->
+      <div class="modal-edit-footer">
+        <button type="button" class="btn-cancel-modal" @click="showEditProfileModal = false">
+          Hủy bỏ
+        </button>
+        <button
+          type="button"
+          class="btn-save-profile-action"
+          :disabled="isSavingProfile"
+          @click="handleSaveProfile"
+        >
+          <span v-if="isSavingProfile" class="spinner-border spinner-border-sm me-1"></span>
+          <i v-else class="bi bi-check2-circle me-1"></i>
+          <span>{{ isSavingProfile ? 'Đang lưu...' : 'Lưu Hồ Sơ Tài Xế' }}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+  </Teleport>
+
+  <!-- ==================== MODAL BỔ SUNG 3 THÔNG TIN PHƯƠNG TIỆN ĐỂ NỔ ĐƠN ==================== -->
+  <Teleport to="body">
+  <div
+    v-if="showRequiredVehicleModal"
+    class="modal-backdrop-overlay"
+    @click.self="showRequiredVehicleModal = false"
+    @wheel.self.prevent
+    @touchmove.self.prevent
+  >
+    <div class="modal-card-box modal-promotion-compact" style="max-width: 520px !important;">
+      <div class="promo-compact-header bg-primary-subtle border-bottom">
+        <div class="d-flex align-items-center gap-2">
+          <div class="promo-header-icon-wrap text-primary bg-white shadow-sm">
+            <i class="bi bi-bicycle"></i>
+          </div>
+          <div>
+            <h5 class="promo-modal-title text-primary mb-0">Cập Nhật Thông Tin Phương Tiện</h5>
+            <span class="small text-muted" style="font-size: 11.5px;">Cần thiết để bật nhận đơn hỏa tốc & định vị giao hàng</span>
+          </div>
+        </div>
+        <button type="button" class="btn-close-compact" @click="showRequiredVehicleModal = false" title="Đóng">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <div class="promo-compact-body p-4">
+        <div class="alert alert-info py-2 px-3 small mb-3 border-0 bg-primary-subtle text-primary-emphasis rounded-3">
+          <i class="bi bi-info-circle-fill me-1"></i> Tài khoản của bạn được thăng cấp nhanh từ Khách Hàng. Để bật trực tuyến và nổ đơn hỏa tốc, vui lòng cập nhật 3 thông tin dưới đây:
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-bold small text-dark">1. Loại phương tiện (*):</label>
+          <select v-model="vehicleForm.vehicleType" class="form-select">
+            <option value="Xe máy xăng">Xe máy xăng</option>
+            <option value="Xe máy điện">Xe máy điện</option>
+            <option value="Xe đạp điện">Xe đạp điện</option>
+            <option value="Xe ba gác">Xe ba gác</option>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-bold small text-dark">2. Biển số xe (*):</label>
+          <input v-model="vehicleForm.licensePlate" type="text" class="form-control" placeholder="VD: 29-X1 678.90 hoặc 29-AA 123.45" />
+          <small class="text-muted">Biển số xe giúp quán ăn và khách hàng nhận diện bạn khi giao nhận hàng.</small>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-bold small text-dark">3. Khu vực chạy chính (*):</label>
+          <select v-model="vehicleForm.operatingArea" class="form-select">
+            <option value="Chạy xuyên (Tất cả 48 khu vực)">
+              🚀 Chạy xuyên (Tất cả 48 khu vực chợ)
+            </option>
+            <option
+              v-if="vehicleForm.operatingArea &&
+                     vehicleForm.operatingArea !== 'Chạy xuyên (Tất cả 48 khu vực)' &&
+                     !allMarketsList.some(m => (m.name + ' (' + m.district + ')') === vehicleForm.operatingArea)"
+              :value="vehicleForm.operatingArea"
+            >
+              📍 {{ vehicleForm.operatingArea }}
+            </option>
+            <optgroup
+              v-for="(markets, district) in groupedMarkets"
+              :key="district"
+              :label="district + ' (' + markets.length + ' chợ)'"
+            >
+              <option
+                v-for="m in markets"
+                :key="m.name"
+                :value="m.name + ' (' + m.district + ')'"
+              >
+                {{ m.name }} ({{ m.district }})
+              </option>
+            </optgroup>
+          </select>
+          <small class="text-muted">Chọn 1 chợ cụ thể hoặc Chạy xuyên tất cả 48 khu vực chợ để nhận đơn hỏa tốc linh hoạt.</small>
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label fw-bold small text-dark">Dòng xe (Tùy chọn):</label>
+          <input v-model="vehicleForm.vehicleModel" type="text" class="form-control" placeholder="VD: Honda Wave Alpha, VinFast Feliz..." />
+        </div>
+      </div>
+
+      <div class="promo-compact-footer p-3 border-top d-flex justify-content-end align-items-center gap-3">
+        <button type="button" class="btn-dismiss-pill" @click="showRequiredVehicleModal = false">
+          Để sau
+        </button>
+        <button type="button" class="btn-boost-pill fw-bold" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);" :disabled="isSavingVehicle" @click="handleSaveVehicle">
+          <i class="bi bi-check-circle-fill me-1"></i> Lưu & Bật Nhận Đơn Ngay
+        </button>
+      </div>
+    </div>
+  </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -5184,5 +6235,771 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+
+/* ==================== SHIPPER PROMOTED BANNER & COMPACT MODAL ==================== */
+.shipper-promoted-banner {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border-bottom: 1px solid #fde68a;
+  padding: 10px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  position: relative;
+  z-index: 1005;
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.12);
+}
+
+.shipper-promoted-banner .banner-left-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 280px;
+}
+
+.shipper-promoted-banner .countdown-badge-pill {
+  background: #f59e0b;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  box-shadow: 0 3px 8px rgba(245, 158, 11, 0.35);
+}
+
+.shipper-promoted-banner .banner-main-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.shipper-promoted-banner .banner-sub-desc {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.shipper-promoted-banner .banner-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shipper-promoted-banner .btn-view-notice-pill {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 5px 13px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.shipper-promoted-banner .btn-view-notice-pill:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.shipper-promoted-banner .btn-boost-profile-gradient {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  border: none;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 6px 16px;
+  border-radius: 20px;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+.shipper-promoted-banner .btn-boost-profile-gradient:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(2, 132, 199, 0.5);
+}
+
+
+/* Modal Backdrop Overlay & Centered Card */
+.modal-backdrop-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: rgba(15, 23, 42, 0.75) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 999999 !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+}
+
+.modal-backdrop-overlay * {
+  box-sizing: border-box;
+}
+
+.modal-card-box {
+  background: #ffffff !important;
+  border-radius: 20px !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.45) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  position: relative !important;
+  z-index: 1000000 !important;
+  animation: modalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@keyframes modalScaleUp {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+
+/* ==========================================================================
+   MODAL CHỈNH SỬA HỒ SƠ TÀI XẾ (PREMIUM MODERN DESIGN)
+   ========================================================================== */
+.modal-edit-profile-card {
+  width: 95%;
+  max-width: 580px;
+  max-height: 90vh;
+  background: #ffffff;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 25px 60px -10px rgba(15, 23, 42, 0.45);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  z-index: 1000000;
+  border: 1px solid #e2e8f0;
+  animation: modalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-edit-header {
+  padding: 18px 22px;
+  background: #ffffff;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.header-left-cluster {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.header-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
+}
+
+.header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.modal-edit-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.2px;
+}
+
+.admin-fast-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 20px;
+  border: 1px solid #fde68a;
+}
+
+.modal-edit-subtitle {
+  font-size: 12px;
+  color: #64748b;
+  margin: 2px 0 0 0;
+}
+
+.btn-close-modal {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.btn-close-modal:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+  transform: rotate(90deg);
+}
+
+.modal-edit-body {
+  padding: 20px 22px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: #f8fafc;
+}
+
+.modal-edit-body::-webkit-scrollbar {
+  width: 6px;
+}
+.modal-edit-body::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.edit-group-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.group-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 8px;
+}
+
+.group-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.group-icon-circle {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+.group-icon-circle.blue {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+.group-icon-circle.amber {
+  background: #fef3c7;
+  color: #d97706;
+}
+.group-icon-circle.green {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.group-card-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.required-badge-pill {
+  font-size: 11px;
+  font-weight: 700;
+  background: #fee2e2;
+  color: #dc2626;
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid #fecaca;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Avatar Upload Box */
+.avatar-upload-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  background: #f1f5f9;
+  border-radius: 12px;
+  border: 1px dashed #cbd5e1;
+  margin-bottom: 14px;
+}
+
+.avatar-preview-wrapper {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.avatar-img-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 2.5px solid #ffffff;
+}
+
+.avatar-fallback-icon {
+  width: 100%;
+  height: 100%;
+  background: #cbd5e1;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 28px;
+  border: 2.5px solid #ffffff;
+}
+
+.avatar-camera-badge {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #0284c7;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  border: 2px solid #ffffff;
+}
+
+.avatar-info-cluster {
+  flex: 1;
+}
+
+.avatar-label-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.avatar-sub-guide {
+  font-size: 11.5px;
+  color: #64748b;
+  margin: 2px 0 8px 0;
+  line-height: 1.35;
+}
+
+.btn-pick-avatar {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #0284c7;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-pick-avatar:hover {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #ffffff;
+}
+
+/* Grid layout for inputs */
+.form-fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.form-field-item {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-field-item.full-width {
+  grid-column: span 2;
+}
+
+.form-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.input-with-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input-leading-icon {
+  position: absolute;
+  left: 12px;
+  color: #94a3b8;
+  font-size: 14px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.custom-form-input,
+.custom-form-select {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px 0 34px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 9px;
+  background: #f8fafc;
+  font-size: 13px;
+  color: #0f172a;
+  outline: none;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.custom-form-input:hover,
+.custom-form-select:hover {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.custom-form-input:focus,
+.custom-form-select:focus {
+  background: #ffffff;
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+.custom-form-input::placeholder {
+  color: #94a3b8;
+  font-size: 12.5px;
+}
+
+.uppercase-text {
+  text-transform: uppercase;
+}
+
+/* Footer Actions */
+.modal-edit-footer {
+  padding: 16px 22px;
+  background: #ffffff;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.btn-cancel-modal {
+  padding: 9px 18px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-cancel-modal:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.btn-save-profile-action {
+  padding: 9px 24px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  border: none;
+  color: #ffffff;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+
+.btn-save-profile-action:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(2, 132, 199, 0.45);
+}
+
+.btn-save-profile-action:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+@media (max-width: 540px) {
+  .form-fields-grid {
+    grid-template-columns: 1fr;
+  }
+  .form-field-item.full-width {
+    grid-column: span 1;
+  }
+}
+
+/* Modal Promotion Compact Styles */
+.modal-card-box.modal-promotion-compact {
+  max-width: 580px !important;
+  width: 95% !important;
+  max-height: 88vh !important;
+  padding: 0 !important;
+  border-radius: 20px !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: #ffffff !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.35) !important;
+}
+
+.promo-compact-header {
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #E0F2FE 0%, #BAE6FD 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(2, 132, 199, 0.2);
+}
+
+.promo-header-icon-wrap {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #0284c7;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.promo-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #212529;
+}
+
+.btn-close-compact {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6c757d;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-close-compact:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #000;
+}
+
+.promo-compact-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.promo-welcome-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.promo-meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.promo-meta-item {
+  display: flex;
+  align-items: center;
+  color: #475569;
+  font-size: 13px;
+}
+
+.promo-deadline-box {
+  background: #fff5f5;
+  border: 1px solid #fed7d7;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.promo-rule-note {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.promo-compact-footer {
+  padding: 12px 20px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.promo-countdown-text {
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  font-size: 13px !important;
+  line-height: 1.2 !important;
+  display: inline-flex;
+  align-items: center;
+}
+
+.promo-buttons-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.btn-dismiss-pill {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 7px 20px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.btn-dismiss-pill:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.btn-boost-pill {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff !important;
+  border: none;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 7px 22px;
+  border-radius: 20px;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.btn-boost-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(2, 132, 199, 0.5);
+}
+
 </style>
 
+
+
+<style>
+/* Đảm bảo Teleport to="body" nhận backdrop và modal hiển thị chính giữa toàn màn hình */
+.modal-backdrop-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: rgba(15, 23, 42, 0.75) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 999999 !important;
+  padding: 16px !important;
+  box-sizing: border-box !important;
+}
+
+.modal-backdrop-overlay * {
+  box-sizing: border-box;
+}
+
+.modal-backdrop-overlay .modal-card-box {
+  background: #ffffff !important;
+  border-radius: 20px !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.45) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  position: relative !important;
+  z-index: 1000000 !important;
+  animation: modalScaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+</style>

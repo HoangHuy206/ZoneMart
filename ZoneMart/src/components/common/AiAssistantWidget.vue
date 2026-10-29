@@ -3,7 +3,7 @@
 import { ref, reactive, computed, nextTick, watch, onMounted, onUnmounted } from 'vue';
 import { apiFetch, getApiUrl } from "../../utils/apiConfig";
 
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 
 import { useAuth } from '../../composables/useAuth';
 
@@ -19,6 +19,12 @@ import AiRobotAvatar from './AiRobotAvatar.vue';
 
 
 const router = useRouter();
+const route = useRoute();
+
+const hasBottomStickyBar = computed(() => {
+  const p = route?.path || '';
+  return p === '/cart' || p.startsWith('/product/');
+});
 
 const auth = useAuth();
 
@@ -5064,7 +5070,7 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
 
   <Teleport to="body">
 
-    <div class="ai-widget-wrapper">
+    <div class="ai-widget-wrapper" :class="{ 'has-bottom-sticky-bar': hasBottomStickyBar }">
 
     <!-- Bong Bóng Lời Thoại Gợi Ý (Thi thoảng mới hiện phía trên avatar) -->
 
@@ -7474,7 +7480,7 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
 
   right: 3.5%;
 
-  z-index: 9999;
+  z-index: 1000;
 
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
@@ -12331,9 +12337,13 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
    Mobile Responsive & iOS Zoom Prevention for AI Assistant
    ================================================================ */
 @media (max-width: 768px) {
-  .ai-assistant-root {
+  .ai-widget-wrapper {
     right: 14px !important;
     bottom: calc(14px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .ai-widget-wrapper.has-bottom-sticky-bar {
+    bottom: calc(82px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   .ai-speech-bubble {

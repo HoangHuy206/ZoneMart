@@ -8,11 +8,16 @@ on:
         required: false
         default: 'v-apk-latest'
   push:
+    branches:
+      - main
     tags:
       - 'apk*'
       - 'build-apk*'
       - 'v-apk*'
       - 'v*-apk*'
+    paths:
+      - 'ZoneMart/**'
+      - '.github/workflows/build-apk.yml'
 
 permissions:
   contents: write
@@ -75,10 +80,10 @@ jobs:
 
       - name: 11. Phát hành GitHub Release (Link tải trực tiếp)
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
         with:
-          tag_name: ${{ github.event.inputs.release_tag || github.ref_name }}
-          name: "ZoneMart Android APK (${{ github.ref_name }})"
+          tag_name: ${{ github.event.inputs.release_tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || 'v-apk-latest' }}
+          name: "ZoneMart Android APK (v-apk-latest)"
           body: |
             🚀 **ZoneMart Android APK Đã Đóng Gói Thành Công!**
             - Phiên bản: Debug APK

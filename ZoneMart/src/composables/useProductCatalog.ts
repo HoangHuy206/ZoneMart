@@ -2020,7 +2020,7 @@ export function useProductCatalog() {
         rating: 5.0,
         reviewsCount: 14,
         sold: 42,
-        stock: p.stock || 50,
+        stock: typeof p.stock === 'number' ? p.stock : 50,
         description: p.description || `Sản phẩm ${p.name} tươi sạch thu hoạch trực tiếp từ ${resolvedStoreName}. Đã trải qua quy trình kiểm định an toàn chất lượng của sàn thương mại điện tử ZoneMart.`,
         highlights: [
           "Nông sản sạch thu hoạch tự nhiên trong ngày",
@@ -2059,8 +2059,19 @@ export function useProductCatalog() {
     if (dynamicActive.length > 0) {
       return dynamicActive;
     }
-    // Fallback chỉ khi thiết bị hoàn toàn offline và chưa từng tải được dữ liệu
-    return CATALOG_PRODUCTS;
+    // Fallback chỉ khi thiết bị hoàn toàn offline và chưa từng tải được dữ liệu (đồng bộ với overrides tồn kho)
+    return CATALOG_PRODUCTS.map(p => {
+      let st = p.stock;
+      try {
+        const rawO = typeof localStorage !== 'undefined' ? localStorage.getItem("zonemart_stock_overrides") : null;
+        if (rawO) {
+          const o = JSON.parse(rawO);
+          if (typeof o[p.id] === 'number') st = o[p.id];
+          else if (typeof o[p.name.toLowerCase().trim()] === 'number') st = o[p.name.toLowerCase().trim()];
+        }
+      } catch {}
+      return { ...p, stock: st };
+    });
   });
 
   // Danh sách toàn bộ gian hàng trích xuất tự động từ MongoDB và sản phẩm
@@ -2076,7 +2087,7 @@ export function useProductCatalog() {
       storeMap.set(key.toLowerCase(), {
         id: sId,
         name: s.storeName,
-        address: s.address || "Số 48 đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội",
+        address: s.address || "Chưa cập nhật",
         distanceKm: 1.2,
         deliveryTime: "15 - 20 phút",
         rating: 5.0,

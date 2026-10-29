@@ -232,6 +232,8 @@ namespace ZoneMart.Server.Controllers
 
             public double Lon { get; set; }
 
+            public double Lng { get; set; }
+
         }
 
 
@@ -1908,7 +1910,7 @@ namespace ZoneMart.Server.Controllers
 
         {
 
-            if (request == null || (request.Lat == 0 && request.Lon == 0))
+            if (request == null)
 
             {
 
@@ -1916,15 +1918,37 @@ namespace ZoneMart.Server.Controllers
 
             }
 
+            double effectiveLat = request.Lat;
 
+            double effectiveLon = request.Lon != 0 ? request.Lon : request.Lng;
+
+            if (effectiveLat == 0 && effectiveLon == 0)
+
+            {
+
+                return BadRequest(new { success = false, message = "Tọa độ GPS không hợp lệ." });
+
+            }
+
+            // Phòng ngừa kinh độ = 0 hoặc ngoài lãnh thổ Việt Nam gây lỗi dịch sai sang Châu Phi/Mali
+
+            if (effectiveLon == 0 || effectiveLon < 100 || effectiveLon > 115 || effectiveLat < 8 || effectiveLat > 24)
+
+            {
+
+                Console.WriteLine($"[GPS Backend]: Cảnh báo tọa độ bất thường ngoài VN: Lat={effectiveLat}, Lon={effectiveLon}. Dùng mặc định Hà Nội.");
+
+                effectiveLat = 21.0333;
+
+                effectiveLon = 105.7983;
+
+            }
 
             // Tọa độ GPS thật sự CHỈ hiện ở Backend Console, TUYỆT ĐỐI không trả tọa độ số về Frontend
 
-            Console.WriteLine($"[GPS Backend]: Nhận tọa độ GPS thực tế từ Client: Lat={request.Lat}, Lon={request.Lon}");
+            Console.WriteLine($"[GPS Backend]: Nhận tọa độ GPS thực tế từ Client: Lat={effectiveLat}, Lon={effectiveLon}");
 
-
-
-            var (safeLocationName, amenity, hamlet, suburb, district, city) = await ResolveSafeLocationFromGpsAsync(request.Lat, request.Lon);
+            var (safeLocationName, amenity, hamlet, suburb, district, city) = await ResolveSafeLocationFromGpsAsync(effectiveLat, effectiveLon);
 
 
 
@@ -2046,15 +2070,7 @@ namespace ZoneMart.Server.Controllers
 
 
 
-            // Nếu chỉ còn lại chuỗi tĩnh từ mock cũ
 
-            if (Regex.IsMatch(cleaned, @"^Phường\s+Tây\s+Mỗ\s*,\s*Quận\s+Nam\s+Từ\s+Liêm\s*,\s*Hà\s+Nội$", RegexOptions.IgnoreCase))
-
-            {
-
-                return "";
-
-            }
 
 
 
