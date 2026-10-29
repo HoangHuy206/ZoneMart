@@ -197,19 +197,19 @@ def extract_actionable_tasks():
     for f in all_files:
         f_lower = f.lower()
         if "chat" in f_lower:
-            features_detected["chat"] = "💬 **Module Chat Người Bán:** Hoàn thiện và test kết nối Chat giữa khách và chủ shop (`ChatController.cs`, `useSellerChat.ts`)"
+            features_detected["chat"] = "💬 **Module Chat Người Bán & Người Mua:** Hoàn thiện và test kết nối Chat giữa khách và chủ shop (`ChatController.cs`, `useSellerChat.ts`)"
         elif "review" in f_lower:
-            features_detected["review"] = "⭐ **Module Đánh Giá (Review):** Tích hợp hiển thị sao và bình luận sản phẩm (`Review.cs`, `ProductDetailView.vue`)"
+            features_detected["review"] = "⭐ **Module Đánh Giá (Review & Rating):** Tích hợp hiển thị sao và bình luận sản phẩm (`Review.cs`, `ProductDetailView.vue`)"
         elif "sellerdashboard" in f_lower or "/binh/" in f_lower:
-            features_detected["binh"] = "📊 **Màn Hình Người Bán (Bình):** Kiểm tra hoàn thiện thống kê và giao diện `SellerDashboardView.vue`"
+            features_detected["seller_dashboard"] = "📊 **Bảng Điều Khiển Người Bán (Seller Dashboard):** Kiểm tra hoàn thiện thống kê và giao diện (`SellerDashboardView.vue`)"
         elif "buyerorders" in f_lower or "/thang/" in f_lower:
-            features_detected["thang"] = "📦 **Màn Hình Đơn Hàng (Thắng):** Tinh chỉnh danh sách đơn hàng người mua `BuyerOrdersView.vue`"
+            features_detected["buyer_orders"] = "📦 **Quản Lý Đơn Hàng (Buyer Orders):** Tinh chỉnh danh sách và trạng thái đơn hàng (`BuyerOrdersView.vue`, `OrdersController.cs`)"
         elif "realtime" in f_lower or "order" in f_lower:
-            features_detected["orders"] = "⚡ **Xử Lý Đơn Hàng Realtime:** Kiểm tra luồng cập nhật trạng thái đơn tức thì (`orderRealtimeService.ts`, `OrdersController.cs`)"
+            features_detected["orders"] = "⚡ **Xử Lý Đơn Hàng Realtime:** Kiểm tra luồng cập nhật trạng thái đơn hàng thời gian thực (`orderRealtimeService.ts`, `OrdersController.cs`)"
         elif "catalog" in f_lower or "product" in f_lower:
-            features_detected["catalog"] = "🛍️ **Danh Mục & Sản Phẩm (Huy):** Kiểm tra bộ lọc danh mục và dữ liệu mẫu (`ProductListView.vue`, `useProductCatalog.ts`)"
+            features_detected["catalog"] = "🛍️ **Danh Mục & Chi Tiết Sản Phẩm:** Kiểm tra bộ lọc phân tầng danh mục và dữ liệu mẫu (`ProductListView.vue`, `useProductCatalog.ts`)"
 
-    for key in ["chat", "review", "binh", "thang", "orders", "catalog"]:
+    for key in ["chat", "review", "seller_dashboard", "buyer_orders", "orders", "catalog"]:
         if key in features_detected:
             tasks.append(features_detected[key])
 
