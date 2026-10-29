@@ -44,6 +44,7 @@ builder.Services.AddHttpClient("FptAiClient", client =>
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<ITelegramService, TelegramService>();
 builder.Services.AddScoped<IProductModerationService, ProductModerationService>();
+builder.Services.AddScoped<IHumanHandoverService, HumanHandoverService>();
 builder.Services.AddHostedService<PythonFaceServiceManager>();
 builder.Services.AddSingleton<OrderRealtimeManager>();
 builder.Services.AddSingleton<SellerChatManager>();

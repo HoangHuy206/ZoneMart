@@ -6,7 +6,7 @@
  */
 
 const KNOWN_PORT = '5000';
-const DEFAULT_LAN_IP = '192.168.99.27';
+const DEFAULT_LAN_IP = '172.16.28.71';
 
 let cachedDiscoveredUrl: string | null = null;
 let lastDiscoveredAt = 0;
@@ -80,7 +80,13 @@ function raceCandidates(candidates: string[], timeoutMs: number): Promise<string
 function generateSubnetCandidates(): string[] {
   const list: string[] = [];
 
-  // 1. Dải 192.168.99.x (Wi-Fi HHT WIFI hiện tại của máy tính dev)
+  // 1. Dải 172.16.28.x (Wi-Fi hiện tại của máy tính dev)
+  list.push(`http://172.16.28.71:${KNOWN_PORT}`);
+  for (let i = 1; i <= 100; i++) {
+    if (i !== 71) list.push(`http://172.16.28.${i}:${KNOWN_PORT}`);
+  }
+
+  // 2. Dải 192.168.99.x (Wi-Fi HHT WIFI)
   list.push(`http://192.168.99.27:${KNOWN_PORT}`);
   for (let i = 2; i <= 60; i++) {
     if (i !== 27) list.push(`http://192.168.99.${i}:${KNOWN_PORT}`);
@@ -220,12 +226,27 @@ export async function autoDiscoverServer(force = false): Promise<string | null> 
 export function getBaseApiUrl(): string {
   if (typeof window === 'undefined') return '';
 
-  // 1. URL đã được hệ thống tự động dò tìm thấy
+  const hostname = window.location.hostname || '';
+  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+
+  // 1. Nếu đang mở từ Localhost (Web Desktop dev): Luôn dùng relative URL '' để qua Vite Proxy tới 127.0.0.1:5000
+  // Tuyệt đối không dùng IP LAN cũ trong localStorage vì người dùng đổi mạng Wi-Fi sẽ bị treo kết nối!
+  if (isLocalhost) {
+    return '';
+  }
+
+  // 2. Nếu đang mở từ trình duyệt trên điện thoại qua IP Wi-Fi (ví dụ http://172.16.28.71:5173):
+  // Backend cùng nằm trên máy tính này nên hostname chính là IP của backend cổng 5000
+  if (hostname && !isLocalhost && !hostname.includes('capacitor')) {
+    return `http://${hostname}:${KNOWN_PORT}`;
+  }
+
+  // 3. URL đã được hệ thống tự động dò tìm thấy
   if (cachedDiscoveredUrl) {
     return cachedDiscoveredUrl;
   }
 
-  // 2. Cấu hình đã lưu trong localStorage từ lần trước
+  // 4. Cấu hình đã lưu trong localStorage từ lần trước
   try {
     const saved = localStorage.getItem('zonemart_api_server_url');
     if (saved && saved.trim()) {
@@ -233,7 +254,7 @@ export function getBaseApiUrl(): string {
     }
   } catch {}
 
-  // 3. Biến môi trường Vite (.env)
+  // 5. Biến môi trường Vite (.env)
   try {
     const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
     if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
@@ -241,17 +262,17 @@ export function getBaseApiUrl(): string {
     }
   } catch {}
 
-  // 4. Môi trường Native App (Capacitor Android / iOS)
+  // 6. Môi trường Native App (Capacitor Android / iOS)
   const isCapacitor =
     window.location.protocol === 'capacitor:' ||
     window.location.protocol === 'ionic:' ||
-    (window.location.hostname === 'localhost' && !window.location.port);
+    (hostname === 'localhost' && !window.location.port);
 
   if (isCapacitor) {
     return `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`;
   }
 
-  // 5. Mặc định trên Web Desktop (Vite proxy)
+  // 7. Mặc định trên Web Desktop (Vite proxy)
   return '';
 }
 
@@ -269,7 +290,10 @@ export function getApiUrl(path: string): string {
  * Gửi HTTP request có cơ chế tự động dò tìm lại IP và thử lại khi gặp sự cố mạng
  */
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  const execute = async (url: string, timeoutSec = 6): Promise<Response> => {
+  const targetUrl = getApiUrl(path);
+
+  // Hàm thực thi fetch kèm controller timeout riêng cho từng lượt gọi
+  const execute = async (url: string, timeoutSec = 15): Promise<Response> => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
     try {
@@ -288,11 +312,11 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   const currentUrl = getApiUrl(path);
 
   try {
-    const res = await execute(currentUrl, 6);
+    const res = await execute(currentUrl, 15);
 
-    // Xử lý fallback cho Vite proxy nếu trả về 404
+    // Xử lý fallback cho Vite proxy nếu trả về 404, 502, 504
     if (
-      res.status === 404 &&
+      (res.status === 404 || res.status === 502 || res.status === 504) &&
       typeof window !== 'undefined' &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
       !currentUrl.startsWith('http')
@@ -304,6 +328,15 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
 
     return res;
   } catch (err: any) {
+    // Nếu đang ở localhost mà fetch relative URL gặp sự cố, thử ngay http://127.0.0.1:5000 trực tiếp (không đợi auto-discover)
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      try {
+        const cleanPath = path.startsWith('/') ? path : '/' + path;
+        const apiPath = cleanPath.startsWith('/api') ? cleanPath : '/api' + cleanPath;
+        return await fetch(`http://127.0.0.1:${KNOWN_PORT}${apiPath}`, init);
+      } catch (directErr) {}
+    }
+
     // Tự động kích hoạt cơ chế Auto-Discovery quét tìm IP mới của máy chủ
     try {
       console.warn('[ZoneMart] Đang tự động dò tìm máy chủ backend...');
@@ -313,11 +346,25 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
         const apiPath = cleanPath.startsWith('/api') ? cleanPath : '/api' + cleanPath;
         const retryUrl = `${discovered}${apiPath}`;
         console.log(`[ZoneMart] Tự động thử lại với máy chủ: ${retryUrl}`);
-        return await execute(retryUrl, 7);
+        return await execute(retryUrl, 15);
       }
     } catch (retryErr) {}
 
-    // Thông báo lỗi thân thiện, bảo mật
+    // Fallback nếu URL relative gặp sự cố
+    if (typeof window !== 'undefined' && !targetUrl.startsWith('http')) {
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (isLocalhost) {
+        try {
+          return await fetch('http://127.0.0.1:5000' + targetUrl, init);
+        } catch (fallbackErr) {}
+      } else {
+        try {
+          return await fetch(`http://${DEFAULT_LAN_IP}:5000` + targetUrl, init);
+        } catch (fallbackErr) {}
+      }
+    }
+
+    // Thông báo lỗi thân thiện, bảo mật, không để lộ mã nguồn hay cơ sở dữ liệu
     const isTimeout = err?.name === 'AbortError';
     const friendlyMsg = isTimeout
       ? 'Hệ thống phản hồi chậm hoặc mạng gián đoạn. Vui lòng kiểm tra lại kết nối Wi-Fi!'

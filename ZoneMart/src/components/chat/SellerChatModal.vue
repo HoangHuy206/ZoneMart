@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onMounted } from 'vue';
+import { ref, nextTick, watch, onMounted } from 'vue';
 import { useSellerChat } from '../../composables/useSellerChat';
 import { getCleanAvatar } from '../../utils/avatarHelper';
 

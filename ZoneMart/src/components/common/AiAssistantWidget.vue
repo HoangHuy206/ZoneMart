@@ -3729,24 +3729,15 @@ async function sendMessage(customText?: string, extraPayload?: any) {
 
 
 
-    // Bất cứ câu nào hỏi về vị trí: Trình duyệt trực tiếp hỏi quyền vị trí ở góc trên bên trái thanh URL (cạnh chữ i/ổ khóa).
-
+    // Bất cứ câu nào hỏi về vị trí: Trình duyệt trực tiếp hỏi quyền vị trí
     // Tuyệt đối không có nút bấm trong chat.
-
     if (isLocMsg) {
-
       if (!navigator.geolocation) {
-
         isLoading.value = false;
-
         userChatHistory.value.push({
-
           id: (Date.now() + 1).toString(),
-
           sender: 'ai',
-
-          text: 'Oh no bạn không cho phép truy cập vị trí thì mình bó tay ròi huhu! 🥺📍\n\nNếu muốn mình xem vị trí và gợi ý quán ngon gần nhất, bạn bấm vào biểu tượng ổ khóa/chữ (i) ở góc bên trái thanh địa chỉ trình duyệt để Bật lại quyền vị trí nhé! ✨',
-
+          text: 'Oh no, bạn chưa cho phép truy cập vị trí nên mình chưa thể tự định vị được rồi ạ! 🥺📍\n\nNếu muốn mình xem vị trí và gợi ý quán ngon gần nhất, bạn vui lòng Bật quyền truy cập vị trí trong Cài đặt trình duyệt/thiết bị nhé! Hoặc bạn cũng có thể nhắn trực tiếp địa chỉ của bạn vào đây để mình tìm quán ngay nha! ✨',
           timestamp: getCurrentTime(),
 
           provider: 'ZoneMart AI Assistant',
@@ -3927,7 +3918,7 @@ async function sendMessage(customText?: string, extraPayload?: any) {
 
             sender: 'ai',
 
-            text: 'Oh no bạn không cho phép truy cập vị trí thì mình bó tay ròi huhu! 🥺📍\n\nNếu muốn mình xem vị trí và gợi ý quán ngon gần nhất, bạn bấm vào biểu tượng ổ khóa/chữ (i) ở góc bên trái thanh địa chỉ trình duyệt để Bật lại quyền vị trí nhé! ✨',
+            text: 'Oh no, bạn chưa cho phép truy cập vị trí nên mình chưa thể tự định vị được rồi ạ! 🥺📍\n\nNếu muốn mình xem vị trí và gợi ý quán ngon gần nhất, bạn vui lòng Bật quyền truy cập vị trí trong Cài đặt trình duyệt/thiết bị nhé! Hoặc bạn cũng có thể nhắn trực tiếp địa chỉ của bạn vào đây để mình tìm quán ngay nha! ✨',
 
             timestamp: getCurrentTime(),
 

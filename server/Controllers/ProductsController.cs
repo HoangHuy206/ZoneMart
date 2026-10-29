@@ -160,6 +160,11 @@ public class ProductsController : ControllerBase
                 }
             }
 
+            if (foundStore != null && foundStore.IsPromotedByAdmin && string.IsNullOrWhiteSpace(foundStore.Address))
+            {
+                return BadRequest(new { success = false, message = "Gian hàng được thăng cấp nhanh bắt buộc phải cập nhật Địa Chỉ Quán trước khi đăng bán sản phẩm!" });
+            }
+
             string resolvedStoreName = !string.IsNullOrWhiteSpace(dto.StoreName)
                 ? dto.StoreName
                 : (foundStore?.StoreName ?? "Gian hàng ZoneMart");

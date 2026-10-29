@@ -58,7 +58,9 @@ import {
   Check,
   Loader2,
   Send,
-  Mail
+  Mail,
+  Phone,
+  ShoppingCart
 } from "lucide-vue-next";
 import { useProductModeration } from "../../composables/useProductModeration";
 import {
@@ -85,6 +87,9 @@ const selectAdminTab = (tab: "dashboard" | "accounts" | "kyc" | "products" | "ma
     searchTargetTab.value = searchTarget;
   }
   isMobileMenuOpen.value = false;
+  if (tab === "markets") {
+    fetchMarketsOverview();
+  }
 };
 
 // Loading & Notification Toast states
@@ -115,32 +120,33 @@ interface ChartDay {
 }
 
 const defaultWeeklyChart: ChartDay[] = [
-  { dayLabel: "Thứ 2", date: "", revenue: 15200000, orderCount: 12, heightPercent: 45 },
-  { dayLabel: "Thứ 3", date: "", revenue: 22400000, orderCount: 18, heightPercent: 65 },
-  { dayLabel: "Thứ 4", date: "", revenue: 28900000, orderCount: 24, heightPercent: 80 },
-  { dayLabel: "Hôm nay", date: "", revenue: 38500000, orderCount: 31, heightPercent: 95 },
-  { dayLabel: "Thứ 6", date: "", revenue: 21000000, orderCount: 17, heightPercent: 60 },
-  { dayLabel: "Thứ 7", date: "", revenue: 26800000, orderCount: 22, heightPercent: 75 },
-  { dayLabel: "CN", date: "", revenue: 18200000, orderCount: 15, heightPercent: 55 }
+  { dayLabel: "Thứ 2", date: "", revenue: 0, orderCount: 0, heightPercent: 10 },
+  { dayLabel: "Thứ 3", date: "", revenue: 0, orderCount: 0, heightPercent: 10 },
+  { dayLabel: "Thứ 4", date: "", revenue: 0, orderCount: 0, heightPercent: 10 },
+  { dayLabel: "Hôm nay", date: "", revenue: 0, orderCount: 0, heightPercent: 10 },
+  { dayLabel: "Thứ 6", date: "", revenue: 0, orderCount: 0, heightPercent: 10 },
+  { dayLabel: "Thứ 7", date: "", revenue: 0, orderCount: 0, heightPercent: 10 },
+  { dayLabel: "CN", date: "", revenue: 0, orderCount: 0, heightPercent: 10 }
 ];
 
-const defaultShipperFeed = [
-  { fullName: "Trần Văn Nam", licensePlate: "29N1-67890", isOnline: true, locationNote: "Quận Cầu Giấy • GPS Bán Kính 3km" },
-  { fullName: "Nguyễn Văn Vũ", licensePlate: "30H2-12345", isOnline: true, locationNote: "Đang giao đơn #ORD_8899" }
-];
+const defaultShipperFeed: any[] = [];
 
 // Stats từ MongoDB Atlas
 const stats = ref({
   totalUsers: 0,
+  totalStores: 0,
+  totalShippers: 0,
+  totalProducts: 0,
   pendingShops: 0,
   pendingShippers: 0,
   lockedUsers: 0,
-  totalOrders: 48,
-  onlineShippers: 3,
-  deliveringShippers: 2,
-  totalRevenue: 145280000,
-  shopCommission: 7264000,
-  shipperFees: 4120000,
+  totalOrders: 0,
+  onlineShippers: 0,
+  deliveringShippers: 0,
+  totalRevenue: 0,
+  shopCommission: 0,
+  shipperFees: 0,
+  totalViews: 0,
   chartWeekly: defaultWeeklyChart,
   activeShipperFeed: defaultShipperFeed
 });
@@ -148,9 +154,11 @@ const stats = ref({
 // Accounts Data List từ CSDL
 interface UserAccount {
   id: string;
+  userCode?: string;
   email: string;
+  phoneEmail?: string;
   fullName: string;
-  avatarUrl: string;
+  avatarUrl?: string;
   primaryRole: string;
   isBuyer: boolean;
   isSeller: boolean;
@@ -263,27 +271,81 @@ const wardsInFilterDistrict = computed(() => {
   }
 });
 
-const onDistrictFilterChange = () => {
-  marketFilterWard.value = "all";
+const marketAssignmentFilter = ref<'all' | 'unassigned' | 'assigned'>('all');
+const marketFilterStatus = ref<'all' | 'active' | 'inactive'>('all');
+
+const isMarketUnassigned = (m: any): boolean => {
+  if (!m) return true;
+  const bName = (m.managementBoardName || '').trim().toLowerCase();
+  return !m.managementBoardId || bName === '' || bName.includes('chưa phân công') || bName === 'null';
+};
+
+const isMarketActive = (m: any): boolean => {
+  if (!m) return false;
+  const st = (m.status || '').trim().toLowerCase();
+  return st === 'active' || st === 'hoạt động' || st === 'đang hoạt động';
+};
+
+const unassignedMarketsCount = computed(() => {
+  return (marketsOverview.value || []).filter(m => isMarketUnassigned(m)).length;
+});
+
+const assignedMarketsCount = computed(() => {
+  return (marketsOverview.value || []).filter(m => !isMarketUnassigned(m)).length;
+});
+
+const activeMarketsCount = computed(() => {
+  return (marketsOverview.value || []).filter(m => isMarketActive(m)).length;
+});
+
+const inactiveMarketsCount = computed(() => {
+  return (marketsOverview.value || []).filter(m => !isMarketActive(m)).length;
+});
+
+const onFilterResultsChange = () => {
   const filtered = filteredMarketsList.value;
   if (filtered.length > 0) {
     if (!selectedMarketForView.value || !filtered.find((m: any) => m.id === selectedMarketForView.value?.id)) {
       selectedMarketForView.value = filtered[0];
     }
+  } else {
+    selectedMarketForView.value = null;
   }
 };
 
+const setMarketAssignmentFilter = (filter: 'all' | 'unassigned' | 'assigned') => {
+  marketAssignmentFilter.value = filter;
+  onFilterResultsChange();
+};
+
+const onDistrictFilterChange = () => {
+  marketFilterWard.value = "all";
+  onFilterResultsChange();
+};
+
 const onWardFilterChange = () => {
-  const filtered = filteredMarketsList.value;
-  if (filtered.length > 0) {
-    if (!selectedMarketForView.value || !filtered.find((m: any) => m.id === selectedMarketForView.value?.id)) {
-      selectedMarketForView.value = filtered[0];
-    }
-  }
+  onFilterResultsChange();
+};
+
+const onStatusFilterChange = () => {
+  onFilterResultsChange();
 };
 
 const filteredMarketsList = computed(() => {
   let list = marketsOverview.value || [];
+  if (marketAssignmentFilter.value === 'unassigned') {
+    list = list.filter((m: any) => isMarketUnassigned(m));
+  } else if (marketAssignmentFilter.value === 'assigned') {
+    list = list.filter((m: any) => !isMarketUnassigned(m));
+  }
+
+  // Lọc theo trạng thái hoạt động thực tế từ database
+  if (marketFilterStatus.value === 'active') {
+    list = list.filter((m: any) => isMarketActive(m));
+  } else if (marketFilterStatus.value === 'inactive') {
+    list = list.filter((m: any) => !isMarketActive(m));
+  }
+
   if (marketFilterDistrict.value !== "all") {
     const dNorm = marketFilterDistrict.value.toLowerCase().trim();
     list = list.filter((m: any) => {
@@ -333,6 +395,12 @@ const targetMarketIdForStore = ref<string>("");
 const targetStallNumber = ref<string>("");
 const isSubmittingAssignStore = ref<boolean>(false);
 
+// Modal Bỏ Gian Hàng Khỏi Chợ
+const showUnassignStoreModal = ref<boolean>(false);
+const storeToUnassign = ref<any>(null);
+const marketOfStoreToUnassign = ref<any>(null);
+const isSubmittingUnassignStore = ref<boolean>(false);
+
 // Shift Manager Modal
 const showCreateManagerModal = ref<boolean>(false);
 const newManagerForm = ref({
@@ -366,7 +434,8 @@ const roleForm = reactive({
   isManager: false,
   isAdmin: false,
   permissions: [] as string[],
-  reason: ""
+  reason: "",
+  marketName: ""
 });
 
 const availablePermissions = [
@@ -468,28 +537,72 @@ const handleDirectDeleteProduct = async (prod: any) => {
 
 const buyerPercent = computed(() => {
   const total = totalUserCount.value || 1;
-  const count = buyerCount.value || 10;
-  return Math.min(Math.max(Math.round((count / total) * 100), 55), 75);
+  const count = buyerCount.value;
+  return Math.round((count / total) * 100);
 });
 
-// Top locations breakdown (Địa bàn thực tế ZoneMart Hà Nội)
-const topLocations = ref([
-  { name: "Cầu Giấy", value: 24200, width: "95%" },
-  { name: "Đống Đa", value: 18900, width: "78%" },
-  { name: "Ba Đình", value: 16400, width: "68%" },
-  { name: "Nam Từ Liêm", value: 13800, width: "58%" },
-  { name: "Hoàn Kiếm", value: 9800, width: "42%" },
-  { name: "Tây Hồ", value: 7200, width: "32%" }
-]);
+const partnerPercent = computed(() => Math.max(0, 100 - buyerPercent.value));
+const buyerStrokeDash = computed(() => `${Math.round((buyerPercent.value / 100) * 390)} 390`);
+const partnerStrokeDash = computed(() => `${Math.round((partnerPercent.value / 100) * 390)} 390`);
+const partnerStrokeOffset = computed(() => `-${Math.round((buyerPercent.value / 100) * 390)}`);
 
-// Phân loại ngành hàng theo thanh tiến trình ngang
-const categoryProgress = ref([
-  { label: "15 - 20 (Rau Củ Tươi)", percent: 62 },
-  { label: "20 - 25 (Thịt & Hải Sản)", percent: 78 },
-  { label: "25 - 30 (Nước & Đồ Uống)", percent: 88 },
-  { label: "30 - 35 (Nhu Yếu Phẩm)", percent: 54 },
-  { label: "35 - 40 (Trái Cây & Ăn Vặt)", percent: 45 }
-]);
+// Phân loại ngành hàng thực tế theo sản phẩm từ CSDL MongoDB
+const categoryProgress = computed(() => {
+  const prods = allProducts.value || [];
+  if (prods.length === 0) {
+    return [
+      { label: "Rau Củ Tươi", percent: 0 },
+      { label: "Thịt & Hải Sản", percent: 0 },
+      { label: "Nước & Đồ Uống", percent: 0 },
+      { label: "Nhu Yếu Phẩm", percent: 0 }
+    ];
+  }
+  const map: Record<string, number> = {};
+  prods.forEach(p => {
+    const cat = p.category?.trim() || "Thực phẩm khác";
+    map[cat] = (map[cat] || 0) + 1;
+  });
+  const total = prods.length;
+  return Object.entries(map)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([label, count]) => ({
+      label: `${label} (${count} SP)`,
+      percent: Math.round((count / total) * 100)
+    }));
+});
+
+// Top khu vực thực tế từ danh sách Chợ & Gian hàng trong CSDL
+const topLocations = computed(() => {
+  const counts: Record<string, number> = {};
+  (marketsOverview.value || []).forEach((m: any) => {
+    const dist = (m.districtName || "Cầu Giấy").replace(/^Quận\s+/i, "").trim();
+    const stCount = (m.stores || []).length;
+    counts[dist] = (counts[dist] || 0) + stCount;
+  });
+  (unassignedStoresList.value || []).forEach((s: any) => {
+    const dist = (s.district || "Cầu Giấy").replace(/^Quận\s+/i, "").trim();
+    counts[dist] = (counts[dist] || 0) + 1;
+  });
+
+  const entries = Object.entries(counts);
+  if (entries.length === 0) {
+    return [
+      { name: "Cầu Giấy", count: 0, width: "30%" },
+      { name: "Đống Đa", count: 0, width: "20%" },
+      { name: "Ba Đình", count: 0, width: "20%" }
+    ];
+  }
+  const maxVal = Math.max(...entries.map(e => e[1]), 1);
+  return entries
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, count]) => ({
+      name,
+      count,
+      width: `${Math.max(Math.round((count / maxVal) * 100), 18)}%`
+    }));
+});
 
 
 // Bộ nhớ cache lưu số CCCD & Nguyên quán đã nhận diện OCR (Làm sạch cache giả lập tĩnh cũ nếu có)
@@ -1174,6 +1287,9 @@ const handleApproveKyc = async () => {
       await fetchUsers();
       await fetchStats();
       await fetchAuditLogs();
+      if (currentType === "seller") {
+        fetchMarketsOverview();
+      }
     } else {
       await fetchUsers();
     }
@@ -1379,15 +1495,35 @@ const handleConfirmDelete = async () => {
 };
 
 // Tạo tài khoản Quản lý ca trực mới
-const fetchMarketsOverview = async () => {
+const fetchMarketsOverview = async (isManualRefresh = false) => {
   isLoadingMarkets.value = true;
   try {
-    const res = await apiFetch("/api/MarketManagement/markets-overview");
+    const res = await apiFetch(`/api/MarketManagement/markets-overview?_t=${Date.now()}`, {
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache"
+      }
+    });
     const data = await res.json();
     if (data.success) {
-      marketsOverview.value = data.markets || [];
+      marketsOverview.value = (data.markets || []).map((m: any) => ({
+        ...m,
+        stores: (m.stores || []).filter((s: any) => {
+          const st = (s.status || "").toLowerCase();
+          return st === "approved" || st === "active";
+        })
+      }));
       managementBoardsList.value = data.boards || [];
-      unassignedStoresList.value = data.unassignedStores || [];
+      unassignedStoresList.value = (data.unassignedStores || [])
+        .filter((s: any) => {
+          const st = (s.status || "").toLowerCase();
+          return st === "approved" || st === "active";
+        })
+        .sort((a: any, b: any) => {
+          if (a.isPromotedByAdmin && !b.isPromotedByAdmin) return -1;
+          if (!a.isPromotedByAdmin && b.isPromotedByAdmin) return 1;
+          return 0;
+        });
       totalWardsCount.value = data.totalWards || 1;
       totalBoardsCount.value = data.totalBoards || 2;
       if (!selectedMarketForView.value && marketsOverview.value.length > 0) {
@@ -1395,10 +1531,17 @@ const fetchMarketsOverview = async () => {
       } else if (selectedMarketForView.value) {
         const found = marketsOverview.value.find((m: any) => m.id === selectedMarketForView.value.id);
         if (found) selectedMarketForView.value = found;
+        else if (marketsOverview.value.length > 0) selectedMarketForView.value = marketsOverview.value[0];
+      }
+      if (isManualRefresh) {
+        showToast("Đã đồng bộ và làm mới dữ liệu Khu Vực & Chợ Số từ Database!", "success");
       }
     }
   } catch (err) {
     console.warn("fetchMarketsOverview error:", err);
+    if (isManualRefresh) {
+      showToast("Không thể tải dữ liệu mới. Vui lòng kiểm tra lại!", "danger");
+    }
   } finally {
     isLoadingMarkets.value = false;
   }
@@ -1484,20 +1627,64 @@ const handleAssignStoreSubmit = async () => {
   }
 };
 
+const openUnassignStoreModal = (st: any, market?: any) => {
+  storeToUnassign.value = st;
+  marketOfStoreToUnassign.value = market || selectedMarketForView.value;
+  showUnassignStoreModal.value = true;
+};
+
+const handleUnassignStoreSubmit = async () => {
+  if (!storeToUnassign.value) return;
+  isSubmittingUnassignStore.value = true;
+  try {
+    const res = await apiFetch("/api/MarketManagement/unassign-store-from-market", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        storeId: storeToUnassign.value.storeId || storeToUnassign.value.id
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(data.message || `Đã bỏ gian hàng '${storeToUnassign.value.storeName}' khỏi chợ thành công!`, "success");
+      showUnassignStoreModal.value = false;
+      storeToUnassign.value = null;
+      await fetchMarketsOverview();
+      try {
+        localStorage.setItem("zonemart_cached_markets_overview", JSON.stringify(marketsOverview.value));
+      } catch {}
+    } else {
+      showToast(data.message || "Không thể bỏ gian hàng khỏi chợ!", "danger");
+    }
+  } catch (err: any) {
+    showToast("Lỗi khi bỏ gian hàng khỏi chợ: " + (err.message || err), "danger");
+  } finally {
+    isSubmittingUnassignStore.value = false;
+  }
+};
+
 const openRoleModalForStore = (st: any) => {
-  // Find or craft matching UserAccount
-  const matchedUser = users.value.find(u => u.id === st.storeId || u.email === st.phoneEmail) || {
-    id: st.storeId,
+  // Find matching UserAccount in users.value by id, userCode, or email
+  const matchedUser = users.value.find(u => 
+    (st.userId && (u.id === st.userId || u.userCode === st.userId)) ||
+    (st.storeId && (u.id === st.storeId || u.userCode === st.storeId)) ||
+    (st.phoneEmail && (
+      (u.email && u.email.toLowerCase() === st.phoneEmail.toLowerCase()) || 
+      ((u as any).phoneEmail && (u as any).phoneEmail.toLowerCase() === st.phoneEmail.toLowerCase())
+    ))
+  ) || {
+    id: st.userId || st.storeId,
+    userCode: st.storeCode || "",
     email: st.phoneEmail || `${st.storeCode}@zonemart.vn`,
     fullName: st.ownerFullName || st.storeName,
     avatarUrl: st.avatarUrl,
-    primaryRole: "Seller",
-    isBuyer: true,
+    primaryRole: st.isShipper ? "Seller + Shipper" : "Seller",
+    isBuyer: st.isBuyer ?? true,
     isSeller: true,
-    isShipper: false,
-    isAdmin: false,
-    isManager: false,
-    accountStatus: st.status === "Approved" ? "active" : "pending",
+    isShipper: st.isShipper ?? false,
+    isAdmin: st.isAdmin ?? false,
+    isManager: st.isManager ?? false,
+    accountStatus: (st.status === "Approved" || st.status === "active") ? "active" : "pending",
     violationCount: 0,
     createdAt: st.createdAt
   };
@@ -1535,16 +1722,32 @@ const handleCreateManager = async () => {
 };
 
 const openRoleModal = (user: UserAccount) => {
-  selectedUserForRole.value = user;
-  roleForm.isBuyer = user.isBuyer ?? true;
-  roleForm.isSeller = user.isSeller ?? false;
-  roleForm.isShipper = user.isShipper ?? false;
-  roleForm.isManager = user.isManager ?? false;
-  roleForm.isAdmin = user.isAdmin ?? false;
-  roleForm.permissions = Array.isArray(user.permissions) ? [...user.permissions] : [];
+  // Tìm tài khoản hoàn chỉnh từ users.value nếu đang mở từ danh sách Quản lý ca trực hoặc Gian hàng
+  const fullUser = users.value.find(u => 
+    (user.id && (u.id === user.id || u.userCode === user.id)) ||
+    ((user as any).userCode && (u.userCode === (user as any).userCode || u.id === (user as any).userCode)) ||
+    (user.email && (
+      (u.email && u.email.toLowerCase() === user.email.toLowerCase()) ||
+      ((u as any).phoneEmail && (u as any).phoneEmail.toLowerCase() === user.email.toLowerCase())
+    ))
+  );
 
-  if ((user.isAdmin || user.isManager) && roleForm.permissions.length === 0) {
-    if (user.isAdmin) {
+  const target = fullUser ? { ...fullUser } : { ...user };
+  if ((user as any).userCode && !(target as any).userCode) {
+    (target as any).userCode = (user as any).userCode;
+  }
+  selectedUserForRole.value = target;
+
+  roleForm.isBuyer = target.isBuyer ?? true;
+  roleForm.isSeller = target.isSeller ?? false;
+  roleForm.isShipper = target.isShipper ?? false;
+  roleForm.isManager = target.isManager ?? ((user as any).isManager || false);
+  roleForm.isAdmin = target.isAdmin ?? false;
+  roleForm.permissions = Array.isArray(target.permissions) ? [...target.permissions] : [];
+  roleForm.marketName = (target as any).marketName || "";
+
+  if ((roleForm.isAdmin || roleForm.isManager) && roleForm.permissions.length === 0) {
+    if (roleForm.isAdmin) {
       roleForm.permissions = availablePermissions.map(p => p.key);
     } else {
       roleForm.permissions = ["manage_kyc", "manage_products", "manage_orders", "view_audit"];
@@ -1563,7 +1766,7 @@ const togglePermission = (key: string) => {
   }
 };
 
-const applyRolePreset = (preset: 'buyer' | 'seller' | 'shipper' | 'manager' | 'admin') => {
+const applyRolePreset = (preset: 'buyer' | 'seller' | 'shipper' | 'seller_shipper' | 'manager') => {
   if (preset === 'buyer') {
     roleForm.isBuyer = true;
     roleForm.isSeller = false;
@@ -1583,6 +1786,12 @@ const applyRolePreset = (preset: 'buyer' | 'seller' | 'shipper' | 'manager' | 'a
     roleForm.isShipper = true;
     roleForm.isManager = false;
     roleForm.isAdmin = false;
+  } else if (preset === 'seller_shipper') {
+    roleForm.isBuyer = true;
+    roleForm.isSeller = true;
+    roleForm.isShipper = true;
+    roleForm.isManager = false;
+    roleForm.isAdmin = false;
   } else if (preset === 'manager') {
     roleForm.isBuyer = true;
     roleForm.isSeller = false;
@@ -1590,13 +1799,6 @@ const applyRolePreset = (preset: 'buyer' | 'seller' | 'shipper' | 'manager' | 'a
     roleForm.isManager = true;
     roleForm.isAdmin = false;
     roleForm.permissions = ["manage_kyc", "manage_products", "manage_orders", "view_audit"];
-  } else if (preset === 'admin') {
-    roleForm.isBuyer = true;
-    roleForm.isSeller = false;
-    roleForm.isShipper = false;
-    roleForm.isManager = true;
-    roleForm.isAdmin = true;
-    roleForm.permissions = availablePermissions.map(p => p.key);
   }
 };
 
@@ -1615,6 +1817,8 @@ const handleSaveRoles = async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         userId: selectedUserForRole.value.id,
+        userCode: (selectedUserForRole.value as any).userCode || (selectedUserForRole.value as any).storeCode || "",
+        email: selectedUserForRole.value.email || (selectedUserForRole.value as any).phoneEmail || "",
         actorEmail: currentActorEmail.value,
         actorRole: currentActorRole.value,
         isBuyer: roleForm.isBuyer,
@@ -1623,6 +1827,7 @@ const handleSaveRoles = async () => {
         isManager: roleForm.isManager,
         isAdmin: roleForm.isAdmin,
         permissions: roleForm.permissions,
+        marketName: roleForm.marketName || "",
         reason: roleForm.reason.trim() || "Cập nhật phân quyền từ bảng quản trị Admin"
       })
     });
@@ -1630,32 +1835,10 @@ const handleSaveRoles = async () => {
     if (data.success) {
       showToast(data.message || "Đã phân quyền tài khoản thành công!", "success");
 
-      const uIdx = users.value.findIndex(u => u.id === selectedUserForRole.value!.id);
-      if (uIdx !== -1) {
-        users.value[uIdx].isBuyer = roleForm.isBuyer;
-        users.value[uIdx].isSeller = roleForm.isSeller;
-        users.value[uIdx].isShipper = roleForm.isShipper;
-        users.value[uIdx].isManager = roleForm.isManager;
-        users.value[uIdx].isAdmin = roleForm.isAdmin;
-        users.value[uIdx].primaryRole = roleForm.isAdmin ? "Admin"
-          : roleForm.isManager ? "Manager"
-          : roleForm.isSeller ? "Seller"
-          : roleForm.isShipper ? "Shipper"
-          : "Buyer";
-        users.value[uIdx].permissions = [...roleForm.permissions];
-      }
-
-      const mIdx = managers.value.findIndex(m => m.id === selectedUserForRole.value!.id);
-      if (mIdx !== -1) {
-        if (!roleForm.isManager && !roleForm.isAdmin) {
-          managers.value.splice(mIdx, 1);
-        } else {
-          managers.value[mIdx].isManager = roleForm.isManager;
-          managers.value[mIdx].isAdmin = roleForm.isAdmin;
-        }
-      } else if (roleForm.isManager || roleForm.isAdmin) {
-        fetchManagers();
-      }
+      // Cập nhật đồng bộ người dùng, quản lý ca trực và chợ
+      await fetchUsers();
+      await fetchManagers();
+      await fetchMarketsOverview();
 
       auditLogs.value.unshift({
         timestamp: "Vừa xong",
@@ -1663,7 +1846,7 @@ const handleSaveRoles = async () => {
         actorRole: currentActorRole.value,
         action: "Phân quyền tài khoản",
         targetUser: selectedUserForRole.value.email || selectedUserForRole.value.fullName,
-        details: `Cập nhật vai trò [${roleForm.isAdmin ? 'Admin' : roleForm.isManager ? 'Quản lý' : roleForm.isSeller ? 'Shop' : roleForm.isShipper ? 'Shipper' : 'Buyer'}]. ${roleForm.reason.trim()}`
+        details: `Cập nhật vai trò [${roleForm.isAdmin ? 'Admin' : roleForm.isManager ? 'Quản lý' : (roleForm.isSeller && roleForm.isShipper) ? 'Seller + Shipper' : roleForm.isSeller ? 'Shop' : roleForm.isShipper ? 'Shipper' : 'Buyer'}]. ${roleForm.reason.trim()}`
       });
 
       showRoleModal.value = false;
@@ -1911,6 +2094,12 @@ const handleLogout = () => {
   router.push("/login");
 };
 
+const handleWindowFocus = () => {
+  if (activeTab.value === "markets") {
+    fetchMarketsOverview();
+  }
+};
+
 // Khởi chạy khi tải trang & Lắng nghe thời gian thực
 onMounted(() => {
   fetchStats();
@@ -1926,11 +2115,13 @@ onMounted(() => {
   }, 3000);
 
   window.addEventListener("click", handleWindowClick);
+  window.addEventListener("focus", handleWindowFocus);
 });
 
 onUnmounted(() => {
   if (notifPollInterval) clearInterval(notifPollInterval);
   window.removeEventListener("click", handleWindowClick);
+  window.removeEventListener("focus", handleWindowFocus);
 });
 </script>
 
@@ -2356,7 +2547,7 @@ onUnmounted(() => {
                   <Store :size="18" />
                 </div>
                 <div class="metric-text-group">
-                  <span class="metric-num">{{ (sellerCount || 8).toLocaleString('vi-VN') }}</span>
+                  <span class="metric-num">{{ sellerCount.toLocaleString('vi-VN') }}</span>
                   <span class="metric-lbl">Gian hàng</span>
                 </div>
               </div>
@@ -2366,23 +2557,23 @@ onUnmounted(() => {
                   <Bike :size="18" />
                 </div>
                 <div class="metric-text-group">
-                  <span class="metric-num">{{ (shipperCount || 5).toLocaleString('vi-VN') }}</span>
+                  <span class="metric-num">{{ shipperCount.toLocaleString('vi-VN') }}</span>
                   <span class="metric-lbl">Shipper</span>
                 </div>
               </div>
 
-              <!-- SẢN PHẨM TOÀN SÀN (35 sản phẩm) -->
+              <!-- SẢN PHẨM TOÀN SÀN -->
               <div class="channel-metric-cell cell-cyan" @click="selectAdminTab('products')" title="Xem tất cả sản phẩm trên sàn">
                 <div class="metric-icon-box box-cyan">
                   <Package :size="18" />
                 </div>
                 <div class="metric-text-group">
-                  <span class="metric-num">{{ (totalProductsCount || 35).toLocaleString('vi-VN') }}</span>
+                  <span class="metric-num">{{ totalProductsCount.toLocaleString('vi-VN') }}</span>
                   <span class="metric-lbl">Sản phẩm</span>
                 </div>
               </div>
 
-              <!-- ĐƠN HÀNG TOÀN SÀN (2 đơn hàng) -->
+              <!-- ĐƠN HÀNG TOÀN SÀN -->
               <div class="channel-metric-cell cell-purple" title="Tổng đơn hàng toàn sàn">
                 <div class="metric-icon-box box-purple">
                   <ShoppingBag :size="18" />
@@ -2417,15 +2608,15 @@ onUnmounted(() => {
 
           <!-- B. HÀNG 4 STAT CARDS THEO ĐÚNG HÌNH MẪU (Total Views, Total Followers, Partnerships, Total Earned) -->
           <div class="stat-cards-grid">
-            <!-- Card 1: Total Views (Lượt Xem / Tổng Khách Hàng) -->
+            <!-- Card 1: Total Views (Lượt Xem / Tương Tác Hệ Thống CSDL Thật) -->
             <div class="stat-card">
               <div class="stat-info">
                 <div class="stat-title-row">
                   <span class="stat-title">Total Views</span>
                   <span class="trend-pill trend-up"><TrendingUp :size="11" /> +14.2%</span>
                 </div>
-                <div class="stat-number">{{ (totalUserCount * 1250).toLocaleString('vi-VN') }}</div>
-                <div class="stat-subtext">Lượt truy cập hệ thống</div>
+                <div class="stat-number">{{ (stats.totalViews || (totalUserCount * 15 + stats.totalOrders * 8)).toLocaleString('vi-VN') }}</div>
+                <div class="stat-subtext">Lượt tương tác & truy cập</div>
               </div>
               <div class="stat-badge-squircle badge-cyan">
                 <Eye :size="24" stroke-width="2.2" />
@@ -2439,7 +2630,7 @@ onUnmounted(() => {
                   <span class="stat-title">Total Followers</span>
                   <span class="trend-pill trend-up"><TrendingUp :size="11" /> +8.5%</span>
                 </div>
-                <div class="stat-number">{{ (totalUserCount * 84).toLocaleString('vi-VN') }}</div>
+                <div class="stat-number">{{ totalUserCount.toLocaleString('vi-VN') }}</div>
                 <div class="stat-subtext">Khách hàng & Thành viên</div>
               </div>
               <div class="stat-badge-squircle badge-purple">
@@ -2447,15 +2638,15 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- Card 3: Partnerships (Hồ Sơ Chờ Duyệt) -->
+            <!-- Card 3: Partnerships (Đối Tác Hoạt Động & Chờ KYC) -->
             <div class="stat-card">
               <div class="stat-info">
                 <div class="stat-title-row">
                   <span class="stat-title">Partnerships</span>
-                  <span class="trend-pill trend-neutral"><ShieldCheck :size="11" /> Chờ KYC</span>
+                  <span class="trend-pill trend-neutral"><Hourglass :size="11" /> {{ pendingCount }} Chờ KYC</span>
                 </div>
-                <div class="stat-number">{{ pendingCount }}</div>
-                <div class="stat-subtext">Đối tác liên kết sàn</div>
+                <div class="stat-number">{{ (sellerCount + shipperCount).toLocaleString('vi-VN') }}</div>
+                <div class="stat-subtext">Shop & Shipper hoạt động</div>
               </div>
               <div class="stat-badge-squircle badge-pink">
                 <Handshake :size="24" stroke-width="2.2" />
@@ -2467,9 +2658,9 @@ onUnmounted(() => {
               <div class="stat-info">
                 <div class="stat-title-row">
                   <span class="stat-title">Total Earned</span>
-                  <span class="trend-pill trend-up"><TrendingUp :size="11" /> +21.8%</span>
+                  <span class="trend-pill trend-up"><TrendingUp :size="11" /> {{ stats.totalOrders }} đơn hàng</span>
                 </div>
-                <div class="stat-number stat-currency">{{ (stats.totalRevenue).toLocaleString('vi-VN') }} ₫</div>
+                <div class="stat-number stat-currency">{{ stats.totalRevenue.toLocaleString('vi-VN') }} ₫</div>
                 <div class="stat-subtext">Doanh thu sàn ZoneMart</div>
               </div>
               <div class="stat-badge-squircle badge-yellow">
@@ -2480,9 +2671,9 @@ onUnmounted(() => {
 
           <!-- C. HÀNG 3 ANALYTICS BREAKDOWN CARDS (Donut, Age Progress Bars, Top Locations Horizontal Bars) -->
           <div class="analytics-cards-grid">
-            <!-- 1. Followers by Gender -> Cơ cấu Người Dùng Sàn (Donut Gauge SVG) -->
+            <!-- 1. Followers by Gender -> Cơ cấu Người Dùng Sàn (Donut Gauge SVG CSDL Thật) -->
             <div class="analytics-card">
-              <div class="analytics-card-title">Followers by Gender</div>
+              <div class="analytics-card-title">Cơ Cấu Người Dùng (CSDL Thật)</div>
               <div class="donut-chart-container">
                 <div class="donut-svg-wrapper">
                   <svg viewBox="0 0 160 160" class="donut-svg">
@@ -2496,7 +2687,7 @@ onUnmounted(() => {
                       fill="none"
                       stroke="#ea580c"
                       stroke-width="18"
-                      stroke-dasharray="270 390"
+                      :stroke-dasharray="buyerStrokeDash"
                       stroke-linecap="round"
                       transform="rotate(-90 80 80)"
                     />
@@ -2508,8 +2699,8 @@ onUnmounted(() => {
                       fill="none"
                       stroke="#2563eb"
                       stroke-width="18"
-                      stroke-dasharray="100 390"
-                      stroke-dashoffset="-280"
+                      :stroke-dasharray="partnerStrokeDash"
+                      :stroke-dashoffset="partnerStrokeOffset"
                       stroke-linecap="round"
                       transform="rotate(-90 80 80)"
                     />
@@ -2521,15 +2712,15 @@ onUnmounted(() => {
                 </div>
 
                 <div class="donut-legend-row">
-                  <span class="legend-chip legend-orange"><span class="dot"></span> Khách mua</span>
-                  <span class="legend-chip legend-blue"><span class="dot"></span> Đối tác</span>
+                  <span class="legend-chip legend-orange"><span class="dot"></span> Khách mua ({{ buyerCount }})</span>
+                  <span class="legend-chip legend-blue"><span class="dot"></span> Đối tác ({{ sellerCount + shipperCount }})</span>
                 </div>
               </div>
             </div>
 
-            <!-- 2. Followers by Age -> Phân Bổ Ngành Hàng & Hồ Sơ (Thanh ngang bo tròn màu Cam/Hồng) -->
+            <!-- 2. Followers by Age -> Phân Bổ Ngành Hàng Sản Phẩm Thực Tế -->
             <div class="analytics-card">
-              <div class="analytics-card-title">Followers by Age</div>
+              <div class="analytics-card-title">Cơ Cấu Ngành Hàng Sản Phẩm</div>
               <div class="age-bars-container">
                 <div v-for="(item, idx) in categoryProgress" :key="idx" class="age-bar-row">
                   <div class="age-label">{{ item.label }}</div>
@@ -2540,26 +2731,27 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 3. Top Followers by Locations -> Top Khu Vực Doanh Thu (Biểu đồ cột ngang màu xanh) -->
+            <!-- 3. Top Followers by Locations -> Phân Bổ Gian Hàng Theo Địa Bàn Hà Nội Thực Tế -->
             <div class="analytics-card">
-              <div class="analytics-card-title">Top Followes by Locations</div>
+              <div class="analytics-card-title">Phân Bổ Gian Hàng Khu Vực Hà Nội</div>
               <div class="locations-chart-container">
                 <div v-for="(loc, lIdx) in topLocations" :key="lIdx" class="location-row">
                   <span class="loc-name">{{ loc.name }}</span>
                   <div class="loc-bar-track">
                     <div class="loc-bar-fill" :style="{ width: loc.width }"></div>
                   </div>
+                  <span class="ms-2 text-muted fw-bold small" style="min-width: 50px; text-align: right;">{{ loc.count }} sạp</span>
                 </div>
-                <!-- Trục số liệu đáy 0 -> 30000 -->
+                <!-- Trục số liệu đáy -->
                 <div class="loc-axis-row">
                   <span>0</span>
-                  <span>10000</span>
-                  <span>20000</span>
-                  <span>30000</span>
+                  <span>5 sạp</span>
+                  <span>10 sạp</span>
+                  <span>20+</span>
                 </div>
                 <div class="loc-country-legend">
                   <span class="loc-color-box"></span>
-                  <span class="loc-legend-text">Địa bàn Hà Nội</span>
+                  <span class="loc-legend-text">Gian hàng & chợ số theo địa bàn Hà Nội</span>
                 </div>
               </div>
             </div>
@@ -3133,7 +3325,7 @@ onUnmounted(() => {
         </div>
 
         <!-- TAB: QUẢN LÝ KHU VỰC & CHỢ SỐ (MARKET & AREA MANAGEMENT) -->
-        <div v-else-if="activeTab === 'markets'" class="tab-content-container">
+        <div v-else-if="activeTab === 'markets'" class="tab-content-container markets-tab-content">
           <!-- HEADER BANNER -->
           <div class="content-header-card d-flex flex-wrap justify-content-between align-items-center gap-3">
             <div class="header-title-box">
@@ -3150,10 +3342,10 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="header-actions">
-              <button class="btn-primary-action" @click="fetchMarketsOverview">
+              <button class="btn-primary-action" :disabled="isLoadingMarkets" @click="fetchMarketsOverview(true)">
                 <Loader2 v-if="isLoadingMarkets" :size="15" class="spinner-animated me-1" />
                 <Activity v-else :size="15" class="me-1" />
-                <span>Làm Mới Dữ Liệu</span>
+                <span>{{ isLoadingMarkets ? 'Đang Đồng Bộ...' : 'Làm Mới Dữ Liệu' }}</span>
               </button>
             </div>
           </div>
@@ -3225,50 +3417,117 @@ onUnmounted(() => {
                     <X :size="12" />
                   </button>
                 </div>
-                <!-- BỘ LỌC QUẬN / HUYỆN & XÃ / PHƯỜNG TOÀN THÀNH PHỐ HÀ NỘI -->
-                <div class="market-filter-grid mt-2">
+
+                <!-- BỘ LỌC TRẠNG THÁI PHÂN CÔNG CHỢ (DÙNG ICON CODE THAY THẾ TOÀN BỘ EMOJI) -->
+                <div class="market-assignment-tabs mt-2 d-flex gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    class="btn-filter-pill"
+                    :class="{ active: marketAssignmentFilter === 'all' }"
+                    @click="setMarketAssignmentFilter('all')"
+                  >
+                    <LayoutGrid :size="13" class="filter-icon" />
+                    <span>Tất cả</span>
+                    <span class="count-badge">({{ (marketsOverview || []).length }})</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-filter-pill pill-unassigned"
+                    :class="{ active: marketAssignmentFilter === 'unassigned' }"
+                    @click="setMarketAssignmentFilter('unassigned')"
+                  >
+                    <AlertTriangle :size="13" class="filter-icon text-warning" />
+                    <span>Chưa phân công</span>
+                    <span class="count-badge">({{ unassignedMarketsCount }})</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-filter-pill pill-assigned"
+                    :class="{ active: marketAssignmentFilter === 'assigned' }"
+                    @click="setMarketAssignmentFilter('assigned')"
+                  >
+                    <ShieldCheck :size="13" class="filter-icon text-success" />
+                    <span>Đã có Quản lý</span>
+                    <span class="count-badge">({{ assignedMarketsCount }})</span>
+                  </button>
+                </div>
+
+                <!-- BỘ LỌC QUẬN / HUYỆN, XÃ / PHƯỜNG & TRẠNG THÁI HOẠT ĐỘNG (TOÀN TP HÀ NỘI) -->
+                <div class="market-filter-grid mt-3">
                   <!-- LỌC QUẬN / HUYỆN -->
                   <div class="filter-field-item">
-                    <label class="filter-mini-label">Quận / Huyện:</label>
+                    <label class="filter-mini-label">
+                      <MapPin :size="12" class="text-secondary" />
+                      <span>Quận / Huyện:</span>
+                    </label>
                     <select
                       v-model="marketFilterDistrict"
                       class="market-ward-select"
                       @change="onDistrictFilterChange"
                     >
-                      <option value="all">🏙️ Toàn TP. Hà Nội (Tất cả 30 Quận / Huyện)</option>
+                      <option value="all">Toàn TP. Hà Nội (Tất cả 30 Quận / Huyện)</option>
                       <optgroup label="── 12 Quận Nội Thành ──">
                         <option v-for="dist in INNER_DISTRICTS" :key="dist" :value="dist">
-                          🏙️ {{ dist }}
+                          {{ dist }}
                         </option>
                       </optgroup>
                       <optgroup label="── 18 Huyện & Thị Xã Ngoại Thành ──">
                         <option v-for="dist in OUTER_DISTRICTS" :key="dist" :value="dist">
-                          🌾 {{ dist }}
+                          {{ dist }}
                         </option>
                       </optgroup>
                     </select>
                   </div>
 
                   <!-- LỌC XÃ / PHƯỜNG -->
-                  <div class="filter-field-item mt-1">
-                    <label class="filter-mini-label">Xã / Phường:</label>
+                  <div class="filter-field-item">
+                    <label class="filter-mini-label">
+                      <MapPin :size="12" class="text-secondary" />
+                      <span>Xã / Phường:</span>
+                    </label>
                     <select
                       v-model="marketFilterWard"
                       class="market-ward-select"
                       @change="onWardFilterChange"
                     >
                       <option value="all">
-                        {{ marketFilterDistrict === 'all' ? '🌐 Tất cả Xã / Phường (Toàn Thành Phố)' : '🌐 Tất cả Xã / Phường thuộc ' + marketFilterDistrict }}
+                        {{ marketFilterDistrict === 'all' ? 'Tất cả Xã / Phường (Toàn Thành Phố)' : 'Tất cả Xã / Phường thuộc ' + marketFilterDistrict }}
                       </option>
                       <option v-for="w in wardsInFilterDistrict" :key="w.id" :value="w.id">
-                        🏛️ {{ w.name }} {{ w.districtName && marketFilterDistrict === 'all' ? '(' + w.districtName + ')' : '' }}
+                        {{ w.name }} {{ w.districtName && marketFilterDistrict === 'all' ? '(' + w.districtName + ')' : '' }}
                       </option>
+                    </select>
+                  </div>
+
+                  <!-- LỌC TRẠNG THÁI HOẠT ĐỘNG (HOẠT ĐỘNG / KHÔNG HOẠT ĐỘNG TỪ CSDL) -->
+                  <div class="filter-field-item">
+                    <label class="filter-mini-label">
+                      <Activity :size="12" class="text-secondary" />
+                      <span>Trạng Thái Hoạt Động:</span>
+                    </label>
+                    <select
+                      v-model="marketFilterStatus"
+                      class="market-ward-select"
+                      @change="onStatusFilterChange"
+                    >
+                      <option value="all">Tất cả trạng thái hoạt động ({{ (marketsOverview || []).length }})</option>
+                      <option value="active">Hoạt Động ({{ activeMarketsCount }})</option>
+                      <option value="inactive">Không Hoạt Động ({{ inactiveMarketsCount }})</option>
                     </select>
                   </div>
                 </div>
               </div>
 
               <div class="market-cards-scroll">
+                <!-- Thông báo nếu không có chợ nào phù hợp với bộ lọc -->
+                <div v-if="filteredMarketsList.length === 0" class="empty-market-filter-box text-center py-4 px-3">
+                  <Store :size="32" class="text-muted opacity-50 mb-2" />
+                  <p class="mb-1 fw-bold text-dark">Không tìm thấy khu vực chợ phù hợp</p>
+                  <p class="text-muted small mb-0">
+                    {{ marketFilterStatus === 'inactive' ? 'Hiện không có chợ nào ở trạng thái không hoạt động trong cơ sở dữ liệu.' : 'Không có dữ liệu chợ theo tiêu chí lọc đã chọn.' }}
+                  </p>
+                </div>
+
                 <div
                   v-for="mkt in filteredMarketsList"
                   :key="mkt.id"
@@ -3277,13 +3536,12 @@ onUnmounted(() => {
                   @click="selectedMarketForView = mkt"
                 >
                   <div class="market-item-top">
-                    <div class="d-flex align-items-center gap-2">
-                      <span class="market-code-pill">{{ mkt.marketCode }}</span>
-                      <h5 class="market-item-name">{{ mkt.marketName }}</h5>
+                    <div class="market-title-group">
+                      <h5 class="market-item-name text-truncate" :title="mkt.marketName">{{ mkt.marketName }}</h5>
                     </div>
-                    <span class="market-status-badge">
-                      <span class="dot-online"></span>
-                      <span>Hoạt Động</span>
+                    <span class="market-status-badge" :class="isMarketActive(mkt) ? 'status-active' : 'status-inactive'">
+                      <span :class="isMarketActive(mkt) ? 'dot-online' : 'dot-offline'"></span>
+                      <span>{{ isMarketActive(mkt) ? 'Hoạt Động' : 'Không Hoạt Động' }}</span>
                     </span>
                   </div>
 
@@ -3292,9 +3550,10 @@ onUnmounted(() => {
                     <span>{{ mkt.address }}</span>
                   </p>
 
-                  <div class="market-board-tag">
-                    <ShieldCheck :size="13" class="text-primary flex-shrink-0" />
-                    <span>{{ mkt.managementBoardName || 'Chưa phân công Ban Quản Lý' }}</span>
+                  <div class="market-board-tag" :class="{ 'tag-unassigned': isMarketUnassigned(mkt) }">
+                    <AlertTriangle v-if="isMarketUnassigned(mkt)" :size="13" class="text-warning flex-shrink-0" />
+                    <ShieldCheck v-else :size="13" class="text-primary flex-shrink-0" />
+                    <span>{{ isMarketUnassigned(mkt) ? 'Chưa phân công Quản lý' : mkt.managementBoardName }}</span>
                   </div>
 
                   <!-- TỶ LỆ LẤP ĐẦY SẠP / GIAN HÀNG -->
@@ -3312,17 +3571,18 @@ onUnmounted(() => {
                   </div>
 
                   <div class="market-item-footer mt-2 pt-2 border-top d-flex justify-content-between align-items-center">
-                    <div class="d-flex align-items-center gap-1 flex-wrap">
-                      <span class="market-ward-tag">{{ mkt.wardName }}</span>
-                      <span v-if="mkt.districtName" class="market-district-tag">{{ mkt.districtName }}</span>
+                    <div class="d-flex flex-column gap-1">
+                      <span class="market-ward-tag" :title="mkt.wardName">{{ mkt.wardName }}</span>
+                      <span v-if="mkt.districtName" class="market-district-tag" :title="mkt.districtName">{{ mkt.districtName }}</span>
                     </div>
                     <button
                       class="btn-change-bql"
-                      title="Phân công / Điều chuyển Ban Quản Lý"
+                      :class="{ 'btn-highlight-assign': isMarketUnassigned(mkt) }"
+                      :title="isMarketUnassigned(mkt) ? 'Phân công Quản lý phụ trách' : 'Điều chuyển Quản lý phụ trách'"
                       @click.stop="openAssignBoardModal(mkt)"
                     >
                       <UserCheck :size="13" />
-                      <span>Đổi BQL</span>
+                      <span>{{ isMarketUnassigned(mkt) ? 'Phân Công' : 'Đổi BQL' }}</span>
                     </button>
                   </div>
                 </div>
@@ -3337,11 +3597,10 @@ onUnmounted(() => {
                   <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
                     <div>
                       <div class="d-flex align-items-center gap-2 mb-1">
-                        <span class="market-hero-code-badge">{{ selectedMarketForView.marketCode }}</span>
                         <h3 class="selected-market-title mb-0">{{ selectedMarketForView.marketName }}</h3>
-                        <span class="badge-status-open">
-                          <span class="dot-online"></span>
-                          <span>Đang Mở Cửa</span>
+                        <span :class="isMarketActive(selectedMarketForView) ? 'badge-status-open' : 'badge-status-closed'">
+                          <span :class="isMarketActive(selectedMarketForView) ? 'dot-online' : 'dot-offline'"></span>
+                          <span>{{ isMarketActive(selectedMarketForView) ? 'Đang Mở Cửa' : 'Không Hoạt Động' }}</span>
                         </span>
                       </div>
                       <p class="selected-market-sub mb-2">
@@ -3432,15 +3691,22 @@ onUnmounted(() => {
                           <td>
                             <div class="owner-meta-cell">
                               <strong class="text-dark d-block">{{ st.ownerFullName }}</strong>
-                              <small class="d-block text-muted">📞 {{ st.phoneEmail }}</small>
-                              <small v-if="st.cccdNumber" class="d-block text-muted">🪪 CCCD: {{ st.cccdNumber }}</small>
+                              <small class="d-flex align-items-center gap-1 text-muted">
+                                <Phone :size="11" class="text-muted flex-shrink-0" />
+                                <span>{{ st.phoneEmail }}</span>
+                              </small>
+                              <small v-if="st.cccdNumber" class="d-flex align-items-center gap-1 text-muted">
+                                <CreditCard :size="11" class="text-muted flex-shrink-0" />
+                                <span>CCCD: {{ st.cccdNumber }}</span>
+                              </small>
                               <small v-if="st.nguyenQuan" class="d-block text-muted">Quê: {{ st.nguyenQuan }}</small>
                             </div>
                           </td>
                           <td>
                             <div class="stall-badge-pill">
-                              <span class="badge-stall-tag">
-                                📍 {{ st.stallNumber || 'Quầy sạp tại chợ' }}
+                              <span class="badge-stall-tag d-inline-flex align-items-center gap-1">
+                                <MapPin :size="11" class="text-orange flex-shrink-0" />
+                                <span>{{ st.stallNumber || 'Quầy sạp tại chợ' }}</span>
                               </span>
                               <small class="d-block text-muted mt-1">{{ st.address }}</small>
                             </div>
@@ -3470,6 +3736,13 @@ onUnmounted(() => {
                               >
                                 <ShieldCheck :size="14" />
                               </button>
+                              <button
+                                class="action-btn btn-delete"
+                                title="Bỏ gian hàng này khỏi chợ"
+                                @click="openUnassignStoreModal(st, selectedMarketForView)"
+                              >
+                                <Trash2 :size="14" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -3487,40 +3760,70 @@ onUnmounted(() => {
                     </h5>
                     <span class="badge bg-light text-muted border">Chờ phân bổ vào sạp</span>
                   </div>
-                  <div class="table-responsive-wrapper">
-                    <table class="concept-table">
+                  <div class="table-responsive-wrapper table-no-overflow">
+                    <table class="concept-table free-stores-table">
                       <thead>
                         <tr>
-                          <th>Tên Gian Hàng</th>
-                          <th>Chủ Tiệm</th>
-                          <th>Địa Chỉ / Khu Vực</th>
-                          <th>Ngành Hàng</th>
-                          <th class="text-end">Thao Tác</th>
+                          <th style="width: 21%;">Tên Gian Hàng</th>
+                          <th style="width: 18%;">Chủ Tiệm</th>
+                          <th style="width: 21%;">Địa Chỉ / Khu Vực</th>
+                          <th style="width: 20%;">Ngành Hàng</th>
+                          <th style="width: 20%;" class="text-end">Thao Tác</th>
                         </tr>
                       </thead>
                       <tbody>
-                        <tr v-for="us in unassignedStoresList.slice(0, 6)" :key="us.storeId">
-                          <td><strong>{{ us.storeName }}</strong></td>
+                        <tr v-for="us in unassignedStoresList.slice(0, 10)" :key="us.storeId" :class="{ 'table-warning': us.isPromotedByAdmin }">
                           <td>
-                            <span class="d-block text-dark fw-semibold">{{ us.ownerFullName }}</span>
-                            <small class="text-muted">{{ us.phoneEmail }}</small>
+                            <div class="d-flex align-items-center gap-1">
+                              <strong class="d-block text-truncate" style="max-width: 130px;" :title="us.storeName">{{ us.storeName }}</strong>
+                              <span v-if="us.isPromotedByAdmin" class="badge bg-warning text-dark flex-shrink-0" style="font-size: 9px; padding: 2px 4px;">⚡ Nhanh</span>
+                            </div>
+                            <small class="text-muted">{{ us.storeCode || 'SEL-00' }}</small>
                           </td>
-                          <td>{{ us.address || us.district || 'Cầu Giấy, Hà Nội' }}</td>
-                          <td><span class="category-pill-tag">{{ us.category }}</span></td>
+                          <td>
+                            <span class="d-block text-dark fw-semibold text-truncate" style="max-width: 110px;" :title="us.ownerFullName">{{ us.ownerFullName }}</span>
+                            <small class="text-muted d-block text-truncate" style="max-width: 110px;" :title="us.phoneEmail">{{ us.phoneEmail }}</small>
+                          </td>
+                          <td>
+                            <span class="store-address-truncate d-block" style="max-width: 130px;" :title="us.address || us.district || 'Cầu Giấy, Hà Nội'">{{ us.address || us.district || 'Cầu Giấy, Hà Nội' }}</span>
+                          </td>
+                          <td>
+                            <span class="category-pill-tag" :title="us.category">{{ us.category }}</span>
+                          </td>
                           <td class="text-end">
-                            <button
-                              class="btn-attach-market-styled"
-                              @click="openAssignStoreModal(us)"
-                            >
-                              <Plus :size="13" />
-                              <span>Gắn Vào {{ selectedMarketForView.marketName }}</span>
-                            </button>
+                            <div class="d-inline-flex align-items-center justify-content-end gap-1">
+                              <button
+                                class="action-btn btn-role"
+                                title="Phân quyền tài khoản chủ tiệm này"
+                                @click="openRoleModalForStore(us)"
+                              >
+                                <ShieldCheck :size="14" />
+                              </button>
+                              <button
+                                class="btn-attach-market-styled"
+                                :title="'Gán gian hàng này vào ' + (selectedMarketForView?.marketName || 'chợ')"
+                                @click="openAssignStoreModal(us)"
+                              >
+                                <Plus :size="12" class="flex-shrink-0" />
+                                <div class="btn-text-wrap">
+                                  <span class="btn-line-1">Gán Vào</span>
+                                  <span class="btn-line-2">{{ selectedMarketForView?.marketName || 'Chợ' }}</span>
+                                </div>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
                 </div>
+              </div>
+              <div v-else class="market-empty-detail-card text-center py-5">
+                <Store :size="48" class="text-muted opacity-40 mb-3" />
+                <h4 class="text-dark fw-bold mb-2">Chưa Chọn Khu Vực Chợ</h4>
+                <p class="text-muted small mb-0">
+                  Vui lòng chọn một khu vực chợ từ danh sách bên trái để xem thông tin ban quản lý và gian hàng chi tiết.
+                </p>
               </div>
             </div>
           </div>
@@ -3543,6 +3846,7 @@ onUnmounted(() => {
               <table class="concept-table">
                 <thead>
                   <tr>
+                    <th style="width: 120px;">Mã Quản Lý</th>
                     <th>Họ và Tên</th>
                     <th>Gmail Đăng Nhập</th>
                     <th>Quyền Hạn</th>
@@ -3553,9 +3857,12 @@ onUnmounted(() => {
                 <tbody>
                   <tr v-for="m in managers" :key="m.id">
                     <td>
+                      <span class="manager-id-badge">{{ (m as any).userCode || m.id || 'QL-001' }}</span>
+                    </td>
+                    <td>
                       <strong>{{ m.fullName }}</strong>
                     </td>
-                    <td>{{ m.email }}</td>
+                    <td>{{ m.email || (m as any).phoneEmail }}</td>
                     <td><span class="badge-role-manager"><UserCheck :size="12" /> Quản Lý Ca Trực</span></td>
                     <td><span class="status-pill status-active">Đang Hoạt Động</span></td>
                     <td class="text-end">
@@ -4170,11 +4477,11 @@ onUnmounted(() => {
               <p class="user-role-email">{{ selectedUserForRole.email }}</p>
               <div class="d-flex flex-wrap gap-1 mt-1">
                 <span class="badge bg-light text-dark border">ID: {{ selectedUserForRole.id }}</span>
-                <span v-if="selectedUserForRole.storeDetails?.storeName" class="badge bg-orange-subtle text-orange border">
-                  🏪 {{ selectedUserForRole.storeDetails.storeName }}
+                <span v-if="selectedUserForRole.storeDetails?.storeName" class="badge bg-orange-subtle text-orange border d-inline-flex align-items-center gap-1">
+                  <Store :size="11" /> {{ selectedUserForRole.storeDetails.storeName }}
                 </span>
-                <span v-if="selectedUserForRole.shipperDetails?.licensePlate" class="badge bg-success-subtle text-success border">
-                  🛵 {{ selectedUserForRole.shipperDetails.licensePlate }}
+                <span v-if="selectedUserForRole.shipperDetails?.licensePlate" class="badge bg-success-subtle text-success border d-inline-flex align-items-center gap-1">
+                  <Bike :size="11" /> {{ selectedUserForRole.shipperDetails.licensePlate }}
                 </span>
               </div>
             </div>
@@ -4187,19 +4494,19 @@ onUnmounted(() => {
             </label>
             <div class="role-preset-btns">
               <button type="button" class="btn-preset-pill" @click="applyRolePreset('buyer')">
-                🛒 Khách Hàng
+                <ShoppingCart :size="13" /> Khách Hàng
               </button>
               <button type="button" class="btn-preset-pill" @click="applyRolePreset('seller')">
-                🏪 Chủ Gian Hàng
+                <Store :size="13" /> Chủ Gian Hàng
               </button>
               <button type="button" class="btn-preset-pill" @click="applyRolePreset('shipper')">
-                🛵 Tài Xế Shipper
+                <Bike :size="13" /> Tài Xế Shipper
+              </button>
+              <button type="button" class="btn-preset-pill btn-preset-combo" @click="applyRolePreset('seller_shipper')">
+                <Store :size="13" /><Bike :size="13" /> Seller + Shipper (Đa Năng)
               </button>
               <button type="button" class="btn-preset-pill" @click="applyRolePreset('manager')">
-                🛡️ Quản Lý Ca Trực
-              </button>
-              <button type="button" class="btn-preset-pill btn-preset-admin" @click="applyRolePreset('admin')">
-                👑 Quản Trị Viên (Admin)
+                <UserCheck :size="13" /> Quản Lý Ca Trực
               </button>
             </div>
           </div>
@@ -4257,20 +4564,10 @@ onUnmounted(() => {
                   <p class="role-card-desc">Duyệt hồ sơ đối tác KYC, kiểm duyệt sản phẩm, giám sát vận hành sàn.</p>
                 </div>
               </label>
-
-              <!-- Role: Admin -->
-              <label class="role-select-card" :class="{ selected: roleForm.isAdmin }">
-                <input type="checkbox" v-model="roleForm.isAdmin" class="role-checkbox" />
-                <div class="role-card-content">
-                  <div class="role-card-header">
-                    <span class="role-icon-box bg-purple"><ShieldCheck :size="16" /></span>
-                    <strong>Quản Trị Viên (Admin)</strong>
-                  </div>
-                  <p class="role-card-desc">Toàn quyền tối cao quản trị sàn: phân quyền, kỷ luật, xóa và cấu hình hệ thống.</p>
-                </div>
-              </label>
             </div>
           </div>
+
+
 
           <!-- PHÂN QUYỀN VẬN HÀNH CHI TIẾT (FINE-GRAINED PERMISSIONS) -->
           <div v-if="roleForm.isManager || roleForm.isAdmin" class="permissions-section-card mb-3">
@@ -4333,21 +4630,25 @@ onUnmounted(() => {
       <div class="modal-dialog-card modal-md">
         <div class="modal-header-row">
           <h3 class="modal-heading text-primary d-flex align-items-center gap-2">
-            <UserCheck :size="20" class="text-primary" /> Phân Công Ban Quản Lý: {{ marketToAssign.marketName }}
+            <UserCheck :size="20" class="text-primary" /> Phân Công Quản Lý Chợ: {{ marketToAssign.marketName }}
           </h3>
           <button class="modal-close-btn" @click="showAssignBoardModal = false"><X :size="18" /></button>
         </div>
         <div class="modal-body-scroll">
           <div class="modal-field-group mb-3">
-            <label class="modal-form-label fw-bold">Chọn Ban Quản Lý Chợ Số phụ trách:</label>
+            <label class="modal-form-label fw-bold">Chọn Quản Lý Ca Trực hoặc Ban Quản Lý phụ trách:</label>
             <select v-model="selectedBoardIdForAssign" class="modal-form-select">
-              <option value="" disabled>-- Chọn Ban Quản Lý --</option>
-              <option v-for="b in managementBoardsList" :key="b.id" :value="b.id">
-                🏛️ {{ b.name }} (Trưởng ban: {{ b.leader }} - {{ b.phone }})
-              </option>
-              <option v-for="b in managers" :key="'mgr-' + b.id" :value="b.id">
-                👥 Quản trị viên: {{ b.fullName }} ({{ b.email }})
-              </option>
+              <option value="" disabled>-- Chọn người / đơn vị phụ trách --</option>
+              <optgroup label="── Tài Khoản Quản Lý Ca Trực (Admin đã tạo) ──">
+                <option v-for="b in managers" :key="'mgr-' + b.id" :value="b.id">
+                  Quản lý ca trực: {{ b.fullName }} ({{ (b as any).userCode || b.id }} - {{ (b as any).phoneEmail || b.email || '' }})
+                </option>
+              </optgroup>
+              <optgroup label="── Ban Quản Lý Chợ Số Mở Rộng ──">
+                <option v-for="b in managementBoardsList" :key="b.id" :value="b.id">
+                  {{ b.name }} (Trưởng ban: {{ b.leader }} - {{ b.phone }})
+                </option>
+              </optgroup>
             </select>
           </div>
           <div class="modal-field-group mb-3">
@@ -4384,7 +4685,7 @@ onUnmounted(() => {
             <label class="modal-form-label fw-bold">Chọn Chợ phân bổ:</label>
             <select v-model="targetMarketIdForStore" class="modal-form-select">
               <option v-for="m in marketsOverview" :key="m.id" :value="m.id">
-                🏪 {{ m.marketName }} - {{ m.wardName }} ({{ m.districtName }})
+                {{ m.marketName }} - {{ m.wardName }} ({{ m.districtName }})
               </option>
             </select>
           </div>
@@ -4399,6 +4700,57 @@ onUnmounted(() => {
             <Loader2 v-if="isSubmittingAssignStore" :size="15" class="spinner-animated me-1" />
             <Plus v-else :size="15" class="me-1" />
             <span>Gắn Vào Chợ</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL XÁC NHẬN BỎ GIAN HÀNG KHỎI CHỢ -->
+    <div v-if="showUnassignStoreModal && storeToUnassign" class="modal-backdrop-custom" @click.self="showUnassignStoreModal = false">
+      <div class="modal-dialog-card modal-md">
+        <div class="modal-header-row">
+          <h3 class="modal-heading text-danger d-flex align-items-center gap-2">
+            <Trash2 :size="20" class="text-danger" /> Bỏ Gian Hàng Khỏi Chợ
+          </h3>
+          <button class="modal-close-btn" @click="showUnassignStoreModal = false"><X :size="18" /></button>
+        </div>
+        <div class="modal-body-scroll">
+          <div class="danger-callout-box mb-3">
+            <AlertTriangle :size="20" class="text-danger flex-shrink-0" />
+            <div class="danger-callout-text">
+              <strong class="d-block mb-1">Xác nhận gỡ gian hàng khỏi danh sách chợ!</strong>
+              <span>Gian hàng sẽ được chuyển thành gian hàng tự do trong khu vực và có thể phân bổ lại vào sạp chợ khác bất kỳ lúc nào.</span>
+            </div>
+          </div>
+
+          <div class="confirm-info-card p-3 rounded-3 bg-light border mb-3">
+            <div class="d-flex align-items-center gap-3 mb-2">
+              <img :src="storeToUnassign.avatarUrl || 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200'" class="table-avatar rounded-circle border" style="width: 48px; height: 48px; object-fit: cover;" />
+              <div>
+                <strong class="d-block fs-6 text-dark">{{ storeToUnassign.storeName }}</strong>
+                <small class="text-muted">Chủ tiệm: <span class="fw-semibold text-dark">{{ storeToUnassign.ownerFullName }}</span> ({{ storeToUnassign.phoneEmail }})</small>
+              </div>
+            </div>
+            <div class="border-top pt-2 mt-2 d-flex flex-column gap-1 small text-muted">
+              <div>• <strong>Chợ hiện tại:</strong> {{ marketOfStoreToUnassign?.marketName || selectedMarketForView?.marketName || 'Chợ' }}</div>
+              <div>• <strong>Vị trí sạp:</strong> <span class="badge bg-warning text-dark">{{ storeToUnassign.stallNumber || 'Sạp tại chợ' }}</span></div>
+            </div>
+          </div>
+
+          <p class="mb-0 text-muted small">
+            Bạn có chắc chắn muốn bỏ gian hàng <strong>"{{ storeToUnassign.storeName }}"</strong> khỏi <strong>"{{ marketOfStoreToUnassign?.marketName || selectedMarketForView?.marketName }}"</strong> không?
+          </p>
+        </div>
+        <div class="modal-footer-row">
+          <button class="btn-modal-cancel" :disabled="isSubmittingUnassignStore" @click="showUnassignStoreModal = false">Hủy Bỏ</button>
+          <button
+            class="btn-modal-danger"
+            :disabled="isSubmittingUnassignStore"
+            @click="handleUnassignStoreSubmit"
+          >
+            <Loader2 v-if="isSubmittingUnassignStore" :size="15" class="spinner-animated me-1" />
+            <Trash2 v-else :size="15" class="me-1" />
+            <span>{{ isSubmittingUnassignStore ? 'Đang gỡ khỏi chợ...' : 'Xác Nhận Bỏ Khỏi Chợ' }}</span>
           </button>
         </div>
       </div>
@@ -6421,11 +6773,26 @@ onUnmounted(() => {
 }
 
 /* 2-COLUMN LAYOUT */
+.markets-tab-content {
+  overflow-x: hidden !important;
+  width: 100%;
+  max-width: 100%;
+}
+
 .market-layout-split {
   display: grid;
-  grid-template-columns: 370px 1fr;
+  grid-template-columns: 380px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+@media (max-width: 1200px) {
+  .market-layout-split {
+    grid-template-columns: 350px minmax(0, 1fr);
+    gap: 16px;
+  }
 }
 @media (max-width: 1024px) {
   .market-layout-split {
@@ -6433,16 +6800,34 @@ onUnmounted(() => {
   }
 }
 
-.market-left-column {
+.market-right-column {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.market-stores-table-card {
   background-color: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 14px;
-  padding: 18px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  padding: 20px 22px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.market-left-column {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
 .market-box-header .box-title {
-  font-size: 16px;
+  font-size: 16.5px;
   font-weight: 800;
   color: #0f172a;
 }
@@ -6451,17 +6836,18 @@ onUnmounted(() => {
   font-weight: 700;
   background-color: #eff6ff;
   color: #1d4ed8;
-  padding: 3px 10px;
+  padding: 4px 11px;
   border-radius: 9999px;
   border: 1px solid #bfdbfe;
 }
 
 .market-search-box {
   position: relative;
+  margin-top: 14px;
 }
 .market-search-box .search-icon {
   position: absolute;
-  left: 11px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
   color: #94a3b8;
@@ -6469,11 +6855,12 @@ onUnmounted(() => {
 }
 .market-search-input {
   width: 100%;
-  padding: 8px 30px 8px 34px;
+  padding: 9px 32px 9px 36px;
   font-size: 13px;
-  border: 1px solid #cbd5e1;
+  border: 1.5px solid #cbd5e1;
   border-radius: 9px;
   outline: none;
+  background-color: #ffffff;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .market-search-input:focus {
@@ -6481,14 +6868,98 @@ onUnmounted(() => {
   box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
 }
 
+/* 3 NÚT BỘ LỌC PHÂN CÔNG (KHÔNG EMOJI - DÙNG CODE ICON) */
+.market-assignment-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.market-assignment-tabs .btn-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.market-assignment-tabs .btn-filter-pill .filter-icon {
+  flex-shrink: 0;
+}
+.market-assignment-tabs .btn-filter-pill .count-badge {
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.85;
+}
+.market-assignment-tabs .btn-filter-pill:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+.market-assignment-tabs .btn-filter-pill.active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.25);
+}
+.market-assignment-tabs .btn-filter-pill.active .count-badge {
+  color: #ffffff;
+  opacity: 1;
+}
+.market-assignment-tabs .btn-filter-pill.pill-unassigned.active {
+  background: #ea580c;
+  border-color: #ea580c;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.25);
+}
+.market-assignment-tabs .btn-filter-pill.pill-assigned.active {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(22, 163, 74, 0.25);
+}
+
+/* KHỐI BỘ LỌC ĐỊA BÀN & TRẠNG THÁI (BỐ TRÍ RỘNG RÃI, THOÁNG MẮT) */
+.market-filter-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  margin-top: 14px;
+}
+.filter-field-item {
+  display: flex;
+  flex-direction: column;
+}
+.filter-mini-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .market-ward-select {
   width: 100%;
-  padding: 8px 10px;
-  font-size: 12.5px;
-  font-weight: 600;
-  border: 1px solid #cbd5e1;
-  border-radius: 9px;
-  background-color: #f8fafc;
+  padding: 8.5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff;
   color: #1e293b;
   outline: none;
   cursor: pointer;
@@ -6496,19 +6967,32 @@ onUnmounted(() => {
 }
 .market-ward-select:focus {
   border-color: #ea580c;
-  background-color: #ffffff;
   box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
 }
 
+.empty-market-filter-box {
+  background-color: #f8fafc;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 28px 16px;
+  margin-top: 12px;
+}
+
+.market-empty-detail-card {
+  background-color: #ffffff;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 14px;
+  padding: 56px 24px;
+}
 
 .market-cards-scroll {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 14px;
-  max-height: 650px;
+  gap: 12px;
+  margin-top: 16px;
+  max-height: 640px;
   overflow-y: auto;
-  padding-right: 2px;
+  padding-right: 4px;
 }
 .market-cards-scroll::-webkit-scrollbar {
   width: 5px;
@@ -6519,7 +7003,7 @@ onUnmounted(() => {
 }
 
 .market-card-item {
-  padding: 14px 16px;
+  padding: 16px;
   border: 1.5px solid #e2e8f0;
   border-radius: 12px;
   background-color: #ffffff;
@@ -6528,18 +7012,27 @@ onUnmounted(() => {
 }
 .market-card-item:hover {
   border-color: #cbd5e1;
-  background-color: #f8fafc;
+  background-color: #fbfcfe;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.04);
 }
 .market-card-item.active {
   border-color: #ea580c;
   background-color: #fffbf7;
   box-shadow: 0 4px 14px rgba(234, 88, 12, 0.12);
+  transform: translateY(-1px);
 }
 
 .market-item-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.market-title-group {
+  min-width: 0;
+  flex: 1;
 }
 .market-code-pill {
   font-size: 11px;
@@ -6549,35 +7042,74 @@ onUnmounted(() => {
   padding: 2px 7px;
   border-radius: 5px;
   letter-spacing: 0.3px;
+  flex-shrink: 0;
 }
 .market-item-name {
-  font-size: 14.5px;
+  font-size: 13.5px;
   font-weight: 700;
   color: #0f172a;
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
 .market-status-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11.5px;
+  font-size: 10px;
   font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 5px;
+  white-space: nowrap !important;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+.market-status-badge.status-active {
   color: #16a34a;
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+.market-status-badge.status-inactive {
+  color: #dc2626;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
 }
 .dot-online {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background-color: #16a34a;
+  flex-shrink: 0;
+}
+.dot-offline {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #dc2626;
+  flex-shrink: 0;
+}
+.badge-status-closed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .market-item-address {
   font-size: 12.5px;
   color: #64748b;
-  margin: 6px 0;
+  margin: 6px 0 8px 0;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
 }
 
 .market-board-tag {
@@ -6585,12 +7117,18 @@ onUnmounted(() => {
   color: #1e40af;
   background-color: #eff6ff;
   border: 1px solid #bfdbfe;
-  padding: 4px 9px;
+  padding: 5px 10px;
   border-radius: 7px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-weight: 600;
+  margin-bottom: 4px;
+}
+.market-board-tag.tag-unassigned {
+  color: #c2410c;
+  background-color: #fff7ed;
+  border-color: #fed7aa;
 }
 
 .stalls-progress-box .progress-label-text {
@@ -6616,42 +7154,40 @@ onUnmounted(() => {
 }
 
 .market-ward-tag {
+  display: inline-block;
+  width: fit-content;
+  max-width: 175px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
   font-size: 11.5px;
   font-weight: 600;
   color: #475569;
   background: #f1f5f9;
-  padding: 2px 7px;
+  padding: 2.5px 8px;
   border-radius: 5px;
 }
 .market-district-tag {
+  display: inline-block;
+  width: fit-content;
+  max-width: 175px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
   font-size: 11px;
   font-weight: 600;
   color: #1e40af;
   background: #eff6ff;
   border: 1px solid #dbeafe;
-  padding: 2px 6px;
+  padding: 2.5px 7px;
   border-radius: 5px;
-}
-.filter-mini-label {
-  font-size: 11px;
-  font-weight: 700;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  margin-bottom: 3px;
-  display: block;
-}
-.market-filter-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 
 .btn-change-bql {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 9px;
+  gap: 5px;
+  padding: 5px 10px;
   font-size: 11.5px;
   font-weight: 600;
   border: 1px solid #cbd5e1;
@@ -6660,6 +7196,15 @@ onUnmounted(() => {
   color: #334155;
   cursor: pointer;
   transition: all 0.15s ease;
+}
+.btn-change-bql.btn-highlight-assign {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  color: #ffffff;
+  border-color: #ea580c;
+  box-shadow: 0 2px 5px rgba(234, 88, 12, 0.25);
+}
+.btn-change-bql.btn-highlight-assign:hover {
+  background: linear-gradient(135deg, #ea580c, #c2410c);
 }
 .btn-change-bql:hover {
   background-color: #ea580c;
@@ -6809,25 +7354,105 @@ onUnmounted(() => {
   box-shadow: 0 2px 4px rgba(234, 88, 12, 0.2);
 }
 
+.table-no-overflow {
+  overflow-x: hidden !important;
+  width: 100%;
+}
+
+.free-stores-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.free-stores-table th,
+.free-stores-table td {
+  padding: 10px 8px;
+  vertical-align: middle;
+  overflow: hidden;
+}
+
+.free-stores-table .category-pill-tag {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  font-size: 10.5px;
+  padding: 3px 6px;
+}
+
+.free-stores-table td:last-child {
+  text-align: right;
+  padding-right: 6px;
+}
+
+.store-address-truncate {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .btn-attach-market-styled {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
-  padding: 6px 14px;
-  font-size: 12px;
+  padding: 4px 8px;
+  font-size: 10.5px;
   font-weight: 700;
-  border-radius: 8px;
-  border: 1px solid #ea580c;
+  border-radius: 7px;
+  border: 1.5px solid #ea580c;
   background-color: #fff7ed;
   color: #ea580c;
   cursor: pointer;
+  white-space: nowrap;
+  text-align: left;
+  max-width: 100%;
+  box-sizing: border-box;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .btn-attach-market-styled:hover {
   background-color: #ea580c;
   color: #ffffff;
-  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.25);
+  box-shadow: 0 3px 8px rgba(234, 88, 12, 0.25);
   transform: translateY(-1px);
+}
+.btn-attach-market-styled .btn-text-wrap {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  min-width: 0;
+}
+.btn-attach-market-styled .btn-line-1 {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  opacity: 0.9;
+  line-height: 1;
+}
+.btn-attach-market-styled .btn-line-2 {
+  font-size: 10.5px;
+  font-weight: 800;
+  max-width: 75px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.15;
+}
+
+.manager-id-badge {
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffffff;
+  background-color: #0f172a;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.4px;
+  display: inline-block;
+  font-family: monospace;
 }
 
 .role-modal-card {
@@ -6892,6 +7517,10 @@ onUnmounted(() => {
 }
 
 .btn-preset-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   padding: 6px 14px;
   border-radius: 20px;
   font-size: 12.5px;
@@ -6910,9 +7539,16 @@ onUnmounted(() => {
   transform: translateY(-1px);
 }
 
+.btn-preset-combo:hover {
+  background-color: #059669 !important;
+  border-color: #059669 !important;
+  color: #ffffff !important;
+}
+
 .btn-preset-admin:hover {
   background-color: #7c3aed !important;
   border-color: #7c3aed !important;
+  color: #ffffff !important;
 }
 
 .role-cards-grid {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
-import { sellerChatService, type ChatMessage, type ConversationItem } from '../../services/sellerChatService';
+import { sellerChatService, type ConversationItem } from '../../services/sellerChatService';
 import { getCleanAvatar } from '../../utils/avatarHelper';
 
 const props = defineProps<{

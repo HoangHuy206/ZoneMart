@@ -116,8 +116,11 @@ router.beforeEach((to, _from, next) => {
     if (currentUserObj?.isShipper === true || currentUserObj?.shipperStatus === 'Approved') {
       effectiveRoles.push('shipper');
     }
+    if (currentUserObj?.isManager === true) {
+      effectiveRoles.push('manager');
+    }
     if (normalizedUserRole === 'admin') {
-      effectiveRoles.push('seller', 'shipper', 'buyer');
+      effectiveRoles.push('seller', 'shipper', 'buyer', 'manager');
     }
 
     const hasAccess = allowedRoles.some((r) => effectiveRoles.includes(r));
@@ -148,6 +151,16 @@ router.beforeEach((to, _from, next) => {
         localStorage.setItem('userRole', 'shipper');
       }
     }
+    // Tương tự cho manager
+    if (allowedRoles.includes('manager') && normalizedUserRole !== 'manager' && normalizedUserRole !== 'admin') {
+      if (currentUserObj) {
+        currentUserObj.role = 'manager';
+        currentUserObj.isManager = true;
+        localStorage.setItem('currentUser', JSON.stringify(currentUserObj));
+        localStorage.setItem('zonemart_user', JSON.stringify(currentUserObj));
+        localStorage.setItem('userRole', 'manager');
+      }
+    }
   }
 
   // 2. Nếu route yêu cầu đăng nhập chung (bất kỳ tài khoản nào đã login)
@@ -164,6 +177,7 @@ router.beforeEach((to, _from, next) => {
   // 3. Nếu đã đăng nhập mà truy cập lại trang Đăng Nhập hoặc Đăng Ký
   if (isLoggedIn && (to.path === '/login' || to.path === '/register')) {
     if (normalizedUserRole === 'admin') return next({ path: '/admin' });
+    if (normalizedUserRole === 'manager') return next({ path: '/manager' });
     if (normalizedUserRole === 'seller') return next({ path: '/seller' });
     if (normalizedUserRole === 'shipper') return next({ path: '/shipper' });
     return next({ path: '/' });

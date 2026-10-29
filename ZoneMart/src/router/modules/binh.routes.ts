@@ -119,4 +119,22 @@ export const binhRoutes: RouteRecordRaw[] = [
       hideFooter: true,
     },
   },
+  {
+    path: '/manager',
+    name: 'Manager',
+    alias: ['/manager-dashboard'],
+    component: () => import('../../views/binh/ManagerDashboardView.vue'),
+    meta: {
+      title: 'Bảng Điều Khiển Ban Quản Lý - ZoneMart Manager',
+      requiresAuth: true,
+      roles: ['manager', 'admin'],
+      hideHeader: true,
+      hideFooter: true,
+    },
+  },
+  {
+    path: '/manager-dashboard',
+    name: 'ManagerDashboardRedirect',
+    redirect: '/manager',
+  },
 ];

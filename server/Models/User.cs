@@ -30,6 +30,30 @@ public class User
     [BsonElement("avatar_url")]
     public string AvatarUrl { get; set; } = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150";
 
+    [BsonElement("role")]
+    public string Role { get; set; } = "buyer";
+
+    [BsonElement("primary_role")]
+    public string PrimaryRole { get; set; } = "buyer";
+
+    [BsonElement("user_role_id")]
+    public int UserRoleId { get; set; } = 1; // 1: Buyer, 2: Admin, 3: Seller, 4: Shipper, 5: Manager
+
+    [BsonElement("group_ids")]
+    public List<int> GroupIds { get; set; } = new() { 1 }; // Nhóm phân cấp nhanh theo cách 2: [1] Buyer, [1, 3] Seller, [1, 4] Shipper
+
+    [BsonElement("is_promoted_by_admin")]
+    public bool IsPromotedByAdmin { get; set; } = false;
+
+    [BsonElement("promoted_at")]
+    public DateTime? PromotedAt { get; set; }
+
+    [BsonElement("promotion_deadline")]
+    public DateTime? PromotionDeadline { get; set; }
+
+    [BsonElement("has_seen_promotion_notice")]
+    public bool HasSeenPromotionNotice { get; set; } = false;
+
     [BsonElement("is_buyer")]
     public bool IsBuyer { get; set; } = true;
 

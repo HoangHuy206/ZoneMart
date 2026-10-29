@@ -13,7 +13,7 @@
  * - Latest Orders Data Table & Order Workflow (Hỏa tốc 10km)
  * ================================================================
  */
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "../../composables/useToast";
 import { orderRealtimeService } from "../../services/orderRealtimeService";
@@ -86,6 +86,11 @@ watch(isMobileSidebarOpen, (open) => {
 const currentUser = reactive({
   name: "Chủ Gian Hàng",
   email: "",
+  phoneEmail: "",
+  isPromotedByAdmin: false,
+  promotionDeadline: "",
+  marketName: "Chợ Trạm Trôi",
+  storeAddress: "",
   avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80"
 });
 
@@ -131,6 +136,40 @@ onMounted(async () => {
     if (parsed.phoneEmail) currentUser.email = parsed.phoneEmail;
     if (parsed.avatarUrl) currentUser.avatar = parsed.avatarUrl;
 
+    // Kiểm tra trạng thái thăng cấp nhanh từ Admin
+    if (parsed.isPromotedByAdmin) {
+      isPromotedByAdmin.value = true;
+      // Luôn hiện lại thông báo khi đăng nhập nếu chưa cập nhật địa chỉ hoặc trong hạn 7 ngày
+      if (!parsed.storeAddress || parsed.storeAddress.trim() === '' || parsed.storeAddress === 'Chưa cập nhật') {
+        showPromotionNoticeModal.value = true;
+      } else {
+        const seenNotice = parsed.hasSeenPromotionNotice || localStorage.getItem(`zonemart_seen_promotion_notice_${parsed.phoneEmail || parsed.email}`) === 'true';
+        if (!seenNotice) {
+          showPromotionNoticeModal.value = true;
+        }
+      }
+      apiFetch(`/api/auth/check-promotion-status?account=${encodeURIComponent(parsed.phoneEmail || parsed.email)}`)
+        .then(async (res) => {
+          if (res.ok) {
+            const statusData = await res.json();
+            if (statusData.isDemoted) {
+              triggerToast("Thời hạn thử nghiệm 7 ngày của bạn đã hết do chưa bổ sung hồ sơ. Tài khoản đã quay về vai trò Khách Hàng.");
+              setTimeout(() => { router.replace('/'); }, 2500);
+            }
+            if (statusData.isPromotedByAdmin) {
+              isPromotedByAdmin.value = true;
+              if (statusData.storeAddress && statusData.storeAddress !== 'Chưa cập nhật') {
+                storeInfo.address = statusData.storeAddress;
+              } else if (!storeInfo.address) {
+                storeInfo.address = "";
+              }
+              if (statusData.marketName) storeInfo.marketName = statusData.marketName;
+            }
+          }
+        })
+        .catch(() => {});
+    }
+
     // Khởi tạo hồ sơ gian hàng, danh mục sản phẩm, đơn hàng & KPIs theo đúng tài khoản người bán
     await loadSellerStoreProfile(parsed);
     loadSellerOrdersAndKPIs();
@@ -156,8 +195,6 @@ onMounted(async () => {
 
   // Kiểm tra trạng thái Face ID của gian hàng
   checkFaceStatus();
-
-
 
   // Đăng ký nhịp tim trực tuyến và lắng nghe tin nhắn người mua
   sellerChatService.registerPresenceHeartbeat(storeInfo.id, 'seller', storeInfo.name);
@@ -410,7 +447,7 @@ const storeInfo = reactive({
   id: "ZM-S001",
   name: "Gian Hàng ZoneMart",
   category: "Thực phẩm & Nhu yếu phẩm",
-  address: "Số 48 đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội",
+  address: "",
   phone: "0988 123 456",
   openHours: "07:00 - 22:00",
   bankName: "Vietcombank (VCB)",
@@ -419,7 +456,9 @@ const storeInfo = reactive({
   radiusKm: 10,
   avgOrderValue: "0 đ",
   totalOrders: "0",
-  lifetimeValue: "0 đ"
+  lifetimeValue: "0 đ",
+  marketName: "Chợ Trạm Trôi",
+  isPromotedByAdmin: false
 });
 
 // Danh sách đơn hàng
@@ -747,7 +786,13 @@ const loadSellerStoreProfile = async (parsedUser: any) => {
     const fallbackStoreName = userStoreName || `Gian Hàng ${userName}`;
     storeInfo.name = fallbackStoreName;
     storeInfo.category = "Thực phẩm & Nhu yếu phẩm";
-    storeInfo.address = "Số 48 đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội";
+    if (parsedUser.isPromotedByAdmin) {
+      isPromotedByAdmin.value = true;
+      storeInfo.address = parsedUser.storeAddress || "";
+      if (parsedUser.marketName) storeInfo.marketName = parsedUser.marketName;
+    } else {
+      storeInfo.address = "Số 48 đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội";
+    }
     storeInfo.phone = parsedUser.phone || cleanEmail || "0988 123 456";
     storeInfo.openHours = "07:00 - 22:00";
     storeInfo.bankName = "Vietcombank (VCB)";
@@ -767,6 +812,24 @@ const loadSellerStoreProfile = async (parsedUser: any) => {
       bankAccount: storeInfo.bankAccount,
       accountHolder: storeInfo.accountHolder
     }));
+  }
+
+  // ĐẶC BIỆT: Đối với tài khoản thăng cấp nhanh từ Admin, bắt buộc kiểm tra địa chỉ thực
+  if (parsedUser.isPromotedByAdmin || isPromotedByAdmin.value) {
+    isPromotedByAdmin.value = true;
+    const currentAddr = (storeInfo.address || parsedUser.storeAddress || "").trim();
+    if (
+      !currentAddr ||
+      currentAddr === "Chưa cập nhật" ||
+      currentAddr === "Đang cập nhật" ||
+      currentAddr === "Được admin duyệt" ||
+      currentAddr.toLowerCase().includes("số 48 đường cầu giấy")
+    ) {
+      storeInfo.address = "";
+    } else {
+      storeInfo.address = currentAddr;
+    }
+    if (parsedUser.marketName) storeInfo.marketName = parsedUser.marketName;
   }
 
   // 2. Tra cứu thêm từ backend API nếu có để đồng bộ hồ sơ đã đăng ký trong CSDL MongoDB
@@ -1063,14 +1126,17 @@ const handleSaveStoreSettings = async () => {
     if (rawUser) {
       const u = JSON.parse(rawUser);
       u.storeName = storeInfo.name;
+      u.storeAddress = storeInfo.address;
       localStorage.setItem("currentUser", JSON.stringify(u));
     }
     const rawZm = localStorage.getItem("zonemart_user");
     if (rawZm) {
       const zm = JSON.parse(rawZm);
       zm.storeName = storeInfo.name;
+      zm.storeAddress = storeInfo.address;
       localStorage.setItem("zonemart_user", JSON.stringify(zm));
     }
+    currentUser.storeAddress = storeInfo.address;
   } catch {}
 
   try {
@@ -1187,8 +1253,6 @@ const handleDisableFace = async () => {
 watch(activeNav, (newNav) => {
   if (newNav === "settings") {
     checkFaceStatus();
-
-
   }
 });
 
@@ -1218,6 +1282,153 @@ const dataURLtoFile = (dataurl: string, filename: string): File => {
     u8arr[n] = bstr.charCodeAt(n);
   }
   return new File([u8arr], filename, { type: mime });
+};
+
+// Thăng cấp nhanh từ Admin (Quick promotion logic)
+const isPromotedByAdmin = ref(false);
+const showPromotionNoticeModal = ref(false);
+const showAddressRequiredModal = ref(false);
+
+// Kiểm tra xem gian hàng đã bổ sung địa chỉ quán thực tế chưa
+const isStoreAddressMissing = computed(() => {
+  if (!isPromotedByAdmin.value) return false;
+  const addr = (storeInfo.address || "").trim().toLowerCase();
+  return (
+    !addr ||
+    addr === "chưa cập nhật" ||
+    addr === "đang cập nhật" ||
+    addr === "được admin duyệt" ||
+    addr.includes("số 48 đường cầu giấy")
+  );
+});
+const tempStoreAddress = ref("");
+const isSavingStoreAddress = ref(false);
+
+const isAddressGlow = ref(false);
+const storeAddressInputRef = ref<HTMLInputElement | null>(null);
+
+const formatMarketDisplay = (market: string | undefined | null) => {
+  if (!market || market.trim() === '') return 'Gian Hàng Tự Do (Chưa Gắn Chợ)';
+  const clean = market.trim();
+  if (clean.toLowerCase().startsWith('chợ')) return clean;
+  return `Chợ ${clean}`;
+};
+
+// Khóa cuộn trang phía sau khi mở modal thông báo hoặc popup nhắc nhở
+watch([showPromotionNoticeModal, showAddressRequiredModal], ([v1, v2]) => {
+  if (typeof document !== 'undefined') {
+    if (v1 || v2) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+  }
+});
+
+const remainingPromotionDays = computed(() => {
+  const rawUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+  let deadlineStr = currentUser.promotionDeadline || "";
+  if (!deadlineStr && rawUser) {
+    try {
+      const u = JSON.parse(rawUser);
+      deadlineStr = u.promotionDeadline || "";
+    } catch {}
+  }
+  if (!deadlineStr) return 7;
+  const deadline = new Date(deadlineStr).getTime();
+  const now = Date.now();
+  const diff = deadline - now;
+  if (diff <= 0) return 0;
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
+});
+
+const remainingPromotionTime = computed(() => {
+  const rawUser = localStorage.getItem("currentUser") || localStorage.getItem("zonemart_user");
+  let deadlineStr = currentUser.promotionDeadline || "";
+  if (!deadlineStr && rawUser) {
+    try {
+      const u = JSON.parse(rawUser);
+      deadlineStr = u.promotionDeadline || "";
+    } catch {}
+  }
+  if (!deadlineStr) return "7 ngày";
+  const deadline = new Date(deadlineStr).getTime();
+  const now = Date.now();
+  const diff = deadline - now;
+  if (diff <= 0) return "Đã hết hạn";
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  if (days <= 0) return `${hours} giờ`;
+  return `${days} ngày ${hours} giờ`;
+});
+
+const goToSettingsAndHighlightAddress = () => {
+  showAddressRequiredModal.value = false;
+  showPromotionNoticeModal.value = false;
+  activeNav.value = 'settings';
+  nextTick(() => {
+    setTimeout(() => {
+      const el = document.getElementById('store-address-input') || storeAddressInputRef.value;
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus();
+        isAddressGlow.value = true;
+        setTimeout(() => {
+          isAddressGlow.value = false;
+        }, 5000);
+      }
+    }, 150);
+  });
+};
+
+void tempStoreAddress; void isSavingStoreAddress;
+const handleSaveStoreAddress = async () => {
+  void handleSaveStoreAddress;
+  if (!tempStoreAddress.value.trim()) {
+    triggerToast("Vui lòng nhập địa chỉ quán chi tiết!");
+    return;
+  }
+  isSavingStoreAddress.value = true;
+  try {
+    const cleanEmail = (currentUser.email || currentUser.phoneEmail || "").toLowerCase().trim();
+    storeInfo.address = tempStoreAddress.value.trim();
+
+    const localKey = `zonemart_seller_store_${cleanEmail}`;
+    const saved = localStorage.getItem(localKey);
+    let parsedObj: any = {};
+    if (saved) {
+      try { parsedObj = JSON.parse(saved); } catch {}
+    }
+    parsedObj.address = storeInfo.address;
+    localStorage.setItem(localKey, JSON.stringify(parsedObj));
+
+    await apiFetch("/api/auth/update-store-address", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account: cleanEmail, address: storeInfo.address })
+    }).catch(() => {});
+
+    showAddressRequiredModal.value = false;
+    triggerToast("Đã lưu địa chỉ quán thành công! Bây giờ bạn có thể đăng sản phẩm.");
+    showAddProductModal.value = true;
+  } catch (err: any) {
+    triggerToast("Lỗi khi lưu địa chỉ: " + (err.message || err));
+  } finally {
+    isSavingStoreAddress.value = false;
+  }
+};
+
+const handleDismissPromotionNotice = async () => {
+  showPromotionNoticeModal.value = false;
+  const cleanEmail = (currentUser.email || currentUser.phoneEmail || "").toLowerCase().trim();
+  try {
+    await apiFetch("/api/auth/dismiss-promotion-notice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account: cleanEmail })
+    }).catch(() => {});
+  } catch {}
+  localStorage.setItem(`zonemart_seen_promotion_notice_${cleanEmail}`, "true");
 };
 
 // Modal thêm / sửa sản phẩm
@@ -1447,6 +1658,13 @@ const openCreateProduct = () => {
     triggerToast("Tài khoản của bạn đã bị XÓA VĨNH VIỄN do tái phạm > 10 lần. Không thể đăng bài!");
     return;
   }
+
+  // Bắt buộc nhập địa chỉ quán trước khi đăng sản phẩm nếu tài khoản được thăng cấp nhanh
+  // Khi chưa bổ sung thông tin là địa chỉ: Bấm vào nút Thêm Sản Phẩm Mới sẽ HIỆN NGAY RA CÁI BẢNG NHƯ ẢNH 1 (showPromotionNoticeModal)
+  if (isStoreAddressMissing.value) {
+    showPromotionNoticeModal.value = true;
+    return;
+  }
   if (penalty.isLocked) {
     const lockDate = penalty.lockUntil ? new Date(penalty.lockUntil).toLocaleDateString("vi-VN") : "10 ngày";
     triggerToast(`Tài khoản đang bị TẠM KHÓA đến ${lockDate} do vi phạm chính sách!`);
@@ -1499,6 +1717,14 @@ const openEditProduct = (prod: ModeratedProduct) => {
 // Xử lý lưu & kích hoạt AI Quét Bài (Luồng 2)
 // Xử lý lưu & đăng bài kiểu Facebook (Thanh chạy mượt mà & AI quét thật trong nền)
 const handleSaveProduct = async () => {
+  // Chặn lưu bài nếu tài khoản thăng cấp nhanh chưa có địa chỉ quán
+  if (isStoreAddressMissing.value) {
+    showAddProductModal.value = false;
+    showPromotionNoticeModal.value = true;
+    triggerToast("Bạn bắt buộc phải nhập Địa chỉ quán trước khi đăng sản phẩm!");
+    return;
+  }
+
   if (!newProductForm.name.trim() || newProductForm.price <= 0) {
     triggerToast("Vui lòng nhập tên và giá bán hợp lệ!");
     return;
@@ -2211,6 +2437,36 @@ const getItemImage = (it: OrderItem) => {
 
       <!-- BODY CONTENT THEO TAB -->
       <main class="seller-content-body">
+        <!-- THÔNG BÁO TÀI KHOẢN ĐƯỢC ADMIN THĂNG CẤP NHANH & ĐẾM NGƯỢC 7 NGÀY -->
+        <div v-if="isPromotedByAdmin" class="promoted-countdown-banner mb-4">
+          <div class="banner-left-meta">
+            <div class="countdown-badge-pill">
+              <i class="bi bi-stopwatch-fill me-1"></i> Còn {{ remainingPromotionDays }} ngày
+            </div>
+            <div class="banner-text-info">
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <strong class="text-dark">Tài khoản được Admin thăng cấp nhanh lên Chủ Gian Hàng</strong>
+                <span class="badge bg-secondary-subtle text-dark border" style="font-size: 11px;">
+                  <i class="bi bi-geo me-1"></i>{{ formatMarketDisplay(storeInfo.marketName) }}
+                </span>
+              </div>
+              <div class="small text-muted mt-1">
+                Hồ sơ tạm ghi <em>"Được admin duyệt"</em>. Thời hạn còn: <b class="text-danger fw-bold">{{ remainingPromotionTime }}</b>.
+                <span v-if="!storeInfo.address || storeInfo.address === 'Chưa cập nhật'" class="text-danger fw-bold ms-1">
+                  <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> Chưa có địa chỉ quán - Cần nhập để mở khóa đăng sản phẩm!
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="banner-actions-group">
+            <button type="button" class="btn-view-notice-pill" @click="showPromotionNoticeModal = true" title="Xem chi tiết hướng dẫn thăng cấp">
+              <i class="bi bi-info-circle me-1"></i> Chi tiết
+            </button>
+            <button type="button" class="btn-boost-profile-gradient" @click="goToSettingsAndHighlightAddress">
+              <i class="bi bi-pencil-square me-1"></i> Bổ sung hồ sơ
+            </button>
+          </div>
+        </div>
         <!-- ==================== TAB 1: OVERVIEW ==================== -->
         <section v-if="activeNav === 'overview'" class="overview-view-container">
           <!-- Heading Welcome -->
@@ -2935,9 +3191,23 @@ const getItemImage = (it: OrderItem) => {
                 <label>Tên gian hàng</label>
                 <input v-model="storeInfo.name" type="text" class="settings-input" />
               </div>
-              <div class="settings-field">
-                <label>Địa chỉ đón khách & lấy hàng</label>
-                <input v-model="storeInfo.address" type="text" class="settings-input" />
+              <div class="settings-field" :class="{ 'highlight-pulsing-box': isAddressGlow }">
+                <label class="d-flex align-items-center justify-content-between">
+                  <span>Địa chỉ đón khách & lấy hàng (*)</span>
+                  <span v-if="isPromotedByAdmin && (!storeInfo.address || storeInfo.address === 'Chưa cập nhật')" class="badge bg-danger text-white">Bắt buộc nhập</span>
+                </label>
+                <input
+                  id="store-address-input"
+                  ref="storeAddressInputRef"
+                  v-model="storeInfo.address"
+                  type="text"
+                  class="settings-input"
+                  :class="{ 'pulse-address-glow': isAddressGlow }"
+                  placeholder="VD: Số 12 ngách 8 ngõ 2, Chợ Trạm Trôi, Hoài Đức, Hà Nội..."
+                />
+                <small v-if="isAddressGlow" class="text-danger fw-bold mt-1 d-block">
+                  👉 Vui lòng nhập địa chỉ quán vào đây để hoàn tất hồ sơ và mở khóa đăng bán sản phẩm!
+                </small>
               </div>
               <div class="settings-field">
                 <label>Khung giờ mở cửa</label>
@@ -3078,6 +3348,140 @@ const getItemImage = (it: OrderItem) => {
           </div>
         </section>
       </main>
+    </div>
+
+    <!-- ==================== MODAL THÔNG BÁO THĂNG CẤP NHANH (BỐ TRÍ ĐẸP, KHÔNG RỚT DÒNG, KHÓA NỀN) ==================== -->
+    <div
+      v-if="showPromotionNoticeModal"
+      class="modal-backdrop-overlay"
+      @click.self="showPromotionNoticeModal = false"
+      @wheel.self.prevent
+      @touchmove.self.prevent
+    >
+      <div class="modal-card-box modal-promotion-compact">
+        <!-- HEADER -->
+        <div class="promo-compact-header">
+          <div class="d-flex align-items-center gap-3">
+            <div class="promo-header-icon-wrap">
+              <i class="bi bi-shop"></i>
+            </div>
+            <div>
+              <h5 class="promo-modal-title mb-0">Chúc Mừng Lên Chủ Gian Hàng!</h5>
+              <span class="badge bg-warning text-dark fw-bold mt-1 d-inline-flex align-items-center" style="font-size: 11px;">
+                <i class="bi bi-lightning-charge-fill me-1"></i> Admin Phân Cấp Nhanh
+              </span>
+            </div>
+          </div>
+          <button type="button" class="btn-close-compact" @click="showPromotionNoticeModal = false" title="Đóng thông báo">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+
+        <!-- BODY -->
+        <div class="promo-compact-body">
+          <div class="promo-welcome-card">
+            <p class="mb-2 text-dark" style="font-size: 13.5px; line-height: 1.5;">
+              Xin chào <strong>{{ storeInfo.name }}</strong>! Tài khoản của bạn đã được Admin phân cấp nhanh từ Khách Hàng lên <b>Chủ Gian Hàng (Seller)</b>.
+            </p>
+            <div class="promo-meta-list">
+              <div class="promo-meta-item">
+                <i class="bi bi-person-check-fill text-primary me-2 flex-shrink-0"></i>
+                <span class="meta-label">Chủ tiệm & avatar:</span>
+                <span class="meta-val ms-1">Lấy từ tài khoản người dùng</span>
+              </div>
+              <div class="promo-meta-item">
+                <i class="bi bi-shield-check text-success me-2 flex-shrink-0"></i>
+                <span class="meta-label">Giấy tờ pháp lý:</span>
+                <span class="meta-val ms-1">Tạm ghi nhận "Được admin duyệt"</span>
+              </div>
+              <div class="promo-meta-item">
+                <i class="bi bi-geo-alt-fill text-warning me-2 flex-shrink-0"></i>
+                <span class="meta-label">Khu vực:</span>
+                <span class="meta-val ms-1 fw-bold text-dark">{{ formatMarketDisplay(storeInfo.marketName) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="promo-deadline-box">
+            <div class="d-flex align-items-center justify-content-between mb-1">
+              <span class="fw-bold text-dark small d-flex align-items-center">
+                <i class="bi bi-alarm-fill text-danger me-1"></i> Thời hạn hoàn tất:
+              </span>
+              <span class="badge bg-danger text-white fw-bold px-2 py-1 text-nowrap">Còn {{ remainingPromotionDays }} ngày</span>
+            </div>
+            <p class="small text-muted mb-0" style="font-size: 12px; line-height: 1.45;">
+              Bạn có <b>1 tuần theo thời gian thực</b> để bổ sung đầy đủ thông tin. Quá 1 tuần nếu chưa bổ sung, tài khoản sẽ <b>tự động hạ cấp trở lại vai trò Khách Hàng</b>.
+            </p>
+          </div>
+
+          <div class="promo-rule-note">
+            <div class="small text-dark fw-bold mb-1 d-flex align-items-center">
+              <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> Lưu ý bắt buộc khi đăng sản phẩm:
+            </div>
+            <p class="small text-muted mb-0" style="font-size: 12px; line-height: 1.45;">
+              Bạn <b>BẮT BUỘC phải nhập Địa Chỉ Quán</b> tại mục <em>Cài đặt gian hàng</em> để hàng hóa được hiển thị công khai và tài xế Shipper có thể tới lấy hàng chuẩn xác.
+            </p>
+          </div>
+        </div>
+
+        <!-- FOOTER -->
+        <div class="promo-compact-footer">
+          <div class="promo-countdown-text text-danger fw-bold text-nowrap">
+            <i class="bi bi-stopwatch-fill me-1"></i> Còn {{ remainingPromotionDays }} ngày ({{ remainingPromotionTime }})
+          </div>
+          <div class="promo-buttons-wrap d-flex align-items-center gap-3">
+            <button type="button" class="btn-dismiss-pill" @click="handleDismissPromotionNotice">
+              Để sau
+            </button>
+            <button type="button" class="btn-boost-pill fw-bold" @click="goToSettingsAndHighlightAddress">
+              <i class="bi bi-pencil-square me-1"></i> Bổ sung hồ sơ ngay
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== MODAL BẮT BUỘC NHẬP ĐỊA CHỈ QUÁN (POPUP NHẮC NHỞ GỒM 2 NÚT ĐỂ SAU & THÊM ĐỊA CHỈ) ==================== -->
+    <div
+      v-if="showAddressRequiredModal"
+      class="modal-backdrop-overlay"
+      @click.self="showAddressRequiredModal = false"
+      @wheel.self.prevent
+      @touchmove.self.prevent
+    >
+      <div class="modal-card-box modal-promotion-compact" style="max-width: 520px !important;">
+        <div class="promo-compact-header bg-danger-subtle border-bottom">
+          <div class="d-flex align-items-center gap-2">
+            <div class="promo-header-icon-wrap text-danger bg-white shadow-sm">
+              <i class="bi bi-geo-alt-fill"></i>
+            </div>
+            <div>
+              <h5 class="promo-modal-title text-danger mb-0">Yêu Cầu Cập Nhật Địa Chỉ Quán</h5>
+              <span class="small text-muted" style="font-size: 11.5px;">Cần thiết để kích hoạt đăng sản phẩm & nổ đơn cho Shipper</span>
+            </div>
+          </div>
+          <button type="button" class="btn-close-compact" @click="showAddressRequiredModal = false" title="Đóng">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        </div>
+        <div class="promo-compact-body p-4">
+          <p class="text-dark mb-3" style="font-size: 13.5px; line-height: 1.5;">
+            Tài khoản của bạn được thăng cấp nhanh từ Khách Hàng. Để mở khóa tính năng <b>đăng sản phẩm mới</b> và cho phép tài xế Shipper tới lấy hàng chính xác, bạn <b>bắt buộc phải điền địa chỉ cụ thể của quán</b>!
+          </p>
+          <div class="alert alert-warning border small p-3 mb-0 d-flex align-items-start gap-2 rounded-3">
+            <i class="bi bi-info-circle-fill text-warning flex-shrink-0 mt-1 fs-5"></i>
+            <span style="font-size: 13px; line-height: 1.45;">Bấm <b>"Thêm địa chỉ"</b> để tới ngay form <em>Cài đặt gian hàng</em>. Hệ thống sẽ tự động chuyển trang và nhấp nháy ô nhập địa chỉ để bạn điền ngay!</span>
+          </div>
+        </div>
+        <div class="promo-compact-footer p-3 border-top d-flex justify-content-end align-items-center gap-3">
+          <button type="button" class="btn-dismiss-pill" @click="showAddressRequiredModal = false">
+            Để sau
+          </button>
+          <button type="button" class="btn-add-address-pill fw-bold" @click="goToSettingsAndHighlightAddress">
+            <i class="bi bi-geo-alt-fill me-1"></i> Thêm địa chỉ
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- ==================== 1. MODAL THÊM / SỬA SẢN PHẨM ==================== -->
@@ -3562,9 +3966,12 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   flex-direction: column;
   padding: 24px 18px 20px 18px;
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  bottom: 0;
   z-index: 100;
+  overflow-y: auto;
 }
 
 .sidebar-brand-container {
@@ -3749,6 +4156,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* ==================== 2. MAIN WRAPPER & TOP BAR ==================== */
 .seller-main-wrapper {
+  margin-left: 250px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -8112,4 +8520,346 @@ h1, h2, h3, h4, h5, h6 {
     border-radius: 8px !important;
   }
 }
+</style>
+
+<style scoped>
+
+/* ==================== MODERN COMPACT PROMOTION MODAL & BUTTONS ==================== */
+.modal-card-box.modal-promotion-compact {
+  max-width: 580px !important;
+  width: 95% !important;
+  max-height: 88vh !important;
+  padding: 0 !important;
+  border-radius: 20px !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: #ffffff !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.35) !important;
+}
+
+.promo-compact-header {
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #FFF8E1 0%, #FFF3E0 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 179, 0, 0.2);
+}
+
+.promo-header-icon-wrap {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #ff9800;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.promo-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #212529;
+}
+
+.btn-close-compact {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6c757d;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-close-compact:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #000;
+}
+
+.promo-compact-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.promo-welcome-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.promo-meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.promo-meta-item {
+  display: flex;
+  align-items: center;
+  color: #475569;
+}
+
+.promo-deadline-box {
+  background: #fff5f5;
+  border: 1px solid #fed7d7;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.promo-rule-note {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.promo-compact-footer {
+  padding: 12px 20px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.promo-countdown-text {
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  font-size: 13px !important;
+  line-height: 1.2 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  color: #dc2626 !important;
+}
+
+.promo-buttons-wrap {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  flex-shrink: 0 !important;
+}
+
+
+/* ==================== BUTTON PILLS & SPACING FOR MODALS ==================== */
+.btn-dismiss-pill {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 7px 20px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.btn-dismiss-pill:hover {
+  background: #e2e8f0;
+  color: #1e293b;
+}
+
+.btn-boost-pill {
+  background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+  color: #ffffff !important;
+  border: none;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 7px 22px;
+  border-radius: 20px;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.35);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.btn-boost-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(234, 88, 12, 0.5);
+}
+
+.btn-add-address-pill {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #ffffff !important;
+  border: none;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 7px 22px;
+  border-radius: 20px;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.btn-add-address-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.5);
+}
+
+.promo-meta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.promo-meta-item {
+  display: flex;
+  align-items: center;
+  color: #334155;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.meta-label {
+  font-weight: 600;
+}
+.meta-val {
+  color: #475569;
+}
+
+.btn-boost-action {
+  background: linear-gradient(135deg, #ff7043 0%, #ff5722 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(255, 87, 34, 0.3) !important;
+  transition: all 0.2s ease !important;
+}
+.btn-boost-action:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 16px rgba(255, 87, 34, 0.45) !important;
+}
+
+.btn-add-address-action {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3) !important;
+  transition: all 0.2s ease !important;
+}
+.btn-add-address-action:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.45) !important;
+}
+
+/* ==================== PROMOTED COUNTDOWN BANNER (TOP) ==================== */
+.promoted-countdown-banner {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 1px solid #fde68a;
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  box-shadow: 0 4px 15px rgba(245, 158, 11, 0.1);
+}
+
+.banner-left-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 280px;
+}
+
+.countdown-badge-pill {
+  background: #f59e0b;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  box-shadow: 0 3px 8px rgba(245, 158, 11, 0.35);
+}
+
+.banner-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-view-notice-pill {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-view-notice-pill:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.btn-boost-profile-gradient {
+  background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+  color: #ffffff;
+  border: none;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 7px 18px;
+  border-radius: 20px;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.35);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: all 0.2s ease;
+}
+.btn-boost-profile-gradient:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(234, 88, 12, 0.5);
+}
+
+/* ==================== PULSE ANIMATION FOR ADDRESS FIELD ==================== */
+@keyframes pulseAddressGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.7);
+    border-color: #ea580c !important;
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(234, 88, 12, 0.25);
+    border-color: #ea580c !important;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.7);
+    border-color: #ea580c !important;
+  }
+}
+
+.pulse-address-glow {
+  animation: pulseAddressGlow 1.2s infinite ease-in-out !important;
+  border-color: #ea580c !important;
+  background-color: #fff7ed !important;
+}
+
+.highlight-pulsing-box {
+  background: rgba(234, 88, 12, 0.04);
+  border-radius: 10px;
+  padding: 10px;
+  border: 1px dashed rgba(234, 88, 12, 0.4);
+  transition: all 0.3s ease;
+}
+
 </style>

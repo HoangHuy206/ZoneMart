@@ -1,4 +1,4 @@
-﻿using MongoDB.Bson;
+using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
 namespace ZoneMart.Server.Models;
@@ -102,6 +102,15 @@ public class Store
 
     [BsonElement("status")]
     public string Status { get; set; } = "Pending"; // Pending, Active, Rejected
+
+    [BsonElement("is_promoted_by_admin")]
+    public bool IsPromotedByAdmin { get; set; } = false;
+
+    [BsonElement("promoted_at")]
+    public DateTime? PromotedAt { get; set; }
+
+    [BsonElement("promotion_deadline")]
+    public DateTime? PromotionDeadline { get; set; }
 
     [BsonElement("reject_reason")]
     public string? RejectReason { get; set; }

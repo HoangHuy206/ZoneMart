@@ -39,6 +39,8 @@ const navigateAfterLogin = (role: string) => {
   }
   if (role === 'admin') {
     router.push('/admin');
+  } else if (role === 'manager') {
+    router.push('/manager');
   } else if (role === 'seller') {
     router.push('/seller');
   } else if (role === 'shipper') {
@@ -240,7 +242,8 @@ const enterOfflineMode = () => {
   const isSeller = targetAcc.includes('seller') || targetAcc.includes('mai');
   const isShipper = targetAcc.includes('shipper') || targetAcc.includes('nam');
   const isAdmin = targetAcc.includes('admin');
-  const detectedRole: UserRole = isAdmin ? 'admin' : isSeller ? 'seller' : isShipper ? 'shipper' : 'buyer';
+  const isManager = targetAcc.includes('manager') || targetAcc.includes('bql') || targetAcc.includes('kv3');
+  const detectedRole: UserRole = isAdmin ? 'admin' : isManager ? 'manager' : isSeller ? 'seller' : isShipper ? 'shipper' : 'buyer';
 
   const offlineUser = {
     id: 'usr_' + Date.now(),
@@ -264,6 +267,7 @@ const enterOfflineMode = () => {
     seller: 'Chủ Gian Hàng',
     shipper: 'Tài Xế Giao Hàng',
     admin: 'Quản Trị Viên',
+    manager: 'Ban Quản Lý',
   };
   celebrationRoleName.value = roleMap[detectedRole] || 'Thành Viên';
   celebrationMessage.value = 'Đang truy cập ZoneMart ở Chế độ Ngoại tuyến độc lập...';
@@ -279,8 +283,11 @@ const handleFaceLoginSuccess = (data: any) => {
     rawRole === 'admin' ||
     loggedUser.isAdmin === true ||
     (loggedUser.phoneEmail || '').toLowerCase() === 'admin@zonemart.vn';
+  const isManagerUser = !isAdminUser && (rawRole === 'manager' || loggedUser.isManager === true);
 
-  const detectedRole: UserRole = isAdminUser ? 'admin' : (rawRole as UserRole) || 'buyer';
+  const isSellerUser = !isAdminUser && !isManagerUser && (rawRole === 'seller' || loggedUser.primaryRole === 'seller' || (loggedUser.isSeller && loggedUser.sellerStatus === 'Approved'));
+  const isShipperUser = !isAdminUser && !isManagerUser && !isSellerUser && (rawRole === 'shipper' || loggedUser.primaryRole === 'shipper' || (loggedUser.isShipper && loggedUser.shipperStatus === 'Approved'));
+  const detectedRole: UserRole = isAdminUser ? 'admin' : isManagerUser ? 'manager' : isSellerUser ? 'seller' : isShipperUser ? 'shipper' : (rawRole as UserRole) || 'buyer';
 
   // Cập nhật useAuth Singleton toàn sàn
   auth.login({
@@ -301,6 +308,7 @@ const handleFaceLoginSuccess = (data: any) => {
     phone: loggedUser.phone || undefined,
     role: detectedRole,
     isAdmin: isAdminUser,
+    isManager: isManagerUser || isAdminUser,
     isSeller: loggedUser.isSeller || loggedUser.sellerStatus === 'Approved',
     isShipper: loggedUser.isShipper || loggedUser.shipperStatus === 'Approved',
     avatarUrl: loggedUser.avatarUrl,
@@ -308,6 +316,13 @@ const handleFaceLoginSuccess = (data: any) => {
     storeName: loggedUser.storeName,
     sellerStatus: loggedUser.sellerStatus,
     rejectReason: loggedUser.rejectReason,
+    isPromotedByAdmin: loggedUser.isPromotedByAdmin || false,
+    promotedAt: loggedUser.promotedAt,
+    promotionDeadline: loggedUser.promotionDeadline,
+    hasSeenPromotionNotice: loggedUser.hasSeenPromotionNotice || false,
+    primaryRole: loggedUser.primaryRole || detectedRole,
+    storeAddress: loggedUser.storeAddress || '',
+    marketName: loggedUser.marketName || '',
   };
   localStorage.setItem('zonemart_user', JSON.stringify(userWithStatus));
   localStorage.setItem('isLoggedIn', 'true');
@@ -327,6 +342,7 @@ const handleFaceLoginSuccess = (data: any) => {
     seller: 'Chủ Gian Hàng',
     shipper: 'Tài Xế Giao Hàng',
     admin: 'Quản Trị Viên',
+    manager: 'Ban Quản Lý',
   };
   celebrationRoleName.value = roleMap[detectedRole] || 'Thành Viên';
   celebrationMessage.value = `Nhận diện sinh trắc học ${biometricDevice.value?.label || 'Face ID'} thành công (${data.similarity ? Math.round(data.similarity * 100) : 98}% khớp)! Đang chuyển hướng...`;
@@ -382,8 +398,11 @@ const handleLogin = async () => {
           data.user?.isAdmin === true ||
           form.account.trim().toLowerCase() === 'admin' ||
           form.account.trim().toLowerCase() === 'admin@zonemart.vn';
+        const isManagerUser = !isAdminUser && (rawRole === 'manager' || data.user?.isManager === true);
 
-        const detectedRole: UserRole = isAdminUser ? 'admin' : (rawRole as UserRole) || 'buyer';
+        const isSellerUser = !isAdminUser && !isManagerUser && (rawRole === 'seller' || data.user?.primaryRole === 'seller' || (data.user?.isSeller && data.user?.sellerStatus === 'Approved'));
+        const isShipperUser = !isAdminUser && !isManagerUser && !isSellerUser && (rawRole === 'shipper' || data.user?.primaryRole === 'shipper' || (data.user?.isShipper && data.user?.shipperStatus === 'Approved'));
+        const detectedRole: UserRole = isAdminUser ? 'admin' : isManagerUser ? 'manager' : isSellerUser ? 'seller' : isShipperUser ? 'shipper' : (rawRole as UserRole) || 'buyer';
 
         // Lưu thông tin người dùng vào useAuth state & localStorage
         auth.login({
@@ -405,6 +424,7 @@ const handleLogin = async () => {
           phone: data.user?.phone || (!form.account.includes('@') ? form.account.trim() : undefined),
           role: detectedRole,
           isAdmin: isAdminUser,
+          isManager: isManagerUser || isAdminUser,
           isSeller: data.user?.isSeller || data.user?.sellerStatus === 'Approved',
           isShipper: data.user?.isShipper || data.user?.shipperStatus === 'Approved',
           avatarUrl: data.user?.avatarUrl,
@@ -412,6 +432,13 @@ const handleLogin = async () => {
           storeName: data.user?.storeName,
           sellerStatus: data.user?.sellerStatus,
           rejectReason: data.user?.rejectReason,
+          isPromotedByAdmin: data.user?.isPromotedByAdmin || false,
+          promotedAt: data.user?.promotedAt,
+          promotionDeadline: data.user?.promotionDeadline,
+          hasSeenPromotionNotice: data.user?.hasSeenPromotionNotice || false,
+          primaryRole: data.user?.primaryRole || detectedRole,
+          storeAddress: data.user?.storeAddress || '',
+          marketName: data.user?.marketName || '',
         };
         localStorage.setItem('zonemart_user', JSON.stringify(userWithStatus));
 
@@ -432,6 +459,7 @@ const handleLogin = async () => {
           seller: 'Chủ Gian Hàng',
           shipper: 'Tài Xế Giao Hàng',
           admin: 'Quản Trị Viên',
+          manager: 'Ban Quản Lý',
         };
         celebrationRoleName.value = roleMap[detectedRole] || 'Thành Viên';
 

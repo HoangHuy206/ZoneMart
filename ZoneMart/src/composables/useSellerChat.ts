@@ -1,7 +1,7 @@
 import { getCleanAvatar } from '../utils/avatarHelper';
 import { ref, computed, watch, onMounted } from 'vue';
 import { useAuth } from './useAuth';
-import { sellerChatService, type ChatMessage, type ChatProductContext } from '../services/sellerChatService';
+import { sellerChatService, type ChatProductContext } from '../services/sellerChatService';
 
 export interface ActiveStore {
   id: string;
@@ -41,14 +41,14 @@ export function useSellerChat() {
 
   const currentBuyerName = computed(() => {
     const user = auth.currentUser.value;
-    if (user?.name) return user.name;
     if (user?.fullName) return user.fullName;
+    if ((user as any)?.name) return (user as any).name;
     return 'Khách Hàng ZoneMart';
   });
 
   const currentBuyerAvatar = computed(() => {
     const user = auth.currentUser.value;
-    const raw = user?.avatarUrl || user?.avatar;
+    const raw = user?.avatarUrl || (user as any)?.avatar;
     return getCleanAvatar(raw, currentBuyerName.value, 'buyer');
   });
 

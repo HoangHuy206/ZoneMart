@@ -118,6 +118,13 @@ const handleFaceLoginSuccess = (data: any) => {
     storeName: loggedUser.storeName,
     sellerStatus: loggedUser.sellerStatus,
     rejectReason: loggedUser.rejectReason,
+    isPromotedByAdmin: loggedUser.isPromotedByAdmin || false,
+    promotedAt: loggedUser.promotedAt,
+    promotionDeadline: loggedUser.promotionDeadline,
+    hasSeenPromotionNotice: loggedUser.hasSeenPromotionNotice || false,
+    primaryRole: loggedUser.primaryRole || detectedRole,
+    storeAddress: loggedUser.storeAddress || '',
+    marketName: loggedUser.marketName || '',
   };
   localStorage.setItem('zonemart_user', JSON.stringify(userWithStatus));
   localStorage.setItem('isLoggedIn', 'true');
@@ -220,6 +227,13 @@ const handleLogin = async () => {
           storeName: data.user?.storeName,
           sellerStatus: data.user?.sellerStatus,
           rejectReason: data.user?.rejectReason,
+          isPromotedByAdmin: data.user?.isPromotedByAdmin || false,
+          promotedAt: data.user?.promotedAt,
+          promotionDeadline: data.user?.promotionDeadline,
+          hasSeenPromotionNotice: data.user?.hasSeenPromotionNotice || false,
+          primaryRole: data.user?.primaryRole || detectedRole,
+          storeAddress: data.user?.storeAddress || '',
+          marketName: data.user?.marketName || '',
         };
         localStorage.setItem('zonemart_user', JSON.stringify(userWithStatus));
 

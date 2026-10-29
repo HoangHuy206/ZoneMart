@@ -46,7 +46,7 @@ export function resolveStoreCoordinates(store: { id?: string; name?: string; add
     return { lat: found.lat, lng: found.lng };
   }
   const addr = (store.address || "").toLowerCase();
-  for (const [k, v] of Object.entries(STORE_COORDINATES_MAP)) {
+  for (const [, v] of Object.entries(STORE_COORDINATES_MAP)) {
     const street = v.address.split(",")[0].toLowerCase().trim();
     if (addr.includes(street)) {
       return { lat: v.lat, lng: v.lng };
@@ -174,6 +174,7 @@ export const recordLocalReview = (review: {
   productReviews?: Array<{ productId: string; productName: string; rating: number; comment?: string; tags?: string[] }>;
   storeComment?: string;
   buyerName?: string;
+  buyerAvatar?: string;
 }) => {
   const current = ratingsSummary.value || { products: {}, stores: {}, shippers: {} };
   const products = { ...(current.products || {}) };
@@ -2696,7 +2697,7 @@ export function useProductCatalog() {
       storeMap.set(key.toLowerCase(), {
         id: sId,
         name: s.storeName,
-        address: s.address || "Số 48 đường Cầu Giấy, Phường Quan Hoa, Quận Cầu Giấy, Hà Nội",
+        address: s.address || "Chưa cập nhật",
         distanceKm: 1.2,
         deliveryTime: "15 - 20 phút",
         rating: 5.0,

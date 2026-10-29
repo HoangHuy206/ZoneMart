@@ -1,11 +1,5 @@
 <script setup lang="ts">
-/**
- * ============================================================================
- * TRANG DANH SÁCH SẢN PHẨM & GIAN HÀNG (CATALOG & STORES VIEW) - ZONE MART
- * Thiết kế áp dụng Taste-Skill: Anti-Slop, Bento Asymmetry, Frameless, Tactile
- * Hỗ trợ tìm kiếm linh hoạt: Sản phẩm HOẶC Gian hàng
- * ============================================================================
- */
+
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useProductCatalog, inferSubCategoryAndPrep, type CatalogStore } from "../../composables/useProductCatalog";
@@ -437,12 +431,12 @@ const filteredProducts = computed(() => {
       if (Math.abs(diffRating) > 0.01) return diffRating;
 
       // 2. Ưu tiên những món có lượt đánh giá thực tế từ người mua trên hệ thống
-      const bRealReviews = (b.reviews && b.reviews.length > 0) ? b.reviews.length : 0;
-      const aRealReviews = (a.reviews && a.reviews.length > 0) ? a.reviews.length : 0;
+      const bRealReviews = (typeof b.reviews === 'number') ? b.reviews : 0;
+      const aRealReviews = (typeof a.reviews === 'number') ? a.reviews : 0;
       if (bRealReviews !== aRealReviews) return bRealReviews - aRealReviews;
 
       // 3. Số lượt đánh giá tổng
-      const diffCount = (b.reviewsCount || 0) - (a.reviewsCount || 0);
+      const diffCount = (b.reviews || 0) - (a.reviews || 0);
       if (diffCount !== 0) return diffCount;
 
       // 4. Lượt bán
@@ -451,8 +445,8 @@ const filteredProducts = computed(() => {
   } else {
     // popular (Bán chạy nhất): Kết hợp lượt bán và ưu tiên đẩy mạnh món 5 sao có đánh giá thực tế lên đầu
     result.sort((a, b) => {
-      const bRealReviews = (b.reviews && b.reviews.length > 0) ? b.reviews.length : 0;
-      const aRealReviews = (a.reviews && a.reviews.length > 0) ? a.reviews.length : 0;
+      const bRealReviews = (typeof b.reviews === 'number') ? b.reviews : 0;
+      const aRealReviews = (typeof a.reviews === 'number') ? a.reviews : 0;
       const bScore = (b.sold || 0) + (b.rating >= 4.8 ? bRealReviews * 120 : 0);
       const aScore = (a.sold || 0) + (a.rating >= 4.8 ? aRealReviews * 120 : 0);
       return bScore - aScore;
@@ -500,6 +494,19 @@ const filteredStores = computed<CatalogStore[]>(() => {
     });
   }
 });
+
+// Kiểm tra gian hàng ở trạng thái Sắp Mở Bán (chưa có địa chỉ HOẶC chưa có sản phẩm)
+// Đến khi seller đó nhập địa chỉ mới VÀ có sản phẩm thì chữ "Sắp mở bán" mới biến mất
+const isStoreUpcoming = (store: any) => {
+  if (!store) return false;
+  const addr = (store.address || '').trim().toLowerCase();
+  const hasNoAddress = !addr || 
+                       addr === 'chưa cập nhật' || 
+                       addr === 'đang cập nhật' || 
+                       addr === 'được admin duyệt';
+  const hasNoProducts = !store.products || store.products.length === 0;
+  return hasNoAddress || hasNoProducts;
+};
 
 // Thông tin gian hàng đang được chọn (nếu có lọc theo gian hàng)
 const activeStoreInfo = computed(() => {
@@ -550,6 +557,13 @@ const goToDetail = (id: string) => {
 
 // Thêm vào giỏ hàng thực tế với Toast tương tác mượt mà
 const onAddToCart = (p: ProductItem) => {
+  // Kiểm tra nếu gian hàng chưa có địa chỉ (ở trạng thái Sắp Mở Bán)
+  const store = catalog.allStores.value.find(s => s.name.toLowerCase() === (p.storeName || '').toLowerCase());
+  const addr = store?.address?.trim().toLowerCase();
+  if (store && (!addr || addr === 'chưa cập nhật' || addr === 'đang cập nhật')) {
+    toast.error('Gian hàng này đang hoàn thiện địa chỉ (Sắp Mở Bán), chưa thể nhận đơn hàng!', 'Sắp Mở Bán');
+    return;
+  }
   cart.addItem(
     {
       storeId: 'store_' + (p.storeName || 'default').toLowerCase().replace(/\s+/g, '_'),
@@ -698,6 +712,9 @@ const resetFilters = () => {
               <div class="store-spotlight-badge-row">
                 <span class="spotlight-tag"><i class="bi bi-shop"></i> GIAN HÀNG ĐANG CHỌN</span>
                 <span v-if="activeStoreInfo.isVerified" class="spotlight-verified"><i class="bi bi-patch-check-fill"></i> Đã xác thực ATTP</span>
+                <span v-if="isStoreUpcoming(activeStoreInfo)" class="badge bg-warning text-dark fw-bold px-2 py-1">
+                  <i class="bi bi-clock-history me-1"></i> SẮP MỞ BÁN
+                </span>
               </div>
               <h2 class="store-spotlight-title">{{ activeStoreInfo.name }}</h2>
               <div class="store-spotlight-sub">
@@ -909,6 +926,25 @@ const resetFilters = () => {
 
         <!-- Empty State khi không tìm thấy sản phẩm -->
         <div v-else class="empty-results-box">
+          <template v-if="activeStoreInfo && isStoreUpcoming(activeStoreInfo)">
+            <div class="empty-icon-circle bg-warning-subtle text-warning shadow-sm">
+              <i class="bi bi-shop-window text-warning" aria-hidden="true"></i>
+            </div>
+            <div class="badge bg-warning text-dark px-3 py-2 fs-6 fw-bold mb-2">
+              <i class="bi bi-clock-history me-1"></i> SẮP MỞ BÁN
+            </div>
+            <h3 class="mt-2">{{ activeStoreInfo.name }} đang chuẩn bị mở bán!</h3>
+            <p class="text-muted max-w-md mx-auto">
+              Chủ gian hàng đang hoàn thiện thông tin địa chỉ và chuẩn bị đăng các sản phẩm tươi ngon lên kệ. Vui lòng quay lại sau!
+            </p>
+            <div class="mt-3">
+              <button class="btn-restore-filters" @click="clearStoreFilter">
+                <i class="bi bi-arrow-left me-1"></i>
+                <span>Khám phá các gian hàng khác</span>
+              </button>
+            </div>
+          </template>
+          <template v-else>
           <div class="empty-icon-circle">
             <i class="bi bi-box-seam" aria-hidden="true"></i>
           </div>
@@ -934,6 +970,7 @@ const resetFilters = () => {
               <span>Xem tất cả sản phẩm</span>
             </button>
           </div>
+          </template>
         </div>
       </div>
 
@@ -981,6 +1018,9 @@ const resetFilters = () => {
                   <h3 class="store-name-heading" :title="store.name">
                     {{ store.name }}
                     <i v-if="store.isVerified" class="bi bi-patch-check-fill verified-icon" title="Gian hàng chính thức ZoneMart"></i>
+                    <span v-if="isStoreUpcoming(store)" class="badge bg-warning text-dark fw-bold ms-2 px-2 py-1 upcoming-store-pill">
+                      <i class="bi bi-clock-history me-1"></i> Sắp mở bán
+                    </span>
                   </h3>
                   <div class="store-rating-row">
                     <span class="store-star-rating">
@@ -1022,9 +1062,10 @@ const resetFilters = () => {
 
               <!-- Card Action Button -->
               <div class="store-card-action-row">
-                <button class="btn-explore-store" @click.stop="selectStore(store.name)">
+                <button class="btn-explore-store" :class="{ 'btn-upcoming-action': isStoreUpcoming(store) }" @click.stop="selectStore(store.name)">
                   <i class="bi bi-shop-window"></i>
-                  <span>Ghé thăm gian hàng ({{ store.products.length }} món)</span>
+                  <span v-if="isStoreUpcoming(store)"><i class="bi bi-clock-history me-1"></i> Sắp mở bán</span>
+                  <span v-else>Ghé thăm gian hàng ({{ store.products.length }} món)</span>
                   <i class="bi bi-arrow-right arrow-anim"></i>
                 </button>
               </div>
@@ -2675,5 +2716,31 @@ const resetFilters = () => {
     opacity: 1;
     transform: translateY(0);
   }
+}
+</style>
+
+
+<style scoped>
+/* ==================== STYLES CHO GIAN HÀNG SẮP MỞ BÁN ==================== */
+.upcoming-store-pill {
+  font-size: 11.5px !important;
+  border-radius: 12px;
+  background: #fef3c7 !important;
+  color: #b45309 !important;
+  border: 1px solid #fde68a !important;
+  vertical-align: middle;
+  font-weight: 700;
+}
+
+.btn-upcoming-action {
+  background: #fef3c7 !important;
+  color: #b45309 !important;
+  border-color: #fde68a !important;
+  font-weight: 700 !important;
+}
+
+.btn-upcoming-action:hover {
+  background: #fde68a !important;
+  color: #92400e !important;
 }
 </style>

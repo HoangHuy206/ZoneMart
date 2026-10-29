@@ -9,7 +9,7 @@
  */
 
 import { reactive } from 'vue';
-import { apiFetch, getApiUrl } from '../utils/apiConfig';
+import { apiFetch } from '../utils/apiConfig';
 import { getCleanAvatar } from '../utils/avatarHelper';
 
 export interface ChatProductContext {
@@ -234,7 +234,7 @@ class SellerChatService {
       };
       this.presenceListeners.forEach((cb) => cb(this.presenceMap[p.id]));
     } else if (data.type === 'CHAT_TYPING' && data.payload) {
-      const { conversationId, role, name, isTyping } = data.payload;
+      const { conversationId, name, isTyping } = data.payload;
       if (!this.activeTyping[conversationId]) {
         this.activeTyping[conversationId] = { name: '', isTyping: false };
       }

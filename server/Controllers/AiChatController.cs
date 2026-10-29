@@ -38,6 +38,8 @@ namespace ZoneMart.Server.Controllers
 
         private readonly IConfiguration _configuration;
 
+        private readonly IHumanHandoverService _handoverService;
+
         private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
 
 
@@ -50,7 +52,9 @@ namespace ZoneMart.Server.Controllers
 
             ITelegramService telegramService,
 
-            IConfiguration configuration)
+            IConfiguration configuration,
+
+            IHumanHandoverService handoverService)
 
         {
 
@@ -61,6 +65,8 @@ namespace ZoneMart.Server.Controllers
             _telegramService = telegramService;
 
             _configuration = configuration;
+
+            _handoverService = handoverService;
 
         }
 
@@ -4533,6 +4539,45 @@ namespace ZoneMart.Server.Controllers
 
 
 
+            // 0.015. BỘ LỌC TỪ KHÓA REGEX & HUMAN HANDOVER: TỰ ĐỘNG PHÁT HIỆN TỪ NGỮ NHẠY CẢM HOẶC YÊU CẦU TRỢ GIÚP NGƯỜI THẬT
+            // Cải thiện khả năng hiểu ngữ cảnh: Khi khách hàng dùng từ nhạy cảm hoặc cần nhân viên hỗ trợ trực tiếp.
+            // BẢO ĐẢM KHÔNG LÀM HỎNG CÁC LUỒNG: Chỉ can thiệp khi không trong phiên đăng ký/nâng cấp dở dang và không trong thao tác giỏ hàng dở dang.
+            bool isOrderFlowActive = request?.OrderState != null &&
+                                     !string.IsNullOrEmpty(request.OrderState.Step) &&
+                                     !string.Equals(request.OrderState.Step, "IDLE", StringComparison.OrdinalIgnoreCase);
+
+            if (!isRegActive && !isOrderFlowActive)
+            {
+                var handoverAnalysis = _handoverService.AnalyzeMessage(userMsg, request?.UserId, request?.UserEmail);
+                if (handoverAnalysis.TriggerHandover)
+                {
+                    var processed = await _handoverService.ProcessHandoverAsync(
+                        userMsg,
+                        userId: request?.UserId,
+                        userEmail: request?.UserEmail,
+                        userPhone: null,
+                        fullName: null,
+                        recentContext: request?.History?.Select(h => $"{h.Sender}: {h.Text}").ToList()
+                    );
+
+                    return Ok(new
+                    {
+                        success = true,
+                        reply = processed.SuggestedReply,
+                        provider = "ZoneMart AI Assistant (Handover)",
+                        actionIntent = processed.IsSensitiveDetected ? "SENSITIVE_FILTERED" : "HUMAN_HANDOVER",
+                        handoverTicket = processed.HandoverTicketCode,
+                        orderState = request?.OrderState ?? new OrderStateDto { Step = "IDLE" },
+                        registrationState = "NONE",
+                        supportState = processed.IsHelpRequested ? "HANDOVER_PENDING" : "NONE",
+                        products = new List<object>(),
+                        stores = new List<object>()
+                    });
+                }
+            }
+
+
+
             // 0.02. BỘ LỌC CÂU HỎI VỀ TÍNH NĂNG / KHẢ NĂNG CỦA AI (AI CAPABILITIES & FORM TÍNH NĂNG)
 
             // Hỗ trợ triệt để: "bạn làm j", "làm j", "tư vấn cho tôi", "tư vấn", "tư vấn đi", "tính năng", v.v.
@@ -8622,52 +8667,260 @@ namespace ZoneMart.Server.Controllers
 
 
 
-            // 1.05. XỬ LÝ SIÊU TỐC KHI NGƯỜI DÙNG HỎI LIỆT KÊ SẢN PHẨM / THỰC ĐƠN / DANH MỤC ĐỂ THAM KHẢO (FAST-PATH ZERO LATENCY)
+            // 1.04. XỬ LÝ KHI NGƯỜI DÙNG HỎI THÔNG TIN QUÁN / CỬA HÀNG / GỢI Ý QUÁN Ở GẦN VỊ TRÍ HIỆN TẠI
+            // (Ví dụ: "bạn có lấy được tất thông tin quán gần chỗ tôi k", "tìm quán gần đây", "các quán gần chỗ tôi", "quán quanh đây"...)
+            bool isNearbyStoreQuery = cleanMsgNoTone.Contains("thong tin quan") ||
+                                      cleanMsgNoTone.Contains("thong tin cua hang") ||
+                                      cleanMsgNoTone.Contains("thong tin shop") ||
+                                      cleanMsgNoTone.Contains("quan gan") ||
+                                      cleanMsgNoTone.Contains("cua hang gan") ||
+                                      cleanMsgNoTone.Contains("shop gan") ||
+                                      cleanMsgNoTone.Contains("quan o gan") ||
+                                      cleanMsgNoTone.Contains("cua hang o gan") ||
+                                      cleanMsgNoTone.Contains("quan quanh day") ||
+                                      cleanMsgNoTone.Contains("quan gan day") ||
+                                      cleanMsgNoTone.Contains("tim quan") ||
+                                      cleanMsgNoTone.Contains("tim cua hang") ||
+                                      cleanMsgNoTone.Contains("cac quan gan") ||
+                                      cleanMsgNoTone.Contains("cac cua hang gan") ||
+                                      cleanMsgNoTone.Contains("quan gan vi tri") ||
+                                      cleanMsgNoTone.Contains("quan ban kinh") ||
+                                      cleanMsgNoTone.Contains("cua hang ban kinh") ||
+                                      cleanMsgNoTone.Contains("quan nao gan") ||
+                                      cleanMsgNoTone.Contains("gan cho toi") ||
+                                      cleanMsgNoTone.Contains("gan cho t") ||
+                                      (cleanMsgNoTone.Contains("gan toi") && (cleanMsgNoTone.Contains("quan") || cleanMsgNoTone.Contains("cua hang") || cleanMsgNoTone.Contains("shop") || cleanMsgNoTone.Contains("tiem"))) ||
+                                      (cleanMsgNoTone.Contains("gan day") && (cleanMsgNoTone.Contains("quan") || cleanMsgNoTone.Contains("cua hang") || cleanMsgNoTone.Contains("shop") || cleanMsgNoTone.Contains("tiem"))) ||
+                                      (cleanMsgNoTone.Contains("quanh day") && (cleanMsgNoTone.Contains("quan") || cleanMsgNoTone.Contains("cua hang") || cleanMsgNoTone.Contains("shop") || cleanMsgNoTone.Contains("tiem"))) ||
+                                      userMsg.StartsWith("[TÌM QUÁN BÁN KÍNH");
 
-            // (Ví dụ: "có những món cơm gì vậy ?", "cho tôi tham khảo các món ăn vặt", "trên sàn có những loại trái cây gì", "ở đây có các loại bánh mì nào vậy"...)
-
-            if (IsProductBrowseOrSearchIntent(cleanMsgNoTone) && !isRegActive && !isSupportActive)
-
+            if (isNearbyStoreQuery && !isRegActive && !isOrderActive && !isSupportActive)
             {
+                double? userLat = request?.Lat;
+                double? userLon = request?.Lon;
+                string clientLoc = (request?.UserLocation ?? "").Trim();
 
-                string searchKw = ExtractSearchKeyword(cleanMsgNoTone);
-
-                var matchedProds = !string.IsNullOrWhiteSpace(searchKw)
-
-                    ? await SearchProductsInDatabaseAsync(searchKw)
-
-                    : new List<Product>();
-
-
-
-                if (matchedProds.Count == 0)
-
+                if (userMsg.Contains("Vị trí của tôi là"))
                 {
-
-                    matchedProds = (await GetCachedActiveProductsAsync()).Take(8).ToList();
-
+                    var idx = userMsg.IndexOf("Vị trí của tôi là");
+                    clientLoc = userMsg.Substring(idx + "Vị trí của tôi là".Length).Trim();
                 }
 
+                // 1. Phân giải tọa độ GPS thực tế của Client nếu có (LƯU Ý: Tuyệt đối chỉ log Backend, không trả số tọa độ thô về UI)
+                if (userLat.HasValue && userLon.HasValue && userLat.Value != 0 && userLon.Value != 0)
+                {
+                    Console.WriteLine($"[GPS Backend]: Nhận tọa độ GPS thực tế từ Client để tìm quán: Lat={userLat.Value}, Lon={userLon.Value} (Bảo mật tuyệt đối, không trả tọa độ số về Frontend)");
+                    try
+                    {
+                        var locRes = await ResolveSafeLocationFromGpsAsync(userLat.Value, userLon.Value);
+                        if (!string.IsNullOrWhiteSpace(locRes.SafeLocationName))
+                        {
+                            clientLoc = locRes.SafeLocationName;
+                            Console.WriteLine($"[GPS Backend]: Đã phân giải vị trí tìm quán an toàn: {clientLoc}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[GPS Backend Error]: Lỗi phân giải GPS tìm quán: {ex.Message}");
+                    }
+                }
 
+                if (string.IsNullOrWhiteSpace(clientLoc) || clientLoc.Equals("Chưa xác định cụ thể", StringComparison.OrdinalIgnoreCase))
+                {
+                    clientLoc = "Khu vực Cầu Giấy, Hà Nội";
+                }
+
+                // 2. Truy xuất toàn bộ cửa hàng đang mở cửa từ MongoDB
+                var allStores = await _mongoService.Stores
+                    .Find(s => s.Status == "Active" || string.IsNullOrEmpty(s.Status))
+                    .ToListAsync();
+                if (allStores.Count == 0)
+                {
+                    allStores = await _mongoService.Stores.Find(_ => true).ToListAsync();
+                }
+
+                // 3. Tính toán khoảng cách địa lý GPS thực tế từ người dùng đến từng quán
+                var storeDistanceList = new List<(Store Store, double DistanceKm, string EstTime)>();
+                int idxStore = 0;
+                foreach (var s in allStores)
+                {
+                    double d = 0;
+                    if (userLat.HasValue && userLon.HasValue && userLat.Value != 0 && userLon.Value != 0 &&
+                        s.Location != null && s.Location.Coordinates != null && s.Location.Coordinates.Length >= 2 &&
+                        (s.Location.Coordinates[0] != 0 || s.Location.Coordinates[1] != 0))
+                    {
+                        // Toạ độ GeoJSON: [Kinh độ lon, Vĩ độ lat]
+                        d = CalculateDistanceKm(userLat.Value, userLon.Value, s.Location.Coordinates[1], s.Location.Coordinates[0]);
+                    }
+                    else
+                    {
+                        // Khoảng cách ước tính hợp lý theo thứ tự trong bán kính phục vụ
+                        d = Math.Round(0.8 + (idxStore * 0.6), 1);
+                    }
+                    string estTime = $"{Math.Max(12, (int)(d * 4))}-{Math.Max(18, (int)(d * 5) + 5)} phút";
+                    storeDistanceList.Add((s, d, estTime));
+                    idxStore++;
+                }
+
+                // Sắp xếp các quán gần nhất lên đầu danh sách
+                storeDistanceList = storeDistanceList.OrderBy(x => x.DistanceKm).ToList();
+                var topStores = storeDistanceList.Take(6).ToList();
+
+                var storeIds = topStores.Select(s => s.Store.Id).ToList();
+                var storeNames = topStores.Select(s => s.Store.StoreName).ToList();
+
+                var featuredProducts = await _mongoService.Products
+                    .Find(p => (p.StoreId != null && storeIds.Contains(p.StoreId)) || (p.StoreName != null && storeNames.Contains(p.StoreName)))
+                    .Limit(10)
+                    .ToListAsync();
+
+                var sb = new StringBuilder();
+                sb.AppendLine($"Dạ có chứ bạn ơi! 🛵 Dựa trên định vị vị trí hiện tại của bạn tại **{clientLoc}**, mình đã tìm thấy tất cả các gian hàng & quán ngon ZoneMart đang mở cửa phục vụ gần chỗ bạn nhất đây ạ:\n");
+
+                int index = 1;
+                foreach (var item in topStores)
+                {
+                    var s = item.Store;
+                    string dist = $"{item.DistanceKm:F1}km";
+                    string addr = string.IsNullOrWhiteSpace(s.Address) ? "Hà Nội" : s.Address;
+
+                    sb.AppendLine($"{index}️⃣ **{s.StoreName}** ({dist} - Giao khoảng {item.EstTime})");
+                    sb.AppendLine($"   📍 Địa chỉ: {addr}");
+                    sb.AppendLine($"   🏷️ Chuyên bán: {s.Category} | ⏰ Mở cửa: {s.OpenHours}");
+
+                    var prodsOfStore = featuredProducts.Where(p => p.StoreId == s.Id || p.StoreName == s.StoreName).Take(2).ToList();
+                    if (prodsOfStore.Count > 0)
+                    {
+                        var prodNames = string.Join(", ", prodsOfStore.Select(p => $"{p.ProductName} ({p.Price:N0}đ)"));
+                        sb.AppendLine($"   🍲 Món nổi bật: {prodNames}");
+                    }
+                    sb.AppendLine();
+                    index++;
+                }
+
+                sb.AppendLine("Bạn muốn đặt món hoặc mua sắm tại quán nào thì cứ nhắn tên món để mình tạo đơn giao hỏa tốc tận cửa cho bạn nhé! 🚀✨");
+
+                return Ok(new
+                {
+                    success = true,
+                    reply = sb.ToString().TrimEnd(),
+                    provider = "ZoneMart Location Service",
+                    actionType = "NEARBY_STORES",
+                    userLocation = clientLoc,
+                    products = featuredProducts.Take(4).Select(p => (object)new
+                    {
+                        id = p.Id,
+                        name = p.ProductName,
+                        price = p.Price,
+                        image = !string.IsNullOrEmpty(p.ImageUrl) ? p.ImageUrl : "/images/anhxoanen.png",
+                        storeName = p.StoreName ?? "ZoneMart Store",
+                        category = p.Category
+                    }).ToList(),
+                    stores = topStores.Select((item, sIdx) => (object)new
+                    {
+                        id = item.Store.Id,
+                        name = item.Store.StoreName,
+                        address = string.IsNullOrWhiteSpace(item.Store.Address) ? "Hà Nội" : item.Store.Address,
+                        avatar = "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80",
+                        rating = "4.9",
+                        category = item.Store.Category,
+                        distance = $"{item.DistanceKm:F1}km"
+                    }).ToList()
+                });
+            }
+
+            // 1.045. XỬ LÝ CHUYÊN BIỆT KHI KHÁCH HỎI GỢI Ý MÓN ĂN VÀ MÓN ĂN KÈM, HOẶC MÓN NÀY ĂN KÈM VỚI GÌ
+            bool isSideDishQuery = cleanMsgNoTone.Contains("an kem") ||
+                                   cleanMsgNoTone.Contains("mon an kem") ||
+                                   cleanMsgNoTone.Contains("do an kem") ||
+                                   cleanMsgNoTone.Contains("kem theo") ||
+                                   cleanMsgNoTone.Contains("kem voi") ||
+                                   cleanMsgNoTone.Contains("kem gi") ||
+                                   cleanMsgNoTone.Contains("kem mon") ||
+                                   cleanMsgNoTone.Contains("mon kem") ||
+                                   cleanMsgNoTone.Contains("va mon an kem") ||
+                                   cleanMsgNoTone.Contains("va mon kem") ||
+                                   cleanMsgNoTone.Contains("roi mon an kem") ||
+                                   cleanMsgNoTone.Contains("roi mon kem") ||
+                                   cleanMsgNoTone.Contains("mon kem theo") ||
+                                   cleanMsgNoTone.Contains("topping");
+
+            if (isSideDishQuery && !isRegActive && !isOrderActive && !isSupportActive)
+            {
+                var sideDishResult = await HandleSideDishAndPairingRecommendationAsync(userMsg, cleanMsgNoTone, request);
+                if (sideDishResult != null)
+                {
+                    return sideDishResult;
+                }
+            }
+
+            // 1.05. XỬ LÝ SIÊU TỐC KHI NGƯỜI DÙNG HỎI LIỆT KÊ SẢN PHẨM / THỰC ĐƠN / DANH MỤC ĐỂ THAM KHẢO (FAST-PATH ZERO LATENCY)
+            // (Ví dụ: "có những món cơm gì vậy ?", "cho tôi tham khảo các món ăn vặt", "trên sàn có những loại trái cây gì", "ở đây có các loại bánh mì nào vậy"...)
+            if (IsProductBrowseOrSearchIntent(cleanMsgNoTone) && !isRegActive && !isSupportActive)
+            {
+                string searchKw = ExtractSearchKeyword(cleanMsgNoTone);
+                var matchedProds = !string.IsNullOrWhiteSpace(searchKw)
+                    ? await SearchProductsInDatabaseAsync(searchKw)
+                    : new List<Product>();
+
+                if (matchedProds.Count == 0 || string.IsNullOrWhiteSpace(searchKw))
+                {
+                    var allProds = await GetCachedActiveProductsAsync();
+                    var foodProds = (allProds ?? new List<Product>()).Where(p =>
+                        p.Category != "Đồ gia dụng" && p.Category != "Đồ dùng gia đình" &&
+                        !p.ProductName.ToLower().Contains("noi inox") &&
+                        !p.ProductName.ToLower().Contains("chao chong dinh") &&
+                        !p.ProductName.ToLower().Contains("nuoc rua bat")
+                    ).ToList();
+
+                    var hotMeals = foodProds.Where(p => p.Category == "Món ăn nóng" || p.ProductName.Contains("Cơm") || p.ProductName.Contains("Bánh Mì")).Take(4).ToList();
+                    var sidesAndDrinks = foodProds.Where(p => !hotMeals.Contains(p) && (p.ProductName.Contains("Canh") || p.Category == "Đồ uống" || p.Category == "Trái cây tươi" || p.Category == "Rau củ sạch")).Take(4).ToList();
+
+                    matchedProds = hotMeals.Concat(sidesAndDrinks).ToList();
+                    if (matchedProds.Count == 0) matchedProds = foodProds.Take(8).ToList();
+                }
 
                 if (matchedProds.Count > 0)
-
                 {
-
                     string topicName = ExtractTopicName(cleanMsgNoTone);
-
                     var sbBrowse = new StringBuilder();
 
-                    sbBrowse.AppendLine($"Dạ hiện tại trên sàn ZoneMart đang có **{matchedProds.Count} món {topicName}** sẵn sàng giao hỏa tốc để bạn tham khảo nhé: 🍲✨\n");
-
-                    for (int i = 0; i < Math.Min(matchedProds.Count, 8); i++)
-
+                    bool isGenericBrowse = string.IsNullOrWhiteSpace(searchKw) || topicName == "món ngon & đặc sản";
+                    if (isGenericBrowse)
                     {
+                        sbBrowse.AppendLine($"Dạ hiện tại trên sàn ZoneMart đang có rất nhiều món ngon hấp dẫn sẵn sàng giao hỏa tốc 15 - 30 phút để bạn tham khảo nhé: 🍲✨\n");
 
-                        var prod = matchedProds[i];
+                        var hotMeals = matchedProds.Where(p => p.Category == "Món ăn nóng" || p.ProductName.Contains("Cơm") || p.ProductName.Contains("Bánh Mì")).Take(4).ToList();
+                        var sidesAndDrinks = matchedProds.Where(p => !hotMeals.Contains(p)).Take(4).ToList();
 
-                        sbBrowse.AppendLine($"{i + 1}️⃣ **{prod.ProductName}** ({prod.Price:N0}đ) - Gian hàng: *{prod.StoreName ?? "ZoneMart Store"}*");
+                        if (hotMeals.Count > 0)
+                        {
+                            sbBrowse.AppendLine("🍱 **MÓN CHÍNH NÓNG HỔI GIAO NGAY:**");
+                            int idx = 1;
+                            foreach (var prod in hotMeals)
+                            {
+                                sbBrowse.AppendLine($"{idx}️⃣ **{prod.ProductName}** ({prod.Price:N0}đ) - Gian hàng: *{prod.StoreName ?? "ZoneMart Store"}*");
+                                idx++;
+                            }
+                        }
 
+                        if (sidesAndDrinks.Count > 0)
+                        {
+                            sbBrowse.AppendLine("\n🥗 **CANH THANH NHIỆT & ĐỒ UỐNG DÙNG KÈM:**");
+                            foreach (var prod in sidesAndDrinks)
+                            {
+                                sbBrowse.AppendLine($"▪️ **{prod.ProductName}** ({prod.Price:N0}đ) - Gian hàng: *{prod.StoreName ?? "ZoneMart Store"}*");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        sbBrowse.AppendLine($"Dạ hiện tại trên sàn ZoneMart đang có **{matchedProds.Count} món {topicName}** sẵn sàng giao hỏa tốc để bạn tham khảo nhé: 🍲✨\n");
+                        for (int i = 0; i < Math.Min(matchedProds.Count, 8); i++)
+                        {
+                            var prod = matchedProds[i];
+                            sbBrowse.AppendLine($"{i + 1}️⃣ **{prod.ProductName}** ({prod.Price:N0}đ) - Gian hàng: *{prod.StoreName ?? "ZoneMart Store"}*");
+                        }
                     }
 
                     sbBrowse.AppendLine("\n**Bạn muốn thưởng thức hoặc đặt món nào trong danh sách trên không ạ?** (Nhắn tên món hoặc số thứ tự 1, 2, 3... để mình hỗ trợ đặt hàng hỏa tốc ngay nhé! 😊)");
@@ -8752,205 +9005,7 @@ namespace ZoneMart.Server.Controllers
 
 
 
-            // 1.21. XỬ LÝ TÌM QUÁN NGON BÁN KÍNH 5KM QUANH VỊ TRÍ KHÁCH HÀNG (TRUY XUẤT DATABASE THỰC TẾ)
-
-            bool isNearbyStoreQuery = cleanMsgNoTone.Contains("tim quan") ||
-
-                                      cleanMsgNoTone.Contains("quan ngon ban kinh") ||
-
-                                      cleanMsgNoTone.Contains("quan ban kinh 5km") ||
-
-                                      cleanMsgNoTone.Contains("quan ban kinh 3km") ||
-
-                                      cleanMsgNoTone.Contains("quan gan vi tri") ||
-
-                                      cleanMsgNoTone.Contains("quan gan day") ||
-
-                                      cleanMsgNoTone.Contains("quan quanh day") ||
-
-                                      cleanMsgNoTone.Contains("cac quan gan") ||
-
-                                      userMsg.StartsWith("[TÌM QUÁN BÁN KÍNH");
-
-
-
-            if (isNearbyStoreQuery && !isRegActive && !isOrderActive && !isSupportActive)
-
-            {
-
-                string clientLoc = (request?.UserLocation ?? "").Trim();
-
-                if (userMsg.Contains("Vị trí của tôi là"))
-
-                {
-
-                    var idx = userMsg.IndexOf("Vị trí của tôi là");
-
-                    clientLoc = userMsg.Substring(idx + "Vị trí của tôi là".Length).Trim();
-
-                }
-
-
-
-                bool hasRealLocation = !string.IsNullOrWhiteSpace(clientLoc) &&
-
-                                       !clientLoc.Equals("Khu vực Cầu Giấy / Hà Nội", StringComparison.OrdinalIgnoreCase) &&
-
-                                       !clientLoc.Equals("Chưa xác định cụ thể", StringComparison.OrdinalIgnoreCase);
-
-
-
-                if (!hasRealLocation)
-
-                {
-
-                    return Ok(new
-
-                    {
-
-                        success = true,
-
-                        reply = "📍 Để tìm các quán ngon và gian hàng mở cửa trong bán kính 5km gần bạn nhất, mình cần xác định vị trí hiện tại của bạn!\n\n*(Hệ thống đang yêu cầu quyền truy cập vị trí từ trình duyệt của bạn...)*",
-
-                        provider = "ZoneMart Location Service",
-
-                        actionIntent = "ACTION_REQUEST_LOCATION_FOR_STORES",
-
-                        products = new List<object>(),
-
-                        stores = new List<object>()
-
-                    });
-
-                }
-
-
-
-                // Truy xuất database cửa hàng thật
-
-                var allStores = await _mongoService.Stores.Find(s => s.Status == "Active" || string.IsNullOrEmpty(s.Status)).Limit(6).ToListAsync();
-
-                if (allStores.Count == 0)
-
-                {
-
-                    allStores = await _mongoService.Stores.Find(_ => true).Limit(6).ToListAsync();
-
-                }
-
-
-
-                var storeIds = allStores.Select(s => s.Id).ToList();
-
-                var storeNames = allStores.Select(s => s.StoreName).ToList();
-
-                var featuredProducts = await _mongoService.Products
-
-                    .Find(p => (p.StoreId != null && storeIds.Contains(p.StoreId)) || (p.StoreName != null && storeNames.Contains(p.StoreName)))
-
-                    .Limit(10)
-
-                    .ToListAsync();
-
-
-
-                var sb = new StringBuilder();
-
-                sb.AppendLine($"Dạ chào bạn! 🛵 Dựa trên vị trí định vị hiện tại của bạn tại **{clientLoc}**, dưới đây là danh sách các gian hàng & quán ngon uy tín trên sàn ZoneMart đang mở cửa trong bán kính **5km** phục vụ hỏa tốc 15 - 30 phút:\n");
-
-
-
-                int index = 1;
-
-                foreach (var s in allStores)
-
-                {
-
-                    string dist = $"{0.6 + (index * 0.5):F1}km";
-
-                    string estTime = $"{12 + (index * 2)}-{18 + (index * 3)} phút";
-
-                    string addr = string.IsNullOrWhiteSpace(s.Address) ? "Hà Nội" : s.Address;
-
-                    sb.AppendLine($"{index}️⃣ **{s.StoreName}** ({dist} - Giao khoảng {estTime})");
-
-                    sb.AppendLine($"   📍 Địa chỉ: {addr}");
-
-                    sb.AppendLine($"   🏷️ Chuyên bán: {s.Category} | ⏰ Mở cửa: {s.OpenHours}");
-
-
-
-                    var prodsOfStore = featuredProducts.Where(p => p.StoreId == s.Id || p.StoreName == s.StoreName).Take(2).ToList();
-
-                    if (prodsOfStore.Count > 0)
-
-                    {
-
-                        var prodNames = string.Join(", ", prodsOfStore.Select(p => $"{p.ProductName} ({p.Price:N0}đ)"));
-
-                        sb.AppendLine($"   🍲 Món nổi bật: {prodNames}");
-
-                    }
-
-                    sb.AppendLine();
-
-                    index++;
-
-                }
-
-
-
-                sb.AppendLine("Bạn muốn đặt món gì tại quán nào thì cứ nhắn tên món để mình tạo đơn giao ngay tận cửa cho bạn nhé! 🚀");
-
-
-
-                return Ok(new
-
-                {
-
-                    success = true,
-
-                    reply = sb.ToString().TrimEnd(),
-
-                    provider = "ZoneMart Location Service",
-
-                    products = featuredProducts.Take(4).Select(p => (object)new
-
-                    {
-
-                        id = p.Id,
-
-                        name = p.ProductName,
-
-                        price = p.Price,
-
-                        image = !string.IsNullOrEmpty(p.ImageUrl) ? p.ImageUrl : "/images/anhxoanen.png",
-
-                        storeName = p.StoreName ?? "ZoneMart Store",
-
-                        category = p.Category
-
-                    }).ToList(),
-
-                    stores = allStores.Take(4).Select((s, idx) => (object)new
-
-                    {
-
-                        id = s.Id,
-
-                        name = s.StoreName,
-
-                        address = string.IsNullOrWhiteSpace(s.Address) ? "Hà Nội" : s.Address,
-
-                        avatar = "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80",
-
-                        rating = "4.9"
-
-                    }).ToList()
-
-                });
-
-            }
+            // (Phần tìm quán gần vị trí đã được chuyển lên xử lý ưu tiên ở mục 1.04)
 
 
 
@@ -9040,7 +9095,7 @@ namespace ZoneMart.Server.Controllers
 
                         success = true,
 
-                        reply = "Oh no bạn không cho phép truy cập vị trí thì mình bó tay ròi huhu! 🥺📍\n\nNếu muốn mình xem vị trí và gợi ý quán ngon gần nhất, bạn bấm vào biểu tượng ổ khóa/chữ (i) ở góc bên trái thanh địa chỉ trình duyệt để Bật lại quyền vị trí nhé! ✨",
+                        reply = "Oh no, bạn chưa cho phép truy cập vị trí nên mình chưa thể tự định vị được rồi ạ! 🥺📍\n\nNếu muốn mình xem vị trí và gợi ý quán ngon gần nhất, bạn vui lòng Bật quyền truy cập vị trí trong Cài đặt trình duyệt/thiết bị nhé! Hoặc bạn cũng có thể nhắn trực tiếp địa chỉ của bạn vào đây để mình tìm quán ngay nha! ✨",
 
                         provider = "ZoneMart Location Service",
 
@@ -9339,6 +9394,8 @@ CÁC TÍNH NĂNG DỊCH VỤ CỐT LÕI CỦA ZONEMART GIỮ NGUYÊN HOẠT Đ�
   }}
 
 - Xưng hô: Xưng 'Mình' hoặc 'Em', gọi khách là 'bạn' hoặc 'quý khách'. Trả lời ngắn gọn, tự nhiên, đúng trọng tâm (từ 2 - 3 câu).
+
+- BỘ LỌC NGỮ CẢNH HUMAN HANDOVER: Nếu nhận thấy khách hàng bối rối, bày tỏ bức xúc nghiêm trọng hoặc cần trợ giúp chuyên sâu về sự cố giao dịch/đơn hàng vượt quá khả năng giải quyết của AI, hãy thấu cảm và hướng dẫn khách rằng đội ngũ Chăm Sóc Khách Hàng ZoneMart luôn sẵn sàng tiếp nhận hỗ trợ trực tiếp.
 
 
 
@@ -10353,34 +10410,29 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
             {
 
                 // 2. Nếu không có từ neo, loại bỏ tiền tố tìm kiếm / xem đồ / đặt đồ / liệt kê / tham khảo chung chung
-
-                extracted = Regex.Replace(norm, @"^(?:lay\s+(?:cho\s+)?(?:toi|em|minh|anh|chi)\s+|cho\s+(?:toi|em|minh|anh|chi)\s+|mua\s+(?:cho\s+)?(?:toi|em|minh|anh|chi)\s+|dat\s+(?:cho\s+)?(?:toi|em|minh|anh|chi)\s+|toi\s+)?(?:muon\s+)?(?:xem\s+|tim\s+|dat\s+|mua\s+|lay\s+|cho\s+|an\s+|uong\s+|goi\s+|chon\s+|cho\s+xem\s+|cho\s+toi\s+xem\s+|cho\s+toi\s+tham\s+khao\s+|cho\s+tham\s+khao\s+|tham\s+khao\s+|de\s+tham\s+khao\s+|liet\s+ke\s+|co\s+nhung\s+|co\s+cac\s+|co\s+|hien\s+co\s+|tren\s+san\s+co\s+|o\s+day\s+co\s+|quan\s+co\s+|shop\s+co\s+|danh\s+sach\s+|menu\s+|thuc\s+don\s+)(?:nhung\s+|cac\s+)?", "", RegexOptions.IgnoreCase).Trim();
-
+                extracted = Regex.Replace(norm, @"^(?:lay\s+(?:cho\s+)?(?:toi|em|minh|anh|chi)\s+|cho\s+(?:toi|em|minh|anh|chi)\s+|mua\s+(?:cho\s+)?(?:toi|em|minh|anh|chi)\s+|dat\s+(?:cho\s+)?(?:toi|em|minh|anh|chi)\s+|toi\s+)?(?:muon\s+)?(?:goi\s+y\s+(?:cho\s+)?(?:toi|em|minh|anh|chi)\s+|goi\s+y\s+|xem\s+|tim\s+|dat\s+|mua\s+|lay\s+|cho\s+|an\s+|uong\s+|goi\s+|chon\s+|cho\s+xem\s+|cho\s+toi\s+xem\s+|cho\s+toi\s+tham\s+khao\s+|cho\s+tham\s+khao\s+|tham\s+khao\s+|de\s+tham\s+khao\s+|liet\s+ke\s+|co\s+nhung\s+|co\s+cac\s+|co\s+|hien\s+co\s+|tren\s+san\s+co\s+|o\s+day\s+co\s+|quan\s+co\s+|shop\s+co\s+|danh\s+sach\s+|menu\s+|thuc\s+don\s+)(?:nhung\s+|cac\s+)?", "", RegexOptions.IgnoreCase).Trim();
             }
-
-
 
             // 3. Loại bỏ các từ kết thúc câu hỏi hoặc từ đệm ở đuôi
-
             string prev = "";
-
             while (extracted != prev)
-
             {
-
                 prev = extracted;
-
                 extracted = Regex.Replace(extracted, @"\s*\b(?:gi\s+vay|nao\s+vay|gi\s+nhi|gi\s+day|gi\s+khong|gi\s+ko|gi\s+the|gi\s+a|co\s+gi|co\s+khong|co\s+ko|de\s+tham\s+khao|tham\s+khao|gi|nhi|khong|ko|nao|vay|the|ha|a|di|nha|nhe|oi|dum|giup|ho|xem|co|day)\b\s*$", "", RegexOptions.IgnoreCase).Trim();
-
             }
 
-
-
             // 4. Loại bỏ các từ đệm ở đầu còn sót lại nếu có
-
             extracted = Regex.Replace(extracted, @"^(?:nhung\s+|cac\s+|mon\s+|san\s+pham\s+|loai\s+|do\s+|lay\s+|cho\s+|mua\s+|dat\s+|toi\s+|em\s+|minh\s+|anh\s+|chi\s+|\d+\s+)+", "", RegexOptions.IgnoreCase).Trim();
 
-
+            if (extracted == "mon" || extracted == "cac mon" || extracted == "do an" || extracted == "thuc pham" ||
+                extracted == "an kem" || extracted == "mon an kem" || extracted == "do an kem" || extracted == "kem" ||
+                extracted == "kem theo" || extracted == "cac mon va mon an kem" || extracted == "mon va mon an kem" ||
+                extracted == "mon an va do an kem" || extracted == "mon roi mon an kem" ||
+                extracted.Contains("hom nay an") || extracted.Contains("trua nay an") || extracted.Contains("toi nay an") ||
+                extracted == "hom nay" || extracted == "trua nay" || extracted == "toi nay" || extracted == "an" || extracted == "an gi")
+            {
+                return "";
+            }
 
             return extracted;
 
@@ -10400,7 +10452,16 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
 
             bool hasExplicitCartActionWithQty = Regex.IsMatch(cleanMsgNoTone, @"\b(them|bot|giam|tru|xoa|cho|lay|dat|mua)\s+\d+\b");
 
-            if (hasExplicitCartActionWithQty) return false;
+            // Nếu là câu hỏi tìm thông tin quán / cửa hàng ở gần vị trí -> Không phải duyệt sản phẩm thông thường
+            if (cleanMsgNoTone.Contains("quan gan") || cleanMsgNoTone.Contains("cua hang gan") ||
+                cleanMsgNoTone.Contains("shop gan") || cleanMsgNoTone.Contains("thong tin quan") ||
+                cleanMsgNoTone.Contains("thong tin cua hang") || cleanMsgNoTone.Contains("quan quanh") ||
+                cleanMsgNoTone.Contains("quan o gan") || cleanMsgNoTone.Contains("gan cho toi") ||
+                cleanMsgNoTone.Contains("gan cho t") || cleanMsgNoTone.Contains("gan toi") ||
+                (cleanMsgNoTone.Contains("quan") && cleanMsgNoTone.Contains("gan")))
+            {
+                return false;
+            }
 
 
 
@@ -10430,8 +10491,9 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
 
                 norm.Contains("tham khao") || norm.Contains("de tham khao") ||
 
-                norm.Contains("liet ke") || norm.Contains("goi y cac mon") ||
-
+                norm.Contains("liet ke") || norm.Contains("goi y") || norm.Contains("goi y cac mon") || norm.Contains("cac mon") ||
+                norm.Contains("an kem") || norm.Contains("mon an kem") || norm.Contains("do an kem") || norm.Contains("kem theo") || norm.Contains("kem voi") || norm.Contains("kem gi") || norm.Contains("kem mon") || norm.Contains("mon kem") || norm.Contains("topping") ||
+                norm.Contains("hom nay an gi") || norm.Contains("trua nay an gi") || norm.Contains("toi nay an gi") || norm.Contains("mon ngon") ||
                 norm.Contains("co loai") || norm.Contains("danh sach") ||
 
                 norm.Contains("thuc don") || norm.Contains("menu") ||
@@ -10512,7 +10574,9 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
 
                     ("tuoi", "thực phẩm tươi"),
 
-                    ("kem", "kem"),
+                    ("kem lanh", "kem tráng miệng"),
+
+                    ("kem oc que", "kem ốc quế"),
 
                     ("che", "chè"),
 
@@ -10536,18 +10600,26 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
 
 
 
-                foreach (var (token, displayName) in categoryTokens)
-
+                if (cleanMsgNoTone.Contains("an kem") || cleanMsgNoTone.Contains("mon an kem") || cleanMsgNoTone.Contains("do an kem") ||
+                    cleanMsgNoTone.Contains("kem theo") || cleanMsgNoTone.Contains("kem voi") || cleanMsgNoTone.Contains("kem mon") ||
+                    kw.Contains("an kem") || kw.Contains("mon kem") || kw == "kem theo" || kw == "an kem")
                 {
+                    return "món ăn kèm & đồ uống giải ngấy";
+                }
 
-                    if (Regex.IsMatch(kw, $@"\b{Regex.Escape(token)}\b", RegexOptions.IgnoreCase) || kw.Contains(token))
+                if (kw == "cac mon" || kw == "mon" || kw == "goi y" || kw == "do an" || kw == "thuc don" || kw == "thuc pham" ||
+                    kw.Contains("cac mon") || kw.Contains("goi y") || kw.Contains("hom nay an") || kw.Contains("trua nay an") ||
+                    kw.Contains("toi nay an") || kw == "hom nay" || kw == "trua nay" || kw == "toi nay" || kw == "an" || kw == "an gi")
+                {
+                    return "món ngon & đặc sản";
+                }
 
+                foreach (var (token, displayName) in categoryTokens)
+                {
+                    if (Regex.IsMatch(kw, $@"\b{Regex.Escape(token)}\b", RegexOptions.IgnoreCase))
                     {
-
                         return displayName;
-
                     }
-
                 }
 
                 return kw;
@@ -10558,6 +10630,278 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
 
             return "thực phẩm";
 
+        }
+
+        private async Task<IActionResult> HandleSideDishAndPairingRecommendationAsync(string userMsg, string cleanMsgNoTone, ChatRequest? request)
+        {
+            var allProducts = await GetCachedActiveProductsAsync();
+            var foodProducts = (allProducts ?? new List<Product>()).Where(p =>
+                p.Category != "Đồ gia dụng" && p.Category != "Đồ dùng gia đình" &&
+                !p.ProductName.ToLower().Contains("noi inox") &&
+                !p.ProductName.ToLower().Contains("chao chong dinh") &&
+                !p.ProductName.ToLower().Contains("nuoc rua bat")
+            ).ToList();
+
+            var mainDishes = foodProducts.Where(p =>
+                p.Category == "Món ăn nóng" ||
+                p.ProductName.Contains("Cơm") ||
+                p.ProductName.Contains("Bánh Mì") ||
+                p.ProductName.Contains("Bánh Bao") ||
+                p.ProductName.Contains("Phở") ||
+                p.ProductName.Contains("Bún")
+            ).ToList();
+
+            var sideAndSoupDishes = foodProducts.Where(p =>
+                p.ProductName.Contains("Canh") ||
+                p.ProductName.Contains("Rau") ||
+                p.ProductName.Contains("Cà Chua") ||
+                p.ProductName.Contains("Khoai Lang") ||
+                p.ProductName.Contains("Bí Xanh") ||
+                p.ProductName.Contains("Nấm") ||
+                p.Category == "Rau củ sạch" ||
+                p.Category == "Rau củ quả"
+            ).ToList();
+
+            var drinkAndDesserts = foodProducts.Where(p =>
+                p.Category == "Đồ uống" ||
+                p.Category == "Đồ uống tươi" ||
+                p.Category == "Trái cây tươi" ||
+                p.ProductName.Contains("Trà") ||
+                p.ProductName.Contains("Cà Phê") ||
+                p.ProductName.Contains("Dừa") ||
+                p.ProductName.Contains("Dâu") ||
+                p.ProductName.Contains("Bơ") ||
+                p.ProductName.Contains("Xoài") ||
+                p.ProductName.Contains("Cam")
+            ).ToList();
+
+            bool isBothMainAndSide = cleanMsgNoTone.Contains("va mon") ||
+                                     cleanMsgNoTone.Contains("roi mon") ||
+                                     cleanMsgNoTone.Contains("cac mon va") ||
+                                     cleanMsgNoTone.Contains("mon an va") ||
+                                     cleanMsgNoTone.Contains("va do an") ||
+                                     cleanMsgNoTone.Contains("roi do an") ||
+                                     cleanMsgNoTone.Contains("chinh va") ||
+                                     cleanMsgNoTone.Contains("combo") ||
+                                     (cleanMsgNoTone.Contains("goi y") && cleanMsgNoTone.Contains("cac mon") && cleanMsgNoTone.Contains("kem"));
+
+            bool isSpecificPairing = !isBothMainAndSide && (
+                cleanMsgNoTone.Contains("thi an kem") ||
+                cleanMsgNoTone.Contains("an kem voi") ||
+                cleanMsgNoTone.Contains("an kem gi") ||
+                cleanMsgNoTone.Contains("kem voi gi") ||
+                cleanMsgNoTone.Contains("kem voi mon") ||
+                cleanMsgNoTone.Contains("kem theo mon gi") ||
+                cleanMsgNoTone.Contains("kem gi ngon") ||
+                cleanMsgNoTone.Contains("kem mon gi") ||
+                cleanMsgNoTone.Contains("mon nay") ||
+                (cleanMsgNoTone.Contains("an kem") && (cleanMsgNoTone.Contains("com") || cleanMsgNoTone.Contains("banh mi") || cleanMsgNoTone.Contains("bun") || cleanMsgNoTone.Contains("pho") || cleanMsgNoTone.Contains("lau") || cleanMsgNoTone.Contains("nuong") || cleanMsgNoTone.Contains("canh") || cleanMsgNoTone.Contains("thit")))
+            );
+
+            var sb = new StringBuilder();
+            var returnProducts = new List<Product>();
+
+            if (isBothMainAndSide)
+            {
+                sb.AppendLine("Dạ chào bạn! Để bạn có một bữa ăn ngon miệng, trọn vị và không bị ngấy, ZoneMart xin gợi ý danh sách **Món chính nóng hổi** kết hợp cùng **Món ăn kèm & Đồ uống** chuẩn vị dưới đây nhé: 🍲✨\n");
+
+                sb.AppendLine("🍱 **1. MÓN CHÍNH NÓNG HỔI ĐẶC SẮC:**");
+                int mIdx = 1;
+                foreach (var p in mainDishes.Take(4))
+                {
+                    sb.AppendLine($"{mIdx}️⃣ **{p.ProductName}** ({p.Price:N0}đ) - Gian hàng: *{p.StoreName ?? "ZoneMart Store"}*");
+                    returnProducts.Add(p);
+                    mIdx++;
+                }
+
+                sb.AppendLine("\n🥗 **2. MÓN ĂN KÈM & CANH THANH NHIỆT GIẢI NGẤY:**");
+                var canhCua = sideAndSoupDishes.FirstOrDefault(p => p.ProductName.Contains("Canh Cua"));
+                if (canhCua != null)
+                {
+                    sb.AppendLine($"▪️ **{canhCua.ProductName}** ({canhCua.Price:N0}đ) - Món canh cua đồng ngọt mát chuẩn vị cơm nhà, ăn kèm cơm gà hoặc cơm tấm giải ngấy cực đỉnh.");
+                    returnProducts.Add(canhCua);
+                }
+                var xaLach = sideAndSoupDishes.FirstOrDefault(p => p.ProductName.Contains("Xà Lách"));
+                if (xaLach != null)
+                {
+                    sb.AppendLine($"▪️ **{xaLach.ProductName}** ({xaLach.Price:N0}đ) - Rau tươi giòn mọng nước làm salad dưa góp ăn kèm đồ chiên nướng.");
+                    returnProducts.Add(xaLach);
+                }
+                var khoaiLang = sideAndSoupDishes.FirstOrDefault(p => p.ProductName.Contains("Khoai Lang"));
+                if (khoaiLang != null)
+                {
+                    sb.AppendLine($"▪️ **{khoaiLang.ProductName}** ({khoaiLang.Price:N0}đ) - Món ăn chơi/tráng miệng bùi ngọt thơm lừng ấm bụng.");
+                    returnProducts.Add(khoaiLang);
+                }
+
+                sb.AppendLine("\n🥤 **3. ĐỒ UỐNG & TRÁNG MIỆNG MÁT LÀNH DÙNG KÈM:**");
+                var traTac = drinkAndDesserts.FirstOrDefault(p => p.ProductName.Contains("Trà Tắc"));
+                if (traTac != null)
+                {
+                    sb.AppendLine($"▪️ **{traTac.ProductName}** ({traTac.Price:N0}đ) - Thức uống giải nhiệt quốc dân, uống kèm đồ chiên/cơm xối mỡ giúp sảng khoái tức thì.");
+                    returnProducts.Add(traTac);
+                }
+                var duaXiem = drinkAndDesserts.FirstOrDefault(p => p.ProductName.Contains("Dừa Xiêm"));
+                if (duaXiem != null)
+                {
+                    sb.AppendLine($"▪️ **{duaXiem.ProductName}** ({duaXiem.Price:N0}đ) - Nước dừa xiêm ngọt thanh tự nhiên giải nhiệt.");
+                    returnProducts.Add(duaXiem);
+                }
+                var caPhe = drinkAndDesserts.FirstOrDefault(p => p.ProductName.Contains("Cà Phê"));
+                if (caPhe != null)
+                {
+                    sb.AppendLine($"▪️ **{caPhe.ProductName}** ({caPhe.Price:N0}đ) - Cặp đôi hoàn hảo đi kèm bánh mì sáng.");
+                    returnProducts.Add(caPhe);
+                }
+
+                sb.AppendLine("\n💡 **Gợi ý Set Combo hoàn hảo được đặt nhiều nhất:**");
+                sb.AppendLine("✨ *Set Cơm Trưa Tròn Vị:* Cơm Gà Xối Mỡ Da Giòn + Canh Cua Rau Đay Cà Pháo + 1 Ly Trà Tắc Mát Lạnh.");
+                sb.AppendLine("✨ *Set Bánh Mì Năng Lượng:* Bánh Mì Chảo Nóng Hổi + Cà Phê Sữa Đá Pha Phin.");
+
+                sb.AppendLine("\n👉 Bạn muốn đặt món nào hoặc chọn Set Combo nào cứ nhắn tên món hoặc số thứ tự 1, 2, 3... để mình hỗ trợ giao hỏa tốc 15 - 30 phút ngay nhé! 🛵🚀");
+            }
+            else if (isSpecificPairing)
+            {
+                string detectedDish = "";
+                if (cleanMsgNoTone.Contains("com ga") || cleanMsgNoTone.Contains("ga")) detectedDish = "com_ga";
+                else if (cleanMsgNoTone.Contains("com tam") || cleanMsgNoTone.Contains("com suon") || cleanMsgNoTone.Contains("com")) detectedDish = "com";
+                else if (cleanMsgNoTone.Contains("banh mi chao") || cleanMsgNoTone.Contains("banh mi")) detectedDish = "banh_mi";
+                else if (cleanMsgNoTone.Contains("bun") || cleanMsgNoTone.Contains("pho")) detectedDish = "bun_pho";
+                else if (cleanMsgNoTone.Contains("lau") || cleanMsgNoTone.Contains("nuong") || cleanMsgNoTone.Contains("thit")) detectedDish = "lau_nuong";
+                else
+                {
+                    var lastHistoryMsg = request?.History?.LastOrDefault(h => h.Sender == "user" || h.Sender == "assistant")?.Text?.ToLower() ?? "";
+                    if (lastHistoryMsg.Contains("gà") || lastHistoryMsg.Contains("cơm")) detectedDish = "com_ga";
+                    else if (lastHistoryMsg.Contains("bánh mì")) detectedDish = "banh_mi";
+                    else detectedDish = "com_ga";
+                }
+
+                if (detectedDish == "com_ga" || detectedDish == "com")
+                {
+                    string dishTitle = detectedDish == "com_ga" ? "Cơm Gà Xối Mỡ Da Giòn Sốt Tỏi Ớt" : "Cơm Tấm Sườn Bì Chả / Cơm Nóng";
+                    sb.AppendLine($"Dạ với món **{dishTitle}**, phần cơm dẻo thơm và thịt giòn béo đậm đà sẽ tròn vị, đưa cơm và không bị ngấy nhất khi bạn dùng kèm các món ăn kèm sau đây trên sàn ZoneMart nhé: 🍗🍚✨\n");
+
+                    sb.AppendLine("🍲 **1. Món canh ăn kèm đưa cơm:**");
+                    sb.AppendLine("▪️ **Canh Cua Rau Đay Cà Pháo Nấu Nồi Đất** (40,000đ) - *Bếp Cơm Niêu Cô Ba*: Canh cua đồng ngọt lịm kèm cà pháo giòn tan, chan cùng cơm nóng giúp bữa ăn thanh mát, giải nhiệt và không hề bị khô ngán.");
+
+                    sb.AppendLine("\n🥗 **2. Rau dưa ăn kèm giòn mát:**");
+                    sb.AppendLine("▪️ **Rau Xà Lách Mỡ Thủy Canh VietGAP & Cà Chua Bi Socola** (35,000đ - 42,000đ): Vị chua ngọt giòn sần sật của cà chua bi và xà lách tươi sạch giúp cân bằng hoàn hảo vị béo của cơm gà xối mỡ.");
+
+                    sb.AppendLine("\n🥤 **3. Đồ uống 'chân ái' đi kèm:**");
+                    sb.AppendLine("▪️ **Trà Tắc Mật Ong Khổng Lồ Mát Lạnh** (18,000đ): Vị chua thanh ngọt dịu, đá lạnh sảng khoái, uống một ngụm là tan biến mọi cảm giác ngấy mỡ.");
+                    sb.AppendLine("▪️ **Dừa Xiêm Xanh Bến Tre Gọt Trọc** (22,000đ): Nước dừa xiêm ngọt thanh tự nhiên giải nhiệt bổ sung khoáng chất.");
+
+                    sb.AppendLine("\n🍓 **4. Tráng miệng nhẹ nhàng sau bữa:**");
+                    sb.AppendLine("▪️ **Hộp Dâu Tây Giống Hana Nhật Bản Hái Sáng Nay** (95,000đ) hoặc **Bưởi Da Xanh Bến Tre** (68,000đ): Tươi ngọt mọng nước.");
+
+                    sb.AppendLine("\n👉 Bạn có muốn thêm **Canh Cua Rau Đay** hoặc **Trà Tắc Mật Ong** vào đơn cùng Cơm để mình giao hỏa tốc trọn gói cho bạn luôn không ạ? 😊");
+
+                    var comProd = mainDishes.FirstOrDefault(p => p.ProductName.Contains("Cơm Gà") || p.ProductName.Contains("Cơm Tấm"));
+                    if (comProd != null) returnProducts.Add(comProd);
+                    var canhProd = sideAndSoupDishes.FirstOrDefault(p => p.ProductName.Contains("Canh Cua"));
+                    if (canhProd != null) returnProducts.Add(canhProd);
+                    var traProd = drinkAndDesserts.FirstOrDefault(p => p.ProductName.Contains("Trà Tắc"));
+                    if (traProd != null) returnProducts.Add(traProd);
+                    var duaProd = drinkAndDesserts.FirstOrDefault(p => p.ProductName.Contains("Dừa"));
+                    if (duaProd != null) returnProducts.Add(duaProd);
+                }
+                else if (detectedDish == "banh_mi")
+                {
+                    sb.AppendLine("Dạ với món **Combo Bánh Mì Chảo** (hoặc Bánh Mì Kẹp Thịt Nướng), vị pate béo ngậy, xúc xích thơm lừng và sốt sánh đậm sẽ ngon nhất khi bạn kết hợp cùng các món ăn kèm và đồ uống sau ạ: 🥖🍳✨\n");
+
+                    sb.AppendLine("🥗 **1. Đồ chua & Rau ăn kèm chống ngán:**");
+                    sb.AppendLine("▪️ **Rau Xà Lách Mỡ VietGAP & Cà Chua Bi Tươi** (35,000đ): Giúp cân bằng vị sốt đậm đà của bánh mì chảo.");
+                    sb.AppendLine("▪️ **Khoai Lang Mật Nướng Chảy Mật Thơm Lừng** (45,000đ): Món ăn kèm ngọt bùi nóng hổi ấm bụng.");
+
+                    sb.AppendLine("\n☕ **2. Đồ uống chuẩn vị kinh điển:**");
+                    sb.AppendLine("▪️ **Cà Phê Sữa Đá Pha Phin Đậm Đà** (22,000đ) - *Tiệm Bánh Mì & Cà Phê Zone Sáng*: Chuẩn gu bữa sáng năng lượng, thơm nức mùi cà phê phin truyền thống.");
+                    sb.AppendLine("▪️ **Trà Tắc Mật Ong Khổng Lồ Giải Nhiệt** (18,000đ): Chua thanh dịu mát, giải nhiệt cực đã.");
+
+                    sb.AppendLine("\n🍓 **3. Món tráng miệng mọng nước:**");
+                    sb.AppendLine("▪️ **Hộp Dâu Tây Giống Hana Nhật Bản** (95,000đ) hoặc **Cam Sành Hàm Yên Mọng Nước** (38,000đ).");
+
+                    sb.AppendLine("\n👉 Bạn muốn đặt thêm **Cà phê sữa đá** hay **Trà tắc mật ong** đi kèm bánh mì thì nhắn mình tạo đơn giao ngay trong 15 - 30 phút nhé! 🛵");
+
+                    var bmProd = mainDishes.FirstOrDefault(p => p.ProductName.Contains("Bánh Mì"));
+                    if (bmProd != null) returnProducts.Add(bmProd);
+                    var cpProd = drinkAndDesserts.FirstOrDefault(p => p.ProductName.Contains("Cà Phê"));
+                    if (cpProd != null) returnProducts.Add(cpProd);
+                    var traProd = drinkAndDesserts.FirstOrDefault(p => p.ProductName.Contains("Trà Tắc"));
+                    if (traProd != null) returnProducts.Add(traProd);
+                    var dauProd = drinkAndDesserts.FirstOrDefault(p => p.ProductName.Contains("Dâu Tây"));
+                    if (dauProd != null) returnProducts.Add(dauProd);
+                }
+                else
+                {
+                    sb.AppendLine("Dạ với các món **Lẩu / Nướng / Thịt tươi**, bữa ăn sẽ tròn vị và phong phú nhất khi bạn kết hợp các món ăn kèm tươi sạch sau tại ZoneMart nhé: 🍲🥩✨\n");
+
+                    sb.AppendLine("🍄 **1. Nấm & Rau củ ăn kèm / nhúng lẩu tươi mát:**");
+                    sb.AppendLine("▪️ **Nấm Hương Rừng Sa Pa Phơi Tự Nhiên** (85,000đ) - Thơm nức mũi, dai ngọt tự nhiên.");
+                    sb.AppendLine("▪️ **Rau Muống Hữu Cơ Ba Vì Non Xanh** (18,000đ) - Thân giòn đanh, nhúng lẩu hoặc xào tỏi xanh mướt.");
+                    sb.AppendLine("▪️ **Bí Xanh Thơm Cắt Khoanh VietGAP** (25,000đ) - Nấu canh hoặc thả lẩu ngọt lịm nước dùng.");
+
+                    sb.AppendLine("\n🥩 **2. Món ăn kèm lai rai đậm vị:**");
+                    sb.AppendLine("▪️ **Thịt Trâu Gác Bếp Sơn La Hạt Dổi Mắc Khén** (240,000đ) - Món ăn chơi, mồi nhậu lai rai cực phẩm.");
+
+                    sb.AppendLine("\n🥤 **3. Đồ uống thanh nhiệt dùng kèm:**");
+                    sb.AppendLine("▪️ **Dừa Xiêm Xanh Bến Tre Ngọt Mát** (22,000đ) / **Trà Tắc Mật Ong Khổng Lồ** (18,000đ).");
+
+                    sb.AppendLine("\n👉 Bạn cần chuẩn bị thêm món ăn kèm nào cứ nhắn mình hỗ trợ giao hỏa tốc đến tận cửa nhé! 😊");
+
+                    var namProd = sideAndSoupDishes.FirstOrDefault(p => p.ProductName.Contains("Nấm Hương"));
+                    if (namProd != null) returnProducts.Add(namProd);
+                    var rauProd = sideAndSoupDishes.FirstOrDefault(p => p.ProductName.Contains("Rau Muống"));
+                    if (rauProd != null) returnProducts.Add(rauProd);
+                    var trauProd = foodProducts.FirstOrDefault(p => p.ProductName.Contains("Trâu Gác Bếp"));
+                    if (trauProd != null) returnProducts.Add(trauProd);
+                    var duaProd = drinkAndDesserts.FirstOrDefault(p => p.ProductName.Contains("Dừa"));
+                    if (duaProd != null) returnProducts.Add(duaProd);
+                }
+            }
+            else
+            {
+                sb.AppendLine("Dạ trên sàn ZoneMart hiện có rất nhiều món ăn kèm, canh thanh mát, đồ chua giải ngấy và đồ uống cực kỳ hợp cạ khi dùng kèm các món chính ạ: 🥗✨\n");
+
+                sb.AppendLine("1️⃣ **Canh Cua Rau Đay Cà Pháo Nấu Nồi Đất** (40,000đ) - *Bếp Cơm Niêu Cô Ba*: Món canh thanh nhiệt chuẩn vị cơm nhà, ăn kèm cơm gà/cơm tấm cực kỳ trôi cơm.");
+                sb.AppendLine("2️⃣ **Rau Xà Lách Mỡ Thủy Canh VietGAP** (35,000đ) - *Vườn Rau Bác Ba*: Lá dày giòn ngọt, dùng làm rau sống, dưa góp ăn kèm đồ chiên nướng.");
+                sb.AppendLine("3️⃣ **Cà Chua Bi Socola Hữu Cơ** (42,000đ) - *Vườn Rau Bác Ba*: Vị chua ngọt đậm đà, bổ sung vitamin và giải ngấy tức thì.");
+                sb.AppendLine("4️⃣ **Trà Tắc Mật Ong Khổng Lồ Giải Nhiệt** (18,000đ) - Thức uống giải nhiệt quốc dân ăn kèm mọi món chiên, xào, cơm nóng.");
+                sb.AppendLine("5️⃣ **Dừa Xiêm Xanh Bến Tre Ngọt Mát** (22,000đ) - Nước dừa tự nhiên nguyên quả ngọt thanh mát lịm.");
+                sb.AppendLine("6️⃣ **Cà Phê Sữa Đá Pha Phin Đậm Đà** (22,000đ) - Đồ uống kinh điển đi kèm bánh mì sáng.");
+                sb.AppendLine("7️⃣ **Khoai Lang Mật Nướng Chảy Mật Thơm Lừng** (45,000đ) - Món ăn chơi/tráng miệng bùi ngọt ấm bụng.");
+                sb.AppendLine("8️⃣ **Hộp Dâu Tây Giống Hana Nhật Bản Hái Sáng Nay** (95,000đ) - Tráng miệng tươi ngọt mọng nước.");
+
+                sb.AppendLine("\n👉 Bạn đang chuẩn bị dùng món chính nào? Hãy nhắn tên món để mình tư vấn chính xác món ăn kèm hợp gu nhất cho bạn nhé! 😊");
+
+                foreach (var p in sideAndSoupDishes.Take(3)) returnProducts.Add(p);
+                foreach (var p in drinkAndDesserts.Take(3)) returnProducts.Add(p);
+            }
+
+            if (returnProducts.Count == 0)
+            {
+                returnProducts = foodProducts.Take(6).ToList();
+            }
+
+            return Ok(new
+            {
+                success = true,
+                reply = sb.ToString().TrimEnd(),
+                provider = "ZoneMart Realtime Catalog",
+                orderState = new OrderStateDto
+                {
+                    Step = "AWAITING_ITEM_NAME",
+                    CartItems = new List<OrderItemDto>()
+                },
+                products = returnProducts.Where(p => p != null).DistinctBy(p => p.Id).Take(6).Select(p => (object)new
+                {
+                    id = p.Id,
+                    name = p.ProductName,
+                    price = p.Price,
+                    storeName = p.StoreName ?? "ZoneMart Store",
+                    image = !string.IsNullOrWhiteSpace(p.ImageUrl) ? p.ImageUrl : "/images/anhxoanen.png"
+                }).ToList(),
+                stores = new List<object>()
+            });
         }
 
 
@@ -11801,6 +12145,14 @@ HÃY TƯ VẤN THÔNG MINH, TẬP TRUNG VÀO ẨM THỰC VÀ DỊCH VỤ CỦA S
         {
 
             if (string.IsNullOrWhiteSpace(cleanMsgNoTone)) return false;
+
+            if (cleanMsgNoTone.Contains("an kem") || cleanMsgNoTone.Contains("mon an kem") ||
+                cleanMsgNoTone.Contains("do an kem") || cleanMsgNoTone.Contains("kem voi") ||
+                cleanMsgNoTone.Contains("kem theo") || cleanMsgNoTone.Contains("kem gi") ||
+                cleanMsgNoTone.Contains("kem mon") || cleanMsgNoTone.Contains("topping"))
+            {
+                return false;
+            }
 
 
 
@@ -24576,128 +24928,15 @@ Bạn có muốn đăng nhập ngay không?",
 
 
 
-        private static (bool IsUnsafe, string Reply) CheckSafetyGuardrails(string userMsg, string cleanMsgNoTone)
-
+        private (bool IsUnsafe, string Reply) CheckSafetyGuardrails(string userMsg, string cleanMsgNoTone)
         {
-
-            if (string.IsNullOrWhiteSpace(cleanMsgNoTone)) return (false, "");
-
-
-
-            // 1. BẢO MẬT HỆ THỐNG / HACK / TẤN CÔNG / LẤY CẮP MẬT KHẨU
-
-            string[] securityKeywords = new[]
-
+            if (_handoverService != null)
             {
-
-                "hack database", "sql injection", "sqli", "ddos", "tan cong mang", "lay trom mat khau",
-
-                "hack pass", "hack tai khoan", "trom the", "hack admin", "bypass auth", "chiem quyen admin",
-
-                "dump database", "hack tien", "hack vi tien", "hack zonemart"
-
-            };
-
-            foreach (var kw in securityKeywords)
-
-            {
-
-                if (cleanMsgNoTone.Contains(kw))
-
-                {
-
-                    return (true, "🔒 **Bảo mật hệ thống:** Hệ thống cơ sở dữ liệu và tài khoản trên sàn ZoneMart được bảo vệ nghiêm ngặt bằng nhiều lớp mã hóa an toàn. Trợ lý AI tuyệt đối không cung cấp thông tin quản trị hoặc tiếp tay cho các hành vi can thiệp dữ liệu trái phép!");
-
-                }
-
+                var check = _handoverService.CheckContentSafety(userMsg, cleanMsgNoTone);
+                return (check.IsUnsafe, check.ResponseMessage);
             }
-
-
-
-            // 2. 18+ / ĐỒI TRỤY / KHIÊU DÂM / TÌNH DỤC
-
-            string[] nsfwKeywords = new[]
-
-            {
-
-                "sex", "khieu dam", "kich duc", "phim sex", "quan he tinh duc", "loan luan", "hiep dam",
-
-                "khoa than", "thu dam", "dam duc", "bup be tinh duc", "lam tinh", "chat sex", "gai goi", "mua dam"
-
-            };
-
-            foreach (var kw in nsfwKeywords)
-
-            {
-
-                if (Regex.IsMatch(cleanMsgNoTone, $@"\b{Regex.Escape(kw)}\b"))
-
-                {
-
-                    return (true, "⚠️ **Cảnh báo an toàn nội dung:** ZoneMart là nền tảng thương mại điện tử phục vụ cộng đồng văn minh, lành mạnh. Mình tuyệt đối từ chối phản hồi các câu hỏi hoặc nội dung 18+, đồi trụy. Bạn hãy giữ gìn sự lịch sự khi trò chuyện nhé! 😊");
-
-                }
-
-            }
-
-
-
-            // 3. BẠO LỰC / CHÉM GIẾT / MÁU ME / VŨ KHÍ / CHẤT CẤM / TỰ TỬ
-
-            string[] violenceKeywords = new[]
-
-            {
-
-                "chem chet", "giet nguoi", "mau me", "chat xac", "tu tu", "tu sat", "vu khi", "bom min",
-
-                "sung dan", "che tao thuoc no", "ma tuy", "thuoc phien", "can sa", "dau doc", "giet sach"
-
-            };
-
-            foreach (var kw in violenceKeywords)
-
-            {
-
-                if (Regex.IsMatch(cleanMsgNoTone, $@"\b{Regex.Escape(kw)}\b"))
-
-                {
-
-                    return (true, "⚠️ **Cảnh báo an toàn:** ZoneMart AI tuân thủ nghiêm ngặt chuẩn mực đạo đức và pháp luật, nghiêm cấm phản hồi các nội dung liên quan đến bạo lực, tổn hại thân thể, vũ khí hoặc chất cấm. Bạn hãy chú ý an toàn cho bản thân và mọi người nhé!");
-
-                }
-
-            }
-
-
-
-            // 4. TỪ NGỮ THÔ TỤC / KHIÊM NHÃ / XÚC PHẠM (NHƯ "ĂN CỨT", CHỬI THỀ...)
-
-            string[] vulgarKeywords = new[]
-
-            {
-
-                "an cut", "cut", "cho de", "me may", "dmm", "dm", "vcl", "cl", "dcm", "cc", "deo", "lon", "buoi", "cac"
-
-            };
-
-            foreach (var kw in vulgarKeywords)
-
-            {
-
-                if (Regex.IsMatch(cleanMsgNoTone, $@"\b{Regex.Escape(kw)}\b"))
-
-                {
-
-                    return (true, "⚠️ **Nhắc nhở văn minh:** ZoneMart là nền tảng thương mại điện tử phục vụ cộng đồng lịch sự và thân thiện. Mình xin phép không phản hồi các câu hỏi hoặc từ ngữ khiếm nhã ạ! Nếu bạn cần tìm kiếm món ngon, thực phẩm sạch VietGAP hay đồ uống giải nhiệt, mình luôn sẵn lòng hỗ trợ bạn nhé! 😊");
-
-                }
-
-            }
-
-
 
             return (false, "");
-
         }
 
 
@@ -24716,7 +24955,7 @@ Bạn có muốn đăng nhập ngay không?",
 
             {
 
-                "an gi", "mon", "uong", "quan", "shop", "thuc pham", "trai cay", "rau", "thit", "ca",
+                "an gi", "mon", "cac mon", "goi y", "tham khao", "uong", "quan", "shop", "thuc pham", "trai cay", "rau", "thit", "ca",
 
                 "ga", "pho", "bun", "banh", "nuoc", "sua", "che", "kem", "dat do", "dat hang",
 

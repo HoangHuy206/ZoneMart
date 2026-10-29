@@ -880,3 +880,200 @@ export function getMarketsForLocation(districtName: string, wardIdOrName?: strin
   return matchedInWard.length > 0 ? matchedInWard : marketsInDistrict;
 }
 
+
+
+// Danh sách đầy đủ 48 khu vực chợ truyền thống Hà Nội
+export const HANOI_48_MARKETS: { name: string; district: string }[] = [
+  {
+    "name": "Chợ A (Chợ Nhà Xanh)",
+    "district": "Quận Cầu Giấy"
+  },
+  {
+    "name": "Chợ B (Chợ Nghĩa Tân)",
+    "district": "Quận Cầu Giấy"
+  },
+  {
+    "name": "Chợ Bưởi",
+    "district": "Quận Tây Hồ"
+  },
+  {
+    "name": "Chợ C (Chợ Dịch Vọng)",
+    "district": "Quận Cầu Giấy"
+  },
+  {
+    "name": "Chợ Châu Long",
+    "district": "Quận Ba Đình"
+  },
+  {
+    "name": "Chợ Cầu Giấy",
+    "district": "Quận Cầu Giấy"
+  },
+  {
+    "name": "Chợ Cống Vị",
+    "district": "Quận Ba Đình"
+  },
+  {
+    "name": "Chợ Cổ Nhuế",
+    "district": "Quận Bắc Từ Liêm"
+  },
+  {
+    "name": "Chợ Cửa Nam",
+    "district": "Quận Hoàn Kiếm"
+  },
+  {
+    "name": "Chợ Dân Sinh Mai Dịch",
+    "district": "Quận Cầu Giấy"
+  },
+  {
+    "name": "Chợ Dịch Vọng Hậu",
+    "district": "Quận Cầu Giấy"
+  },
+  {
+    "name": "Chợ Gia Thụy",
+    "district": "Quận Long Biên"
+  },
+  {
+    "name": "Chợ Gốm Bát Tràng",
+    "district": "Huyện Gia Lâm"
+  },
+  {
+    "name": "Chợ Hà Đông",
+    "district": "Quận Hà Đông"
+  },
+  {
+    "name": "Chợ Hàng Bè",
+    "district": "Quận Hoàn Kiếm"
+  },
+  {
+    "name": "Chợ Hôm - Đức Viên",
+    "district": "Quận Hai Bà Trưng"
+  },
+  {
+    "name": "Chợ Khâm Thiên",
+    "district": "Quận Đống Đa"
+  },
+  {
+    "name": "Chợ Kim Liên",
+    "district": "Quận Đống Đa"
+  },
+  {
+    "name": "Chợ Lụa Vạn Phúc",
+    "district": "Quận Hà Đông"
+  },
+  {
+    "name": "Chợ Mai Động",
+    "district": "Quận Hoàng Mai"
+  },
+  {
+    "name": "Chợ Mun",
+    "district": "Huyện Đông Anh"
+  },
+  {
+    "name": "Chợ Mía",
+    "district": "Thị xã Sơn Tây"
+  },
+  {
+    "name": "Chợ Mơ (TTTM Chợ Mơ)",
+    "district": "Quận Hai Bà Trưng"
+  },
+  {
+    "name": "Chợ Mỹ Đình",
+    "district": "Quận Nam Từ Liêm"
+  },
+  {
+    "name": "Chợ Nam Đồng",
+    "district": "Quận Đống Đa"
+  },
+  {
+    "name": "Chợ Nghĩa Đô",
+    "district": "Quận Cầu Giấy"
+  },
+  {
+    "name": "Chợ Nghệ",
+    "district": "Thị xã Sơn Tây"
+  },
+  {
+    "name": "Chợ Ngọc Hà",
+    "district": "Quận Ba Đình"
+  },
+  {
+    "name": "Chợ Ngọc Lâm",
+    "district": "Quận Long Biên"
+  },
+  {
+    "name": "Chợ Nhân Chính",
+    "district": "Quận Thanh Xuân"
+  },
+  {
+    "name": "Chợ Phùng Khoang",
+    "district": "Quận Nam Từ Liêm"
+  },
+  {
+    "name": "Chợ Phúc Đồng",
+    "district": "Quận Long Biên"
+  },
+  {
+    "name": "Chợ Sài Đồng",
+    "district": "Quận Long Biên"
+  },
+  {
+    "name": "Chợ Sơn Đồng",
+    "district": "Huyện Hoài Đức"
+  },
+  {
+    "name": "Chợ Thành Công",
+    "district": "Quận Ba Đình"
+  },
+  {
+    "name": "Chợ Thái Hà",
+    "district": "Quận Đống Đa"
+  },
+  {
+    "name": "Chợ Thượng Đình",
+    "district": "Quận Thanh Xuân"
+  },
+  {
+    "name": "Chợ Trung Hòa (Cụm Chợ Số Trung Hòa)",
+    "district": "Quận Cầu Giấy"
+  },
+  {
+    "name": "Chợ Trung Kính - Yên Hòa",
+    "district": "Quận Cầu Giấy"
+  },
+  {
+    "name": "Chợ Trạm Trôi",
+    "district": "Huyện Hoài Đức"
+  },
+  {
+    "name": "Chợ Tó (Chợ Trung Tâm Đông Anh)",
+    "district": "Huyện Đông Anh"
+  },
+  {
+    "name": "Chợ Tứ Liên",
+    "district": "Quận Tây Hồ"
+  },
+  {
+    "name": "Chợ Văn Điển",
+    "district": "Huyện Thanh Trì"
+  },
+  {
+    "name": "Chợ Vải Ninh Hiệp",
+    "district": "Huyện Gia Lâm"
+  },
+  {
+    "name": "Chợ Xuân Đỉnh",
+    "district": "Quận Bắc Từ Liêm"
+  },
+  {
+    "name": "Chợ Định Công",
+    "district": "Quận Hoàng Mai"
+  },
+  {
+    "name": "Chợ Đồng Xa",
+    "district": "Quận Cầu Giấy"
+  },
+  {
+    "name": "Chợ Đồng Xuân",
+    "district": "Quận Hoàn Kiếm"
+  }
+];

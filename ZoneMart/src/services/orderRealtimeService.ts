@@ -43,6 +43,8 @@ export interface RealtimeOrder {
     licensePlate: string;
     shipperCode?: string;
     avatarUrl?: string;
+    vehicleType?: string;
+    vehicleModel?: string;
   };
 }
 
@@ -550,10 +552,12 @@ class OrderRealtimeService {
     active.statusText = "Tài xế đang đến quán lấy hàng";
     active.shipperInfo = {
       name: shipperInfo.fullName || shipperInfo.name || "Tài xế ZoneMart",
-      phone: shipperInfo.phoneEmail || shipperInfo.phone || "0912 888 999",
+      phone: shipperInfo.phoneEmail || shipperInfo.phoneNumber || shipperInfo.phone || "0912 888 999",
       licensePlate: shipperInfo.licensePlate || "29N1-67890",
       shipperCode: shipperInfo.shipperCode || "ZM-DRV-01",
-      avatarUrl: shipperInfo.avatarUrl || ""
+      avatarUrl: shipperInfo.avatarUrl || "",
+      vehicleType: shipperInfo.vehicleType || "",
+      vehicleModel: shipperInfo.vehicleModel || ""
     };
 
     this.cachedOrdersMap.set(orderId, active);
