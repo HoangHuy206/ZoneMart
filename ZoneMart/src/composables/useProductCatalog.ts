@@ -1,6 +1,92 @@
 import { ref, computed } from "vue";
 import { useProductModeration, fetchRealProductsFromBackend } from "./useProductModeration";
 import { apiFetch } from "../utils/apiConfig";
+import { getCleanAvatar } from "../utils/avatarHelper";
+import { currentUserCoords } from "./useSafeLocation";
+
+// Bảng tọa độ GPS thực tế của các cơ sở & gian hàng đối tác ZoneMart tại Hà Nội
+export const STORE_COORDINATES_MAP: Record<string, { lat: number; lng: number; address: string }> = {
+  "store_vuon_rau_bac_ba": { lat: 21.0371, lng: 105.7766, address: "36 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy, Hà Nội" },
+  "vườn rau hữu cơ bác ba": { lat: 21.0371, lng: 105.7766, address: "36 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy, Hà Nội" },
+  "store_nong_trai_xanh_lac_duong": { lat: 21.0315, lng: 105.7876, address: "112 Trần Thái Tông, Dịch Vọng Hậu, Cầu Giấy, Hà Nội" },
+  "nông trại xanh lạc dương": { lat: 21.0315, lng: 105.7876, address: "112 Trần Thái Tông, Dịch Vọng Hậu, Cầu Giấy, Hà Nội" },
+  "store_vua_trai_cay_sau_thao": { lat: 21.0182, lng: 105.8015, address: "45 Nguyễn Khang, Yên Hòa, Cầu Giấy, Hà Nội" },
+  "vựa trái cây sáu thảo miền tây": { lat: 21.0182, lng: 105.8015, address: "45 Nguyễn Khang, Yên Hòa, Cầu Giấy, Hà Nội" },
+  "store_thuc_pham_tuoi_song_zonemart": { lat: 21.0345, lng: 105.7960, address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội" },
+  "thực phẩm tươi sống zonemart cầu giấy": { lat: 21.0345, lng: 105.7960, address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội" },
+  "gian hàng zonemart": { lat: 21.0345, lng: 105.7960, address: "245 Cầu Giấy, Dịch Vọng, Cầu Giấy, Hà Nội" },
+  "test gian hàng": { lat: 21.0345, lng: 105.7960, address: "206 Cầu Giấy, Hà Nội" },
+  "store_bep_com_nieu_co_ba": { lat: 21.0116, lng: 105.7942, address: "56 Nguyễn Chánh, Trung Hòa, Cầu Giấy, Hà Nội" },
+  "bếp cơm niêu & ẩm thực nóng cô ba": { lat: 21.0116, lng: 105.7942, address: "56 Nguyễn Chánh, Trung Hòa, Cầu Giấy, Hà Nội" },
+  "store_tiem_banh_mi_zone_sang": { lat: 21.0366, lng: 105.7832, address: "18 Xuân Thủy, Dịch Vọng Hậu, Cầu Giấy, Hà Nội" },
+  "tiệm bánh mì & cà phê zone sáng": { lat: 21.0366, lng: 105.7832, address: "18 Xuân Thủy, Dịch Vọng Hậu, Cầu Giấy, Hà Nội" },
+  "store_hop_tac_xa_tay_bac": { lat: 21.0289, lng: 105.7712, address: "88 Lê Đức Thọ, Mỹ Đình 2, Nam Từ Liêm, Hà Nội" },
+  "hợp tác xã đặc sản vùng cao tây bắc": { lat: 21.0289, lng: 105.7712, address: "88 Lê Đức Thọ, Mỹ Đình 2, Nam Từ Liêm, Hà Nội" },
+  "store_tong_kho_my_dinh": { lat: 21.0388, lng: 105.7645, address: "102 Hàm Nghi, Mỹ Đình 1, Nam Từ Liêm, Hà Nội" },
+  "tổng kho đồ gia dụng & tiêu dùng mỹ đình": { lat: 21.0388, lng: 105.7645, address: "102 Hàm Nghi, Mỹ Đình 1, Nam Từ Liêm, Hà Nội" },
+  "store_chuc_son": { lat: 20.9250, lng: 105.7050, address: "Khu Chợ Chúc Sơn, Thị trấn Chúc Sơn, Huyện Chương Mỹ, Hà Nội" },
+  "nông sản sạch chúc sơn - chương mỹ": { lat: 20.9250, lng: 105.7050, address: "Khu Chợ Chúc Sơn, Thị trấn Chúc Sơn, Huyện Chương Mỹ, Hà Nội" },
+  "store_yen_nghia": { lat: 20.9385, lng: 105.7250, address: "Số 12 Đường Biên Giang, Phường Đồng Mai, Hà Đông, Hà Nội" },
+  "bếp nóng yên nghĩa & biên giang": { lat: 20.9385, lng: 105.7250, address: "Số 12 Đường Biên Giang, Phường Đồng Mai, Hà Đông, Hà Nội" },
+  "store_ba_la": { lat: 20.9580, lng: 105.7610, address: "Ngã 3 Ba La, Phường Phú Lãm, Quận Hà Đông, Hà Nội" },
+  "vựa thịt sạch & hải sản ba la - hà đông": { lat: 20.9580, lng: 105.7610, address: "Ngã 3 Ba La, Phường Phú Lãm, Quận Hà Đông, Hà Nội" },
+  "store_zone_fruits": { lat: 20.9392, lng: 105.7310, address: "Số 1368 Đường Quang Trung, Yên Nghĩa, Hà Đông, Hà Nội" },
+  "tiệm trái cây & nước ép zone fruits": { lat: 20.9392, lng: 105.7310, address: "Số 1368 Đường Quang Trung, Yên Nghĩa, Hà Đông, Hà Nội" },
+  "nổi loạn 123456": { lat: 20.9390, lng: 105.7311, address: "1368 Đường Quang Trung, Đồng Mai, Yên Nghĩa, Hà Nội" }
+};
+
+export function resolveStoreCoordinates(store: { id?: string; name?: string; address?: string; lat?: number; lng?: number }): { lat: number; lng: number } {
+  if (store.lat && store.lng && store.lat > 0 && store.lng > 0) {
+    return { lat: store.lat, lng: store.lng };
+  }
+  const idKey = (store.id || "").toLowerCase().trim();
+  const nameKey = (store.name || "").toLowerCase().trim();
+  const found = STORE_COORDINATES_MAP[idKey] || STORE_COORDINATES_MAP[nameKey];
+  if (found) {
+    return { lat: found.lat, lng: found.lng };
+  }
+  const addr = (store.address || "").toLowerCase();
+  for (const [, v] of Object.entries(STORE_COORDINATES_MAP)) {
+    const street = v.address.split(",")[0].toLowerCase().trim();
+    if (addr.includes(street)) {
+      return { lat: v.lat, lng: v.lng };
+    }
+  }
+  return { lat: 21.0345, lng: 105.7960 };
+}
+
+// Công thức Haversine tính khoảng cách đại vòng tròn chuẩn xác theo tọa độ GPS (km)
+export function calculateHaversineDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return 1.2;
+  const R = 6371; // Bán kính Trái Đất (km)
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const dist = R * c;
+  return Math.round(dist * 10) / 10;
+}
+
+// Ước tính thời gian giao hàng thực tế theo khoảng cách km
+export function estimateDeliveryTime(distanceKm: number): string {
+  if (distanceKm <= 1.0) return "10 - 15 phút";
+  if (distanceKm <= 2.0) return "12 - 18 phút";
+  if (distanceKm <= 3.5) return "18 - 25 phút";
+  if (distanceKm <= 5.0) return "25 - 35 phút";
+  if (distanceKm <= 7.0) return "35 - 45 phút";
+  if (distanceKm <= 10.0) return "45 - 60 phút";
+  return "60 - 90 phút";
+}
 
 const catalogVersion = ref(0);
 const STORAGE_KEY_DB_STORES = "zonemart_db_stores";
@@ -39,20 +125,163 @@ export const fetchDbStores = async () => {
   }
 };
 
+const STORAGE_KEY_RATINGS_SUMMARY = "zonemart_ratings_summary";
+
+const getInitialRatingsSummary = (): any => {
+  if (typeof window === "undefined") return { products: {}, stores: {}, shippers: {} };
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_RATINGS_SUMMARY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { products: {}, stores: {}, shippers: {} };
+};
+
+export const ratingsSummary = ref<any>(getInitialRatingsSummary());
+let isFetchingRatings = false;
+
+export const fetchRatingsSummary = async () => {
+  if (typeof window === "undefined" || isFetchingRatings) return;
+  isFetchingRatings = true;
+  try {
+    const res = await apiFetch("/api/orders/reviews/summary").catch(() => null);
+    if (res && res.ok) {
+      const json = await res.json().catch(() => null);
+      if (json && json.success) {
+        ratingsSummary.value = {
+          products: json.products || {},
+          stores: json.stores || {},
+          shippers: json.shippers || {}
+        };
+        try {
+          localStorage.setItem(STORAGE_KEY_RATINGS_SUMMARY, JSON.stringify(ratingsSummary.value));
+        } catch {}
+        catalogVersion.value++;
+      }
+    }
+  } catch (err) {
+    console.warn("Lỗi fetchRatingsSummary:", err);
+  } finally {
+    isFetchingRatings = false;
+  }
+};
+
+export const recordLocalReview = (review: {
+  orderId: string;
+  storeName: string;
+  storeId?: string;
+  storeRating?: number;
+  shipperRating?: number;
+  productReviews?: Array<{ productId: string; productName: string; rating: number; comment?: string; tags?: string[] }>;
+  storeComment?: string;
+  buyerName?: string;
+  buyerAvatar?: string;
+}) => {
+  const current = ratingsSummary.value || { products: {}, stores: {}, shippers: {} };
+  const products = { ...(current.products || {}) };
+  const stores = { ...(current.stores || {}) };
+
+  // 1. Cập nhật Đánh giá Gian hàng
+  if (review.storeName || review.storeId) {
+    const sKeys = [
+      (review.storeId || "").trim().toLowerCase(),
+      (review.storeName || "").trim().toLowerCase()
+    ].filter(Boolean);
+
+    for (const key of sKeys) {
+      const prev = stores[key] || { total: 0, count: 0, averageRating: 5.0, comments: [] };
+      const sRate = review.storeRating || 5;
+      const newTotal = prev.total + sRate;
+      const newCount = prev.count + 1;
+      stores[key] = {
+        total: newTotal,
+        count: newCount,
+        averageRating: Math.round((newTotal / newCount) * 10) / 10,
+        comments: [
+          {
+            author: review.buyerName || "Khách Hàng ZoneMart",
+            avatar: review.buyerAvatar || getCleanAvatar(null, review.buyerName, 'buyer'),
+            rating: sRate,
+            comment: review.storeComment || "",
+            date: new Date().toLocaleDateString("vi-VN")
+          },
+          ...(prev.comments || [])
+        ]
+      };
+    }
+  }
+
+  // 2. Cập nhật Đánh giá Từng Sản phẩm
+  if (review.productReviews && Array.isArray(review.productReviews)) {
+    for (const pr of review.productReviews) {
+      const pKeys = [
+        (pr.productId || "").trim().toLowerCase(),
+        (pr.productName || "").trim().toLowerCase()
+      ].filter(Boolean);
+
+      for (const key of pKeys) {
+        const prev = products[key] || { total: 0, count: 0, averageRating: 5.0, comments: [] };
+        const newTotal = prev.total + pr.rating;
+        const newCount = prev.count + 1;
+        products[key] = {
+          total: newTotal,
+          count: newCount,
+          averageRating: Math.round((newTotal / newCount) * 10) / 10,
+          comments: [
+            {
+              author: review.buyerName || "Khách Hàng ZoneMart",
+              avatar: review.buyerAvatar || getCleanAvatar(null, review.buyerName, 'buyer'),
+              rating: pr.rating,
+              comment: pr.comment || "",
+              tags: pr.tags || [],
+              date: new Date().toLocaleDateString("vi-VN")
+            },
+            ...(prev.comments || [])
+          ]
+        };
+      }
+    }
+  }
+
+  ratingsSummary.value = {
+    ...current,
+    products,
+    stores
+  };
+
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(STORAGE_KEY_RATINGS_SUMMARY, JSON.stringify(ratingsSummary.value));
+    } catch {}
+    window.dispatchEvent(new CustomEvent("zonemart:ratings-updated"));
+    window.dispatchEvent(new CustomEvent("zonemart:products-changed"));
+  }
+  catalogVersion.value++;
+};
+
 if (typeof window !== "undefined") {
   setTimeout(() => {
     fetchDbStores();
     fetchRealProductsFromBackend();
+    fetchRatingsSummary();
   }, 50);
   window.addEventListener("zonemart:products-changed", () => {
+    catalogVersion.value++;
+  });
+  window.addEventListener("zonemart:ratings-updated", () => {
     catalogVersion.value++;
   });
   window.addEventListener("storage", (e) => {
     if (
       e.key === "zonemart_moderated_products" ||
       e.key === "zonemart_product_bus_event" ||
-      e.key === STORAGE_KEY_DB_STORES
+      e.key === STORAGE_KEY_DB_STORES ||
+      e.key === STORAGE_KEY_RATINGS_SUMMARY
     ) {
+      if (e.key === STORAGE_KEY_RATINGS_SUMMARY) {
+        try {
+          ratingsSummary.value = JSON.parse(e.newValue || "{}");
+        } catch {}
+      }
       catalogVersion.value++;
     }
   });
@@ -72,9 +301,12 @@ export interface ProductReview {
 
 export interface CatalogProduct {
   id: string;
+  distanceKm?: number;
   name: string;
   category: "food" | "veggie" | "fastfood" | "beverage" | "household";
   categoryName: string;
+  subCategory?: string;
+  prepType?: "raw" | "cooked" | "fresh" | "packaged";
   price: number;
   oldPrice?: number;
   discountBadge?: string;
@@ -154,6 +386,211 @@ export interface CatalogStore {
   coverImage: string;
   openHours?: string;
   products: CatalogProduct[];
+}
+
+// HÀM TỰ ĐỘNG PHÂN TẦNG VÀ PHÂN LOẠI TRẠNG THÁI CHẾ BIẾN (CHUẨN HÓA DANH MỤC CẤP 2 VÀ TRẠNG THÁI SỐNG/CHÍN)
+export function inferSubCategoryAndPrep(product: {
+  name: string;
+  category?: string;
+  subCategory?: string;
+  prepType?: string;
+}): { subCategory: string; prepType: "raw" | "cooked" | "fresh" | "packaged" } {
+  if (product.subCategory && product.prepType) {
+    return {
+      subCategory: product.subCategory,
+      prepType: product.prepType as "raw" | "cooked" | "fresh" | "packaged",
+    };
+  }
+  const name = (product.name || "").toLowerCase();
+  const cat = (product.category || "").toLowerCase();
+
+  // 1. Phân loại Gà & Gia cầm (Gà rán KFC vs Thịt gà sống sơ chế)
+  if (
+    name.includes("gà rán") ||
+    name.includes("kfc") ||
+    name.includes("popcorn") ||
+    name.includes("chiên giòn") ||
+    name.includes("lắc phô mai")
+  ) {
+    return { subCategory: "fried_chicken", prepType: "cooked" };
+  }
+  if (
+    name.includes("cơm gà") ||
+    name.includes("gà nướng") ||
+    name.includes("gà xối mỡ") ||
+    name.includes("cháo gà")
+  ) {
+    return { subCategory: "fried_chicken", prepType: "cooked" };
+  }
+  if (
+    name.includes("gà") ||
+    name.includes("cánh gà") ||
+    name.includes("đùi gà") ||
+    name.includes("ức gà") ||
+    name.includes("vịt")
+  ) {
+    if (
+      cat === "fastfood" ||
+      name.includes("chín") ||
+      name.includes("luộc") ||
+      name.includes("nóng")
+    ) {
+      return { subCategory: "fried_chicken", prepType: "cooked" };
+    }
+    return { subCategory: "poultry", prepType: "raw" };
+  }
+
+  // 2. Thịt heo & Thịt bò
+  if (
+    name.includes("bò") ||
+    name.includes("heo") ||
+    name.includes("lợn") ||
+    name.includes("sườn") ||
+    name.includes("ba chỉ") ||
+    name.includes("trâu")
+  ) {
+    if (
+      cat === "fastfood" ||
+      name.includes("cơm") ||
+      name.includes("nướng") ||
+      name.includes("kho")
+    ) {
+      return { subCategory: "rice_noodle", prepType: "cooked" };
+    }
+    return { subCategory: "beef_pork", prepType: "raw" };
+  }
+
+  // 3. Cá & Hải sản tươi
+  if (
+    name.includes("cá ") ||
+    name.includes("tôm") ||
+    name.includes("mực") ||
+    name.includes("hải sản") ||
+    name.includes("cua")
+  ) {
+    if (cat === "fastfood" || name.includes("canh chua") || name.includes("canh cua")) {
+      return { subCategory: "rice_noodle", prepType: "cooked" };
+    }
+    return { subCategory: "seafood", prepType: "raw" };
+  }
+
+  // 4. Trứng & Đậu phụ
+  if (name.includes("trứng") || name.includes("đậu phụ") || name.includes("đậu hũ")) {
+    if (cat === "fastfood" || name.includes("bánh bao")) {
+      return { subCategory: "breakfast_bread", prepType: "cooked" };
+    }
+    return { subCategory: "egg_tofu", prepType: "raw" };
+  }
+
+  // 5. Cơm, Bún, Phở nóng & Món ăn gia đình
+  if (
+    name.includes("cơm") ||
+    name.includes("bún") ||
+    name.includes("phở") ||
+    name.includes("mì") ||
+    name.includes("canh")
+  ) {
+    return { subCategory: "rice_noodle", prepType: "cooked" };
+  }
+  if (
+    name.includes("bánh mì") ||
+    name.includes("bánh bao") ||
+    name.includes("xôi") ||
+    name.includes("pate")
+  ) {
+    return { subCategory: "breakfast_bread", prepType: "cooked" };
+  }
+
+  // 6. Rau củ VietGAP
+  if (
+    name.includes("xà lách") ||
+    name.includes("rau muống") ||
+    name.includes("cải") ||
+    name.includes("mồng tơi") ||
+    name.includes("rau")
+  ) {
+    return { subCategory: "leafy", prepType: "fresh" };
+  }
+  if (
+    name.includes("cà chua") ||
+    name.includes("bí") ||
+    name.includes("khoai") ||
+    name.includes("cà rốt") ||
+    name.includes("bầu") ||
+    name.includes("bắp") ||
+    name.includes("ngô")
+  ) {
+    return { subCategory: "root_fruit", prepType: "fresh" };
+  }
+  if (
+    name.includes("nấm") ||
+    name.includes("tỏi") ||
+    name.includes("hành") ||
+    name.includes("gừng") ||
+    name.includes("ớt")
+  ) {
+    return { subCategory: "mushroom_spices", prepType: "fresh" };
+  }
+
+  // 7. Trái cây & Đồ uống
+  if (
+    name.includes("dâu") ||
+    name.includes("bơ sáp") ||
+    name.includes("táo") ||
+    name.includes("cam") ||
+    name.includes("xoài") ||
+    name.includes("sầu riêng") ||
+    name.includes("hoa quả") ||
+    name.includes("trái cây")
+  ) {
+    return { subCategory: "fruit", prepType: "fresh" };
+  }
+  if (
+    name.includes("cà phê") ||
+    name.includes("trà ") ||
+    name.includes("cafe")
+  ) {
+    return { subCategory: "tea_coffee", prepType: "cooked" };
+  }
+  if (name.includes("nước ép") || name.includes("sinh tố")) {
+    return { subCategory: "juice_smoothie", prepType: "fresh" };
+  }
+
+  // 8. Đồ gia dụng & Nhu yếu phẩm
+  if (
+    name.includes("nồi") ||
+    name.includes("chảo") ||
+    name.includes("hộp") ||
+    name.includes("bát") ||
+    name.includes("đĩa") ||
+    name.includes("bình")
+  ) {
+    return { subCategory: "kitchen", prepType: "packaged" };
+  }
+  if (
+    name.includes("nước rửa") ||
+    name.includes("giặt") ||
+    name.includes("lau") ||
+    name.includes("tẩy")
+  ) {
+    return { subCategory: "cleaning", prepType: "packaged" };
+  }
+  if (
+    name.includes("gạo") ||
+    name.includes("mật ong") ||
+    name.includes("muối") ||
+    name.includes("đường") ||
+    name.includes("mắm")
+  ) {
+    return { subCategory: "kitchen", prepType: "packaged" };
+  }
+
+  // Mặc định an toàn theo category
+  if (cat === "fastfood") return { subCategory: "snack", prepType: "cooked" };
+  if (cat === "food") return { subCategory: "poultry", prepType: "raw" };
+  if (cat === "veggie") return { subCategory: "leafy", prepType: "fresh" };
+  if (cat === "beverage") return { subCategory: "juice_smoothie", prepType: "fresh" };
+  return { subCategory: "kitchen", prepType: "packaged" };
 }
 
 // 8 GIAN HÀNG CHÍNH THỨC VỚI 32 SẢN PHẨM HOÀN TOÀN ĐỘC NHẤT, THÔNG SỐ VÀ CHỈ SỐ KHÁC BIỆT 100%
@@ -1180,6 +1617,60 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
     reviews: []
   },
   {
+    id: "p_kfc_chicken",
+    name: "Gà Rán Giòn Cay Chuẩn Vị KFC (2 Miếng Đùi & Cánh)",
+    category: "fastfood",
+    categoryName: "Món ăn nóng",
+    subCategory: "fried_chicken",
+    prepType: "cooked",
+    price: 69000,
+    oldPrice: 85000,
+    discountBadge: "-19%",
+    unit: "Phần 2 miếng",
+    image: "https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?auto=format&fit=crop&w=800&q=80"],
+    badge: "Giao nóng giòn 20p",
+    store: {
+      id: "store_bep_com_co_ba",
+      name: "Bếp Cơm Niêu & Ẩm Thực Nóng Cô Ba",
+      address: "56 Nguyễn Chánh, Trung Hòa, Cầu Giấy, Hà Nội",
+      distanceKm: 3.1,
+      deliveryTime: "20 - 30 phút",
+      rating: 4.8,
+      reviewsCount: 310,
+      openHours: "09:30 - 21:00",
+      totalProducts: 26,
+      isVerified: true,
+      categoryName: "Cơm niêu & Món ăn gia đình nóng",
+      avatar: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80",
+      coverImage: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=800&q=80"
+    },
+    rating: 4.9,
+    reviewsCount: 245,
+    sold: 580,
+    stock: 65,
+    description: "Gà rán vỏ giòn rụm màu vàng ruộm, thịt bên trong mềm mọng nước đậm vị tiêu ớt chuẩn công thức KFC. Luôn được chiên mới khi có đơn và bọc giấy bạc giữ nhiệt giao ngay.",
+    highlights: ["Chiên mới 100% khi nhận đơn", "Vỏ ngoài giòn tan, thịt mọng nước", "Tặng kèm tương cà & tương ớt"],
+    specs: {
+      origin: "ZoneMart Kitchen",
+      brand: "Gà Rán ZoneMart",
+      weight: "Phần 350g",
+      shelfLife: "Dùng ngon nhất trong vòng 2 giờ",
+      storage: "Bảo quản nóng, ăn ngay",
+      packingStandard: "Hộp giấy kraft cách nhiệt kèm sốt"
+    },
+    nutrition: {
+      servingSize: "2 miếng",
+      calories: "520 kcal",
+      protein: "38 g",
+      fat: "28 g",
+      carbs: "22 g",
+      minerals: "Natri, Kali, Phốt pho"
+    },
+    cookingTips: ["Ăn ngay khi còn nóng giòn để cảm nhận trọn vẹn hương vị."],
+    reviews: []
+  },
+  {
     id: "p19",
     name: "Canh Cua Rau Đay Cà Pháo Nấu Nồi Đất Chuẩn Vị",
     category: "fastfood",
@@ -1782,8 +2273,8 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
     oldPrice: 60000,
     discountBadge: "-20%",
     unit: "Chai 800ml",
-    image: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=800&q=80",
-    gallery: ["https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=800&q=80"],
+    image: "/images/nuoc_rua_bat_huu_co.jpg",
+    gallery: ["/images/nuoc_rua_bat_huu_co.jpg"],
     badge: "Bảo vệ da tay",
     store: {
       id: "store_tong_kho_my_dinh",
@@ -1974,7 +2465,8 @@ export function useProductCatalog() {
       }
 
       const dbStore = apiStores.value.find(s => 
-        s.storeName && p.storeName && s.storeName.trim().toLowerCase() === p.storeName.trim().toLowerCase()
+        (s.id && (p as any).storeId && String(s.id).toLowerCase() === String((p as any).storeId).toLowerCase()) ||
+        (s.storeName && p.storeName && s.storeName.trim().toLowerCase() === p.storeName.trim().toLowerCase())
       );
       if (dbStore) {
         if (dbStore.address) storeAddr = dbStore.address;
@@ -1989,16 +2481,32 @@ export function useProductCatalog() {
       }
 
       const resolvedStoreName = p.storeName || dbStore?.storeName || "Gian Hàng ZoneMart";
+      let resolvedImage = p.image || "/images/nuoc_rua_bat_huu_co.jpg";
+      if (
+        (resolvedImage && (resolvedImage.includes("1585421514738") || resolvedImage.includes("1584308666744"))) ||
+        (p.name && (p.name.toLowerCase().includes("nước rửa bát") || p.name.toLowerCase().includes("nuoc rua bat")))
+      ) {
+        resolvedImage = "/images/nuoc_rua_bat_huu_co.jpg";
+      }
+
+      const inferred = inferSubCategoryAndPrep({
+        name: p.name,
+        category: cat,
+        subCategory: (p as any).subCategory,
+        prepType: (p as any).prepType
+      });
 
       return {
         id: p.id,
         name: p.name,
         category: cat,
         categoryName: p.category,
+        subCategory: (p as any).subCategory || inferred.subCategory,
+        prepType: (p as any).prepType || inferred.prepType,
         price: p.price,
         unit: p.unit || "Phần",
-        image: p.image,
-        gallery: [p.image],
+        image: resolvedImage,
+        gallery: [resolvedImage],
         badge: "Đã Kiểm Duyệt",
         store: {
           id: dbStore?.id || ("store_" + (resolvedStoreName).toLowerCase().replace(/[^a-z0-9]/g, "_")),
@@ -2018,7 +2526,7 @@ export function useProductCatalog() {
           coverImage: p.image || "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800&q=80"
         },
         rating: 5.0,
-        reviewsCount: 14,
+        reviewsCount: 0,
         sold: 42,
         stock: typeof p.stock === 'number' ? p.stock : 50,
         description: p.description || `Sản phẩm ${p.name} tươi sạch thu hoạch trực tiếp từ ${resolvedStoreName}. Đã trải qua quy trình kiểm định an toàn chất lượng của sàn thương mại điện tử ZoneMart.`,
@@ -2055,9 +2563,105 @@ export function useProductCatalog() {
       } as CatalogProduct;
     });
 
+
+  // Hàm tính toán điểm số trung bình động cho từng sản phẩm dựa trên đánh giá thực tế của khách hàng
+  const applyDynamicRating = (p: CatalogProduct): CatalogProduct => {
+    const summary = ratingsSummary.value;
+    if (!summary) return p;
+
+    const pKey = p.id.toLowerCase();
+    const nameKey = p.name.toLowerCase().trim();
+    const cleanNumId = pKey.startsWith("p") ? pKey.slice(1) : pKey;
+
+    const pStat = summary.products?.[pKey] || summary.products?.[nameKey] || summary.products?.[cleanNumId];
+    let finalRating = p.rating || 5.0;
+    let finalCount = (p.reviews && p.reviews.length > 0) ? p.reviews.length : 0;
+    let finalReviews = [...(p.reviews || [])];
+
+    if (pStat && pStat.count > 0) {
+      // Khi sản phẩm có đánh giá thực tế từ người mua:
+      // finalCount và finalReviews phản ánh chính xác 100% số lượt đánh giá thực tế, không cộng thêm 14
+      if (pStat.comments && pStat.comments.length > 0) {
+        const mappedComments: ProductReview[] = pStat.comments.map((c: any, idx: number) => ({
+          id: `dyn_rev_${p.id}_${idx}`,
+          author: c.author || "Khách Hàng ZoneMart",
+          avatar: getCleanAvatar(c.avatar, c.author || "Khách Hàng ZoneMart", "buyer"),
+          rating: c.rating || 5,
+          date: c.date || "Vừa xong",
+          comment: (c.comment || "").trim(),
+          helpfulCount: 5,
+          verified: true
+        }));
+        finalReviews = mappedComments;
+        finalCount = mappedComments.length;
+      } else {
+        finalCount = pStat.count;
+      }
+      finalRating = pStat.averageRating || (pStat.count > 0 ? Math.round((pStat.total / pStat.count) * 10) / 10 : 5.0);
+    } else {
+      finalCount = p.reviews ? p.reviews.length : 0;
+      finalRating = p.rating || 5.0;
+    }
+
+    // Cập nhật điểm gian hàng trong sản phẩm
+    let storeObj = p.store;
+    if (storeObj) {
+      const sKey = (storeObj.id || "").toLowerCase();
+      const sNameKey = (storeObj.name || "").toLowerCase().trim();
+      const sStat = summary.stores?.[sKey] || summary.stores?.[sNameKey];
+      if (sStat && sStat.count > 0) {
+        const baseCount = storeObj.reviewsCount || 40;
+        const baseRating = storeObj.rating || 5.0;
+        const totalStars = (baseRating * baseCount) + sStat.total;
+        const totalCount = baseCount + sStat.count;
+        storeObj = {
+          ...storeObj,
+          rating: Math.round((totalStars / totalCount) * 10) / 10,
+          reviewsCount: totalCount
+        };
+      }
+    }
+
+    return {
+      ...p,
+      rating: finalRating,
+      reviewsCount: finalCount,
+      reviews: finalReviews,
+      store: storeObj
+    };
+  };
+
+  // Hàm tính toán khoảng cách và thời gian giao hàng thực tế từ GPS người dùng đến gian hàng của sản phẩm
+  const applyDynamicDistance = (p: CatalogProduct): CatalogProduct => {
+    let storeObj = p.store;
+    if (storeObj) {
+      const uCoords = currentUserCoords.value;
+      const sCoords = resolveStoreCoordinates(storeObj);
+      const realDist = calculateHaversineDistance(
+        uCoords.lat,
+        uCoords.lng,
+        sCoords.lat,
+        sCoords.lng
+      );
+      const realDelivery = estimateDeliveryTime(realDist);
+      storeObj = {
+        ...storeObj,
+        lat: sCoords.lat,
+        lng: sCoords.lng,
+        distanceKm: realDist,
+        deliveryTime: realDelivery
+      };
+    }
+    return {
+      ...p,
+      distanceKm: storeObj?.distanceKm || 1.2,
+      store: storeObj
+    };
+  };
+
     // Ưu tiên hiển thị 100% dữ liệu sản phẩm thực từ MongoDB Atlas
     if (dynamicActive.length > 0) {
-      return dynamicActive;
+      return dynamicActive.map(applyDynamicRating).map(applyDynamicDistance);
     }
     // Fallback chỉ khi thiết bị hoàn toàn offline và chưa từng tải được dữ liệu (đồng bộ với overrides tồn kho)
     return CATALOG_PRODUCTS.map(p => {
@@ -2070,8 +2674,14 @@ export function useProductCatalog() {
           else if (typeof o[p.name.toLowerCase().trim()] === 'number') st = o[p.name.toLowerCase().trim()];
         }
       } catch {}
-      return { ...p, stock: st };
-    });
+      const inferred = inferSubCategoryAndPrep(p);
+      return {
+        ...p,
+        subCategory: p.subCategory || inferred.subCategory,
+        prepType: p.prepType || inferred.prepType,
+        stock: st
+      };
+    }).map(applyDynamicRating).map(applyDynamicDistance);
   });
 
   // Danh sách toàn bộ gian hàng trích xuất tự động từ MongoDB và sản phẩm
@@ -2133,7 +2743,42 @@ export function useProductCatalog() {
       }
     }
 
-    return Array.from(storeMap.values());
+    return Array.from(storeMap.values()).map(s => {
+      const sKey = (s.id || "").toLowerCase();
+      const sNameKey = (s.name || "").toLowerCase().trim();
+      const sStat = ratingsSummary.value?.stores?.[sKey] || ratingsSummary.value?.stores?.[sNameKey];
+      let sRating = s.rating || 5.0;
+      let sReviewsCount = s.reviewsCount || 48;
+      if (sStat && sStat.count > 0) {
+        const baseCount = s.reviewsCount || 48;
+        const baseRating = s.rating || 5.0;
+        const totalStars = (baseRating * baseCount) + sStat.total;
+        const totalCount = baseCount + sStat.count;
+        sRating = Math.round((totalStars / totalCount) * 10) / 10;
+        sReviewsCount = totalCount;
+      }
+
+      // Khoảng cách thực tế từ GPS người dùng đến gian hàng
+      const uCoords = currentUserCoords.value;
+      const sCoords = resolveStoreCoordinates(s);
+      const realDist = calculateHaversineDistance(
+        uCoords.lat,
+        uCoords.lng,
+        sCoords.lat,
+        sCoords.lng
+      );
+      const realDelivery = estimateDeliveryTime(realDist);
+
+      return {
+        ...s,
+        lat: sCoords.lat,
+        lng: sCoords.lng,
+        distanceKm: realDist,
+        deliveryTime: realDelivery,
+        rating: sRating,
+        reviewsCount: sReviewsCount
+      };
+    });
   });
 
   // Tìm kiếm sản phẩm theo ID (hỗ trợ mã 'p1' lẫn '1')
@@ -2176,12 +2821,22 @@ export function useProductCatalog() {
     getRelatedProducts,
     getStoreByIdOrName,
     refreshCatalog,
+    ratingsSummary,
+    fetchRatingsSummary,
+    recordLocalReview,
+    currentUserCoords,
+    calculateHaversineDistance,
+    estimateDeliveryTime,
+    resolveStoreCoordinates,
   };
 }
 
-// Lắng nghe sự kiện toàn cục khi sản phẩm thay đổi để tự động re-compute catalog
+// Lắng nghe sự kiện toàn cục khi sản phẩm hoặc vị trí GPS thay đổi để tự động re-compute catalog
 if (typeof window !== "undefined") {
   window.addEventListener("zonemart:products-changed", () => {
+    catalogVersion.value++;
+  });
+  window.addEventListener("zonemart:location-changed", () => {
     catalogVersion.value++;
   });
 }

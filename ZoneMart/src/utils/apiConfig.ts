@@ -6,7 +6,7 @@
  */
 
 const KNOWN_PORT = '5000';
-const DEFAULT_LAN_IP = '172.16.28.71';
+const DEFAULT_LAN_IP = '192.168.1.16';
 
 let cachedDiscoveredUrl: string | null = null;
 let lastDiscoveredAt = 0;
@@ -80,33 +80,42 @@ function raceCandidates(candidates: string[], timeoutMs: number): Promise<string
 function generateSubnetCandidates(): string[] {
   const list: string[] = [];
 
-  // 1. Dải 172.16.28.x (Wi-Fi hiện tại của máy tính dev)
+  // 1. Dải 192.168.1.x (Wi-Fi hiện tại của máy tính dev & Router gia đình phổ biến nhất tại VN)
+  list.push(`http://192.168.1.16:${KNOWN_PORT}`);
+  for (let i = 2; i <= 50; i++) {
+    if (i !== 16) list.push(`http://192.168.1.${i}:${KNOWN_PORT}`);
+  }
+  for (let i = 100; i <= 150; i++) {
+    list.push(`http://192.168.1.${i}:${KNOWN_PORT}`);
+  }
+
+  // 2. Dải 192.168.0.x
+  for (let i = 2; i <= 30; i++) {
+    list.push(`http://192.168.0.${i}:${KNOWN_PORT}`);
+  }
+  for (let i = 100; i <= 130; i++) {
+    list.push(`http://192.168.0.${i}:${KNOWN_PORT}`);
+  }
+
+  // 3. Dải 172.16.28.x (Mạng trường học / văn phòng)
   list.push(`http://172.16.28.71:${KNOWN_PORT}`);
   for (let i = 1; i <= 100; i++) {
     if (i !== 71) list.push(`http://172.16.28.${i}:${KNOWN_PORT}`);
   }
 
-  // 2. Dải 192.168.99.x (Wi-Fi HHT WIFI)
+  // 4. Dải 192.168.99.x (HHT WIFI)
   list.push(`http://192.168.99.27:${KNOWN_PORT}`);
   for (let i = 2; i <= 60; i++) {
     if (i !== 27) list.push(`http://192.168.99.${i}:${KNOWN_PORT}`);
   }
 
-  // 2. Dải 192.168.5.x (Wi-Fi văn phòng / nhà riêng trước đó)
+  // 5. Dải 192.168.5.x
   list.push(`http://192.168.5.115:${KNOWN_PORT}`);
   for (let i = 100; i <= 150; i++) {
     if (i !== 115) list.push(`http://192.168.5.${i}:${KNOWN_PORT}`);
   }
   for (let i = 2; i <= 40; i++) {
     list.push(`http://192.168.5.${i}:${KNOWN_PORT}`);
-  }
-
-  // 3. Dải 192.168.1.x (Router gia đình phổ biến nhất)
-  for (let i = 100; i <= 140; i++) {
-    list.push(`http://192.168.1.${i}:${KNOWN_PORT}`);
-  }
-  for (let i = 2; i <= 30; i++) {
-    list.push(`http://192.168.1.${i}:${KNOWN_PORT}`);
   }
 
   // 4. Dải 192.168.0.x
@@ -171,6 +180,7 @@ export async function autoDiscoverServer(force = false): Promise<string | null> 
 
       const standardCandidates = [
         `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`,
+        `http://192.168.1.10:${KNOWN_PORT}`,
         `http://10.0.2.2:${KNOWN_PORT}`,
         `http://localhost:${KNOWN_PORT}`,
         `http://127.0.0.1:${KNOWN_PORT}`,
@@ -221,58 +231,69 @@ export async function autoDiscoverServer(force = false): Promise<string | null> 
 }
 
 /**
+ * Kiểm tra xem ứng dụng có đang chạy dưới dạng Native Mobile App (Capacitor Android / iOS) hay không
+ */
+export function isNativeMobile(): boolean {
+  if (typeof window === 'undefined') return false;
+  // 1. Kiểm tra qua Capacitor runtime
+  if ((window as any).Capacitor?.isNativePlatform?.()) return true;
+  if ((window as any).Capacitor?.getPlatform?.() && (window as any).Capacitor?.getPlatform?.() !== 'web') return true;
+  // 2. Giao thức native (Capacitor iOS / Ionic)
+  if (window.location.protocol === 'capacitor:' || window.location.protocol === 'ionic:') return true;
+  // 3. Android WebView tải từ http://localhost hoặc https://localhost mà KHÔNG có số cổng (port rỗng)
+  const hostname = window.location.hostname || '';
+  const port = window.location.port || '';
+  if ((hostname === 'localhost' || hostname === '127.0.0.1') && !port) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Lấy Base API URL hiện hành
  */
 export function getBaseApiUrl(): string {
   if (typeof window === 'undefined') return '';
 
-  const hostname = window.location.hostname || '';
-  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+  // TRƯỜNG HỢP 1: Môi trường Native Mobile App (Capacitor Android APK / iOS IPA)
+  if (isNativeMobile()) {
+    // 1. URL đã dò tìm thành công gần đây
+    if (cachedDiscoveredUrl) {
+      return cachedDiscoveredUrl;
+    }
 
-  // 1. Nếu đang mở từ Localhost (Web Desktop dev): Luôn dùng relative URL '' để qua Vite Proxy tới 127.0.0.1:5000
-  // Tuyệt đối không dùng IP LAN cũ trong localStorage vì người dùng đổi mạng Wi-Fi sẽ bị treo kết nối!
-  if (isLocalhost) {
-    return '';
+    // 2. Biến môi trường Vite (.env) - cấu hình chuẩn IP Wi-Fi
+    try {
+      const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
+      if (envUrl && typeof envUrl === 'string' && envUrl.trim() && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+        return envUrl.trim().replace(/\/+$/, '');
+      }
+    } catch {}
+
+    // 3. Cấu hình đã lưu trong localStorage từ lần trước
+    try {
+      const saved = localStorage.getItem('zonemart_api_server_url');
+      if (saved && saved.trim()) {
+        const cleanSaved = saved.trim().replace(/\/+$/, '');
+        if (cleanSaved.startsWith('http://') || cleanSaved.startsWith('https://') || cleanSaved.includes('192.168.') || cleanSaved.includes('172.') || cleanSaved.includes('10.') || cleanSaved.includes('10.0.2.2') || cleanSaved.includes(DEFAULT_LAN_IP)) {
+          return cleanSaved;
+        }
+      }
+    } catch {}
+
+    // 4. Mặc định trỏ thẳng tới IP Wi-Fi của máy chủ Dev
+    return `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`;
   }
 
-  // 2. Nếu đang mở từ trình duyệt trên điện thoại qua IP Wi-Fi (ví dụ http://172.16.28.71:5173):
-  // Backend cùng nằm trên máy tính này nên hostname chính là IP của backend cổng 5000
+  // TRƯỜNG HỢP 2: Trình duyệt mở từ thiết bị di động qua IP LAN (ví dụ http://192.168.1.16:5173)
+  const hostname = window.location.hostname || '';
+  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
   if (hostname && !isLocalhost && !hostname.includes('capacitor')) {
     return `http://${hostname}:${KNOWN_PORT}`;
   }
 
-  // 3. URL đã được hệ thống tự động dò tìm thấy
-  if (cachedDiscoveredUrl) {
-    return cachedDiscoveredUrl;
-  }
-
-  // 4. Cấu hình đã lưu trong localStorage từ lần trước
-  try {
-    const saved = localStorage.getItem('zonemart_api_server_url');
-    if (saved && saved.trim()) {
-      return saved.trim().replace(/\/+$/, '');
-    }
-  } catch {}
-
-  // 5. Biến môi trường Vite (.env)
-  try {
-    const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
-    if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
-      return envUrl.trim().replace(/\/+$/, '');
-    }
-  } catch {}
-
-  // 6. Môi trường Native App (Capacitor Android / iOS)
-  const isCapacitor =
-    window.location.protocol === 'capacitor:' ||
-    window.location.protocol === 'ionic:' ||
-    (hostname === 'localhost' && !window.location.port);
-
-  if (isCapacitor) {
-    return `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`;
-  }
-
-  // 7. Mặc định trên Web Desktop (Vite proxy)
+  // TRƯỜNG HỢP 3: Mở trên Web Desktop Dev qua localhost (http://localhost:5173)
+  // Dùng relative URL '' để qua Vite Proxy chuyển tiếp tới 127.0.0.1:5000, tránh lỗi CORS
   return '';
 }
 
@@ -312,7 +333,8 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   const currentUrl = getApiUrl(path);
 
   try {
-    const res = await execute(currentUrl, 15);
+    const firstTimeout = isNativeMobile() ? 3.5 : 15;
+    const res = await execute(currentUrl, firstTimeout);
 
     // Xử lý fallback cho Vite proxy nếu trả về 404, 502, 504
     if (
@@ -374,9 +396,32 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   }
 }
 
+/**
+ * Đặt URL máy chủ thủ công (dành cho người dùng Mobile App đổi Wi-Fi)
+ */
+export function setCustomServerUrl(url: string): string {
+  let clean = url.trim().replace(/\/+$/, '');
+  if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
+    clean = `http://${clean}`;
+  }
+  if (!clean.match(/:\d+$/)) {
+    clean = `${clean}:${KNOWN_PORT}`;
+  }
+  setDiscoveredServer(clean);
+  return clean;
+}
+
+/**
+ * Lấy URL máy chủ hiện hành đang áp dụng
+ */
+export function getCurrentServerUrl(): string {
+  return getBaseApiUrl() || `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`;
+}
+
 // Tự động kích hoạt dò tìm máy chủ trong nền khi ứng dụng khởi động
 if (typeof window !== 'undefined') {
   setTimeout(() => {
-    autoDiscoverServer(false).catch(() => {});
+    const isMobile = isNativeMobile();
+    autoDiscoverServer(isMobile).catch(() => {});
   }, 100);
 }

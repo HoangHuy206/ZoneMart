@@ -822,7 +822,7 @@ const KNOWN_STORE_PROFILES: Record<string, SellerStoreProfile> = {
         price: 18000,
         unit: "Trái",
         stock: 90,
-        image: "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=400&q=80",
+        image: "https://images.unsplash.com/photo-1550258987-190a2d41a8ba?auto=format&fit=crop&w=400&q=80",
         aiSafetyScore: 99,
         aiMatchScore: 98
       }
@@ -1549,7 +1549,7 @@ const KNOWN_STORE_PROFILES: Record<string, SellerStoreProfile> = {
         salesText: "1,150 Đã bán",
         statusText: "Còn hàng",
         stockText: "Còn 90 can",
-        image: "https://images.unsplash.com/photo-1585670210693-e7fdd16b142e?auto=format&fit=crop&w=400&q=80"
+        image: "/images/nuoc_rua_bat_huu_co.jpg"
       }
     ],
     customers: [
@@ -1645,7 +1645,7 @@ const KNOWN_STORE_PROFILES: Record<string, SellerStoreProfile> = {
         price: 65000,
         unit: "Can 2 lít",
         stock: 90,
-        image: "https://images.unsplash.com/photo-1585670210693-e7fdd16b142e?auto=format&fit=crop&w=400&q=80",
+        image: "/images/nuoc_rua_bat_huu_co.jpg",
         aiSafetyScore: 99,
         aiMatchScore: 98
       },

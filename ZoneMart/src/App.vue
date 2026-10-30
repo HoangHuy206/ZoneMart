@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+import { sellerChatService } from './services/sellerChatService';
 import { useRouter, useRoute } from 'vue-router';
 import logoImg from './assets/logo.png';
 import { useAuth } from './composables/useAuth';
@@ -9,6 +10,7 @@ import { getSafeCurrentLocation } from './composables/useSafeLocation';
 import ZoneToast from './components/common/ZoneToast.vue';
 import TopProgressBar from './components/common/TopProgressBar.vue';
 import AiAssistantWidget from './components/common/AiAssistantWidget.vue';
+import SellerChatModal from './components/chat/SellerChatModal.vue';
 import AppIntroSplash from './components/common/AppIntroSplash.vue';
 
 const router = useRouter();
@@ -46,6 +48,24 @@ const navigateToBuyerOrders = () => {
     window.dispatchEvent(new CustomEvent('zonemart:refresh_buyer_orders', { detail: { time: Date.now() } }));
   }
 };
+
+
+// Duy trì nhịp tim trực tuyến liên tục theo thời gian thực cho tài khoản đang đăng nhập
+watch(
+  () => auth.currentUser.value,
+  (user) => {
+    if (user) {
+      const role = auth.currentRole.value === 'seller' ? 'seller' : 'buyer';
+      const id = String(user.id || user.phoneEmail || 'user');
+      const name = user.fullName || (user as any).name || user.phoneEmail || 'Khách Hàng ZoneMart';
+      sellerChatService.registerPresenceHeartbeat(id, role, name);
+      if (name && name !== id) {
+        sellerChatService.updatePresence(name, role, name, true);
+      }
+    }
+  },
+  { immediate: true }
+);
 
 // Đồng bộ phản ứng avatar và thông tin người dùng tức thì khi có cập nhật
 if (typeof window !== 'undefined') {
@@ -218,6 +238,8 @@ const handleLogout = () => {
     <ZoneToast />
     <!-- Trợ lý AI Chuyên Gia ZoneMart 24/7 (Khung chat góc dưới bên phải - chỉ hiển thị trên giao diện mua sắm, ẩn ở thanh toán để tránh che nút) -->
     <AiAssistantWidget v-if="!$route.meta.hideHeader && !$route.path.startsWith('/admin') && !$route.path.startsWith('/seller') && !$route.path.startsWith('/shipper') && $route.path !== '/checkout'" />
+    <!-- Hộp thoại Chat trực tiếp với Người Bán (Real-time Seller Chat) -->
+    <SellerChatModal v-if="!$route.path.startsWith('/seller') && !$route.path.startsWith('/admin')" />
 
     <!-- Header chuẩn theo hình Sample Mockup (Tự động ẩn ở trang 404 qua meta.hideHeader) -->
     <header v-if="!$route.meta.hideHeader" class="navbar">
@@ -717,6 +739,14 @@ const handleLogout = () => {
                       <span>Đơn Mua Của Bạn</span>
                     </router-link>
                     <router-link
+                      to="/buyer-orders?tab=purchased_products"
+                      class="dropdown-item"
+                      @click="navigateToBuyerOrders"
+                    >
+                      <i class="bi bi-stars menu-icon text-warning"></i>
+                      <span>Sản Phẩm Đã Mua (Đánh Giá ⭐)</span>
+                    </router-link>
+                    <router-link
                       to="/cart"
                       class="dropdown-item"
                       @click="closeDropdowns"
@@ -1100,6 +1130,14 @@ const handleLogout = () => {
             >
               <i class="bi bi-bag-check menu-icon"></i>
               <span>Đơn Mua Của Tôi</span>
+            </router-link>
+            <router-link
+              to="/buyer-orders?tab=purchased_products"
+              class="mobile-link"
+              @click="navigateToBuyerOrders"
+            >
+              <i class="bi bi-stars menu-icon text-warning"></i>
+              <span>Sản Phẩm Đã Mua (Đánh Giá ⭐)</span>
             </router-link>
             <router-link
               to="/profile"

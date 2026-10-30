@@ -47,6 +47,7 @@ builder.Services.AddScoped<IProductModerationService, ProductModerationService>(
 builder.Services.AddScoped<IHumanHandoverService, HumanHandoverService>();
 builder.Services.AddHostedService<PythonFaceServiceManager>();
 builder.Services.AddSingleton<OrderRealtimeManager>();
+builder.Services.AddSingleton<SellerChatManager>();
 
 // 4. MemoryCache & WebAuthn / Passkeys (FIDO2)
 builder.Services.AddMemoryCache();

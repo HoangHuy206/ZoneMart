@@ -11,11 +11,13 @@ import { useAuth } from "../../composables/useAuth";
 import { apiFetch } from "../../utils/apiConfig";
 import { useProductCatalog, type CatalogProduct } from "../../composables/useProductCatalog";
 import { orderRealtimeService } from "../../services/orderRealtimeService";
+import { useToast } from "../../composables/useToast";
 
 const auth = useAuth();
 const router = useRouter();
 const route = useRoute();
 const catalog = useProductCatalog();
+const toast = useToast();
 
 const orders = ref<any[]>([]);
 const isLoading = ref<boolean>(true);
@@ -308,6 +310,13 @@ const handleGlobalRefresh = () => {
 };
 
 onMounted(() => {
+  if (route.query.tab === 'purchased' || route.query.tab === 'purchased_products' || route.query.tab === 'reviews') {
+    activeFilterTab.value = 'purchased_products';
+  } else if (route.query.tab === 'completed') {
+    activeFilterTab.value = 'completed';
+  } else if (route.query.tab === 'delivering') {
+    activeFilterTab.value = 'delivering';
+  }
   fetchOrdersWithLoading(650);
   window.addEventListener("zonemart:refresh_buyer_orders", handleGlobalRefresh);
 
@@ -347,30 +356,357 @@ onUnmounted(() => {
 watch(
   () => [auth.currentUser.value?.id, auth.currentUser.value?.phoneEmail],
   () => {
+    if (route.query.tab === 'purchased' || route.query.tab === 'purchased_products' || route.query.tab === 'reviews') {
+      activeFilterTab.value = 'purchased_products';
+    } else if (route.query.tab === 'completed') {
+      activeFilterTab.value = 'completed';
+    } else if (route.query.tab === 'delivering') {
+      activeFilterTab.value = 'delivering';
+    } else if (route.query.tab === 'all') {
+      activeFilterTab.value = 'all';
+    }
     fetchOrdersWithLoading(500);
   }
 );
 
 // Tải lại khi route query thay đổi
 watch(
-  () => [route.fullPath, route.query.refresh],
+  () => [route.fullPath, route.query.refresh, route.query.tab],
   () => {
     fetchOrdersWithLoading(500);
   }
 );
 
-// Trạng thái Đánh Giá Đơn Hàng (Modal & Form)
+// ========================================================
+// BỘ LỌC ĐƠN HÀNG & TAB SẢN PHẨM ĐÃ MUA (GIỐNG SHOPEE)
+// ========================================================
+type OrderFilterTab = 'all' | 'delivering' | 'completed' | 'purchased_products';
+const activeFilterTab = ref<OrderFilterTab>('all');
+
+export interface PurchasedProductEntry {
+  orderId: string;
+  orderDate: string;
+  storeName: string;
+  storeId: string;
+  productId: string;
+  name: string;
+  image: string;
+  price: number;
+  quantity: number;
+  uniqueKey: string;
+}
+
+const getInitialRatedProductsMap = (): Record<string, { rating: number; comment: string; tags: string[]; date: string }> => {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem("zonemart_rated_products_map");
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+};
+
+const ratedProductsMap = ref<Record<string, { rating: number; comment: string; tags: string[]; date: string }>>(getInitialRatedProductsMap());
+
+const isProductItemRated = (orderId: string, item: any): boolean => {
+  const rawId = String(orderId).replace(/^#/, "").trim();
+  const match = findProductMatch(item);
+  const prodId = match?.id || item.productId || item.id || ("prod_" + (item.name || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "_"));
+  const key = `${rawId}_${prodId}`;
+  return Boolean(ratedProductsMap.value[key] || ratedProductsMap.value[prodId]);
+};
+
+const getProductItemRating = (orderId: string, item: any): number => {
+  const rawId = String(orderId).replace(/^#/, "").trim();
+  const match = findProductMatch(item);
+  const prodId = match?.id || item.productId || item.id || ("prod_" + (item.name || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "_"));
+  const key = `${rawId}_${prodId}`;
+  return ratedProductsMap.value[key]?.rating || ratedProductsMap.value[prodId]?.rating || 5;
+};
+
+// Đơn hàng lọc theo trạng thái
+const filteredOrders = computed(() => {
+  if (activeFilterTab.value === 'all') return orders.value;
+  if (activeFilterTab.value === 'delivering') {
+    return orders.value.filter(o => {
+      const cls = getOrderStatusClass(o.status);
+      return cls === 'delivering' || cls === 'picking' || cls === 'confirmed';
+    });
+  }
+  if (activeFilterTab.value === 'completed') {
+    return orders.value.filter(o => getOrderStatusClass(o.status) === 'completed' || o.status === 'completed');
+  }
+  return orders.value;
+});
+
+const deliveringOrdersCount = computed(() => {
+  return orders.value.filter(o => {
+    const cls = getOrderStatusClass(o.status);
+    return cls === 'delivering' || cls === 'picking' || cls === 'confirmed';
+  }).length;
+});
+
+const completedOrdersCount = computed(() => {
+  return orders.value.filter(o => getOrderStatusClass(o.status) === 'completed' || o.status === 'completed').length;
+});
+
+// Trích xuất tất cả sản phẩm từ các đơn hàng ĐÃ GIAO THÀNH CÔNG (Purchased Products like Shopee)
+const allPurchasedProducts = computed<PurchasedProductEntry[]>(() => {
+  const result: PurchasedProductEntry[] = [];
+  const completed = orders.value.filter(o => getOrderStatusClass(o.status) === 'completed' || o.status === 'completed');
+
+  for (const ord of completed) {
+    const rawId = String(ord.orderId || ord.id || "").replace(/^#/, "").trim();
+    const storeName = getOrderStoreName(ord);
+    const storeId = ord.storeId || ord.store?.id || "";
+    const items = parseOrderItems(ord.items);
+
+    for (const it of items) {
+      const match = findProductMatch(it);
+      const prodId = match?.id || it.productId || it.id || ("prod_" + (it.name || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "_"));
+      const uniqueKey = `${rawId}_${prodId}`;
+      result.push({
+        orderId: rawId,
+        orderDate: ord.date || "Vừa xong",
+        storeName,
+        storeId,
+        productId: prodId,
+        name: it.name,
+        image: it.image || match?.image || "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=300&q=80",
+        price: it.price || match?.price || 0,
+        quantity: it.quantity || 1,
+        uniqueKey
+      });
+    }
+  }
+
+  return result;
+});
+
+const unratedProductsCount = computed(() => {
+  return allPurchasedProducts.value.filter(p => !ratedProductsMap.value[p.uniqueKey] && !ratedProductsMap.value[p.productId]).length;
+});
+
+// Modal đánh giá riêng từng sản phẩm (Giống Shopee)
+const showSingleProductModal = ref(false);
+const singleReviewProduct = ref<PurchasedProductEntry | null>(null);
+const singleProductRating = ref(0);
+const singleProductComment = ref("");
+const singleProductTags = ref<string[]>([]);
+const showExtraReview = ref(false);
+const singleStoreRating = ref(0);
+const singleStoreComment = ref("");
+const singleShipperRating = ref(0);
+const singleShipperComment = ref("");
+
+const openSingleProductReviewModal = (entry: PurchasedProductEntry) => {
+  singleReviewProduct.value = entry;
+  const existing = ratedProductsMap.value[entry.uniqueKey] || ratedProductsMap.value[entry.productId];
+  if (existing) {
+    singleProductRating.value = existing.rating || 0;
+    singleProductComment.value = existing.comment || "";
+    singleProductTags.value = existing.tags ? [...existing.tags] : [];
+  } else {
+    singleProductRating.value = 0; // Không mặc định 5 sao
+    singleProductComment.value = ""; // Không tự động chèn lời nhắn
+    singleProductTags.value = []; // Không tự động tick sẵn tag
+  }
+  showExtraReview.value = false;
+  singleStoreRating.value = 0;
+  singleStoreComment.value = "";
+  singleShipperRating.value = 0;
+  singleShipperComment.value = "";
+  showSingleProductModal.value = true;
+};
+
+const openSingleProductReviewModalFromOrder = (item: any, order: any) => {
+  const rawId = String(order.orderId || order.id || "").replace(/^#/, "").trim();
+  const storeName = getOrderStoreName(order);
+  const match = findProductMatch(item);
+  const prodId = match?.id || item.productId || item.id || ("prod_" + (item.name || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "_"));
+  
+  const entry: PurchasedProductEntry = {
+    orderId: rawId,
+    orderDate: order.date || "Vừa xong",
+    storeName,
+    storeId: order.storeId || "",
+    productId: prodId,
+    name: item.name,
+    image: item.image || match?.image || "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=300&q=80",
+    price: item.price || match?.price || 0,
+    quantity: item.quantity || 1,
+    uniqueKey: `${rawId}_${prodId}`
+  };
+
+  openSingleProductReviewModal(entry);
+};
+
+const submitSingleProductReview = async () => {
+  if (!singleReviewProduct.value) return;
+  if (!singleProductRating.value || singleProductRating.value <= 0) {
+    toast.warning("Vui lòng bấm chọn số sao đánh giá chất lượng sản phẩm (1-5 sao)!", "Chưa chọn số sao ⭐");
+    return;
+  }
+  const entry = singleReviewProduct.value;
+  isSubmittingReview.value = true;
+
+  try {
+    const payload = {
+      orderId: entry.orderId,
+      subOrderId: "",
+      storeId: entry.storeId,
+      storeName: entry.storeName,
+      buyerId: auth.currentUser.value?.id || "",
+      buyerName: currentAccountName.value,
+      buyerAvatar: auth.currentUser.value?.avatarUrl || (auth.currentUser.value as any)?.avatar || "",
+      rating: singleProductRating.value,
+      comment: singleProductComment.value,
+      shipperRating: showExtraReview.value ? singleShipperRating.value : 5,
+      shipperComment: showExtraReview.value ? singleShipperComment.value : "",
+      storeRating: showExtraReview.value ? singleStoreRating.value : 5,
+      storeComment: showExtraReview.value ? singleStoreComment.value : "",
+      productReviews: [
+        {
+          productId: entry.productId,
+          productName: entry.name,
+          productImage: entry.image,
+          rating: singleProductRating.value,
+          comment: singleProductComment.value,
+          tags: singleProductTags.value
+        }
+      ]
+    };
+
+    // 1. Cập nhật rating local 0ms
+    catalog.recordLocalReview(payload);
+
+    // 2. Gửi API backend
+    await apiFetch("/api/orders/reviews", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }).catch(() => null);
+
+    // 3. Đánh dấu đã đánh giá sản phẩm này
+    ratedProductsMap.value[entry.uniqueKey] = {
+      rating: singleProductRating.value,
+      comment: singleProductComment.value,
+      tags: singleProductTags.value,
+      date: new Date().toLocaleDateString("vi-VN")
+    };
+    ratedProductsMap.value[entry.productId] = ratedProductsMap.value[entry.uniqueKey];
+
+    try {
+      localStorage.setItem("zonemart_rated_products_map", JSON.stringify(ratedProductsMap.value));
+    } catch {}
+
+    toast.success(
+      `Đánh giá thành công cho sản phẩm "${entry.name}"! Điểm số trung bình đã được cập nhật và sản phẩm sẽ được ưu tiên xếp lên đầu trang.`,
+      "Đánh Giá Thành Công ⭐"
+    );
+    showSingleProductModal.value = false;
+    singleReviewProduct.value = null;
+  } catch (err) {
+    toast.success("Đã lưu đánh giá thành công!", "Đánh Giá Thành Công ⭐");
+    showSingleProductModal.value = false;
+    singleReviewProduct.value = null;
+  } finally {
+    isSubmittingReview.value = false;
+  }
+};
+
+// ========================================================
+// TRẠNG THÁI ĐÁNH GIÁ ĐA PHÂN HỆ (TÀI XẾ, GIAN HÀNG & TỪNG SẢN PHẨM)
+// ========================================================
+interface ReviewProductItemState {
+  productId: string;
+  name: string;
+  image: string;
+  quantity: number;
+  price: number;
+  rating: number;
+  comment: string;
+  tags: string[];
+}
+
+const getInitialRatedOrders = (): Set<string> => {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem("zonemart_rated_order_ids");
+    if (raw) return new Set(JSON.parse(raw));
+  } catch {}
+  return new Set();
+};
+
+const ratedOrderIds = ref<Set<string>>(getInitialRatedOrders());
 const showReviewModal = ref<boolean>(false);
 const selectedOrderForReview = ref<any>(null);
-const reviewRating = ref<number>(5);
-const reviewComment = ref<string>("");
 const isSubmittingReview = ref<boolean>(false);
-const ratedOrderIds = ref<Set<string>>(new Set());
+
+// 1. Phân hệ Tài xế giao vận (Shipper)
+const shipperRating = ref<number>(5);
+const shipperComment = ref<string>("");
+const selectedShipperTags = ref<string[]>([]);
+const defaultShipperTags = [
+  "⚡ Giao siêu tốc",
+  "😊 Thân thiện & lịch sự",
+  "📦 Hàng nguyên vẹn, không dập",
+  "⏱️ Đúng giờ hẹn",
+  "📍 Tìm đúng địa chỉ"
+];
+
+// 2. Phân hệ Gian hàng đối tác (Store)
+const storeRating = ref<number>(5);
+const storeComment = ref<string>("");
+const selectedStoreTags = ref<string[]>([]);
+const defaultStoreTags = [
+  "📦 Đóng gói cẩn thận",
+  "🌿 Nông sản tươi rói",
+  "⏱️ Chuẩn bị nhanh chóng",
+  "💯 Đúng & đủ món",
+  "🎁 Quà tặng chu đáo"
+];
+
+// 3. Phân hệ Từng Sản phẩm chi tiết (Products)
+const reviewProductItems = ref<ReviewProductItemState[]>([]);
+const defaultProductTags = [
+  "🌿 Rất tươi ngon",
+  "💰 Đáng tiền",
+  "✨ Đúng hình ảnh",
+  "😋 Vị thơm ngọt tự nhiên",
+  "🔄 Sẽ mua lại"
+];
+
+const toggleTag = (list: string[], tag: string) => {
+  const idx = list.indexOf(tag);
+  if (idx >= 0) list.splice(idx, 1);
+  else list.push(tag);
+};
 
 const openReviewModal = (order: any) => {
   selectedOrderForReview.value = order;
-  reviewRating.value = 5;
-  reviewComment.value = "";
+  shipperRating.value = 0;
+  shipperComment.value = "";
+  selectedShipperTags.value = [];
+
+  storeRating.value = 0;
+  storeComment.value = "";
+  selectedStoreTags.value = [];
+
+  const parsed = parseOrderItems(order.items);
+  reviewProductItems.value = parsed.map((it: any) => {
+    const match = findProductMatch(it);
+    return {
+      productId: match?.id || it.productId || it.id || ("prod_" + it.name.trim().toLowerCase().replace(/[^a-z0-9]/g, "_")),
+      name: it.name,
+      image: it.image || match?.image || "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=300&q=80",
+      quantity: it.quantity || 1,
+      price: it.price || match?.price || 0,
+      rating: 0,
+      comment: "",
+      tags: []
+    };
+  });
+
   showReviewModal.value = true;
 };
 
@@ -467,41 +803,72 @@ const handleConfirmReceived = async (id: string, order?: any) => {
 
 const submitReview = async () => {
   if (!selectedOrderForReview.value) return;
+  const unrated = reviewProductItems.value.find(it => !it.rating || it.rating <= 0);
+  if (unrated) {
+    toast.warning(`Vui lòng bấm chọn số sao đánh giá cho sản phẩm "${unrated.name}"!`, "Chưa chọn số sao ⭐");
+    return;
+  }
   const order = selectedOrderForReview.value;
   const orderId = String(order.orderId || order.id || "").replace(/^#/, "").trim();
   const storeName = getOrderStoreName(order);
+  const storeId = order.storeId || order.store?.id || "";
 
   isSubmittingReview.value = true;
   try {
-    const res = await apiFetch("/api/orders/reviews", {
+    const payload = {
+      orderId,
+      subOrderId: order.subOrderId || "",
+      storeId,
+      storeName,
+      buyerId: auth.currentUser.value?.id || "",
+      buyerName: currentAccountName.value,
+      buyerAvatar: auth.currentUser.value?.avatarUrl || (auth.currentUser.value as any)?.avatar || "",
+      rating: storeRating.value,
+      comment: storeComment.value,
+      shipperId: order.shipperId || order.shipper?.id || "",
+      shipperName: order.shipperName || order.shipper?.name || "Tài xế ZoneMart Express",
+      shipperRating: shipperRating.value,
+      shipperComment: shipperComment.value,
+      shipperTags: selectedShipperTags.value,
+      storeRating: storeRating.value,
+      storeComment: storeComment.value,
+      storeTags: selectedStoreTags.value,
+      productReviews: reviewProductItems.value.map(it => ({
+        productId: it.productId,
+        productName: it.name,
+        productImage: it.image,
+        rating: it.rating,
+        comment: it.comment,
+        tags: it.tags
+      }))
+    };
+
+    // 1. Cập nhật local rating ngay lập tức để Bảng Xếp Hạng phản ứng 0ms
+    catalog.recordLocalReview(payload);
+
+    // 2. Gửi đồng bộ lên backend API
+    await apiFetch("/api/orders/reviews", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        orderId,
-        subOrderId: order.subOrderId || "",
-        storeId: order.storeId || "",
-        storeName,
-        buyerId: auth.currentUser.value?.id || "",
-        buyerName: currentAccountName.value,
-        rating: reviewRating.value,
-        comment: reviewComment.value
-      })
-    });
+      body: JSON.stringify(payload)
+    }).catch(() => null);
 
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.success) {
-      alert(`Đánh giá ${reviewRating.value} sao cho ${storeName} thành công! Cảm ơn bạn.`);
-      ratedOrderIds.value.add(orderId);
-      closeReviewModal();
-    } else {
-      // Lưu offline/local nếu backend bận
-      alert(`Đã ghi nhận đánh giá ${reviewRating.value} sao của bạn! Cảm ơn bạn.`);
-      ratedOrderIds.value.add(orderId);
-      closeReviewModal();
-    }
-  } catch (e) {
-    alert(`Đã ghi nhận đánh giá ${reviewRating.value} sao của bạn! Cảm ơn bạn.`);
     ratedOrderIds.value.add(orderId);
+    try {
+      localStorage.setItem("zonemart_rated_order_ids", JSON.stringify(Array.from(ratedOrderIds.value)));
+    } catch {}
+
+    toast.success(
+      `Cảm ơn bạn! Đã ghi nhận đánh giá cho Tài xế, Gian hàng "${storeName}" và ${reviewProductItems.value.length} sản phẩm. Điểm số trung bình đã được cập nhật ngay trên sàn!`,
+      "Hoàn Tất Đánh Giá 🎉"
+    );
+    closeReviewModal();
+  } catch (e) {
+    ratedOrderIds.value.add(orderId);
+    try {
+      localStorage.setItem("zonemart_rated_order_ids", JSON.stringify(Array.from(ratedOrderIds.value)));
+    } catch {}
+    toast.success("Đã ghi nhận đánh giá của bạn! Cảm ơn bạn.", "Đã Ghi Nhận");
     closeReviewModal();
   } finally {
     isSubmittingReview.value = false;
@@ -632,6 +999,46 @@ const handleReportIssue = (order: any) => {
       </div>
     </div>
 
+    <!-- THANH ĐIỀU HƯỚNG TAB CHUẨN SHOPEE (TẤT CẢ, ĐANG GIAO, HOÀN THÀNH, SẢN PHẨM ĐÃ MUA) -->
+    <div class="buyer-orders-tabs-nav">
+      <button 
+        type="button"
+        class="tab-nav-btn" 
+        :class="{ active: activeFilterTab === 'all' }" 
+        @click="activeFilterTab = 'all'"
+      >
+        <i class="bi bi-collection-fill me-1"></i> Tất Cả Đơn ({{ orders.length }})
+      </button>
+
+      <button 
+        type="button"
+        class="tab-nav-btn" 
+        :class="{ active: activeFilterTab === 'delivering' }" 
+        @click="activeFilterTab = 'delivering'"
+      >
+        <i class="bi bi-bicycle me-1"></i> Đang Giao Hàng ({{ deliveringOrdersCount }})
+      </button>
+
+      <button 
+        type="button"
+        class="tab-nav-btn" 
+        :class="{ active: activeFilterTab === 'completed' }" 
+        @click="activeFilterTab = 'completed'"
+      >
+        <i class="bi bi-check-circle-fill me-1"></i> Đã Hoàn Thành ({{ completedOrdersCount }})
+      </button>
+
+      <button 
+        type="button"
+        class="tab-nav-btn highlight-shopee" 
+        :class="{ active: activeFilterTab === 'purchased_products' }" 
+        @click="activeFilterTab = 'purchased_products'"
+      >
+        <i class="bi bi-stars text-warning me-1"></i> Sản Phẩm Đã Mua & Đánh Giá ({{ allPurchasedProducts.length }})
+        <span class="badge-pending-rate" v-if="unratedProductsCount > 0">{{ unratedProductsCount }} chờ đánh giá</span>
+      </button>
+    </div>
+
     <!-- HIỆU ỨNG LOADING SKELETON (TASTE-SKILL TACTILE SHIMMER) -->
     <div v-if="isLoading" class="skeleton-orders-wrap">
       <div class="sync-status-indicator">
@@ -688,9 +1095,83 @@ const handleReportIssue = (order: any) => {
       </div>
     </div>
 
-    <!-- DANH SÁCH ĐƠN HÀNG -->
-    <div v-else-if="orders.length > 0" class="orders-list">
-      <div v-for="order in orders" :key="order.orderId || order.id" class="order-card">
+    <!-- GIAO DIỆN TAB: SẢN PHẨM ĐÃ MUA & ĐÁNH GIÁ (CHUẨN SHOPEE) -->
+    <div v-else-if="activeFilterTab === 'purchased_products'" class="purchased-products-view">
+      <div class="purchased-header-intro">
+        <div class="intro-left">
+          <h3><i class="bi bi-bag-check-fill text-success me-2"></i>Các Sản Phẩm Bạn Đã Mua</h3>
+          <p>Chỉ những sản phẩm từ đơn hàng đã giao thành công mới có thể gửi đánh giá xác thực (Chuẩn Shopee).</p>
+        </div>
+        <div class="intro-right-stats">
+          <span class="stat-pill">Tổng đã mua: <strong>{{ allPurchasedProducts.length }}</strong> món</span>
+          <span class="stat-pill highlight" v-if="unratedProductsCount > 0">Chưa đánh giá: <strong>{{ unratedProductsCount }}</strong> món</span>
+        </div>
+      </div>
+
+      <div v-if="allPurchasedProducts.length === 0" class="empty-purchased-card">
+        <div class="empty-icon-wrap"><i class="bi bi-box2-heart"></i></div>
+        <h4>Chưa có sản phẩm đã mua nào hoàn tất</h4>
+        <p>Khi bạn nhận hàng thành công từ shipper, các món hàng sẽ hiển thị ở đây để bạn chấm sao và viết cảm nhận giống Shopee!</p>
+        <router-link to="/products" class="btn btn-warning fw-bold text-dark btn-sm">
+          <i class="bi bi-cart-plus me-1"></i> Khám phá mua sắm ngay
+        </router-link>
+      </div>
+
+      <div v-else class="purchased-products-grid">
+        <div 
+          v-for="entry in allPurchasedProducts" 
+          :key="entry.uniqueKey" 
+          class="purchased-product-card"
+        >
+          <div class="card-thumb-wrap" @click="goToProductDetail(entry)" title="Bấm để xem sản phẩm">
+            <img :src="entry.image" :alt="entry.name" class="card-thumb-img" @error="handleImgError" />
+            <span class="qty-badge-float">x{{ entry.quantity }}</span>
+          </div>
+
+          <div class="card-content-wrap">
+            <div class="card-top-row">
+              <span class="store-badge-tag"><i class="bi bi-shop me-1"></i>{{ entry.storeName }}</span>
+              <span class="order-code-tag">#{{ entry.orderId }} • {{ entry.orderDate }}</span>
+            </div>
+
+            <h4 class="card-prod-title" @click="goToProductDetail(entry)">{{ entry.name }}</h4>
+
+            <div class="card-price-row">
+              <span class="unit-price" v-if="entry.price > 0">{{ formatPrice(entry.price) }}</span>
+              <span class="subtotal-text" v-if="entry.price > 0">Tổng: <strong>{{ formatPrice(entry.price * entry.quantity) }}</strong></span>
+            </div>
+
+            <div class="card-action-bar">
+              <!-- Nút trạng thái Đánh giá -->
+              <div v-if="ratedProductsMap[entry.uniqueKey] || ratedProductsMap[entry.productId]" class="rated-status-group">
+                <span class="badge bg-success-subtle text-success border border-success-subtle p-2">
+                  <i class="bi bi-patch-check-fill text-success me-1"></i>
+                  Đã đánh giá {{ (ratedProductsMap[entry.uniqueKey] || ratedProductsMap[entry.productId]).rating }}★
+                </span>
+                <button type="button" class="btn btn-sm btn-outline-secondary btn-re-review" @click="openSingleProductReviewModal(entry)">
+                  <i class="bi bi-pencil-square me-1"></i> Xem / Sửa
+                </button>
+              </div>
+
+              <div v-else class="unrated-status-group">
+                <button type="button" class="btn btn-sm btn-warning text-dark fw-bold btn-shopee-rate" @click="openSingleProductReviewModal(entry)">
+                  <i class="bi bi-star-fill text-dark me-1"></i> Đánh Giá Sản Phẩm
+                </button>
+                <span class="rate-incentive-hint"><i class="bi bi-award-fill text-warning me-1"></i>Tích lũy điểm uy tín</span>
+              </div>
+
+              <button type="button" class="btn btn-sm btn-outline-primary ms-auto btn-buy-again-mini" @click="goToProductDetail(entry)">
+                <i class="bi bi-arrow-repeat me-1"></i> Mua Lại
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DANH SÁCH ĐƠN HÀNG (LỌC THEO TAB TẤT CẢ, ĐANG GIAO, HOÀN THÀNH) -->
+    <div v-else-if="filteredOrders.length > 0" class="orders-list">
+      <div v-for="order in filteredOrders" :key="order.orderId || order.id" class="order-card">
         <!-- HEADER ĐƠN HÀNG -->
         <div class="order-top">
           <div class="order-meta-info">
@@ -787,10 +1268,25 @@ const handleReportIssue = (order: any) => {
                 </div>
               </div>
 
-              <!-- Thành tiền sản phẩm -->
+              <!-- Thành tiền sản phẩm & Nút đánh giá món lẻ (Chuẩn Shopee) -->
               <div class="product-subtotal-box" v-if="item.price > 0">
                 <span class="subtotal-label">Thành tiền:</span>
                 <strong class="subtotal-amount">{{ formatPrice((item.price || 0) * (item.quantity || 1)) }}</strong>
+                
+                <div class="inline-item-rate-wrap" v-if="getOrderStatusClass(order.status) === 'completed' || order.status === 'completed'">
+                  <button 
+                    v-if="!isProductItemRated(order.orderId || order.id, item)" 
+                    type="button"
+                    class="btn btn-xs btn-outline-warning btn-rate-item-inline"
+                    @click.stop="openSingleProductReviewModalFromOrder(item, order)"
+                    title="Đánh giá chất lượng riêng cho sản phẩm này"
+                  >
+                    <i class="bi bi-star-fill text-warning me-1"></i> Đánh giá món
+                  </button>
+                  <span v-else class="badge-rated-item-inline">
+                    <i class="bi bi-check-circle-fill text-success me-1"></i> Đã đánh giá {{ getProductItemRating(order.orderId || order.id, item) }}★
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -884,60 +1380,298 @@ const handleReportIssue = (order: any) => {
       </router-link>
     </div>
 
-    <!-- MODAL ĐÁNH GIÁ ĐƠN HÀNG & CHẤM SAO (MÔ HÌNH CHỢ ĐỊA PHƯƠNG SỐ) -->
+    <!-- MODAL ĐÁNH GIÁ 3 PHÂN HỆ: TÀI XẾ, GIAN HÀNG & TỪNG SẢN PHẨM -->
     <div v-if="showReviewModal" class="review-modal-backdrop" @click.self="closeReviewModal">
-      <div class="review-modal-card">
+      <div class="review-modal-dialog">
         <div class="review-modal-header">
           <div class="review-modal-title">
-            <i class="bi bi-star-fill text-warning me-2"></i>
-            Đánh Giá Đơn Hàng & Chợ Địa Phương
+            <div class="review-header-icon"><i class="bi bi-stars"></i></div>
+            <div>
+              <h3>Đánh Giá Đơn Hàng #{{ String(selectedOrderForReview?.orderId || selectedOrderForReview?.id).replace(/^#/, '') }}</h3>
+              <p>Phản hồi của bạn giúp tối ưu thứ hạng sản phẩm & chất lượng phục vụ</p>
+            </div>
           </div>
-          <button type="button" class="btn-close-review" @click="closeReviewModal">×</button>
+          <button type="button" class="btn-close-review" @click="closeReviewModal" title="Đóng">&times;</button>
         </div>
 
-        <div class="review-modal-body" v-if="selectedOrderForReview">
-          <p class="review-order-info">
-            Đơn hàng: <strong>#{{ String(selectedOrderForReview.orderId || selectedOrderForReview.id).replace(/^#/, '') }}</strong>
-            <br />
-            Gian hàng: <span class="badge bg-warning text-dark">{{ getOrderStoreName(selectedOrderForReview) }}</span>
-          </p>
+        <div class="review-modal-scrollable-body" v-if="selectedOrderForReview">
+          
+          <!-- PHÂN HỆ 1: ĐÁNH GIÁ TÀI XẾ (SHIPPER) -->
+          <div class="review-section-card shipper-card">
+            <div class="section-card-header">
+              <div class="section-icon shipper-icon"><i class="bi bi-bicycle"></i></div>
+              <div class="section-info">
+                <h4>1. Đánh Giá Tài Xế Giao Vận</h4>
+                <p>{{ selectedOrderForReview.shipperName || selectedOrderForReview.shipper?.name || 'Tài xế ZoneMart Hỏa Tốc' }} (Bán kính 10km)</p>
+              </div>
+            </div>
 
-          <div class="rating-stars-container">
-            <span class="rating-prompt">Mức độ hài lòng của bạn:</span>
-            <div class="stars-row">
-              <span 
-                v-for="star in 5" 
-                :key="star" 
-                class="star-icon" 
-                :class="{ 'active': star <= reviewRating }"
-                @click="reviewRating = star"
-              >
-                ★
+            <div class="interactive-stars-box">
+              <div class="stars-selector">
+                <span 
+                  v-for="s in 5" 
+                  :key="s" 
+                  class="star-item" 
+                  :class="{ active: s <= shipperRating }"
+                  @click="shipperRating = s"
+                >★</span>
+              </div>
+              <span class="rating-badge-text">
+                {{ shipperRating === 5 ? '⭐ 5/5 - Giao siêu nhanh & thân thiện' : shipperRating === 4 ? '⭐ 4/5 - Hài lòng, giao đúng hẹn' : shipperRating === 3 ? '⭐ 3/5 - Bình thường' : shipperRating === 2 ? '⭐ 2/5 - Giao chậm trễ' : '⭐ 1/5 - Thái độ chưa tốt' }}
               </span>
             </div>
-            <span class="rating-text-label">
-              {{ reviewRating === 5 ? 'Tuyệt vời (5/5 sao)' : reviewRating === 4 ? 'Hài lòng (4/5 sao)' : reviewRating === 3 ? 'Bình thường (3/5 sao)' : reviewRating === 2 ? 'Chưa hài lòng (2/5 sao)' : 'Rất tệ (1/5 sao)' }}
-            </span>
+
+            <div class="quick-tags-container">
+              <button 
+                v-for="tag in defaultShipperTags" 
+                :key="tag" 
+                type="button" 
+                class="quick-tag-pill" 
+                :class="{ active: selectedShipperTags.includes(tag) }"
+                @click="toggleTag(selectedShipperTags, tag)"
+              >
+                {{ tag }}
+              </button>
+            </div>
+
+            <input 
+              v-model="shipperComment" 
+              type="text" 
+              class="form-control review-input-text" 
+              placeholder="Lời khen hoặc góp ý thêm cho shipper (tùy chọn)..." 
+            />
           </div>
 
-          <div class="review-comment-box">
-            <label class="comment-label">Nhận xét chi tiết về chất lượng sản phẩm & dịch vụ giao hàng:</label>
-            <textarea
-              v-model="reviewComment"
-              class="form-control review-textarea"
-              rows="3"
-              placeholder="Chia sẻ cảm nhận của bạn về độ tươi sạch của nông sản, thái độ phục vụ của gian hàng và tài xế giao vận..."
-            ></textarea>
+          <!-- PHÂN HỆ 2: ĐÁNH GIÁ GIAN HÀNG (STORE) -->
+          <div class="review-section-card store-card">
+            <div class="section-card-header">
+              <div class="section-icon store-icon"><i class="bi bi-shop"></i></div>
+              <div class="section-info">
+                <h4>2. Đánh Giá Gian Hàng</h4>
+                <p><strong>{{ getOrderStoreName(selectedOrderForReview) }}</strong> • Chuẩn bị & đóng gói</p>
+              </div>
+            </div>
+
+            <div class="interactive-stars-box">
+              <div class="stars-selector">
+                <span 
+                  v-for="s in 5" 
+                  :key="s" 
+                  class="star-item" 
+                  :class="{ active: s <= storeRating }"
+                  @click="storeRating = s"
+                >★</span>
+              </div>
+              <span class="rating-badge-text">
+                {{ storeRating === 5 ? '⭐ 5/5 - Gian hàng uy tín, hàng chuẩn' : storeRating === 4 ? '⭐ 4/5 - Đóng gói tốt, giao đủ' : storeRating === 3 ? '⭐ 3/5 - Bình thường' : storeRating === 2 ? '⭐ 2/5 - Đóng gói sơ sài' : '⭐ 1/5 - Thiếu hàng / Hàng kém chất lượng' }}
+              </span>
+            </div>
+
+            <div class="quick-tags-container">
+              <button 
+                v-for="tag in defaultStoreTags" 
+                :key="tag" 
+                type="button" 
+                class="quick-tag-pill" 
+                :class="{ active: selectedStoreTags.includes(tag) }"
+                @click="toggleTag(selectedStoreTags, tag)"
+              >
+                {{ tag }}
+              </button>
+            </div>
+
+            <input 
+              v-model="storeComment" 
+              type="text" 
+              class="form-control review-input-text" 
+              placeholder="Cảm nhận về quy cách phục vụ của gian hàng..." 
+            />
           </div>
+
+          <!-- PHÂN HỆ 3: ĐÁNH GIÁ TỪNG SẢN PHẨM TRONG ĐƠN -->
+          <div class="review-section-card products-card">
+            <div class="section-card-header">
+              <div class="section-icon product-icon"><i class="bi bi-basket3-fill"></i></div>
+              <div class="section-info">
+                <h4>3. Đánh Giá Chi Tiết Từng Sản Phẩm ({{ reviewProductItems.length }} món)</h4>
+                <p>Điểm số sẽ được tính trung bình động và đưa món ngon nhất lên đầu sàn</p>
+              </div>
+            </div>
+
+            <div class="product-review-list">
+              <div 
+                v-for="(item, idx) in reviewProductItems" 
+                :key="item.productId || idx" 
+                class="product-item-review-row"
+              >
+                <div class="product-thumb-col">
+                  <img :src="item.image" :alt="item.name" class="p-thumb-img" @error="handleImgError" />
+                </div>
+                <div class="product-review-details-col">
+                  <div class="p-header-info">
+                    <strong class="p-name">{{ item.name }}</strong>
+                    <span class="p-qty badge bg-light text-dark border">x{{ item.quantity }}</span>
+                  </div>
+
+                  <div class="interactive-stars-box mini">
+                    <div class="stars-selector">
+                      <span 
+                        v-for="s in 5" 
+                        :key="s" 
+                        class="star-item mini" 
+                        :class="{ active: s <= item.rating }"
+                        @click="item.rating = s"
+                      >★</span>
+                    </div>
+                    <span class="p-rating-label">
+                      {{ item.rating === 5 ? 'Rất tươi ngon (5★)' : item.rating === 4 ? 'Tươi ngon (4★)' : item.rating === 3 ? 'Ổn (3★)' : item.rating === 2 ? 'Kém tươi (2★)' : 'Hỏng / Dập (1★)' }}
+                    </span>
+                  </div>
+
+                  <div class="quick-tags-container mini">
+                    <button 
+                      v-for="tag in defaultProductTags" 
+                      :key="tag" 
+                      type="button" 
+                      class="quick-tag-pill mini" 
+                      :class="{ active: item.tags.includes(tag) }"
+                      @click="toggleTag(item.tags, tag)"
+                    >
+                      {{ tag }}
+                    </button>
+                  </div>
+
+                  <textarea 
+                    v-model="item.comment" 
+                    rows="2" 
+                    class="form-control review-textarea-small" 
+                    placeholder="Nhận xét độ tươi, vị ngon, đóng gói của món này..."
+                  ></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <div class="review-modal-footer">
           <button type="button" class="btn btn-secondary btn-sm" @click="closeReviewModal" :disabled="isSubmittingReview">
             Hủy Bỏ
           </button>
-          <button type="button" class="btn btn-warning btn-sm fw-bold text-dark" @click="submitReview" :disabled="isSubmittingReview">
-            <i class="bi bi-send-fill me-1"></i>
-            {{ isSubmittingReview ? 'Đang gửi...' : 'Gửi Đánh Giá' }}
+          <button type="button" class="btn btn-warning btn-sm fw-bold text-dark btn-submit-rating" @click="submitReview" :disabled="isSubmittingReview">
+            <i class="bi bi-star-fill text-dark me-1" v-if="!isSubmittingReview"></i>
+            <span class="spinner-border spinner-border-sm me-1" v-else></span>
+            {{ isSubmittingReview ? 'Đang lưu đánh giá & tính xếp hạng...' : 'Gửi Đánh Giá & Cập Nhật Bảng Xếp Hạng' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL ĐÁNH GIÁ RIÊNG SẢN PHẨM ĐÃ MUA (CHUẨN SHOPEE) -->
+    <div v-if="showSingleProductModal && singleReviewProduct" class="review-modal-backdrop" @click.self="showSingleProductModal = false">
+      <div class="review-modal-dialog">
+        <div class="review-modal-header">
+          <div class="review-modal-title">
+            <div class="review-header-icon"><i class="bi bi-star-fill"></i></div>
+            <div>
+              <h3>Đánh Giá Sản Phẩm Đã Mua</h3>
+              <p>Mã đơn: #{{ singleReviewProduct.orderId }} • Gian hàng: {{ singleReviewProduct.storeName }}</p>
+            </div>
+          </div>
+          <button type="button" class="btn-close-review" @click="showSingleProductModal = false" title="Đóng">&times;</button>
+        </div>
+
+        <div class="review-modal-scrollable-body">
+          <!-- Card Sản phẩm đang đánh giá -->
+          <div class="single-prod-eval-card">
+            <div class="eval-thumb-col">
+              <img :src="singleReviewProduct.image" :alt="singleReviewProduct.name" class="eval-thumb-img" @error="handleImgError" />
+            </div>
+            <div class="eval-details-col">
+              <strong class="eval-prod-name">{{ singleReviewProduct.name }}</strong>
+              <div class="eval-meta-row">
+                <span class="badge bg-light text-dark border">Số lượng: x{{ singleReviewProduct.quantity }}</span>
+                <span class="eval-price" v-if="singleReviewProduct.price > 0">{{ formatPrice(singleReviewProduct.price) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bộ Chấm Sao Tương Tác Lớn Cho Món Ăn -->
+          <div class="review-section-card">
+            <div class="stars-prompt-label">Chất lượng sản phẩm & độ hài lòng:</div>
+            <div class="interactive-stars-box large-center">
+              <div class="stars-selector">
+                <span 
+                  v-for="s in 5" 
+                  :key="s" 
+                  class="star-item large" 
+                  :class="{ active: singleProductRating > 0 && s <= singleProductRating }"
+                  @click="singleProductRating = s"
+                >★</span>
+              </div>
+              <span class="rating-badge-text fs-6" :class="{ 'text-muted': singleProductRating === 0 }">
+                {{ singleProductRating === 5 ? '⭐ Tuyệt vời - Rất tươi ngon & chuẩn vị' : singleProductRating === 4 ? '⭐ Hài lòng - Món ăn ngon, đúng mô tả' : singleProductRating === 3 ? '⭐ Bình thường - Ăn tạm được' : singleProductRating === 2 ? '⭐ Kém chất lượng - Không tươi' : singleProductRating === 1 ? '⭐ Rất tệ - Hỏng hoặc dập ôi' : '👉 Vui lòng bấm chọn số sao đánh giá (1-5 sao)' }}
+              </span>
+            </div>
+
+            <!-- Gợi ý Tag Đánh Giá Nhanh -->
+            <div class="quick-tags-container">
+              <button 
+                v-for="tag in defaultProductTags" 
+                :key="tag" 
+                type="button" 
+                class="quick-tag-pill" 
+                :class="{ active: singleProductTags.includes(tag) }"
+                @click="toggleTag(singleProductTags, tag)"
+              >
+                {{ tag }}
+              </button>
+            </div>
+
+            <!-- Ô nhận xét chi tiết -->
+            <textarea 
+              v-model="singleProductComment" 
+              rows="3" 
+              class="form-control review-textarea" 
+              placeholder="Hãy chia sẻ trải nghiệm thực tế về độ tươi ngon, hương vị, đóng gói của món ăn này để giúp đỡ người mua khác nhé..."
+            ></textarea>
+          </div>
+
+          <!-- Mở rộng: Đánh giá kèm Dịch Vụ Người Bán & Vận Chuyển (Tùy chọn giống Shopee) -->
+          <div class="accordion-extra-review">
+            <button type="button" class="btn-toggle-extra" @click="showExtraReview = !showExtraReview">
+              <span><i class="bi bi-sliders me-1"></i> Đánh giá thêm dịch vụ Người bán & Shipper (Tùy chọn)</span>
+              <i class="bi" :class="showExtraReview ? 'bi-chevron-up' : 'bi-chevron-down'"></i>
+            </button>
+
+            <div v-if="showExtraReview" class="extra-eval-content">
+              <!-- Gian hàng -->
+              <div class="extra-eval-row">
+                <span class="extra-label"><i class="bi bi-shop text-warning me-1"></i> Dịch vụ người bán:</span>
+                <div class="stars-selector">
+                  <span v-for="s in 5" :key="s" class="star-item mini" :class="{ active: s <= singleStoreRating }" @click="singleStoreRating = s">★</span>
+                </div>
+              </div>
+
+              <!-- Shipper -->
+              <div class="extra-eval-row">
+                <span class="extra-label"><i class="bi bi-bicycle text-primary me-1"></i> Tốc độ giao vận:</span>
+                <div class="stars-selector">
+                  <span v-for="s in 5" :key="s" class="star-item mini" :class="{ active: s <= singleShipperRating }" @click="singleShipperRating = s">★</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="review-modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" @click="showSingleProductModal = false" :disabled="isSubmittingReview">
+            Hủy Bỏ
+          </button>
+          <button type="button" class="btn btn-warning btn-sm fw-bold text-dark btn-submit-rating" @click="submitSingleProductReview" :disabled="isSubmittingReview">
+            <i class="bi bi-send-fill me-1" v-if="!isSubmittingReview"></i>
+            <span class="spinner-border spinner-border-sm me-1" v-else></span>
+            {{ isSubmittingReview ? 'Đang gửi...' : 'Hoàn Tất & Gửi Đánh Giá' }}
           </button>
         </div>
       </div>
@@ -2172,12 +2906,12 @@ const handleReportIssue = (order: any) => {
   to { transform: translateY(0); opacity: 1; }
 }
 
-/* MODAL ĐÁNH GIÁ ĐƠN HÀNG */
+/* MODAL ĐÁNH GIÁ ĐƠN HÀNG ĐA PHÂN HỆ */
 .review-modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(4px);
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(5px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2185,12 +2919,15 @@ const handleReportIssue = (order: any) => {
   padding: 16px;
 }
 
-.review-modal-card {
+.review-modal-dialog {
   background: #ffffff;
-  border-radius: 16px;
+  border-radius: 20px;
   width: 100%;
-  max-width: 480px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  max-width: 660px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   overflow: hidden;
   animation: modalPopIn 0.25s ease-out;
 }
@@ -2201,119 +2938,285 @@ const handleReportIssue = (order: any) => {
 }
 
 .review-modal-header {
-  padding: 16px 20px;
-  background: #fff7ed;
+  padding: 16px 22px;
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
   border-bottom: 1px solid #fed7aa;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .review-modal-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #9a3412;
   display: flex;
   align-items: center;
+  gap: 12px;
+}
+
+.review-header-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #ea580c;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  box-shadow: 0 4px 10px rgba(234, 88, 12, 0.3);
+}
+
+.review-modal-title h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #9a3412;
+  margin: 0;
+}
+
+.review-modal-title p {
+  font-size: 12px;
+  color: #78350f;
+  margin: 2px 0 0 0;
 }
 
 .btn-close-review {
   background: transparent;
   border: none;
-  font-size: 24px;
+  font-size: 28px;
   line-height: 1;
   color: #9a3412;
   cursor: pointer;
+  padding: 0 4px;
 }
 
-.review-modal-body {
-  padding: 20px;
+.review-modal-scrollable-body {
+  padding: 18px 22px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: #f8fafc;
 }
 
-.review-order-info {
-  font-size: 13.5px;
-  color: #334155;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
+.review-section-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.section-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
   border-bottom: 1px dashed #e2e8f0;
 }
 
-.rating-stars-container {
+.section-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  margin-bottom: 18px;
+  justify-content: center;
+  font-size: 18px;
 }
 
-.rating-prompt {
-  font-size: 13px;
-  font-weight: 600;
-  color: #475569;
-  margin-bottom: 8px;
+.shipper-icon { background: #dbeafe; color: #1d4ed8; }
+.store-icon { background: #fef3c7; color: #b45309; }
+.product-icon { background: #dcfce7; color: #15803d; }
+
+.section-info h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
 }
 
-.stars-row {
+.section-info p {
+  font-size: 12px;
+  color: #64748b;
+  margin: 2px 0 0 0;
+}
+
+.interactive-stars-box {
   display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.interactive-stars-box.mini {
+  margin-bottom: 8px;
   gap: 8px;
 }
 
-.star-icon {
-  font-size: 32px;
+.stars-selector {
+  display: flex;
+  gap: 4px;
+}
+
+.star-item {
+  font-size: 28px;
   color: #cbd5e1;
   cursor: pointer;
   transition: transform 0.15s ease, color 0.15s ease;
   user-select: none;
+  line-height: 1;
 }
 
-.star-icon:hover {
+.star-item:hover {
   transform: scale(1.2);
 }
 
-.star-icon.active {
+.star-item.active {
   color: #eab308;
 }
 
-.rating-text-label {
+.star-item.mini {
+  font-size: 20px;
+}
+
+.rating-badge-text {
   font-size: 12.5px;
   font-weight: 600;
   color: #d97706;
-  margin-top: 6px;
 }
 
-.review-comment-box {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.comment-label {
-  font-size: 12px;
+.p-rating-label {
+  font-size: 11.5px;
   font-weight: 600;
+  color: #059669;
+}
+
+.quick-tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.quick-tags-container.mini {
+  margin-bottom: 8px;
+  gap: 5px;
+}
+
+.quick-tag-pill {
+  border: 1px solid #e2e8f0;
+  background: #f1f5f9;
   color: #475569;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-.review-textarea {
-  width: 100%;
+.quick-tag-pill:hover {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+}
+
+.quick-tag-pill.active {
+  background: #ffedd5;
+  border-color: #fdba74;
+  color: #c2410c;
+  font-weight: 600;
+}
+
+.quick-tag-pill.mini {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.review-input-text {
   border-radius: 8px;
+  font-size: 12.5px;
   border: 1px solid #cbd5e1;
-  padding: 10px;
-  font-size: 13px;
-  outline: none;
-  resize: vertical;
+  padding: 8px 12px;
 }
 
-.review-textarea:focus {
+.review-input-text:focus, .review-textarea-small:focus {
   border-color: #f97316;
   box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
 }
 
-.review-modal-footer {
-  padding: 12px 20px;
+.review-textarea-small {
+  border-radius: 8px;
+  font-size: 12px;
+  border: 1px solid #cbd5e1;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.product-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.product-item-review-row {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
   background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.product-thumb-col {
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+}
+
+.p-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.product-review-details-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.p-header-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.p-name {
+  font-size: 13px;
+  color: #1e293b;
+}
+
+.p-qty {
+  font-size: 11px;
+}
+
+.review-modal-footer {
+  padding: 14px 22px;
+  background: #ffffff;
   border-top: 1px solid #e2e8f0;
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  flex-shrink: 0;
+}
+
+.btn-submit-rating {
+  box-shadow: 0 4px 12px rgba(234, 179, 8, 0.3);
 }
 
 /* ==========================================================
@@ -2752,4 +3655,471 @@ const handleReportIssue = (order: any) => {
   background: #334155;
   transform: translateY(-1px);
 }
+
+/* ==========================================================
+   SHOPEE-STYLE TABS NAVIGATION BAR (TASTE-SKILL / BENTO UI)
+   ========================================================== */
+.buyer-orders-tabs-nav {
+  display: flex;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 6px;
+  gap: 6px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.buyer-orders-tabs-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-nav-btn {
+  flex: 1;
+  min-width: fit-content;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 12px 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.tab-nav-btn:hover {
+  color: #1e293b;
+  background: #f8fafc;
+}
+
+.tab-nav-btn.active {
+  background: #fff7ed;
+  color: #ea580c;
+  border-color: #fed7aa;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(234, 88, 12, 0.12);
+}
+
+.tab-nav-btn.highlight-shopee {
+  color: #d97706;
+}
+
+.tab-nav-btn.highlight-shopee:hover {
+  color: #b45309;
+  background: #fefce8;
+}
+
+.tab-nav-btn.highlight-shopee.active {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+}
+
+.badge-pending-rate {
+  background: #ea580c;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.35);
+  animation: pulseBadge 2s infinite ease-in-out;
+}
+
+@keyframes pulseBadge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+/* Purchased products tab view */
+.purchased-products-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.purchased-header-intro {
+  background: linear-gradient(135deg, #ffffff 0%, #fff7ed 100%);
+  border: 1px solid #fed7aa;
+  border-radius: 16px;
+  padding: 18px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  box-shadow: 0 2px 10px rgba(234, 88, 12, 0.05);
+}
+
+.intro-left h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  display: flex;
+  align-items: center;
+}
+
+.intro-left p {
+  font-size: 12.5px;
+  color: #64748b;
+  margin: 4px 0 0 0;
+}
+
+.intro-right-stats {
+  display: flex;
+  gap: 8px;
+}
+
+.stat-pill {
+  font-size: 12px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  padding: 6px 12px;
+  border-radius: 20px;
+}
+
+.stat-pill.highlight {
+  background: #ffedd5;
+  border-color: #fdba74;
+  color: #c2410c;
+  font-weight: 600;
+}
+
+.purchased-products-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .purchased-products-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.purchased-product-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  gap: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.purchased-product-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(249, 115, 22, 0.1);
+  border-color: #fed7aa;
+}
+
+.card-thumb-wrap {
+  width: 84px;
+  height: 84px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  position: relative;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.card-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.qty-badge-float {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: rgba(15, 23, 42, 0.85);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.card-content-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.store-badge-tag {
+  font-size: 11.5px;
+  color: #ea580c;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+}
+
+.order-code-tag {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.card-prod-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 6px 0;
+  cursor: pointer;
+  line-height: 1.35;
+}
+
+.card-prod-title:hover {
+  color: #ea580c;
+}
+
+.card-price-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  margin-bottom: 12px;
+}
+
+.card-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  flex-wrap: wrap;
+}
+
+.unrated-status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-shopee-rate {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff;
+  box-shadow: 0 3px 10px rgba(245, 158, 11, 0.35);
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.btn-shopee-rate:hover {
+  transform: translateY(-1px);
+}
+
+.rate-incentive-hint {
+  font-size: 11px;
+  color: #b45309;
+}
+
+.rated-status-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-re-review {
+  font-size: 11.5px;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.btn-buy-again-mini {
+  font-size: 11.5px;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.empty-purchased-card {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 56px 24px;
+  text-align: center;
+  border: 1px dashed #cbd5e1;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+}
+
+.empty-icon-wrap {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: #fff7ed;
+  color: #ea580c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  margin: 0 auto 16px auto;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.15);
+}
+
+.empty-purchased-card h4 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 6px;
+}
+
+.empty-purchased-card p {
+  font-size: 13.5px;
+  color: #64748b;
+  max-width: 460px;
+  margin: 0 auto 20px auto;
+  line-height: 1.6;
+}
+
+/* Inline product review in order cards */
+.inline-item-rate-wrap {
+  margin-top: 6px;
+}
+
+.btn-rate-item-inline {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.badge-rated-item-inline {
+  font-size: 11px;
+  color: #059669;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+}
+
+/* Single product review modal specifics */
+.single-prod-eval-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.eval-thumb-col {
+  width: 68px;
+  height: 68px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  flex-shrink: 0;
+}
+
+.eval-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.eval-details-col {
+  flex: 1;
+}
+
+.eval-prod-name {
+  font-size: 14.5px;
+  color: #1e293b;
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.eval-meta-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.eval-price {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ea580c;
+}
+
+.stars-prompt-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 8px;
+}
+
+.interactive-stars-box.large-center {
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+.star-item.large {
+  font-size: 40px;
+}
+
+.accordion-extra-review {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.btn-toggle-extra {
+  width: 100%;
+  background: #f8fafc;
+  border: none;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+}
+
+.extra-eval-content {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.extra-eval-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.extra-label {
+  font-size: 13px;
+  color: #334155;
+}
+
 </style>

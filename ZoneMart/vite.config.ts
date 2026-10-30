@@ -1321,6 +1321,20 @@ export default defineConfig({
         target: 'http://127.0.0.1:5000',
         changeOrigin: true,
         xfwd: true,
+        configure: (proxy) => {
+          proxy.on('error', (_err, _req, res) => {
+            if (res && 'writeHead' in res && !(res as any).headersSent) {
+              try {
+                (res as any).writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' })
+                res.end(JSON.stringify({
+                  success: false,
+                  initializing: true,
+                  message: 'Backend .NET dang khoi dong, vui long thu lai trong giay lat...',
+                }))
+              } catch {}
+            }
+          })
+        },
       },
     },
     hmr: {
