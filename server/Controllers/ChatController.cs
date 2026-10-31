@@ -64,6 +64,11 @@ namespace ZoneMart.Server.Controllers
                 return BadRequest(new { success = false, message = "Nội dung tin nhắn không được để trống." });
             }
 
+            if (msg.Content != null && msg.Content.Length > 5000)
+            {
+                return BadRequest(new { success = false, message = "Nội dung tin nhắn quá dài (tối đa 5000 ký tự)!" });
+            }
+
             var saved = _chatManager.SendMessage(msg);
             return Ok(new { success = true, message = saved });
         }

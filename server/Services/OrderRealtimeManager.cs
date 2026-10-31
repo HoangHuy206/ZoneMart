@@ -34,7 +34,7 @@ namespace ZoneMart.Server.Services
         public OrderRealtimeManager(IConfiguration? configuration = null, IHttpClientFactory? httpClientFactory = null)
         {
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            var projectRoot = Directory.GetParent(baseDir)?.Parent?.Parent?.Parent?.FullName ?? baseDir;
+            var projectRoot = ResolveProjectRoot(baseDir);
             
             _realtimeOrdersFilePath = Path.Combine(projectRoot, ".pending_realtime_orders.json");
             _registeredOrdersFilePath = Path.Combine(projectRoot, ".pending_orders.json");
@@ -42,7 +42,8 @@ namespace ZoneMart.Server.Services
 
             _sepayApiKey = configuration?["SepaySettings:ApiKey"]
                 ?? Environment.GetEnvironmentVariable("SEPAY_API_KEY")
-                ?? "J5P9SPVE9WO46FWFBHOWUPAIIU1VDYAMLYFDGQRBI2NQKMLEXZTOHUZWQFI7RVAD";
+                ?? "";
+            if (_sepayApiKey.Contains("YOUR_SEPAY")) _sepayApiKey = "";
 
             _httpClient = httpClientFactory?.CreateClient() ?? new HttpClient();
             _httpClient.Timeout = TimeSpan.FromSeconds(10);
@@ -51,6 +52,23 @@ namespace ZoneMart.Server.Services
 
             // Khởi chạy timer tự động quét SePay giao dịch ngân hàng TPBank thật mỗi 2 giây
             _sepayTimer = new Timer(async _ => await PollSepayTransactionsAsync(), null, 1000, 2000);
+        }
+
+        
+        private static string ResolveProjectRoot(string baseDir)
+        {
+            var current = new DirectoryInfo(baseDir);
+            while (current != null)
+            {
+                if (File.Exists(Path.Combine(current.FullName, "server.csproj")) ||
+                    File.Exists(Path.Combine(current.FullName, "ZoneMart.sln")) ||
+                    Directory.Exists(Path.Combine(current.FullName, "server")))
+                {
+                    return current.FullName;
+                }
+                current = current.Parent;
+            }
+            return baseDir;
         }
 
         private void LoadFromDisk()

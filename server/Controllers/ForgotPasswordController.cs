@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using System.Collections.Concurrent;
 using System.Net;
 using Microsoft.AspNetCore.Mvc;
@@ -13,6 +14,7 @@ namespace ZoneMart.Server.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[EnableRateLimiting("auth-rate-limit")]
 public class ForgotPasswordController : ControllerBase
 {
     private readonly MongoDbService _mongoService;
@@ -487,11 +489,19 @@ public class ForgotPasswordController : ControllerBase
     /// </summary>
     public static async Task<bool> SendEmailViaMailKitAsync(string toEmail, string subject, string htmlBody, string senderName = "ZoneMart Security")
     {
-        var accounts = new (string Email, string Password)[]
+        var accounts = new List<(string Email, string Password)>();
+        var envSender = Environment.GetEnvironmentVariable("GMAIL_SENDER_EMAIL");
+        var envPass = Environment.GetEnvironmentVariable("GMAIL_APP_PASSWORD");
+        if (!string.IsNullOrWhiteSpace(envSender) && !string.IsNullOrWhiteSpace(envPass))
         {
-            ("dobinh225599@gmail.com", "pihzfkraulkrrccz"),
-            ("hh9393100@gmail.com", "bjgiqgdpcozzfqip")
-        };
+            accounts.Add((envSender.Trim(), envPass.Replace(" ", "").Trim()));
+        }
+        var envBackupSender = Environment.GetEnvironmentVariable("GMAIL_BACKUP_EMAIL");
+        var envBackupPass = Environment.GetEnvironmentVariable("GMAIL_BACKUP_APP_PASSWORD");
+        if (!string.IsNullOrWhiteSpace(envBackupSender) && !string.IsNullOrWhiteSpace(envBackupPass))
+        {
+            accounts.Add((envBackupSender.Trim(), envBackupPass.Replace(" ", "").Trim()));
+        }
 
         foreach (var account in accounts)
         {

@@ -23,9 +23,26 @@ public class OrdersController : ControllerBase
     private static string GetReviewStoragePath()
     {
         var baseDir = AppContext.BaseDirectory;
-        var projectRoot = Directory.GetParent(baseDir)?.Parent?.Parent?.Parent?.FullName ?? baseDir;
+        var projectRoot = ResolveProjectRoot(baseDir);
         return Path.Combine(projectRoot, ".review_data.json");
     }
+
+    
+        private static string ResolveProjectRoot(string baseDir)
+        {
+            var current = new DirectoryInfo(baseDir);
+            while (current != null)
+            {
+                if (System.IO.File.Exists(Path.Combine(current.FullName, "server.csproj")) ||
+                    System.IO.File.Exists(Path.Combine(current.FullName, "ZoneMart.sln")) ||
+                    System.IO.Directory.Exists(Path.Combine(current.FullName, "server")))
+                {
+                    return current.FullName;
+                }
+                current = current.Parent;
+            }
+            return baseDir;
+        }
 
     private static void SaveReviewToDisk(Review review)
     {
@@ -119,6 +136,16 @@ public class OrdersController : ControllerBase
                 return BadRequest(new { success = false, message = "Đơn hàng chưa có sản phẩm nào!" });
             }
 
+            if (request.TotalAmount <= 0)
+            {
+                return BadRequest(new { success = false, message = "Tổng giá trị đơn hàng không hợp lệ (phải lớn hơn 0)!" });
+            }
+
+            if (request.Stores.Any(s => s.Items == null || s.Items.Any(i => i.Price < 0 || i.Quantity <= 0)))
+            {
+                return BadRequest(new { success = false, message = "Số lượng hoặc giá sản phẩm trong đơn hàng không hợp lệ!" });
+            }
+
             // Kiểm tra bắt buộc đăng nhập tài khoản trước khi đặt hàng
             if (string.IsNullOrWhiteSpace(request.BuyerId) || 
                 request.BuyerId.Trim().ToLowerInvariant().StartsWith("guest") ||
@@ -130,43 +157,14 @@ public class OrdersController : ControllerBase
             // 1. Chuẩn hóa ID người mua thành ObjectId hợp lệ
             string safeBuyerId = EnsureValidObjectId(request.BuyerId);
 
-            // 2. Nếu thanh toán bằng Ví ZonePay: Kiểm tra và trừ tiền trong ví
+            // 2. Kiểm tra phương thức thanh toán: Dự án đã chuyển hoàn toàn sang VietQR và COD
             if (request.PaymentMethod == "ZONEPAY_WALLET")
             {
-                var userFilter = Builders<User>.Filter.Or(
-                    Builders<User>.Filter.Eq(u => u.Id, safeBuyerId),
-                    Builders<User>.Filter.Eq(u => u.PhoneEmail, request.BuyerPhone),
-                    Builders<User>.Filter.Eq(u => u.FullName, request.BuyerName)
-                );
-                var user = await _mongoService.Users.Find(userFilter).FirstOrDefaultAsync();
-
-                if (user != null)
+                return BadRequest(new
                 {
-                    if (user.WalletBalance < request.TotalAmount)
-                    {
-                        return BadRequest(new
-                        {
-                            success = false,
-                            message = $"Số dư Ví ZonePay ({user.WalletBalance:N0} ₫) không đủ để thanh toán đơn hàng {request.TotalAmount:N0} ₫. Vui lòng nạp thêm hoặc chọn phương thức khác!"
-                        });
-                    }
-
-                    // Trừ tiền trong ví
-                    var updateWallet = Builders<User>.Update.Inc(u => u.WalletBalance, -request.TotalAmount);
-                    await _mongoService.Users.UpdateOneAsync(u => u.Id == user.Id, updateWallet);
-
-                    // Ghi lịch sử giao dịch ví
-                    var trans = new WalletTransaction
-                    {
-                        Id = ObjectId.GenerateNewId().ToString(),
-                        UserId = user.Id ?? safeBuyerId,
-                        Amount = -request.TotalAmount,
-                        Type = "payment",
-                        Description = $"Thanh toán đơn hàng ZoneMart giao hỏa tốc",
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    await _mongoService.WalletTransactions.InsertOneAsync(trans);
-                }
+                    success = false,
+                    message = "Phương thức thanh toán Ví ZonePay đã ngừng hỗ trợ. Vui lòng chọn chuyển khoản VietQR hoặc Thanh toán khi nhận hàng (COD)!"
+                });
             }
 
             // 3. Tạo ParentOrder

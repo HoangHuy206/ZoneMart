@@ -154,6 +154,17 @@ function setDiscoveredServer(url: string) {
  * Tự động dò tìm địa chỉ IP máy chủ Backend trong mạng Wi-Fi LAN
  */
 export async function autoDiscoverServer(force = false): Promise<string | null> {
+  // Ưu tiên 0: Biến môi trường Vite (.env) chỉ định trực tiếp Domain máy chủ Backend khi Deploy Internet
+  try {
+    const envApi = ((import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE_URL || '') as string;
+    if (envApi && typeof envApi === 'string' && envApi.trim()) {
+      const cleanEnv = envApi.trim().replace(/\/+$/, '');
+      cachedDiscoveredUrl = cleanEnv;
+      lastDiscoveredAt = Date.now();
+      return cleanEnv;
+    }
+  } catch {}
+
   if (!force && cachedDiscoveredUrl && (Date.now() - lastDiscoveredAt < 30000)) {
     return cachedDiscoveredUrl;
   }
@@ -255,6 +266,14 @@ export function isNativeMobile(): boolean {
 export function getBaseApiUrl(): string {
   if (typeof window === 'undefined') return '';
 
+  // Ưu tiên cao nhất: Cấu hình VITE_API_URL hoặc VITE_API_BASE_URL chỉ định trực tiếp địa chỉ máy chủ trên Internet
+  try {
+    const configuredApiUrl = ((import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE_URL || '') as string;
+    if (configuredApiUrl && typeof configuredApiUrl === 'string' && configuredApiUrl.trim()) {
+      return configuredApiUrl.trim().replace(/\/+$/, '');
+    }
+  } catch {}
+
   // TRƯỜNG HỢP 1: Môi trường Native Mobile App (Capacitor Android APK / iOS IPA)
   if (isNativeMobile()) {
     // 1. URL đã dò tìm thành công gần đây
@@ -313,13 +332,34 @@ export function getApiUrl(path: string): string {
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const targetUrl = getApiUrl(path);
 
+  // Tự động đính kèm vai trò người dùng vào Header để xác thực Backend
+  const customHeaders = new Headers(init?.headers || {});
+  if (!customHeaders.has('X-User-Role') && typeof localStorage !== 'undefined') {
+    try {
+      const savedUser = localStorage.getItem('currentUser') || localStorage.getItem('zonemart_user');
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        if (parsed?.role) {
+          customHeaders.set('X-User-Role', parsed.role);
+        }
+        if (parsed?.id) {
+          customHeaders.set('X-User-Id', parsed.id);
+        }
+      }
+    } catch {}
+  }
+  const mergedInit: RequestInit = {
+    ...init,
+    headers: customHeaders
+  };
+
   // Hàm thực thi fetch kèm controller timeout riêng cho từng lượt gọi
   const execute = async (url: string, timeoutSec = 15): Promise<Response> => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutSec * 1000);
     try {
       const res = await fetch(url, {
-        ...init,
+        ...mergedInit,
         signal: init?.signal || controller.signal,
       });
       clearTimeout(timeoutId);

@@ -639,7 +639,7 @@ const onPaymentConfirmed = (paidAmount?: number) => {
     orderRealtimeService.dispatchNewOrder({
       id: orderId,
       orderCode: orderId,
-      total: 0, // Khách quét mã QR thanh toán thành công -> Nổ đơn bên gian hàng là 0đ
+      total: finalTotal.value, // Bảo toàn đúng tổng tiền thực tế của đơn hàng khi nổ sang quán
       shippingFee: shippingFee.value || 5000,
       paymentMethod: "Chuyển khoản QR",
       createdAt: dateStr,

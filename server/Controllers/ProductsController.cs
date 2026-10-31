@@ -241,6 +241,17 @@ public class ProductsController : ControllerBase
     {
         try
         {
+            var roleHeader = Request.Headers["X-User-Role"].ToString().Trim();
+            var effectiveRole = !string.IsNullOrWhiteSpace(roleHeader) ? roleHeader : Request.Query["role"].ToString().Trim();
+            var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+            bool isDev = string.Equals(env, "Development", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(env);
+
+            if (!isDev && !string.Equals(effectiveRole, "seller", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(effectiveRole, "admin", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(effectiveRole, "manager", StringComparison.OrdinalIgnoreCase))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "⛔ Bạn không có quyền xóa sản phẩm trên sàn ZoneMart!" });
+            }
             var decodedId = System.Uri.UnescapeDataString(id).Trim();
             var targetName = !string.IsNullOrWhiteSpace(name) ? System.Uri.UnescapeDataString(name).Trim() : decodedId;
 

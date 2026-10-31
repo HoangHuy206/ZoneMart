@@ -41,6 +41,41 @@ public class AdminController : ControllerBase
         _mongoService = mongoService;
 
     }
+    private IActionResult? ValidateAdminAccess()
+    {
+        var roleHeader = Request.Headers["X-User-Role"].ToString().Trim();
+        var actorRoleQuery = Request.Query["actorRole"].ToString().Trim();
+        var effectiveRole = !string.IsNullOrWhiteSpace(roleHeader) ? roleHeader : actorRoleQuery;
+
+        if (string.Equals(effectiveRole, "admin", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(effectiveRole, "manager", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(effectiveRole, "administrator", StringComparison.OrdinalIgnoreCase))
+        {
+            return null; // Quyền hợp lệ
+        }
+
+        if (Request.Headers.TryGetValue("X-Admin-Secret", out var secretVal))
+        {
+            var expected = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD") ?? Environment.GetEnvironmentVariable("ADMIN_API_SECRET");
+            if (!string.IsNullOrWhiteSpace(expected) && string.Equals(secretVal.ToString().Trim(), expected.Trim(), StringComparison.Ordinal))
+            {
+                return null;
+            }
+        }
+
+        var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+        if (string.Equals(env, "Development", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(env))
+        {
+            return null; // Cho phép thử nghiệm nội bộ trong môi trường Development
+        }
+
+        return StatusCode(StatusCodes.Status403Forbidden, new
+        {
+            success = false,
+            message = "⛔ LỖI 403 FORBIDDEN: Bạn không có quyền truy cập tài nguyên quản trị ZoneMart."
+        });
+    }
+
 
 
 
@@ -191,6 +226,9 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> GetStats()
 
     {
+
+        var authCheck = ValidateAdminAccess();
+        if (authCheck != null) return authCheck;
 
         try
 
@@ -723,6 +761,9 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> GetUsers([FromQuery] string? query, [FromQuery] string? role, [FromQuery] string? status)
 
     {
+
+        var authCheck = ValidateAdminAccess();
+        if (authCheck != null) return authCheck;
 
         try
 
@@ -5009,15 +5050,19 @@ public class AdminController : ControllerBase
 
 
 
-        var accounts = new (string Email, string Password)[]
-
+        var accounts = new List<(string Email, string Password)>();
+        var envSender = Environment.GetEnvironmentVariable("GMAIL_SENDER_EMAIL");
+        var envPass = Environment.GetEnvironmentVariable("GMAIL_APP_PASSWORD");
+        if (!string.IsNullOrWhiteSpace(envSender) && !string.IsNullOrWhiteSpace(envPass))
         {
-
-            ("dobinh225599@gmail.com", "pihzfkraulkrrccz"),
-
-            ("hh9393100@gmail.com", "bjgiqgdpcozzfqip")
-
-        };
+            accounts.Add((envSender.Trim(), envPass.Replace(" ", "").Trim()));
+        }
+        var envBackupSender = Environment.GetEnvironmentVariable("GMAIL_BACKUP_EMAIL");
+        var envBackupPass = Environment.GetEnvironmentVariable("GMAIL_BACKUP_APP_PASSWORD");
+        if (!string.IsNullOrWhiteSpace(envBackupSender) && !string.IsNullOrWhiteSpace(envBackupPass))
+        {
+            accounts.Add((envBackupSender.Trim(), envBackupPass.Replace(" ", "").Trim()));
+        }
 
 
 
@@ -5127,9 +5172,9 @@ public class AdminController : ControllerBase
 
                     PhoneEmail = "admin@zonemart.vn",
 
-                    PasswordHash = "admin123",
+                    PasswordHash = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD") ?? "ZoneMart@SecureAdmin2026!",
 
-                    Password = "admin123",
+                    Password = Environment.GetEnvironmentVariable("ADMIN_DEFAULT_PASSWORD") ?? "ZoneMart@SecureAdmin2026!",
 
                     FullName = "Super Administrator",
 
@@ -6018,4 +6063,3 @@ public class DeleteUserPostRequest
     public string ActorRole { get; set; } = string.Empty;
 
 }
-

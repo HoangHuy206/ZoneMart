@@ -77,11 +77,28 @@ namespace ZoneMart.Server.Services
             _orderRealtimeManager = orderRealtimeManager;
 
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            var projectRoot = Directory.GetParent(baseDir)?.Parent?.Parent?.Parent?.FullName ?? baseDir;
+            var projectRoot = ResolveProjectRoot(baseDir);
             _chatStorageFilePath = Path.Combine(projectRoot, ".seller_chat_data.json");
 
             LoadFromDisk();
             SeedWelcomingMessagesIfEmpty();
+        }
+
+        
+        private static string ResolveProjectRoot(string baseDir)
+        {
+            var current = new DirectoryInfo(baseDir);
+            while (current != null)
+            {
+                if (File.Exists(Path.Combine(current.FullName, "server.csproj")) ||
+                    File.Exists(Path.Combine(current.FullName, "ZoneMart.sln")) ||
+                    Directory.Exists(Path.Combine(current.FullName, "server")))
+                {
+                    return current.FullName;
+                }
+                current = current.Parent;
+            }
+            return baseDir;
         }
 
         private void LoadFromDisk()

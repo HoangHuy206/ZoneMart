@@ -7,7 +7,7 @@ import {
 } from "firebase/auth";
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyC3VAt43G0IAzfiwhEP1xFoJFVplx7VPLs",
+  apiKey: (import.meta.env.VITE_FIREBASE_API_KEY as string) || "",
   authDomain: "zonemart-f1df6.firebaseapp.com",
   projectId: "zonemart-f1df6",
   storageBucket: "zonemart-f1df6.firebasestorage.app",

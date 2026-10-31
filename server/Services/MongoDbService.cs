@@ -10,15 +10,25 @@ public class MongoDbService
 {
     private IMongoDatabase _database;
 
-    private const string FallbackReplicaSetConn = "mongodb://huyhoangzz:hH28122006...@ac-txqeg1o-shard-00-00.trwjvms.mongodb.net:27017,ac-txqeg1o-shard-00-01.trwjvms.mongodb.net:27017,ac-txqeg1o-shard-00-02.trwjvms.mongodb.net:27017/zonemart?tls=true&replicaSet=atlas-p9e9jm-shard-0&authSource=admin&readPreference=primaryPreferred&retryWrites=true&w=majority";
-
     public MongoDbService(IOptions<MongoDBSettings> settings)
     {
-        string connStr = settings.Value?.ConnectionString?.Trim() ?? "";
+        string connStr = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING")?.Trim() ?? "";
 
-        if (string.IsNullOrWhiteSpace(connStr) || connStr.Contains("<username>") || connStr.Contains("your_mongodb"))
+        if (string.IsNullOrWhiteSpace(connStr))
         {
-            connStr = "mongodb+srv://huyhoangzz:hH28122006...@cluster0.trwjvms.mongodb.net/zonemart?retryWrites=true&w=majority&appName=Cluster0";
+            connStr = settings.Value?.ConnectionString?.Trim() ?? "";
+        }
+
+        if (string.IsNullOrWhiteSpace(connStr) || connStr.Contains("<username>") || connStr.Contains("your_mongodb") || connStr.Contains("YOUR_MONGODB"))
+        {
+            connStr = ResolveMongoConnFromEnvFile();
+        }
+
+        if (string.IsNullOrWhiteSpace(connStr) || connStr.Contains("<username>") || connStr.Contains("YOUR_MONGODB"))
+        {
+            Console.WriteLine("⚠️ [MongoDbService] Chưa cấu hình MongoDB Connection String. Vui lòng thiết lập biến môi trường MONGODB_CONNECTION_STRING hoặc trong .env!");
+            // Khởi tạo một client in-memory mock hoặc fallback localhost để không gây crash ứng dụng khi khởi động
+            connStr = "mongodb://localhost:27017";
         }
 
         MongoClientSettings? clientSettings = null;
@@ -30,10 +40,13 @@ public class MongoDbService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"⚠️ [MongoDbService] Lỗi phân giải cú pháp ConnectionString ({ex.Message}). Tự động kích hoạt Fallback Direct ReplicaSet...");
-            clientSettings = MongoClientSettings.FromConnectionString(FallbackReplicaSetConn);
-            clientSettings.ServerSelectionTimeout = TimeSpan.FromSeconds(7);
-            clientSettings.ConnectTimeout = TimeSpan.FromSeconds(5);
+            Console.WriteLine($"⚠️ [MongoDbService] Lỗi phân giải cú pháp ConnectionString ({ex.Message}). Sử dụng kết nối mặc định...");
+            clientSettings = new MongoClientSettings
+            {
+                Server = new MongoServerAddress("localhost", 27017),
+                ServerSelectionTimeout = TimeSpan.FromSeconds(3),
+                ConnectTimeout = TimeSpan.FromSeconds(3)
+            };
         }
 
         var client = new MongoClient(clientSettings);
@@ -47,24 +60,47 @@ public class MongoDbService
         }
         catch (Exception pingEx)
         {
-            Console.WriteLine($"⚠️ [MongoDbService] Kết nối chính thất bại ({pingEx.Message}). Tự động kích hoạt kết nối Fallback Direct ReplicaSet...");
-            try
+            Console.WriteLine($"⚠️ [MongoDbService] Ping MongoDB không thành công ({pingEx.Message}). Hệ thống vẫn tiếp tục với bộ đệm sẵn sàng.");
+        }
+    }
+
+    private static string ResolveMongoConnFromEnvFile()
+    {
+        try
+        {
+            var searchDirs = new[]
             {
-                var fbSettings = MongoClientSettings.FromConnectionString(FallbackReplicaSetConn);
-                fbSettings.ServerSelectionTimeout = TimeSpan.FromSeconds(7);
-                fbSettings.ConnectTimeout = TimeSpan.FromSeconds(5);
-                var fbClient = new MongoClient(fbSettings);
-                using var cts2 = new CancellationTokenSource(TimeSpan.FromSeconds(4));
-                var fbDb = fbClient.GetDatabase(settings.Value?.DatabaseName ?? "zonemart");
-                fbDb.RunCommand<BsonDocument>(new BsonDocument("ping", 1), cancellationToken: cts2.Token);
-                _database = fbDb;
-                Console.WriteLine("✅ [MongoDbService] Kết nối Fallback Direct ReplicaSet đã hoạt động hoàn hảo!");
-            }
-            catch (Exception fbEx)
+                Directory.GetCurrentDirectory(),
+                AppDomain.CurrentDomain.BaseDirectory,
+                Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..")),
+                Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "../..")),
+                Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "../../..")),
+                Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "../../../.."))
+            };
+
+            foreach (var dir in searchDirs)
             {
-                Console.WriteLine($"❌ [MongoDbService] Fallback cũng gặp sự cố: {fbEx.Message}");
+                var envPath = Path.Combine(dir, ".env");
+                if (File.Exists(envPath))
+                {
+                    var lines = File.ReadAllLines(envPath);
+                    foreach (var line in lines)
+                    {
+                        var trimmed = line.Trim();
+                        if (trimmed.StartsWith("#") || !trimmed.Contains('=')) continue;
+                        var parts = trimmed.Split('=', 2);
+                        var key = parts[0].Trim();
+                        var val = parts[1].Trim().Trim('"', '\'');
+                        if (key == "MONGODB_CONNECTION_STRING" && !string.IsNullOrWhiteSpace(val))
+                        {
+                            return val;
+                        }
+                    }
+                }
             }
         }
+        catch { }
+        return "";
     }
 
     public IMongoDatabase Database => _database;

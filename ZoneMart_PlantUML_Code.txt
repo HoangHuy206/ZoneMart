@@ -1,0 +1,163 @@
+@startuml ZoneMart_Master_Activity
+skinparam defaultFontName Arial
+skinparam roundcorner 10
+skinparam backgroundColor #FFFFFF
+skinparam ActivityBackgroundColor #E3F2FD
+skinparam ActivityBorderColor #1565C0
+skinparam ActivityFontSize 12
+skinparam ActivityDiamondBackgroundColor #FFF9C4
+skinparam ActivityDiamondBorderColor #F57F17
+skinparam ActivityDiamondFontSize 12
+
+start
+:Truy cập Hệ thống ZoneMart;
+
+if (Đã có tài khoản chưa?) then (Chưa có)
+  :Màn hình Đăng ký mới;
+  if (Đăng ký vai trò gì?) then (Khách mua - Buyer)
+    :Nhập SĐT/Email + OTP SMS;
+    :Lưu tài khoản vào MongoDB;
+  elseif (Người bán - Seller) then (Seller)
+    :Nộp hồ sơ sạp + AI OCR CCCD & ATVSTP;
+    :Chờ Admin thẩm định KYC;
+  else (Tài xế - Shipper)
+    :Nộp GPLX + Quét nhận diện Face ID;
+    :Chờ Admin thẩm định KYC;
+  endif
+else (Đã có)
+endif
+
+:Màn hình Đăng nhập;
+
+if (Chọn cách đăng nhập?) then (Face ID)
+  :Quét khuôn mặt Camera;
+  if (AI Face Service khớp mặt?) then (Đúng)
+    :Xác thực danh tính thành công;
+  else (Sai)
+    :Báo lỗi đăng nhập;
+    stop
+  endif
+else (Mật khẩu / Passkey)
+  :Nhập mật khẩu hoặc chạm Passkey;
+  if (Thông tin hợp lệ?) then (Đúng)
+    :Xác thực danh tính thành công;
+  else (Sai)
+    :Báo lỗi đăng nhập;
+    stop
+  endif
+endif
+
+if (Phân quyền vai trò RBAC?) then (Admin)
+  :Dashboard Quản trị toàn sàn;
+  if (Tác vụ chọn?) then (Duyệt đối tác)
+    if (Hồ sơ đạt chuẩn?) then (Đạt)
+      :Phê duyệt đối tác (Approve KYC);
+    else (Không đạt)
+      :Từ chối hồ sơ (Reject KYC);
+    endif
+  else (Phân công chợ)
+    :Phân công quản lý chợ cho BQL;
+  endif
+  stop
+
+elseif (Zone Manager) then (Zone Manager)
+  :Cổng Ban Quản Lý Chợ;
+  :Giám sát sạp chợ & Xử lý vi phạm;
+  stop
+
+elseif (Seller) then (Seller)
+  :Kênh Quản Lý Bán Hàng;
+  if (Đăng sản phẩm mới?) then (Đăng sp)
+    :Nhập thông tin nông sản;
+    if (AI Moderation duyệt ảnh & text?) then (Hợp lệ)
+      :Lưu MongoDB & Hiển thị lên Chợ;
+    else (Vi phạm)
+      :Từ chối & Cộng 1 điểm phạt;
+      stop
+    endif
+  endif
+
+elseif (Shipper) then (Shipper)
+  :Ứng dụng Tài Xế ZoneMart;
+  :Bật trạng thái Trực tuyến (Online);
+  :Radar sẵn sàng chờ nổ đơn quanh chợ;
+
+else (Buyer - Mua sắm)
+  :Trang chủ Mua sắm ZoneMart;
+  if (Cách chọn hàng?) then (Nhờ AI tư vấn)
+    :Mở Chatbot AI Gemini;
+    :AI tư vấn mâm cơm & gom Combo;
+    :Thêm toàn bộ Combo vào Giỏ;
+  else (Tự dạo Chợ)
+    :Tìm kiếm rau củ, thịt cá tại sạp;
+    :Thêm từng món vào Giỏ hàng;
+  endif
+
+  :Xem giỏ hàng đa quầy sạp;
+  :Trang Thanh toán & Điền địa chỉ;
+
+  if (Phương thức thanh toán?) then (Ví ZoneMart)
+    if (Số dư ví đủ tiền?) then (Đủ)
+      :Trừ số dư ví ZoneMart;
+    else (Thiếu)
+      :Nạp tiền qua cổng VNPAY;
+      :Trừ số dư ví ZoneMart;
+    endif
+  elseif (VietQR / Chuyển khoản) then (VietQR)
+    :Hệ thống tạo mã VietQR động;
+    :Khách quét mã chuyển tiền ngân hàng;
+    if (Webhook TingO báo khớp tiền?) then (Khớp tiền)
+      :Xác nhận thanh toán thành công;
+    else (Lỗi)
+      :Báo thanh toán thất bại;
+      stop
+    endif
+  else (COD)
+    :Ghi nhận thanh toán tiền mặt COD;
+  endif
+
+  :Tạo đơn hàng ParentOrder trong MongoDB;
+  :Hệ thống tách thành các SubOrder riêng từng sạp;
+  :Phát chuông Realtime đến từng chủ sạp;
+
+  if (Sạp kiểm tra thực phẩm tươi sống?) then (Đủ hàng)
+    :Cân ký, đóng gói túi thực phẩm;
+    :Bấm 'Sẵn sàng giao - Chờ tài xế';
+  else (Hết hàng)
+    :Sạp báo hết hàng & Hủy đơn con;
+    :Tự động hoàn tiền về ví Khách;
+    stop
+  endif
+
+  :Hệ thống quét Radar tìm Shipper gần chợ;
+  if (Có tài xế nhận cuốc?) then (Có nhận)
+    :Gán Shipper vào đơn SubOrder;
+  else (Chưa có)
+    :Mở rộng bán kính tìm kiếm 3km - 5km;
+    :Gán Shipper vào đơn SubOrder;
+  endif
+
+  :Shipper tới sạp chợ lấy túi thực phẩm;
+  :Bấm 'Đã lấy hàng' & Bật GPS đi giao;
+  :Shipper đến địa chỉ nhà khách;
+
+  if (Khách nhận hàng thành công?) then (Thành công)
+    if (Đơn có thu tiền COD?) then (Có COD)
+      :Shipper thu tiền mặt từ khách;
+    else (Đã trả trước)
+    endif
+    :Bàn giao túi thực phẩm tươi sạch;
+    :Chụp ảnh xác nhận & Bấm Hoàn tất;
+    :Cộng cước vào Ví Shipper & Tiền vào Ví Seller;
+    :Khách quét QR truy xuất nguồn gốc nông sản;
+    :Khách đánh giá sao & nhận xét chất lượng sạp;
+    stop
+  else (Thất bại / Bom hàng)
+    :Báo cáo sự cố khẩn cấp;
+    :Mang hàng gửi lại Ban Quản Lý chợ đối soát;
+    stop
+  endif
+
+endif
+
+@enduml

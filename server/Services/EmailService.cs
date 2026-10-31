@@ -146,8 +146,19 @@ public class EmailService : IEmailService
             {
                 accounts.Add((_settings.SenderEmail.Trim(), _settings.AppPassword.Replace(" ", "").Trim()));
             }
-            accounts.Add(("dobinh225599@gmail.com", "pihzfkraulkrrccz"));
-            accounts.Add(("hh9393100@gmail.com", "bjgiqgdpcozzfqip"));
+            var envSender = Environment.GetEnvironmentVariable("GMAIL_SENDER_EMAIL");
+            var envPass = Environment.GetEnvironmentVariable("GMAIL_APP_PASSWORD");
+            if (!string.IsNullOrWhiteSpace(envSender) && !string.IsNullOrWhiteSpace(envPass))
+            {
+                accounts.Add((envSender.Trim(), envPass.Replace(" ", "").Trim()));
+            }
+
+            var envBackupSender = Environment.GetEnvironmentVariable("GMAIL_BACKUP_EMAIL");
+            var envBackupPass = Environment.GetEnvironmentVariable("GMAIL_BACKUP_APP_PASSWORD");
+            if (!string.IsNullOrWhiteSpace(envBackupSender) && !string.IsNullOrWhiteSpace(envBackupPass))
+            {
+                accounts.Add((envBackupSender.Trim(), envBackupPass.Replace(" ", "").Trim()));
+            }
 
             foreach (var account in accounts.GroupBy(a => a.Email.ToLowerInvariant()).Select(g => g.First()))
             {

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using System.Collections.Concurrent;
 
 using System.Net;
@@ -35,6 +36,8 @@ namespace ZoneMart.Server.Controllers;
 [ApiController]
 
 [Route("api/[controller]")]
+
+[EnableRateLimiting("auth-rate-limit")]
 
 public class AuthController : ControllerBase
 
@@ -5589,15 +5592,19 @@ Email liên hệ: dobinh225599@gmail.com
 
 
 
-        var accounts = new (string Email, string Password)[]
-
+        var accounts = new List<(string Email, string Password)>();
+        var envSender = Environment.GetEnvironmentVariable("GMAIL_SENDER_EMAIL");
+        var envPass = Environment.GetEnvironmentVariable("GMAIL_APP_PASSWORD");
+        if (!string.IsNullOrWhiteSpace(envSender) && !string.IsNullOrWhiteSpace(envPass))
         {
-
-            ("dobinh225599@gmail.com", "pihzfkraulkrrccz"),
-
-            ("hh9393100@gmail.com", "bjgiqgdpcozzfqip")
-
-        };
+            accounts.Add((envSender.Trim(), envPass.Replace(" ", "").Trim()));
+        }
+        var envBackupSender = Environment.GetEnvironmentVariable("GMAIL_BACKUP_EMAIL");
+        var envBackupPass = Environment.GetEnvironmentVariable("GMAIL_BACKUP_APP_PASSWORD");
+        if (!string.IsNullOrWhiteSpace(envBackupSender) && !string.IsNullOrWhiteSpace(envBackupPass))
+        {
+            accounts.Add((envBackupSender.Trim(), envBackupPass.Replace(" ", "").Trim()));
+        }
 
 
 
@@ -6580,110 +6587,11 @@ Email liên hệ: dobinh225599@gmail.com
     /// </summary>
 
     [HttpPost("topup-wallet")]
-
     public async Task<IActionResult> TopupWallet([FromBody] TopupWalletRequest request)
-
     {
-
-        if (request.Amount <= 0)
-
-        {
-
-            return BadRequest(new { success = false, message = "Số tiền nạp không hợp lệ!" });
-
-        }
-
-
-
-        User? user = null;
-
-        if (!string.IsNullOrEmpty(request.Id))
-
-        {
-
-            try { user = await _mongoService.Users.Find(u => u.Id == request.Id).FirstOrDefaultAsync(); } catch { }
-
-        }
-
-
-
-        if (user == null && !string.IsNullOrEmpty(request.PhoneEmail))
-
-        {
-
-            string email = request.PhoneEmail.Trim().ToLower();
-
-            try
-
-            {
-
-                var filterBuilder = Builders<User>.Filter;
-
-                var filter = filterBuilder.Or(
-
-                    filterBuilder.Eq(u => u.PhoneEmail, email),
-
-                    filterBuilder.Regex(u => u.PhoneEmail, new BsonRegularExpression($"^{Regex.Escape(email)}$", "i")),
-
-                    filterBuilder.Eq(u => u.Phone, email)
-
-                );
-
-                user = await _mongoService.Users.Find(filter).FirstOrDefaultAsync();
-
-            }
-
-            catch { }
-
-
-
-            if (user == null && InMemoryUsers.TryGetValue(email, out var inMem)) user = inMem;
-
-        }
-
-
-
-        if (user != null)
-
-        {
-
-            user.WalletBalance += request.Amount;
-
-            try
-
-            {
-
-                await _mongoService.Users.UpdateOneAsync(
-
-                    u => u.Id == user.Id,
-
-                    Builders<User>.Update.Set(u => u.WalletBalance, user.WalletBalance)
-
-                );
-
-            }
-
-            catch { }
-
-        }
-
-
-
-        return Ok(new
-
-        {
-
-            success = true,
-
-            message = $"Nạp thành công +{request.Amount:N0} ₫ vào Ví ZonePay!",
-
-            walletBalance = user?.WalletBalance ?? request.Amount
-
-        });
-
+        await Task.CompletedTask;
+        return BadRequest(new { success = false, message = "Phương thức ví điện tử không còn được hỗ trợ. Vui lòng thanh toán qua VietQR hoặc COD!" });
     }
-
-
 
     private static readonly HttpClient _faceHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
 
@@ -8438,4 +8346,3 @@ public class DismissPromotionNoticeRequest
     public string Account { get; set; } = string.Empty;
 
 }
-

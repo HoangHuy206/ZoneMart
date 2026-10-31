@@ -126,92 +126,27 @@ const sendDirectTelegram = async (ticketCode: string, p: {
   previewUrl?: string | null;
 }) => {
   try {
-    const botToken = "8873124743:AAGnQs8cqHBf8lolMKlgjl6jqEh2aF8XN_Y";
-    const chatId = "5807941249";
-    const vnTime = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-    const orderLine = p.orderCode ? `📦 <b>Mã đơn hàng:</b> <code>#${p.orderCode}</code>\n` : "";
-    const fileLine = p.fileName ? `📎 <b>Tệp đính kèm:</b> ${p.fileName}\n` : "";
-    const text = `🔔 <b>[ZONEMART] CÓ YÊU CẦU HỖ TRỢ MỚI!</b>
-━━━━━━━━━━━━━━━━━━━━
-🏷 <b>Mã Ticket:</b> <code>#${ticketCode}</code>
-⏰ <b>Thời gian:</b> ${vnTime}
-
-👤 <b>Khách hàng:</b> ${p.fullName}
-📧 <b>Email:</b> <code>${p.email}</code>
-📞 <b>Số điện thoại:</b> <code>${p.phone || 'Chưa cung cấp'}</code>
-${orderLine}📂 <b>Chủ đề:</b> ${p.topic}
-${fileLine}
-💬 <b>Nội dung yêu cầu:</b>
-<blockquote>${p.message}</blockquote>
-━━━━━━━━━━━━━━━━━━━━
-<i>⚡ Hệ thống tự động đẩy thông báo từ ZoneMart Portal</i>`;
-
-    // 1. Nếu có fileBase64 tải từ máy khách
-    if (p.fileBase64) {
-      try {
-        const commaIdx = p.fileBase64.indexOf(",");
-        const base64Data = commaIdx >= 0 ? p.fileBase64.slice(commaIdx + 1) : p.fileBase64;
-        const mimeMatch = p.fileBase64.match(/^data:(.*?);base64,/);
-        const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
-        const byteCharacters = atob(base64Data);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: mimeType });
-
-        const isImage = mimeType.startsWith("image/");
-        const endpoint = isImage ? "sendPhoto" : "sendDocument";
-        const fieldName = isImage ? "photo" : "document";
-
-        const formData = new FormData();
-        formData.append("chat_id", chatId);
-        formData.append(fieldName, blob, p.fileName || "attachment.jpg");
-        const caption = text.length > 1000 ? text.slice(0, 995) + "..." : text;
-        formData.append("caption", caption);
-        formData.append("parse_mode", "HTML");
-
-        const photoRes = await fetch(`https://api.telegram.org/bot${botToken}/${endpoint}`, {
-          method: "POST",
-          body: formData
-        });
-        if (photoRes.ok) return true;
-      } catch (fileErr) {
-        console.warn("Direct Telegram sendPhoto failed, fallback to sendMessage:", fileErr);
-      }
-    } else if (p.previewUrl && /^https?:\/\//i.test(p.previewUrl)) {
-      // 2. Nếu đính kèm trực tiếp URL ảnh sản phẩm từ đơn hàng
-      try {
-        const caption = text.length > 1000 ? text.slice(0, 995) + "..." : text;
-        const photoRes = await fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: chatId,
-            photo: p.previewUrl,
-            caption: caption,
-            parse_mode: "HTML"
-          })
-        });
-        if (photoRes.ok) return true;
-      } catch (photoErr) {
-        console.warn("Direct Telegram sendPhoto by URL failed:", photoErr);
-      }
-    }
-
-    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    // Bảo mật: Thông báo Telegram được ủy quyền hoàn toàn qua Backend API (/api/support/ticket)
+    // để bảo vệ an toàn Bot Token không bị lộ ra ngoài máy khách / DevTools.
+    const res = await apiFetch("/api/support/ticket", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-        parse_mode: "HTML"
+        ticketCode,
+        fullName: p.fullName,
+        email: p.email,
+        phone: p.phone,
+        orderCode: p.orderCode,
+        topic: p.topic,
+        message: p.message,
+        fileName: p.fileName,
+        fileBase64: p.fileBase64,
+        previewUrl: p.previewUrl
       })
     });
     return res.ok;
   } catch (e) {
-    console.error("Direct telegram send error:", e);
+    console.warn("Gửi thông báo hỗ trợ gián đoạn:", e);
     return false;
   }
 };

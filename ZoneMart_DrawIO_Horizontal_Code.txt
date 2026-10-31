@@ -1,0 +1,167 @@
+flowchart LR
+
+    %% ==========================================
+    %% BẢNG MÀU ĐỘ TƯƠNG PHẢN CAO CHO DRAW.IO (HÀNG NGANG)
+    %% ==========================================
+    classDef startEnd fill:#1B5E20,stroke:#003300,stroke-width:2px,color:#FFFFFF,font-size:13px;
+    classDef failEnd fill:#B71C1C,stroke:#7F0000,stroke-width:2px,color:#FFFFFF,font-size:13px;
+    classDef decision fill:#FFF9C4,stroke:#F57F17,stroke-width:2px,color:#000000,font-size:12px;
+    classDef authStep fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1,font-size:12px;
+    classDef adminStep fill:#EDE7F6,stroke:#4527A0,stroke-width:2px,color:#311B92,font-size:12px;
+    classDef buyerStep fill:#E0F7FA,stroke:#006064,stroke-width:2px,color:#004D40,font-size:12px;
+    classDef payStep fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20,font-size:12px;
+    classDef sellerStep fill:#FFF3E0,stroke:#E65100,stroke-width:2px,color:#BF360C,font-size:12px;
+    classDef shipperStep fill:#FCE4EC,stroke:#AD1457,stroke-width:2px,color:#880E4F,font-size:12px;
+
+    %% ==========================================
+    %% 1. XÁC THỰC & ĐĂNG NHẬP
+    %% ==========================================
+    Start(["<b>BẮT ĐẦU: TRUY CẬP ZONEMART</b>"]):::startEnd --> CheckAuth{"<b>Người dùng đã có<br/>tài khoản chưa?</b>"}:::decision
+
+    CheckAuth -- "Chưa có" --> RegScreen["<b>Màn hình Đăng ký mới</b><br/>Chọn vai trò muốn tham gia"]:::authStep
+    RegScreen --> SelectRegRole{"<b>Đăng ký vai trò gì?</b>"}:::decision
+    SelectRegRole -- "Khách mua (Buyer)" --> RegBuyer["<b>Đăng ký Khách hàng</b><br/>Nhập SĐT/Email + OTP SMS"]:::authStep
+    SelectRegRole -- "Người bán (Seller)" --> RegSeller["<b>Đăng ký Quầy sạp</b><br/>Nộp hồ sơ + AI OCR CCCD & ATVSTP"]:::authStep
+    SelectRegRole -- "Tài xế (Shipper)" --> RegShipper["<b>Đăng ký Tài xế</b><br/>Nộp GPLX + Quét nhận diện Face ID"]:::authStep
+    
+    RegBuyer --> SaveUser["<b>Lưu tài khoản vào MongoDB</b><br/>Gán quyền mặc định Khách hàng"]:::authStep
+    RegSeller --> WaitKYC["<b>Hàng đợi thẩm định KYC</b><br/>Chờ Ban Quản Trị xét duyệt"]:::sellerStep
+    RegShipper --> WaitKYC
+
+    CheckAuth -- "Đã có" --> LoginScreen["<b>Màn hình Đăng nhập</b><br/>Nhập tài khoản ZoneMart"]:::authStep
+    SaveUser --> LoginScreen
+    LoginScreen --> SelectLoginMethod{"<b>Chọn phương thức<br/>đăng nhập?</b>"}:::decision
+    
+    SelectLoginMethod -- "Khuôn mặt (Face ID)" --> ScanFace["<b>Quét khuôn mặt Camera</b><br/>Trích xuất vector sinh trắc học"]:::authStep
+    ScanFace --> CheckFace{"<b>AI Face Service<br/>khớp dữ liệu?</b>"}:::decision
+    CheckFace -- "Sai (False)" --> LoginFail["<b>Báo lỗi đăng nhập</b><br/>Yêu cầu thử lại hoặc dùng mật khẩu"]:::authStep
+    LoginFail --> LoginScreen
+    CheckFace -- "Đúng (True)" --> AuthOK["<b>Xác thực danh tính thành công</b><br/>Cấp Token JWT phiên làm việc"]:::authStep
+
+    SelectLoginMethod -- "Mật khẩu / Passkey" --> InputPass["<b>Nhập mật khẩu</b><br/>hoặc chạm cảm biến Passkey"]:::authStep
+    InputPass --> CheckPass{"<b>Mật khẩu hoặc<br/>Passkey hợp lệ?</b>"}:::decision
+    CheckPass -- "Sai (False)" --> LoginFail
+    CheckPass -- "Đúng (True)" --> AuthOK
+
+    AuthOK --> CheckRole{"<b>Phân quyền vai trò<br/>(RBAC Role)?</b>"}:::decision
+
+    %% ==========================================
+    %% 2. PHÂN HỆ QUẢN TRỊ & BQL CHỢ
+    %% ==========================================
+    CheckRole -- "Admin" --> AdminDashboard["<b>Bảng điều khiển Quản trị toàn sàn</b><br/>Quản trị người dùng, hệ thống"]:::adminStep
+    AdminDashboard --> AdminTasks{"<b>Tác vụ Admin chọn?</b>"}:::decision
+    AdminTasks -- "Duyệt đối tác" --> ReviewKYC{"<b>Hồ sơ Shop/Shipper<br/>đạt chuẩn không?</b>"}:::decision
+    ReviewKYC -- "Đạt chuẩn" --> ApproveKYC["<b>Phê duyệt đối tác</b><br/>Nâng quyền Role + Bắn tin Telegram"]:::adminStep
+    ReviewKYC -- "Không đạt" --> RejectKYC["<b>Từ chối hồ sơ</b><br/>Gửi email nêu rõ lý do cần sửa"]:::adminStep
+    AdminTasks -- "Phân công chợ" --> AssignMarket["<b>Phân công quản lý chợ</b><br/>Gán quyền chợ cho Ban Quản Lý"]:::adminStep
+    AdminTasks -- "Kiểm toán" --> ViewAudit["<b>Xem Audit Log</b><br/>Tra cứu lịch sử bảo mật hệ thống"]:::adminStep
+
+    CheckRole -- "Zone Manager" --> ManagerDashboard["<b>Cổng Ban Quản Lý Chợ</b><br/>Điều hành khu vực chợ truyền thống"]:::adminStep
+    ManagerDashboard --> ManagerTasks{"<b>Nhiệm vụ BQL?</b>"}:::decision
+    ManagerTasks -- "Giám sát sạp" --> CheckStalls["<b>Kiểm tra quầy sạp</b><br/>Tra cứu danh sách tiểu thương trong chợ"]:::adminStep
+    ManagerTasks -- "Xử lý vi phạm" --> ResolveIssue["<b>Xử phạt vi phạm</b><br/>Lập biên bản vi phạm ATVSTP / Cân thiếu"]:::adminStep
+
+    %% ==========================================
+    %% 3. PHÂN HỆ NGƯỜI BÁN & TÀI XẾ
+    %% ==========================================
+    CheckRole -- "Seller" --> SellerDashboard["<b>Kênh Quản Lý Bán Hàng</b><br/>Quản lý sạp chợ ZoneMart Seller"]:::sellerStep
+    SellerDashboard --> SellerAction{"<b>Tiểu thương thao tác?</b>"}:::decision
+    SellerAction -- "Đăng sản phẩm" --> UploadProduct["<b>Nhập thông tin nông sản</b><br/>Tên, giá cân ký, ảnh chụp tại sạp"]:::sellerStep
+    UploadProduct --> AIModCheck{"<b>AI Moderation duyệt<br/>ảnh & nội dung cấm?</b>"}:::decision
+    AIModCheck -- "Vi phạm" --> ModReject["<b>Từ chối hiển thị</b><br/>Cảnh báo vi phạm + Cộng 1 điểm phạt sạp"]:::sellerStep
+    AIModCheck -- "Hợp lệ" --> ModApprove["<b>Lưu vào MongoDB</b><br/>Hiển thị mặt hàng lên Chợ ảo ngay"]:::sellerStep
+
+    CheckRole -- "Shipper" --> ShipperDashboard["<b>Ứng dụng Tài Xế ZoneMart</b><br/>Cổng làm việc của Driver"]:::shipperStep
+    ShipperDashboard --> ToggleOnline["<b>Bật trạng thái Trực tuyến</b><br/>Kích hoạt định vị GPS thời gian thực"]:::shipperStep
+    ToggleOnline --> StandbyRadar["<b>Radar sẵn sàng nhận đơn</b><br/>Chờ hệ thống nổ đơn quanh chợ"]:::shipperStep
+
+    %% ==========================================
+    %% 4. PHÂN HỆ KHÁCH HÀNG & MUA SẮM AI
+    %% ==========================================
+    CheckRole -- "Buyer" --> ShoppingEntry["<b>Trang chủ Mua sắm ZoneMart</b><br/>Danh mục Chợ dân sinh & Nông sản tươi"]:::buyerStep
+    ShoppingEntry --> BuyerDiscovery{"<b>Khách chọn cách mua?</b>"}:::decision
+    
+    BuyerDiscovery -- "Nhờ Trợ lý AI tư vấn" --> OpenAiChat["<b>Mở Chatbot AI Gemini</b><br/>Nhập yêu cầu: 'Gợi ý mâm cơm 4 người 120k'"]:::buyerStep
+    OpenAiChat --> AIGenerate["<b>Gemini AI phân tích thực đơn</b><br/>Tự động gom nguyên liệu từ các sạp cùng chợ"]:::buyerStep
+    AIGenerate --> AddComboToCart["<b>Thêm toàn bộ Combo vào Giỏ</b><br/>Một chạm nhặt đủ mâm cơm gia đình"]:::buyerStep
+    
+    BuyerDiscovery -- "Tự dạo Chợ & Tìm kiếm" --> BrowseCatalog["<b>Khám phá quầy sạp chợ</b><br/>Tìm rau củ, thịt cá theo tên hoặc vị trí"]:::buyerStep
+    BrowseCatalog --> AddSingleToCart["<b>Thêm từng món vào giỏ hàng</b><br/>Chọn số lượng hoặc số kg cần mua"]:::buyerStep
+
+    AddComboToCart --> ViewCart["<b>Giỏ hàng tổng hợp</b><br/>Tập hợp món từ nhiều quầy sạp khác nhau"]:::buyerStep
+    AddSingleToCart --> ViewCart
+    ViewCart --> CheckoutStep["<b>Trang Thanh Toán (Checkout)</b><br/>Điền địa chỉ giao hàng & Số điện thoại"]:::payStep
+
+    %% ==========================================
+    %% 5. THANH TOÁN & TÁCH ĐƠN HÀNG CON
+    %% ==========================================
+    CheckoutStep --> SelectPayment{"<b>Phương thức<br/>thanh toán?</b>"}:::decision
+    
+    SelectPayment -- "Ví ZoneMart" --> CheckWallet{"<b>Số dư ví có đủ<br/>tiền thanh toán?</b>"}:::decision
+    CheckWallet -- "Thiếu tiền" --> TopupWallet["<b>Nạp tiền ví điện tử</b><br/>Liên kết cổng thanh toán VNPAY"]:::payStep
+    TopupWallet --> PayWalletOK["<b>Khấu trừ số dư ví</b><br/>Ghi nhận giao dịch ví thành công"]:::payStep
+    CheckWallet -- "Đủ tiền" --> PayWalletOK
+
+    SelectPayment -- "VietQR / Chuyển khoản" --> GenVietQR["<b>Hệ thống sinh mã VietQR động</b><br/>Chứa số tiền & mã đơn hàng tự động"]:::payStep
+    GenVietQR --> ScanQR["<b>Khách quét mã QR</b><br/>Chuyển khoản qua App Mobile Banking"]:::payStep
+    ScanQR --> CheckTingo{"<b>Webhook TingO báo<br/>khớp tiền tài khoản?</b>"}:::decision
+    CheckTingo -- "Lỗi / Quá giờ" --> PayFailed["<b>Báo thanh toán lỗi</b><br/>Yêu cầu quét lại mã hoặc đổi phương thức"]:::payStep
+    PayFailed --> CheckoutStep
+    CheckTingo -- "Khớp tiền" --> PaySuccess["<b>Xác nhận thanh toán thành công</b><br/>Cập nhật trạng thái 'Đã thanh toán'"]:::payStep
+
+    SelectPayment -- "Tiền mặt COD" --> PayCOD["<b>Ghi nhận thanh toán COD</b><br/>Shipper sẽ thu tiền mặt khi giao hàng"]:::payStep
+
+    PayWalletOK --> CreateOrderDB["<b>Tạo đơn hàng ParentOrder</b><br/>Lưu thông tin đơn tổng vào MongoDB"]:::payStep
+    PaySuccess --> CreateOrderDB
+    PayCOD --> CreateOrderDB
+
+    CreateOrderDB --> SplitEngine["<b>Bộ máy tách đơn hàng tự động</b><br/>Tách ParentOrder thành các SubOrder riêng từng sạp"]:::sellerStep
+    SplitEngine --> NotifyStore["<b>Phát chuông báo đơn mới</b><br/>Đẩy thông báo thời gian thực đến từng chủ sạp"]:::sellerStep
+    
+    NotifyStore --> StorePrep{"<b>Sạp kiểm tra thực phẩm<br/>tươi sống còn đủ?</b>"}:::decision
+    StorePrep -- "Hết hàng" --> StoreCancel["<b>Sạp báo hết hàng</b><br/>Hủy riêng phần đơn con SubOrder này"]:::sellerStep
+    StoreCancel --> AutoRefund["<b>Tự động hoàn tiền</b><br/>Hoàn lại số tiền món hủy về ví khách"]:::payStep
+    
+    StorePrep -- "Đủ hàng" --> StorePack["<b>Chuẩn bị thực phẩm tại sạp</b><br/>Cân ký chính xác, sơ chế & đóng túi bảo quản"]:::sellerStep
+    StorePack --> StoreReady["<b>Bấm 'Sẵn sàng giao'</b><br/>Chờ tài xế Shipper đến sạp lấy hàng"]:::sellerStep
+
+    %% ==========================================
+    %% 6. ĐIỀU PHỐI SHIPPER & GIAO VẬN HỎA TỐC
+    %% ==========================================
+    StoreReady --> DispatchSystem["<b>Hệ thống quét Radar tìm tài xế</b><br/>Quét các Shipper đang Online gần chợ"]:::shipperStep
+    DispatchSystem --> CheckShipperAccept{"<b>Có tài xế bấm<br/>nhận cuốc xe?</b>"}:::decision
+    
+    CheckShipperAccept -- "Chưa có (False)" --> ExpandRadius["<b>Mở rộng bán kính tìm kiếm</b><br/>Tăng khoảng cách quét từ 3km lên 5km"]:::shipperStep
+    ExpandRadius --> DispatchSystem
+    
+    CheckShipperAccept -- "Có nhận (True)" --> AssignShipper["<b>Gán Shipper vào đơn hàng con</b><br/>Cung cấp vị trí sạp chợ cần lấy hàng"]:::shipperStep
+    AssignShipper --> ShipperPickup["<b>Shipper tới sạp chợ lấy hàng</b><br/>Đối chiếu mã đơn SubOrder & nhận túi hàng"]:::shipperStep
+    ShipperPickup --> ShipperStatus1["<b>Shipper bấm 'Đã lấy hàng'</b><br/>Bắt đầu di chuyển giao hỏa tốc"]:::shipperStep
+    
+    ShipperStatus1 --> LiveGPS["<b>Kích hoạt Live GPS Tracking</b><br/>Khách hàng xem Shipper chạy trên bản đồ số"]:::shipperStep
+    LiveGPS --> ArriveHome["<b>Shipper đến địa chỉ nhà khách</b><br/>Liên hệ người mua ra nhận hàng"]:::shipperStep
+
+    ArriveHome --> CheckDeliveryOK{"<b>Khách nhận hàng<br/>thành công không?</b>"}:::decision
+    
+    CheckDeliveryOK -- "Thất bại (Bom hàng / Không gọi được)" --> DeliveryFailed["<b>Báo cáo sự cố khẩn cấp</b><br/>Chụp ảnh địa chỉ & ghi nhận lý do"]:::shipperStep
+    DeliveryFailed --> ReturnToMarket["<b>Mang hàng hoàn trả chợ</b><br/>Gửi túi thực phẩm lại Ban Quản Lý chợ đối soát"]:::adminStep
+    ReturnToMarket --> OrderTerminatedFail(["<b>KẾT THÚC: ĐƠN HÀNG THẤT BẠI</b>"]):::failEnd
+
+    CheckDeliveryOK -- "Thành công (True)" --> CheckCollectCOD{"<b>Đơn hàng có thu<br/>tiền mặt COD?</b>"}:::decision
+    CheckCollectCOD -- "Có thu COD" --> CollectCash["<b>Shipper thu tiền mặt</b><br/>Thu đúng số tiền cần thanh toán"]:::shipperStep
+    CheckCollectCOD -- "Không thu (Đã trả trước)" --> HandoverGoods["<b>Bàn giao túi thực phẩm tươi sạch</b><br/>Khách hàng kiểm tra hàng tươi ngon"]:::shipperStep
+    CollectCash --> HandoverGoods
+    
+    HandoverGoods --> ShipperConfirm["<b>Shipper bấm 'Hoàn tất giao hàng'</b><br/>Chụp ảnh túi hàng đã giao làm bằng chứng"]:::shipperStep
+
+    %% ==========================================
+    %% 7. QUYẾT TOÁN DÒNG TIỀN & ĐÁNH GIÁ
+    %% ==========================================
+    ShipperConfirm --> FinancialSettlement["<b>Quyết toán tài chính tự động</b><br/>Hệ thống giải ngân tiền trong ví"]:::payStep
+    FinancialSettlement --> SettleShipper["<b>Cộng cước vận chuyển</b><br/>Tiền công nổ ngay vào Ví Tài Xế"]:::shipperStep
+    FinancialSettlement --> SettleSeller["<b>Cộng tiền bán hàng</b><br/>Tiền vào Ví Sạp sau trừ chiết khấu sàn"]:::sellerStep
+    
+    FinancialSettlement --> BuyerNotification["<b>Thông báo giao hàng thành công</b><br/>Gửi tin nhắn xác nhận tới App Khách hàng"]:::buyerStep
+    BuyerNotification --> TraceQR["<b>Quét mã QR truy xuất nguồn gốc</b><br/>Xem xuất xứ trang trại & chứng nhận VietGAP"]:::buyerStep
+    TraceQR --> BuyerReview["<b>Đánh giá & Chấm điểm sao</b><br/>Phản hồi độ tươi ngon của quầy sạp chợ"]:::buyerStep
+    BuyerReview --> OrderCompletedSuccess(["<b>KẾT THÚC: ĐƠN HÀNG HOÀN TẤT 100%</b>"]):::startEnd

@@ -87,7 +87,7 @@ function resolveTelegramToken(): string {
       }
     }
   } catch (e) {}
-  return '8873124743:AAGnQs8cqHBf8lolMKlgjl6jqEh2aF8XN_Y'
+  return process.env.TELEGRAM_SUPPORT_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || ''
 }
 
 function resolveTelegramAdminChatId(): string {
@@ -134,7 +134,7 @@ function resolvePaymentSecret(): string {
       if (match) return match[1].trim().replace(/^[\"\']|[\"\']$/g, '')
     }
   } catch (e) {}
-  return 'ZM_SEC_99887766554433221100_BANKING_PRO'
+  return process.env.ZONEMART_PAYMENT_SECRET || ''
 }
 
 function resolveCassoApiKey(): string {

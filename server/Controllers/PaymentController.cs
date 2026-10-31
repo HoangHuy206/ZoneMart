@@ -5,6 +5,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
+using MongoDB.Driver;
+using ZoneMart.Server.Models;
 using ZoneMart.Server.Services;
 
 namespace ZoneMart.Server.Controllers
@@ -13,10 +16,17 @@ namespace ZoneMart.Server.Controllers
     public class PaymentController : ControllerBase
     {
         private readonly OrderRealtimeManager _realtimeManager;
+        private readonly IConfiguration? _configuration;
+        private readonly MongoDbService? _mongoService;
 
-        public PaymentController(OrderRealtimeManager realtimeManager)
+        public PaymentController(
+            OrderRealtimeManager realtimeManager,
+            IConfiguration? configuration = null,
+            MongoDbService? mongoService = null)
         {
             _realtimeManager = realtimeManager;
+            _configuration = configuration;
+            _mongoService = mongoService;
         }
 
         // ========================================================
@@ -95,7 +105,7 @@ namespace ZoneMart.Server.Controllers
                 {
                     while (!cancellationToken.IsCancellationRequested && !tcs.Task.IsCompleted)
                     {
-                        await Task.WhenAny(tcs.Task, Task.Delay(15000, cancellationToken));
+                        var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(15000, cancellationToken));
                         if (cancellationToken.IsCancellationRequested || tcs.Task.IsCompleted) break;
 
                         try
@@ -170,10 +180,35 @@ namespace ZoneMart.Server.Controllers
         [HttpPost("/bank/api/transaction-sync")]
         [HttpPost("/api/payment/transaction-callback")]
         [HttpPost("/tingo-callback")]
-        public IActionResult HandlePaymentWebhook([FromBody] JsonElement body)
+        public async Task<IActionResult> HandlePaymentWebhook([FromBody] JsonElement body)
         {
             try
             {
+                // BẢO MẬT: Kiểm tra Secret Key chống giả mạo webhook từ bên ngoài
+                string expectedSecret = Environment.GetEnvironmentVariable("ZONEMART_PAYMENT_SECRET")
+                    ?? _configuration?["PaymentSettings:WebhookSecret"]
+                    ?? "";
+
+                if (!string.IsNullOrWhiteSpace(expectedSecret) && !expectedSecret.Contains("YOUR_PAYMENT"))
+                {
+                    string authHeader = Request.Headers.Authorization.ToString().Replace("Bearer ", "").Trim();
+                    string apiKeyHeader = Request.Headers["x-api-key"].ToString().Trim();
+                    string secretKeyHeader = Request.Headers["x-secret-key"].ToString().Trim();
+                    string tokenQuery = Request.Query["token"].ToString().Trim();
+                    string sepayKey = Environment.GetEnvironmentVariable("SEPAY_API_KEY") ?? "";
+
+                    bool authorized = authHeader == expectedSecret ||
+                                      apiKeyHeader == expectedSecret ||
+                                      secretKeyHeader == expectedSecret ||
+                                      tokenQuery == expectedSecret ||
+                                      (!string.IsNullOrWhiteSpace(sepayKey) && (authHeader == sepayKey || apiKeyHeader == sepayKey));
+
+                    if (!authorized)
+                    {
+                        return Unauthorized(new { error = true, message = "Truy cập trái phép: Webhook Secret không hợp lệ." });
+                    }
+                }
+
                 long amount = 0;
                 if (body.TryGetProperty("amount", out var a1)) amount = a1.GetInt64();
                 else if (body.TryGetProperty("transferAmount", out var a2)) amount = a2.GetInt64();
@@ -198,6 +233,22 @@ namespace ZoneMart.Server.Controllers
                 if (!string.IsNullOrWhiteSpace(matchedCode))
                 {
                     _realtimeManager.RecordPaidOrder(matchedCode, amount, bankAccount, body);
+
+                    // Đồng bộ trạng thái thanh toán "paid" vào CSDL MongoDB Atlas
+                    if (_mongoService != null)
+                    {
+                        try
+                        {
+                            var filter = Builders<ParentOrder>.Filter.Or(
+                                Builders<ParentOrder>.Filter.Eq(o => o.Id, matchedCode),
+                                Builders<ParentOrder>.Filter.Regex(o => o.ShippingAddress, new MongoDB.Bson.BsonRegularExpression(matchedCode, "i"))
+                            );
+                            var update = Builders<ParentOrder>.Update.Set(o => o.PaymentStatus, "paid");
+                            await _mongoService.ParentOrders.UpdateManyAsync(filter, update);
+                        }
+                        catch { }
+                    }
+
                     return Ok(new
                     {
                         error = false,

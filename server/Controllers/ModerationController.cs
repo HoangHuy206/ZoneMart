@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using ZoneMart.Server.Models;
 using ZoneMart.Server.Services;
@@ -6,6 +7,7 @@ namespace ZoneMart.Server.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[EnableRateLimiting("auth-rate-limit")]
 public class ModerationController : ControllerBase
 {
     private readonly IProductModerationService _moderationService;

@@ -17,6 +17,28 @@ server/appsettings.Development.json
 appsettings.Production.json
 server/appsettings.Production.json
 
+# Local Order Data & Cache (Never push customer PII to Git)
+.*_orders.json
+.*_data.json
+.paid_orders.json
+.pending_orders.json
+.pending_realtime_orders.json
+.realtime_orders.json
+.review_data.json
+.seller_chat_data.json
+server/.*_orders.json
+server/.*_data.json
+server/.paid_orders.json
+server/.pending_orders.json
+server/.pending_realtime_orders.json
+server/.review_data.json
+server/.seller_chat_data.json
+ZoneMart/.*_orders.json
+ZoneMart/.*_data.json
+ZoneMart/.paid_orders.json
+ZoneMart/.pending_orders.json
+ZoneMart/.realtime_orders.json
+
 # IDE & Editor files
 .vs/
 .vscode/*
@@ -68,7 +90,6 @@ __pycache__/
 !**/gradlew.bat
 !**/gradlew
 
-
 # Telegram Antigravity Bridge (Local Automation - Do NOT push to Git)
 scripts/*
 !scripts/project_reporter.py
@@ -77,7 +98,6 @@ bot_config.json
 *.vbs
 *.log
 .telegram_uploads/
-
 
 *.pid
 .bot.pid

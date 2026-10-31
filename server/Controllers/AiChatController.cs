@@ -1288,7 +1288,7 @@ namespace ZoneMart.Server.Controllers
 
         /// BƯỚC 2: Gọi http://ip-api.com/json/{IP_của_khách} để trích xuất city
 
-        /// BƯỚC 3: Truyền city vào OpenWeatherMap API: https://api.openweathermap.org/data/2.5/weather?q={city}&units=metric&lang=vi&appid=8cf6d64868efe0e4023e58c6fcd4d676
+        /// BƯỚC 3: Truyền city vào OpenWeatherMap API: https://api.openweathermap.org/data/2.5/weather?q={city}&units=metric&lang=vi&appid={API_KEY}
 
         /// BƯỚC 4: Trích xuất temp và description
 
@@ -1436,7 +1436,12 @@ namespace ZoneMart.Server.Controllers
 
                 // BƯỚC 3: Dùng biến city vừa lấy được, truyền vào URL của OpenWeatherMap
 
-                string weatherUrl = $"https://api.openweathermap.org/data/2.5/weather?q={Uri.EscapeDataString(city)}&units=metric&lang=vi&appid=8cf6d64868efe0e4023e58c6fcd4d676";
+                string weatherApiKey = _configuration["OpenWeather:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENWEATHER_API_KEY") ?? "";
+                if (string.IsNullOrWhiteSpace(weatherApiKey))
+                {
+                    weatherApiKey = "YOUR_OPENWEATHER_KEY";
+                }
+                string weatherUrl = $"https://api.openweathermap.org/data/2.5/weather?q={Uri.EscapeDataString(city)}&units=metric&lang=vi&appid={weatherApiKey}";
 
                 using var ctsW = new CancellationTokenSource(TimeSpan.FromMilliseconds(1200));
 
