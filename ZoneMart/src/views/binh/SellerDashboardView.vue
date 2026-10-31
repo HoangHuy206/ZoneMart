@@ -225,10 +225,14 @@ onMounted(async () => {
       order.paymentMethod.toLowerCase().includes("qr") ||
       order.paymentMethod.toLowerCase().includes("chuyển khoản") ||
       order.paymentMethod.toLowerCase().includes("online_qr")
-    )) || (order.status as any) === "Đã thanh toán" || order.total === 0;
+    )) || (order.status as any) === "Đã thanh toán";
 
-    // Khi quét mã QR thanh toán thì tổng tiền nổ đơn gian hàng hiển thị là 0đ
-    const formattedPrice = isQr ? "0 đ" : `${(order.total || 0).toLocaleString("vi-VN")} đ`;
+    // Giá trị đơn hàng của gian hàng là tổng tiền thực tế của đơn hàng (bảo toàn đúng doanh thu cho shop)
+    let orderNum = typeof order.total === "number" ? order.total : (parseInt(String(order.total || "").replace(/\D/g, ""), 10) || 0);
+    if (orderNum <= 0 && Array.isArray(order.items) && order.items.length > 0) {
+      orderNum = order.items.reduce((sum: number, it: any) => sum + ((it.price || 0) * (it.quantity || it.qty || 1)), 0);
+    }
+    const formattedPrice = `${orderNum.toLocaleString("vi-VN")} đ`;
 
     const mappedItems: OrderItem[] = Array.isArray(order.items) ? order.items.map((it: any) => {
       let img = it.image || it.img || "";
@@ -295,7 +299,7 @@ onMounted(async () => {
     orderRealtimeService.playOrderAlertSound();
 
     // Toast thông báo nổ đơn
-    triggerToast(`🔔 NỔ ĐƠN HỎA TỐC! Mã đơn ${orderCode} • ${isQr ? '0 đ (Đã thanh toán QR)' : formattedPrice}`);
+    triggerToast(`🔔 NỔ ĐƠN HỎA TỐC! Mã đơn ${orderCode} • ${formattedPrice} (${isQr ? 'Đã thanh toán QR' : 'Thu tiền mặt COD'})`);
 
     // Bật popup nổ đơn mới cho gian hàng
     newIncomingOrderNotification.value = {
@@ -672,6 +676,10 @@ const topProducts = computed<TopProduct[]>(() => {
   return products.value.slice(0, 5).map((prod) => {
     let soldQty = 0;
     orders.value.forEach((ord) => {
+      const statusLower = (ord.status || "").toLowerCase().trim();
+      if (statusLower === "đã hủy" || statusLower === "cancelled" || statusLower.includes("hủy")) {
+        return;
+      }
       ord.items?.forEach((it) => {
         const itName = (it.name || "").toLowerCase().trim();
         const pName = prod.name.toLowerCase().trim();
@@ -867,17 +875,57 @@ const loadSellerStoreProfile = async (parsedUser: any) => {
 
 // Tính toán lại các KPI thực tế dựa trên danh sách đơn
 const recalculateKPIs = () => {
-  const totalCount = orders.value.length;
-  storeInfo.totalOrders = totalCount.toLocaleString("vi-VN");
+  // Chỉ tính đơn hợp lệ (bỏ qua đơn đã hủy)
+  const validOrders = orders.value.filter(ord => {
+    const st = (ord.status || "").toLowerCase().trim();
+    return st !== "đã hủy" && st !== "cancelled" && !st.includes("hủy");
+  });
+  storeInfo.totalOrders = validOrders.length.toLocaleString("vi-VN");
 
   let totalRev = 0;
+  let revenueCount = 0;
+
   orders.value.forEach(ord => {
+    const statusLower = (ord.status || "").toLowerCase().trim();
+    if (statusLower === "đã hủy" || statusLower === "cancelled" || statusLower.includes("hủy")) {
+      return;
+    }
+
     const rawNum = parseInt((ord.priceFormatted || "").replace(/\D/g, ""), 10) || 0;
-    totalRev += rawNum;
+    if (rawNum <= 0) return;
+
+    const payMethod = (ord.paymentMethod || "").toLowerCase().trim();
+    const isPaidOnline = payMethod.includes("qr") || 
+                         payMethod.includes("chuyển khoản") || 
+                         payMethod.includes("online") || 
+                         payMethod.includes("thẻ") ||
+                         statusLower === "đã thanh toán" ||
+                         statusLower.includes("đã thanh toán");
+
+    const isDelivered = statusLower === "đã giao hàng" || 
+                        statusLower === "hoàn thành" || 
+                        statusLower === "completed" || 
+                        statusLower === "delivered" ||
+                        statusLower.includes("giao thành công");
+
+    // 1. ĐƠN THANH TOÁN QR / CHUYỂN KHOẢN (PREPAID):
+    // Khách đã quét mã QR thanh toán tiền trước thành công -> Cộng ngay vào Doanh Thu Tích Lũy (trừ khi bị hủy)
+    if (isPaidOnline) {
+      totalRev += rawNum;
+      revenueCount++;
+    }
+    // 2. ĐƠN THANH TOÁN COD (TIỀN MẶT KHI NHẬN HÀNG - POSTPAID):
+    // Khách chỉ trả tiền khi nhận hàng. Khi đơn còn đang "Chờ xác nhận", "Đang xử lý", "Đang giao hàng"
+    // (chưa giao xong và chưa bấm xác nhận) -> TUYỆT ĐỐI KHÔNG CỘNG VÀO DOANH THU.
+    // CHỈ CỘNG VÀO DOANH THU KHI ĐÃ GIAO HÀNG THÀNH CÔNG!
+    else if (isDelivered) {
+      totalRev += rawNum;
+      revenueCount++;
+    }
   });
 
   storeInfo.lifetimeValue = `${totalRev.toLocaleString("vi-VN")} đ`;
-  const avg = totalCount > 0 ? Math.round(totalRev / totalCount) : 0;
+  const avg = revenueCount > 0 ? Math.round(totalRev / revenueCount) : 0;
   storeInfo.avgOrderValue = `${avg.toLocaleString("vi-VN")} đ`;
 };
 
@@ -895,6 +943,16 @@ const loadSellerOrdersAndKPIs = () => {
       if (Array.isArray(parsedOrders)) {
         // Lọc bỏ triệt để các đơn hàng bị rò rỉ từ các shop khác hoặc đơn buyer test cũ
         sellerOrderList = parsedOrders.filter(ord => isOrderForCurrentSeller(ord));
+        // Tự động khôi phục giá trị thực tế cho các đơn QR bị lưu nhầm "0 đ" trước đây
+        sellerOrderList.forEach(ord => {
+          const numPrice = parseInt((ord.priceFormatted || "").replace(/\D/g, ""), 10) || 0;
+          if (numPrice === 0 && Array.isArray(ord.items) && ord.items.length > 0) {
+            const sumItems = ord.items.reduce((sum: number, it: any) => sum + ((it.price || 0) * (it.qty || it.quantity || 1)), 0);
+            if (sumItems > 0) {
+              ord.priceFormatted = `${sumItems.toLocaleString("vi-VN")} đ`;
+            }
+          }
+        });
         // Đảm bảo từng món hàng trong đơn đã lưu đều có ảnh (lấy từ sản phẩm gian hàng nếu bị thiếu)
         sellerOrderList.forEach(ord => {
           if (Array.isArray(ord.items)) {
@@ -929,9 +987,13 @@ const loadSellerOrdersAndKPIs = () => {
               const code = bo.orderCode || (bo.id ? `#${bo.id.slice(-6).toUpperCase()}` : "#ZM" + Math.floor(1000 + Math.random() * 9000));
 
               const existingIdx = sellerOrderList.findIndex(o => o.id === ordId || o.orderCode === code);
-              const formattedPrice = typeof bo.total === "number"
-                ? `${bo.total.toLocaleString("vi-VN")} đ`
-                : (bo.priceFormatted || "0 đ");
+              let rawOrderTotal = typeof bo.total === "number" ? bo.total : (parseInt(String(bo.total || "").replace(/\D/g, ""), 10) || 0);
+              if (rawOrderTotal <= 0 && Array.isArray(bo.items) && bo.items.length > 0) {
+                rawOrderTotal = bo.items.reduce((s: number, it: any) => s + ((it.price || 0) * (it.quantity || it.qty || 1)), 0);
+              }
+              const formattedPrice = rawOrderTotal > 0
+                ? `${rawOrderTotal.toLocaleString("vi-VN")} đ`
+                : (bo.priceFormatted && bo.priceFormatted !== "0 đ" ? bo.priceFormatted : "0 đ");
 
               const mappedItems: OrderItem[] = Array.isArray(bo.items) ? bo.items.map((it: any) => {
                 let img = it.image || it.img || "";
