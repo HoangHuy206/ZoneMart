@@ -379,6 +379,8 @@ interface ChatMessage {
 
   comboSuggestions?: string[];
 
+  categoryOptions?: string[];
+
   selectedShipping?: string;
 
   selectedPayment?: string;
@@ -676,6 +678,26 @@ const supportState = ref<string>('NONE');
 const supportDraft = ref<any>({});
 
 const selectedSupportTopic = ref<string>('');
+
+const categoryState = ref<{
+  step: string;
+  categoryId: string;
+  categoryName: string;
+  subCategoryId?: string;
+  subCategoryName?: string;
+  dishStatusId?: string;
+  dishStatusName?: string;
+  options: string[];
+}>({
+  step: 'NONE',
+  categoryId: '',
+  categoryName: '',
+  subCategoryId: '',
+  subCategoryName: '',
+  dishStatusId: '',
+  dishStatusName: '',
+  options: []
+});
 
 
 
@@ -2297,6 +2319,8 @@ const goToBuyerOrdersDirectly = () => {
 
   orderState.value = { step: 'IDLE', cartItems: [], pendingItem: null };
 
+  categoryState.value = { step: 'NONE', categoryId: '', categoryName: '', options: [] };
+
   isOpen.value = false;
 
   router.push('/buyer-orders').catch(() => {
@@ -3818,7 +3842,9 @@ async function sendMessage(customText?: string, extraPayload?: any) {
 
                 cartStores: cart.cartStores.value || [],
 
-                selectedCartItems: extraPayload?.selectedCartItems || undefined
+                selectedCartItems: extraPayload?.selectedCartItems || undefined,
+
+                categoryState: categoryState.value
 
               })
 
@@ -4044,7 +4070,9 @@ async function sendMessage(customText?: string, extraPayload?: any) {
 
         cartStores: cart.cartStores.value || [],
 
-        selectedCartItems: extraPayload?.selectedCartItems || undefined
+        selectedCartItems: extraPayload?.selectedCartItems || undefined,
+
+        categoryState: categoryState.value
 
       })
 
@@ -4117,6 +4145,12 @@ async function sendMessage(customText?: string, extraPayload?: any) {
       if (data.orderState !== undefined) {
 
         orderState.value = data.orderState;
+
+      }
+
+      if (data.categoryState !== undefined) {
+
+        categoryState.value = data.categoryState;
 
       }
 
@@ -4223,6 +4257,8 @@ async function sendMessage(customText?: string, extraPayload?: any) {
         stores: data.stores,
 
         actionIntent: data.actionIntent,
+
+        categoryOptions: data.categoryOptions,
 
         existingCartItems: data.existingCartItems || [],
 
@@ -4939,6 +4975,18 @@ async function handleBackToCurrentLocation() {
 const chatPlaceholderText = computed(() => {
 
   if (isRecordingVoice.value) return '🎙️ Đang lắng nghe giọng nói của bạn...';
+
+  if (categoryState.value?.step === 'AWAITING_DISH_STATUS') {
+    return 'Nhập số (1, 2, 3...) hoặc tên trạng thái món (nhắn "hủy" để dừng)...';
+  }
+
+  if (categoryState.value?.step === 'AWAITING_SUBCATEGORY') {
+    return 'Nhập số (1, 2, 3...) hoặc tên nhóm hàng (nhắn "hủy" để dừng)...';
+  }
+
+  if (categoryState.value?.step === 'AWAITING_MAIN_CATEGORY') {
+    return 'Nhập số (1 - 5) hoặc tên phân loại (nhắn "hủy" để dừng)...';
+  }
 
   if (registrationState.value === 'UPGRADE_CHOOSE_ROLE') {
     return 'Bấm chọn 1 trong 2 vai trò nâng cấp hoặc nhập "Hủy" để dừng...';
@@ -6205,6 +6253,21 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
                   </template>
 
 
+
+                  <!-- CHỌN NHÓM HÀNG HOẶC PHÂN LOẠI NGÀNH HÀNG -->
+                  <template v-else-if="msg.actionIntent === 'SHOW_SUBCATEGORY_OPTIONS' || msg.actionIntent === 'SHOW_MAIN_CATEGORY_OPTIONS' || msg.actionIntent === 'SHOW_DISH_STATUS_OPTIONS'">
+                    <button
+                      v-for="(opt, oIdx) in (msg.categoryOptions || [])"
+                      :key="oIdx"
+                      class="btn-intent btn-intent-ai"
+                      @click="sendMessage((oIdx + 1).toString())"
+                    >
+                      {{ opt }}
+                    </button>
+                    <button class="btn-intent btn-intent-manual" @click="sendMessage('hủy')">
+                      <i class="bi bi-x-circle me-1"></i> Hủy gợi ý
+                    </button>
+                  </template>
 
                   <!-- CHỌN PHƯƠNG THỨC VẬN CHUYỂN -->
 
