@@ -3,4 +3,41 @@ Allow: /
 Disallow: /admin
 Disallow: /manager
 
+# OpenAI (ChatGPT & SearchBot)
+User-agent: GPTBot
+Allow: /
+Disallow: /admin
+Disallow: /manager
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+# Anthropic (Claude)
+User-agent: ClaudeBot
+Allow: /
+Disallow: /admin
+Disallow: /manager
+
+User-agent: anthropic-ai
+Allow: /
+
+# Perplexity AI
+User-agent: PerplexityBot
+Allow: /
+
+# Apple Intelligence
+User-agent: Applebot-Extended
+Allow: /
+
+# Google Gemini / AI
+User-agent: Google-Extended
+Allow: /
+
+# Microsoft Bing & Copilot
+User-agent: Bingbot
+Allow: /
+
 Sitemap: https://zonemart.id.vn/sitemap.xml

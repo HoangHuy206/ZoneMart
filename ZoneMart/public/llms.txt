@@ -1,0 +1,31 @@
+# ZoneMart – E-Commerce Platform with 10km Express Delivery
+> ZoneMart (zonemart.id.vn) là sàn thương mại điện tử đa kênh thế hệ mới kết nối Người mua (Buyer), Người bán (Seller) và Tài xế giao hàng (Shipper) với cam kết giao hàng hỏa tốc trong bán kính 10km.
+
+## Giới thiệu chung
+- Tên nền tảng: ZoneMart
+- Website chính thức: https://zonemart.id.vn
+- Lĩnh vực: Thương mại điện tử (E-commerce), Bán lẻ đa ngành, Giao hàng siêu tốc nội thành theo bán kính định vị GPS (Zone-based Commerce).
+- Mô hình hoạt động: Đa bên (Multi-sided Platform) hỗ trợ 4 vai trò người dùng:
+  1. Khách mua hàng (Buyer): Mua sắm tiện lợi, gợi ý sản phẩm theo khoảng cách gần nhất, theo dõi vị trí shipper trên bản đồ thời gian thực (Live Leaflet GPS Tracker), nhận hàng hỏa tốc 10km.
+  2. Đối tác bán hàng (Seller): Quản lý gian hàng số, đăng tải sản phẩm, quản lý tồn kho, theo dõi doanh thu và phân luồng đơn hàng tự động.
+  3. Tài xế giao hàng (Shipper): Nhận đơn hàng theo thuật toán khoảng cách tối ưu, hỗ trợ định vị dẫn đường thông minh.
+  4. Quản trị hệ thống (Manager / Admin): Kiểm duyệt sản phẩm, quản lý gian hàng và điều phối chất lượng dịch vụ.
+
+## Công nghệ & Bảo mật cốt lõi
+- Xác thực sinh trắc học phần cứng chính chủ: Hỗ trợ Apple Face ID / Touch ID (iOS Safari) và Cảm biến vân tay Android / Windows Hello thông qua giao thức W3C WebAuthn / Passkeys backed by Apple Secure Enclave.
+- Hệ thống định vị bán kính: Sử dụng bản đồ OpenStreetMap & Leaflet tính toán khoảng cách thực tế giữa người mua và kho hàng.
+- Nền tảng: Frontend Vue 3 + TypeScript, Backend C# .NET 9 Kestrel hiệu năng cao, CSDL MongoDB và Nginx Reverse Proxy với chứng chỉ SSL LetsEncrypt.
+
+## Danh mục sản phẩm & Dịch vụ chính
+- Thực phẩm tươi sống, nông sản sạch & đồ ăn nhanh.
+- Đồ uống, bánh kẹo & đồ ăn vặt đóng gói.
+- Đồ dùng gia đình, thiết bị tiện ích thông minh & văn phòng phẩm.
+- Phụ kiện công nghệ & đồ điện tử tiêu dùng.
+
+## Các liên kết chính
+- Trang chủ: https://zonemart.id.vn/
+- Danh mục sản phẩm: https://zonemart.id.vn/products
+- Đăng ký & Giới thiệu cho Người bán: https://zonemart.id.vn/seller-landing
+- Đăng ký & Giới thiệu cho Shipper: https://zonemart.id.vn/shipper-landing
+- Liên hệ & Hỗ trợ khách hàng: https://zonemart.id.vn/contact
+- Sơ đồ website (Sitemap): https://zonemart.id.vn/sitemap.xml
