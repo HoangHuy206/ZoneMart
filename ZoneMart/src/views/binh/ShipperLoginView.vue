@@ -13,6 +13,11 @@ import { useAuth, type UserRole } from '../../composables/useAuth';
 import { apiFetch } from '../../utils/apiConfig';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
 import FaceScanModal from '../../components/auth/FaceScanModal.vue';
+import {
+  authenticateBiometricPasskey,
+  registerBiometricPasskey,
+  browserSupportsWebAuthn,
+} from '../../utils/biometricHelper';
 import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
 import { useToast } from '../../composables/useToast';
 
@@ -79,8 +84,66 @@ const onCelebrationComplete = () => {
 // Trạng thái & Handler cho Đăng nhập Face ID AI UniFace
 const showFaceLoginModal = ref(false);
 
-const openFaceIdLoginModal = () => {
-  showFaceLoginModal.value = true;
+const openFaceIdLoginModal = async () => {
+  const targetAccount = form.account.trim();
+  const targetPassword = form.password.trim();
+  const savedBioAccount = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_account') : null;
+  const savedBioPass = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_pass') : null;
+  const actToUse = targetAccount || savedBioAccount || '';
+
+  if (browserSupportsWebAuthn()) {
+    try {
+      const authRes = await authenticateBiometricPasskey(actToUse);
+      if (authRes.success && authRes.data?.user) {
+        toast.success('Xác thực Face ID / Vân tay phần cứng thành công!');
+        handleFaceLoginSuccess(authRes.data);
+        return;
+      }
+
+      if (authRes.message?.includes('hủy') || authRes.message?.includes('NotAllowedError')) {
+        toast.info('Đã hủy quét sinh trắc học.');
+        return;
+      }
+
+      if (authRes.hasPasskey === false || !savedBioAccount) {
+        const pwdToUse = targetPassword || (savedBioPass ? atob(savedBioPass) : '');
+        if (!targetAccount || !pwdToUse) {
+          toast.info('Vui lòng nhập Tài khoản & Mật khẩu trước một lần để liên kết Face ID / Vân tay phần cứng của máy!');
+          return;
+        }
+
+        const loginCheck = await apiFetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account: targetAccount, password: pwdToUse }),
+        });
+
+        if (!loginCheck || !loginCheck.ok) {
+          toast.error('Tài khoản hoặc mật khẩu không đúng.');
+          return;
+        }
+
+        const loginData = await loginCheck.json();
+        toast.info('Vui lòng quét Face ID / Vân tay trên thiết bị để liên kết...');
+        const regRes = await registerBiometricPasskey(targetAccount);
+        if (regRes.success) {
+          localStorage.setItem('zonemart_passkey_saved', 'true');
+          localStorage.setItem('zonemart_biometric_account', targetAccount);
+          localStorage.setItem('zonemart_biometric_pass', btoa(pwdToUse));
+          toast.success('Đã liên kết phần cứng thành công!');
+        }
+        handleFaceLoginSuccess(loginData);
+        return;
+      }
+
+      toast.error(authRes.message || 'Xác thực sinh trắc học không thành công.');
+    } catch (err: any) {
+      toast.error('Lỗi xác thực: ' + (err?.message || 'Vui lòng thử lại.'));
+    }
+    return;
+  }
+
+  toast.error('Thiết bị hoặc trình duyệt không hỗ trợ sinh trắc học phần cứng.');
 };
 
 const handleFaceLoginSuccess = (data: any) => {

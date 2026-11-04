@@ -10,13 +10,16 @@ import { ref, reactive, onMounted } from 'vue';
 import {
   detectBiometricDevice,
   verifyDeviceFaceId,
+  authenticateBiometricPasskey,
+  registerBiometricPasskey,
+  browserSupportsWebAuthn,
   type BiometricDeviceInfo,
 } from '../../utils/biometricHelper';
+import { Capacitor } from '@capacitor/core';
 import { useRouter, useRoute } from 'vue-router';
 import ForgotPasswordForm from './ForgotPasswordForm.vue';
 import { useAuth, type UserRole } from '../../composables/useAuth';
 import { apiFetch } from '../../utils/apiConfig';
-import { Capacitor } from '@capacitor/core';
 import AuthCelebrationModal from '../../components/common/AuthCelebrationModal.vue';
 import FaceScanModal from '../../components/auth/FaceScanModal.vue';
 import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
@@ -106,100 +109,116 @@ const handleQuickBiometricLogin = async () => {
   const deviceLabel = biometricDevice.value?.label || 'Face ID';
   const savedBioAccount = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_account') : null;
   const savedBioPass = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_pass') : null;
-  const isPasskeySaved = typeof localStorage !== 'undefined' && (localStorage.getItem('zonemart_passkey_saved') === 'true' || !!savedBioAccount);
-
-  // Nếu máy chưa từng lưu Face ID và người dùng chưa nhập tài khoản
-  if (!isPasskeySaved && !targetAccount) {
-    toast.info(
-      `Vui lòng nhập Tài khoản & Mật khẩu lần đầu tiên, sau đó bấm biểu tượng ${deviceLabel} để kích hoạt!`,
-      `Kích Hoạt ${deviceLabel}`
-    );
-    return;
-  }
+  const actToUse = targetAccount || savedBioAccount || '';
 
   try {
     isBiometricChecking.value = true;
     errorMessage.value = '';
 
-    // BƯỚC 1: BẮT BUỘC QUÉT SINH TRẮC HỌC (VÂN TAY ANDROID / FACE ID IPHONE / CAMERA AI WEB)
-    if (biometricDevice.value?.iconType === 'fingerprint' || biometricDevice.value?.type === 'android-biometric') {
-      toast.info(`Vui lòng chạm cảm biến vân tay trên thiết bị để quét ${deviceLabel}...`, `Xác thực ${deviceLabel}`);
-    } else {
-      toast.info(`Vui lòng nhìn vào thiết bị để quét ${deviceLabel}...`, `Xác thực ${deviceLabel}`);
-    }
-
-    // Gọi cảm biến Native (Vân tay Android hoặc Face ID iOS)
-    const nativeVerify = await verifyDeviceFaceId(`Xác thực ${deviceLabel} để đăng nhập tài khoản ZoneMart`);
-
-    const isAndroidPlatform = typeof window !== 'undefined' && (
-      (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') ||
-      biometricDevice.value?.type === 'android-biometric'
-    );
-
-    if (nativeVerify.message !== 'NO_NATIVE_BRIDGE') {
-      // Đang chạy trên Native App (Capacitor Android hoặc iOS)
-      if (!nativeVerify.success) {
-        // BẤM HỦY HOẶC KHÔNG KHỚP -> DỪNG NGAY LẬP TỨC!
-        toast.error(nativeVerify.message || `Xác thực ${deviceLabel} không khớp hoặc bạn đã hủy.`, deviceLabel);
+    // 1. WebAuthn: Gọi trực tiếp phần cứng thiết bị (Apple Face ID / Touch ID trên Safari iOS, Fingerprint Android, Windows Hello)
+    if (browserSupportsWebAuthn()) {
+      // 1.1 Thử xác thực Passkey phần cứng đã lưu trên thiết bị
+      const authRes = await authenticateBiometricPasskey(actToUse);
+      if (authRes.success && authRes.data?.user) {
+        toast.success(`Xác thực phần cứng ${deviceLabel} thành công!`, `${deviceLabel} Hợp Lệ`);
+        handleFaceLoginSuccess(authRes.data);
         return;
       }
-      // Quét sinh trắc học thành công 100%!
-      toast.success(`Xác thực ${deviceLabel} thành công!`, `${deviceLabel} Hợp Lệ`);
-    } else {
-      // Nếu là thiết bị Android Native, tuyệt đối KHÔNG mở camera quét mặt:
-      if (isAndroidPlatform) {
-        toast.error('Thiết bị Android chưa bật cảm biến vân tay hoặc chưa cài đặt vân tay trong Cài đặt máy. Vui lòng đăng nhập bằng mật khẩu!', 'Cảm Biến Vân Tay');
+
+      // Nếu người dùng bấm Hủy trên giao diện Apple Face ID / Touch ID
+      if (authRes.message?.includes('hủy') || authRes.message?.includes('NotAllowedError')) {
+        toast.info(`Đã hủy quét ${deviceLabel}.`);
         return;
       }
-      // Đang chạy trên Web Browser Desktop (không có Native Bridge):
-      showFaceScanModal.value = true;
+
+      // 1.2 Nếu tài khoản chưa từng liên kết Face ID/Vân tay với thiết bị này:
+      // Tự động kích hoạt liên kết phần cứng nếu người dùng đã nhập thông tin tài khoản & mật khẩu
+      if (authRes.hasPasskey === false || !savedBioAccount) {
+        if (!targetAccount) {
+          toast.info(
+            `Vui lòng nhập Email / SĐT và Mật khẩu trước một lần, sau đó bấm biểu tượng ${deviceLabel} để kích hoạt phần cứng trên thiết bị này!`,
+            `Kích Hoạt ${deviceLabel}`
+          );
+          return;
+        }
+
+        const pwdToUse = targetPassword || (savedBioPass ? atob(savedBioPass) : '');
+        if (!pwdToUse) {
+          toast.info(
+            `Vui lòng nhập Mật khẩu trên form để kích hoạt ${deviceLabel} cho tài khoản!`,
+            `Kích Hoạt ${deviceLabel}`
+          );
+          return;
+        }
+
+        // Kiểm tra đăng nhập với backend trước
+        const loginCheck = await apiFetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account: targetAccount, password: pwdToUse }),
+        });
+
+        if (!loginCheck || !loginCheck.ok) {
+          const errData = await loginCheck.json().catch(() => ({}));
+          toast.error(errData.message || 'Tài khoản hoặc mật khẩu không chính xác.');
+          return;
+        }
+
+        const loginData = await loginCheck.json();
+
+        // Kích hoạt Apple Face ID / Touch ID của máy để tạo khóa bảo mật
+        toast.info(`Vui lòng xác thực ${deviceLabel} trên thiết bị để liên kết phần cứng...`, `Liên Kết ${deviceLabel}`);
+        const regRes = await registerBiometricPasskey(targetAccount);
+        if (regRes.success) {
+          localStorage.setItem('zonemart_passkey_saved', 'true');
+          localStorage.setItem('zonemart_biometric_account', targetAccount);
+          localStorage.setItem('zonemart_biometric_pass', btoa(pwdToUse));
+          toast.success(`Đã liên kết phần cứng ${deviceLabel} thành công! Lần sau bạn có thể đăng nhập 1-chạm không cần mật khẩu.`);
+          handleFaceLoginSuccess(loginData);
+          return;
+        } else {
+          toast.error(regRes.message || `Chưa thể liên kết ${deviceLabel}. Bạn vẫn được đăng nhập.`);
+          handleFaceLoginSuccess(loginData);
+          return;
+        }
+      }
+
+      toast.error(authRes.message || `Xác thực ${deviceLabel} không thành công.`);
       return;
     }
 
-    // BƯỚC 2: CHỈ KHI ĐÃ QUÉT MẶT THÀNH CÔNG THÌ MỚI TIẾN HÀNH ĐĂNG NHẬP
-    const actToUse = targetAccount || savedBioAccount;
-    if (!actToUse) {
-      toast.info(
-        `Vui lòng nhập Email / SĐT và Mật khẩu trước một lần để kích hoạt ${deviceLabel} trên thiết bị này!`,
-        `Kích Hoạt ${deviceLabel}`
-      );
-      return;
+    // 2. Môi trường Native Mobile App (Capacitor Android / iOS)
+    if (Capacitor.isNativePlatform()) {
+      const nativeVerify = await verifyDeviceFaceId(`Xác thực ${deviceLabel} để đăng nhập tài khoản ZoneMart`);
+      if (nativeVerify.success) {
+        toast.success(`Xác thực ${deviceLabel} thành công!`, `${deviceLabel} Hợp Lệ`);
+        if (actToUse) {
+          const pwdToUse = targetPassword || (savedBioPass ? atob(savedBioPass) : '123456');
+          const checkLogin = await apiFetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account: actToUse, password: pwdToUse }),
+          });
+          if (checkLogin && checkLogin.ok) {
+            const loginData = await checkLogin.json();
+            handleFaceLoginSuccess(loginData);
+            return;
+          }
+        }
+      } else {
+        toast.error(nativeVerify.message || `Xác thực ${deviceLabel} không khớp.`);
+        return;
+      }
     }
-    const pwdToUse = targetPassword || (savedBioPass ? atob(savedBioPass) : '123456');
 
-    try {
-      const checkLogin = await apiFetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account: actToUse, password: pwdToUse }),
-      });
-      if (checkLogin && checkLogin.ok) {
-        const loginData = await checkLogin.json();
-        localStorage.setItem('zonemart_passkey_saved', 'true');
-        localStorage.setItem('zonemart_biometric_account', actToUse);
-        localStorage.setItem('zonemart_biometric_pass', btoa(pwdToUse));
-        handleFaceLoginSuccess(loginData);
-        return;
-      }
-    } catch (apiErr) {
-      // Chế độ ngoại tuyến nếu máy tính tắt
-      const savedUserStr = localStorage.getItem('zonemart_biometric_user');
-      if (savedUserStr) {
-        handleFaceLoginSuccess({ user: JSON.parse(savedUserStr) });
-        return;
-      }
-      enterOfflineMode();
-      return;
-    }
-  } catch (err) {
+    toast.error('Trình duyệt hoặc thiết bị này không hỗ trợ cảm biến sinh trắc học.');
+  } catch (err: any) {
     console.warn('Biometric error:', err);
-    toast.error('Có lỗi xảy ra khi xác thực Face ID. Vui lòng thử lại!');
+    toast.error('Có lỗi xảy ra khi xác thực Face ID: ' + (err?.message || 'Vui lòng thử lại!'));
   } finally {
     isBiometricChecking.value = false;
   }
 };
-
-// Đăng nhập Chế độ Ngoại tuyến khi máy tính tắt hoặc mất mạng LAN
 
 const handleFaceScanModalSuccess = (payload?: any) => {
   showFaceScanModal.value = false;

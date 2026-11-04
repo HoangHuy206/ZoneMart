@@ -97,6 +97,7 @@ public class WebAuthnController : ControllerBase
     }
 
     [HttpGet("check-passkey")]
+    [HttpGet("status")]
     public async Task<IActionResult> CheckPasskey([FromQuery] string username)
     {
         if (string.IsNullOrWhiteSpace(username))

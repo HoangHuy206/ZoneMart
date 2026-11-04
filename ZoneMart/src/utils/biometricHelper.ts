@@ -6,6 +6,8 @@ import {
   type AuthenticationResponseJSON,
   type RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
+
+export { browserSupportsWebAuthn, platformAuthenticatorIsAvailable };
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { apiFetch } from './apiConfig';
 
@@ -235,7 +237,20 @@ export async function verifyDeviceBiometrics(
     });
   }
 
-  // 3. Trình duyệt Web thông thường (không có Native Bridge)
+  // 3. Trình duyệt Web (Safari iOS, Chrome Android, Mac, Windows): Dùng WebAuthn trực tiếp qua Secure Enclave
+  if (browserSupportsWebAuthn()) {
+    try {
+      const authRes = await authenticateBiometricPasskey();
+      if (authRes.success) {
+        return { success: true, message: 'Xác thực sinh trắc học thiết bị thành công!' };
+      }
+      return { success: false, message: authRes.message || 'Xác thực sinh trắc học không thành công.' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Lỗi khi kích hoạt cảm biến sinh trắc học.' };
+    }
+  }
+
+  // 4. Trình duyệt không có hỗ trợ
   return { success: false, message: 'NO_NATIVE_BRIDGE' };
 }
 
