@@ -94,6 +94,7 @@ __pycache__/
 scripts/*
 !scripts/project_reporter.py
 !scripts/notify_telegram.py
+!scripts/deploy_vps.sh
 bot_config.json
 *.vbs
 *.log
