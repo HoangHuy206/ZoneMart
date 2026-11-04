@@ -952,7 +952,6 @@ const loadAddressForCurrentAccount = () => {
   if (!initialPhone) initialPhone = u?.phone || (u?.phoneEmail && /^0\d+$/.test(u.phoneEmail) ? u.phoneEmail : "0396222614");
   if (!initialAddr) initialAddr = localStorage.getItem('zonemart_user_address') || localStorage.getItem('zonemart_gps_address') || (u && (u as any).address) || "Xuân Phương, Nam Từ Liêm, Hà Nội";
   const userLat = localStorage.getItem('zonemart_lat');
-  
   const userLon = localStorage.getItem('zonemart_lon');
   if (userLat && userLon) {
     initialLat = parseFloat(userLat);
