@@ -293,11 +293,8 @@ const handleFormSubmit = async () => {
 
     await executeFinalSubmit();
   } catch (error: any) {
-    console.error('Lỗi khi gọi API kiểm duyệt:', error);
-    const proceed = confirm('Dịch vụ AI kiểm duyệt tạm thời bận. Bạn có muốn tiếp tục đăng sản phẩm không?');
-    if (proceed) {
-      await executeFinalSubmit();
-    }
+    moderationWarnings.value = ['Dịch vụ AI kiểm duyệt tạm thời bận. Bạn có muốn tiếp tục đăng sản phẩm không?'];
+    showWarningModal.value = true;
   } finally {
     isModerating.value = false;
   }
@@ -335,7 +332,7 @@ const executeFinalSubmit = async () => {
     form.price = 25000;
     clearImage();
   } catch (error) {
-    console.error('Lỗi khi lưu sản phẩm:', error);
+   
     toast.error('Có lỗi xảy ra khi lưu sản phẩm. Vui lòng thử lại!', 'Lỗi Đăng Sản Phẩm');
   } finally {
     isSubmitting.value = false;

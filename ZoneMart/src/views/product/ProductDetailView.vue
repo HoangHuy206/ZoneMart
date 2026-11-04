@@ -16,6 +16,7 @@ import { useAuth } from "../../composables/useAuth";
 import { useSellerChat } from "../../composables/useSellerChat";
 import { sellerChatService } from "../../services/sellerChatService";
 import { getCleanAvatar } from "../../utils/avatarHelper";
+import { useStoreOpenStatus } from "../../composables/useStoreOpenStatus";
 
 const route = useRoute();
 const router = useRouter();
@@ -23,6 +24,7 @@ const cart = useCart();
 const catalog = useProductCatalog();
 const auth = useAuth();
 const sellerChat = useSellerChat();
+const storeOpenStatus = useStoreOpenStatus();
 
 // Kiểm tra trạng thái trực tuyến thời gian thực của Shop đang xem
 const isCurrentStoreOnline = computed(() => {
@@ -156,6 +158,12 @@ const selectImage = (img: string) => {
 // Số lượng & Tùy chọn
 const quantity = ref(1);
 // Kiểm tra gian hàng chưa cập nhật địa chỉ (ở trạng thái Sắp Mở Bán)
+const isStoreTemporarilyClosed = computed(() => {
+  const sName = product.value?.store?.name || (product.value as any)?.storeName || '';
+  if (!sName) return false;
+  return storeOpenStatus.isStoreClosed(sName);
+});
+
 const isStorePendingAddress = computed(() => {
   const store = product.value?.store;
   if (!store) return false;
@@ -216,6 +224,14 @@ const showToastMessage = (msg: string) => {
 
 // Thêm vào giỏ hàng
 const handleAddToCart = () => {
+  if (isStoreTemporarilyClosed.value) {
+    toast.warning(`Gian hàng "${product.value?.store?.name || 'này'}" hiện đang tạm đóng cửa nghỉ nhận đơn hỏa tốc!`, 'Gian Hàng Tạm Đóng');
+    return;
+  }
+  if (product.value && (product.value as any).isAvailable === false) {
+    toast.warning(`Sản phẩm "${product.value?.name || 'này'}" hiện đang tạm ngưng mở bán!`, 'Tạm Ngưng Bán');
+    return;
+  }
   const storeInfo = {
     storeId: product.value.store.id,
     storeName: product.value.store.name,
@@ -239,6 +255,14 @@ const handleAddToCart = () => {
 
 // Mua ngay hỏa tốc (Thêm vào giỏ và sang trang Checkout ngay)
 const handleBuyNow = () => {
+  if (isStoreTemporarilyClosed.value) {
+    toast.warning(`Gian hàng "${product.value?.store?.name || 'này'}" hiện đang tạm đóng cửa nghỉ nhận đơn hỏa tốc!`, 'Gian Hàng Tạm Đóng');
+    return;
+  }
+  if (product.value && (product.value as any).isAvailable === false) {
+    toast.warning(`Sản phẩm "${product.value?.name || 'này'}" hiện đang tạm ngưng mở bán!`, 'Tạm Ngưng Bán');
+    return;
+  }
   handleAddToCart();
   if (!auth.isLoggedIn.value) {
     toast.warning("Vui lòng đăng nhập tài khoản để tiến hành mua hàng!", "Yêu Cầu Đăng Nhập");
@@ -396,12 +420,18 @@ const relatedProducts = computed(() => {
           <!-- Rating & Sold Stats Row -->
           <div class="rating-sold-row">
             <div class="stars-wrap">
-              <i class="bi bi-star-fill star-icon"></i>
-              <strong class="score-num">{{ product.rating.toFixed(1) }}</strong>
-              <span class="reviews-count">({{ product.reviewsCount }} đánh giá)</span>
+              <template v-if="product.reviewsCount > 0 && product.rating > 0">
+                <i class="bi bi-star-fill star-icon"></i>
+                <strong class="score-num">{{ product.rating.toFixed(1) }}</strong>
+                <span class="reviews-count">({{ product.reviewsCount }} đánh giá)</span>
+              </template>
+              <template v-else>
+                <i class="bi bi-star text-muted"></i>
+                <strong class="score-num text-muted" style="font-size: 13px; font-weight: 600;">Chưa có đánh giá</strong>
+              </template>
             </div>
             <div class="sold-stat-badge">
-              <i class="bi bi-bag-check"></i> Đã bán {{ product.sold }}
+              <i class="bi bi-bag-check"></i> Đã bán {{ product.sold || 0 }}
             </div>
             <div class="stock-status-pill">
               <i class="bi bi-box-seam"></i> Còn {{ product.stock }} sản phẩm
@@ -481,7 +511,8 @@ const relatedProducts = computed(() => {
               <span class="dot-sep">•</span>
               <div class="metric-pill">
                 <i class="bi bi-star-fill text-warning"></i>
-                <span>Đánh giá <strong>{{ product.store.rating }}★</strong></span>
+                <span v-if="product.store && (product.store.reviewsCount ?? 0) > 0 && (product.store.rating ?? 0) > 0">Đánh giá <strong>{{ product.store.rating.toFixed(1) }}★</strong></span>
+                <span v-else>Đánh giá <strong>Mới</strong></span>
               </div>
             </div>
           </div>
@@ -545,7 +576,37 @@ const relatedProducts = computed(() => {
                 <i class="bi bi-info-circle me-1"></i> Gian hàng đang trong thời gian bổ sung địa chỉ & hoàn thiện hồ sơ. Sản phẩm sẽ sớm được mở bán!
               </p>
             </div>
-            <!-- NẾU ĐÃ CÓ ĐỊA CHỈ: HIỂN THỊ NÚT MUA BÌNH THƯỜNG -->
+            <!-- NẾU GIAN HÀNG TẠM ĐÓNG CỬA -->
+            <div v-else-if="isStoreTemporarilyClosed" class="upcoming-store-cta-block">
+              <button type="button" class="btn-upcoming-big-cta btn-store-closed" disabled>
+                <i class="bi bi-moon-stars-fill me-2"></i>
+                <span>GIAN HÀNG TẠM ĐÓNG CỬA</span>
+              </button>
+              <p class="upcoming-hint-text text-muted text-center mt-2 small">
+                <i class="bi bi-info-circle me-1"></i> Gian hàng đang tạm nghỉ nhận đơn hỏa tốc lúc này. Vui lòng quay lại sau!
+              </p>
+            </div>
+            <!-- NẾU SẢN PHẨM TẠM NGƯNG BÁN -->
+            <div v-else-if="product && (product as any).isAvailable === false" class="upcoming-store-cta-block">
+              <button type="button" class="btn-upcoming-big-cta" style="background: #fff7ed; color: #c2410c; border: 1.5px solid #fed7aa;" disabled>
+                <i class="bi bi-pause-circle-fill me-2"></i>
+                <span>SẢN PHẨM TẠM NGƯNG BÁN</span>
+              </button>
+              <p class="upcoming-hint-text text-muted text-center mt-2 small">
+                <i class="bi bi-info-circle me-1"></i> Gian hàng đang tạm ngưng mở bán mặt hàng này. Vui lòng quay lại sau!
+              </p>
+            </div>
+            <!-- NẾU SẢN PHẨM HẾT HÀNG -->
+            <div v-else-if="product && typeof product.stock === 'number' && product.stock <= 0" class="upcoming-store-cta-block">
+              <button type="button" class="btn-upcoming-big-cta btn-out-of-stock" disabled>
+                <i class="bi bi-x-circle-fill me-2"></i>
+                <span>TẠM HẾT HÀNG</span>
+              </button>
+              <p class="upcoming-hint-text text-muted text-center mt-2 small">
+                <i class="bi bi-info-circle me-1"></i> Sản phẩm này hiện đã hết hàng trong kho. Gian hàng sẽ sớm bổ sung thêm!
+              </p>
+            </div>
+            <!-- NẾU ĐÃ CÓ ĐỊA CHỈ & MỞ CỬA & CÒN HÀNG: HIỂN THỊ NÚT MUA BÌNH THƯỜNG -->
             <div v-else class="buttons-horizontal-row">
               <button class="btn-add-cart-tactile" @click="handleAddToCart">
                 <i class="bi bi-bag-plus-fill"></i>
@@ -822,18 +883,15 @@ const relatedProducts = computed(() => {
             <div class="reviews-section-layout">
               <!-- Cột trái: Tổng kết điểm số & thanh sao -->
               <div class="review-summary-card">
-                <div class="big-rating-score">{{ product.rating.toFixed(1) }}</div>
+                <div v-if="product.reviewsCount > 0 && product.rating > 0" class="big-rating-score">{{ product.rating.toFixed(1) }}</div>
+                <div v-else class="big-rating-score text-muted fs-4">Chưa có đánh giá</div>
                 <div class="stars-gold">
-                  <i class="bi bi-star-fill"></i>
-                  <i class="bi bi-star-fill"></i>
-                  <i class="bi bi-star-fill"></i>
-                  <i class="bi bi-star-fill"></i>
-                  <i class="bi bi-star-fill"></i>
+                  <i v-for="s in 5" :key="s" class="bi" :class="s <= Math.round(product.rating || 0) && product.reviewsCount > 0 ? 'bi-star-fill text-warning' : 'bi-star text-muted'"></i>
                 </div>
-                <p class="text-muted mb-3">{{ product.reviewsCount }} nhận xét từ người mua thực tế</p>
+                <p class="text-muted mb-3">{{ product.reviewsCount > 0 ? `${product.reviewsCount} nhận xét từ người mua thực tế` : 'Sản phẩm mới chưa có lượt nhận xét' }}</p>
 
                 <!-- Thanh phân bổ điểm số -->
-                <div class="stars-breakdown">
+                <div v-if="product.reviewsCount > 0" class="stars-breakdown">
                   <div class="star-bar-row">
                     <span>5 ★</span>
                     <div class="progress-bar"><div class="fill" :style="{ width: starBreakdown[5].percent + '%' }"></div></div>
@@ -955,11 +1013,20 @@ const relatedProducts = computed(() => {
         <strong class="sticky-price">{{ (currentCalculatedPrice * quantity).toLocaleString("vi-VN") }} ₫</strong>
       </div>
       <div class="sticky-actions-side">
-        <button class="btn-sticky-cart" @click="handleAddToCart" title="Thêm vào giỏ">
-          <i class="bi bi-bag-plus"></i>
+        <button
+          class="btn-sticky-cart"
+          :disabled="isStoreTemporarilyClosed || (product && (product as any).isAvailable === false)"
+          @click="handleAddToCart"
+          :title="(product && (product as any).isAvailable === false) ? 'Sản phẩm tạm ngưng bán' : 'Thêm vào giỏ'"
+        >
+          <i :class="(product && (product as any).isAvailable === false) ? 'bi bi-pause-circle-fill' : 'bi bi-bag-plus'"></i>
         </button>
-        <button class="btn-sticky-buy" @click="handleBuyNow">
-          <span>Mua Ngay </span>
+        <button
+          class="btn-sticky-buy"
+          :disabled="isStoreTemporarilyClosed || (product && (product as any).isAvailable === false)"
+          @click="handleBuyNow"
+        >
+          <span>{{ (product && (product as any).isAvailable === false) ? 'Tạm Ngưng Bán' : 'Mua Ngay' }}</span>
         </button>
       </div>
     </div>

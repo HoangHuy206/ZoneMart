@@ -535,7 +535,7 @@ const KNOWN_STORE_PROFILES: Record<string, SellerStoreProfile> = {
         salesText: "1,200 Đã bán",
         statusText: "Còn hàng",
         stockText: "Còn 140 kg",
-        image: "https://images.unsplash.com/photo-1596097635121-14b63b7a0c19?auto=format&fit=crop&w=400&q=80"
+        image: "https://images.unsplash.com/photo-1590165482129-1b8b27698780?auto=format&fit=crop&w=400&q=80"
       }
     ],
     customers: [
@@ -642,7 +642,7 @@ const KNOWN_STORE_PROFILES: Record<string, SellerStoreProfile> = {
         price: 38000,
         unit: "Túi 1kg",
         stock: 140,
-        image: "https://images.unsplash.com/photo-1596097635121-14b63b7a0c19?auto=format&fit=crop&w=400&q=80",
+        image: "https://images.unsplash.com/photo-1590165482129-1b8b27698780?auto=format&fit=crop&w=400&q=80",
         aiSafetyScore: 100,
         aiMatchScore: 99
       },

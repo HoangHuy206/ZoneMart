@@ -34,8 +34,8 @@ onUnmounted(() => window.removeEventListener('zonemart:replay-intro', replayIntr
 onMounted(() => {
   catalog.refreshCatalog();
   setTimeout(() => {
-    getSafeCurrentLocation().catch((err) => {
-      console.warn('[App] Dinh vi nen khi khoi dong:', err);
+    getSafeCurrentLocation().catch(() => {
+     
     });
   }, 1200);
 });
@@ -767,7 +767,7 @@ const handleLogout = () => {
                   <!-- 2. SELLER ITEMS -->
                   <template v-else-if="auth.currentRole.value === 'seller'">
                     <router-link
-                      to="/admin"
+                      to="/seller"
                       class="dropdown-item highlight-item"
                       @click="closeDropdowns"
                     >

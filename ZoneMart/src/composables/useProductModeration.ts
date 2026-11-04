@@ -97,6 +97,47 @@ function textHasKeyword(text: string, kw: string): boolean {
   return lower.includes(lowerKw);
 }
 
+function isFoodException(text: string, category?: string): boolean {
+  if (!text) return false;
+  const low = text.toLowerCase().trim();
+  const norm = stripAccents(low);
+  const catNorm = stripAccents(category || "").toLowerCase();
+
+  // 1. Thịt lợn, thịt heo và các chế phẩm nông sản từ lợn
+  if (low.includes("lợn") || low.includes("heo") ||
+      norm.includes("thit lon") || norm.includes("suon lon") || norm.includes("mo lon") || 
+      norm.includes("tai lon") || norm.includes("gio lon") || norm.includes("lon man") || 
+      norm.includes("lon rung") || norm.includes("tiet lon") || norm.includes("long lon") ||
+      norm.includes("da lon") || norm.includes("nac lon") ||
+      (norm.includes("lon") && (catNorm.includes("thit") || catNorm.includes("thuc pham")))) {
+    return true;
+  }
+  // 2. Bưởi
+  if (low.includes("bưởi") || 
+      (norm.includes("buoi") && (norm.includes("trai") || norm.includes("qua") || norm.includes("xanh") || 
+       norm.includes("nam roi") || norm.includes("dien") || norm.includes("tep") || catNorm.includes("trai cay") || catNorm.includes("hoa qua")))) {
+    return true;
+  }
+  // 3. Quả sung, bông súng
+  if (norm.includes("qua sung") || norm.includes("trai sung") || norm.includes("sung muoi") || 
+      norm.includes("bong sung") || norm.includes("rau sung") || norm.includes("sung nep") || 
+      norm.includes("canh bong sung") || (norm.includes("sung") && (catNorm.includes("rau") || catNorm.includes("nong san")))) {
+    return true;
+  }
+  // 4. Món dầm chua ngọt (cóc dầm, xoài dầm)
+  if (low.includes("dầm") || 
+      (norm.includes("dam") && (norm.includes("coc") || norm.includes("xoai") || norm.includes("me") || 
+       norm.includes("man") || norm.includes("chua") || norm.includes("ngot") || norm.includes("ot")))) {
+    return true;
+  }
+  // 5. Lon sữa, lon bia, lon ngô
+  if (norm.includes("lon") && (norm.includes("sua") || norm.includes("nuoc") || norm.includes("bia") || 
+      norm.includes("pate") || norm.includes("ca ") || norm.includes("hop") || norm.includes("ngo") || norm.includes("dau"))) {
+    return true;
+  }
+  return false;
+}
+
 function isFoodSung(text: string): boolean {
   const norm = (text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").toLowerCase();
   return (
@@ -163,6 +204,27 @@ export const INITIAL_PRODUCTS: ModeratedProduct[] = [];
 const STORAGE_KEY_PRODUCTS = "zonemart_moderated_products";
 const STORAGE_KEY_PENALTIES = "zonemart_seller_penalties";
 const STORAGE_KEY_DELETED = "zonemart_deleted_products";
+const STORAGE_KEY_AVAILABILITY = "zonemart_availability_overrides";
+
+export function getAvailabilityOverrides(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_AVAILABILITY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+export function recordAvailabilityOverride(id: string, name?: string, isAvailable: boolean = true) {
+  try {
+    const overrides = getAvailabilityOverrides();
+    if (id) overrides[id] = isAvailable;
+    if (name) {
+      overrides[name.toLowerCase().trim()] = isAvailable;
+      overrides[stripAccents(name).trim()] = isAvailable;
+    }
+    localStorage.setItem(STORAGE_KEY_AVAILABILITY, JSON.stringify(overrides));
+  } catch {}
+}
 
 function getDeletedProductKeys(): Set<string> {
   try {
@@ -219,6 +281,18 @@ function loadProducts(): ModeratedProduct[] {
           else if (typeof overrides[norm] === "number") it.stock = overrides[norm];
         });
       }
+    } catch {}
+
+    // Đồng bộ trạng thái tạm ngưng bán từ persistent availability overrides nếu có
+    try {
+      const availOverrides = getAvailabilityOverrides();
+      items.forEach(it => {
+        const norm = stripAccents(it.name);
+        const low = (it.name || "").toLowerCase().trim();
+        if (typeof availOverrides[it.id] === "boolean") it.isAvailable = availOverrides[it.id];
+        else if (typeof availOverrides[low] === "boolean") it.isAvailable = availOverrides[low];
+        else if (typeof availOverrides[norm] === "boolean") it.isAvailable = availOverrides[norm];
+      });
     } catch {}
 
     // 1. Lọc bỏ hoàn toàn các sản phẩm đã bị Từ Chối / Gỡ bài / Xóa bỏ
@@ -461,7 +535,9 @@ async function syncProductToBackend(p: ModeratedProduct) {
       image: cleanImg,
       sellerEmail: p.sellerEmail,
       storeName: p.storeName,
-      status: p.status
+      status: p.status,
+      isAvailable: p.isAvailable,
+      aiCheckNote: p.aiScore?.flag || ""
     };
 
     const res = await apiFetch("/api/products/sync-product", {
@@ -550,6 +626,34 @@ export async function fetchRealProductsFromBackend(): Promise<ModeratedProduct[]
             }
           } catch {}
 
+          // Xác định trạng thái isAvailable chuẩn xác:
+          // 1. Persistent availability overrides do người bán cấu hình
+          // 2. Trạng thái trong allProducts.value hiện tại trong phiên làm việc
+          // 3. bp.isAvailable từ CSDL MongoDB backend
+          // Mặc định: isApproved
+          let resolvedAvailable = isApproved;
+          try {
+            const availOverrides = getAvailabilityOverrides();
+            const lowName = pName.toLowerCase();
+            const normName = stripAccents(pName);
+            if (typeof availOverrides[bp.id] === "boolean") {
+              resolvedAvailable = availOverrides[bp.id];
+            } else if (typeof availOverrides[lowName] === "boolean") {
+              resolvedAvailable = availOverrides[lowName];
+            } else if (typeof availOverrides[normName] === "boolean") {
+              resolvedAvailable = availOverrides[normName];
+            } else {
+              const existingItem = allProducts.value.find(ep => ep.id === bp.id || ep.name.trim().toLowerCase() === lowName);
+              if (existingItem && typeof existingItem.isAvailable === "boolean") {
+                resolvedAvailable = existingItem.isAvailable;
+              } else if (typeof bp.isAvailable === "boolean") {
+                resolvedAvailable = bp.isAvailable;
+              } else if (typeof bp.is_available === "boolean") {
+                resolvedAvailable = bp.is_available;
+              }
+            }
+          } catch {}
+
           mappedList.push({
             id: bp.id || `p-${Date.now()}`,
             storeId: bp.storeId || "",
@@ -560,7 +664,7 @@ export async function fetchRealProductsFromBackend(): Promise<ModeratedProduct[]
             stock: effectiveStock,
             image: realImage,
             status: prodStatus,
-            isAvailable: isApproved,
+            isAvailable: resolvedAvailable,
             sellerEmail: realSellerEmail,
             storeName: realStoreName,
             description: bp.description || "",
@@ -608,10 +712,8 @@ if (typeof window !== "undefined") {
     }
   });
 
-  // Lắng nghe event nội bộ trong cùng window
-  window.addEventListener("zonemart:products-changed", () => {
-    refreshProducts();
-  });
+  // Lưu ý: Không tự lắng nghe zonemart:products-changed trong useProductModeration
+  // để tránh việc saveProducts() gây ra vòng lặp refetch vô tận đè ngược dữ liệu local.
 }
 
 
@@ -673,13 +775,18 @@ export function useProductModeration() {
       }
     }
 
+    const isFood = isFoodException(params.name, params.category) || isFoodSung(params.name) || isFoodSung(params.imageFileName || "");
+    const deobfuscatedName = cleanName.replace(/([a-z0-9])[\W_]+(?=[a-z0-9])/g, "$1");
+    const collapsedName = deobfuscatedName.replace(/\b([a-z0-9])\s+(?=[a-z0-9]\b)/g, "$1");
+
     for (const kw of PROHIBITED_KEYWORDS) {
-      // Ngoại lệ cho nông sản quả sung / bông súng
-      if ((kw === "sung" || kw === "súng") && (isFoodSung(params.name) || isFoodSung(params.imageFileName || ""))) {
+      if (isFood && (kw === "sung" || kw === "súng" || kw === "lon" || kw === "buoi" || kw === "dam")) {
         continue;
       }
-      const matchedName = textHasKeyword(lowerName, kw) || textHasKeyword(cleanName, stripAccents(kw));
-      const matchedFile = cleanFileName.includes(stripAccents(kw)) || lowerFileName.includes(kw);
+      const kwNorm = stripAccents(kw);
+      const matchedName = textHasKeyword(lowerName, kw) || textHasKeyword(cleanName, kwNorm) ||
+                          textHasKeyword(deobfuscatedName, kwNorm) || collapsedName.includes(kwNorm);
+      const matchedFile = cleanFileName.includes(kwNorm) || lowerFileName.includes(kw);
       const matchedImage = lowerImage.includes(kw);
 
       if (matchedName || matchedFile || matchedImage) {
@@ -976,6 +1083,7 @@ export function useProductModeration() {
 
       allProducts.value.unshift(newProd);
       saveProducts();
+      syncProductToBackend(newProd);
       return {
         scanResult,
         createdProduct: newProd
@@ -1206,7 +1314,7 @@ export function useProductModeration() {
   };
 
   const activeProducts = computed(() =>
-    allProducts.value.filter(p => p.status === "active")
+    allProducts.value.filter(p => p.status === "active" && p.isAvailable !== false)
   );
 
   const pendingReviewProducts = computed(() =>
@@ -1216,6 +1324,41 @@ export function useProductModeration() {
   const rejectedProducts = computed(() =>
     allProducts.value.filter(p => p.status === "rejected_need_edit")
   );
+
+  const toggleProductAvailability = (prodOrId: ModeratedProduct | string): boolean => {
+    let target: ModeratedProduct | undefined;
+    if (typeof prodOrId === "string") {
+      target = allProducts.value.find(p => p.id === prodOrId || String(p.id) === String(prodOrId) || p.name.trim().toLowerCase() === prodOrId.trim().toLowerCase());
+    } else {
+      target = prodOrId;
+    }
+    if (!target) return false;
+
+    // Đảo trạng thái isAvailable
+    target.isAvailable = !(target.isAvailable !== false);
+    const newStatus = target.isAvailable;
+
+    // 1. Cập nhật persistent availability overrides
+    recordAvailabilityOverride(target.id, target.name, newStatus);
+
+    // 2. Lưu vào localStorage và dispatch event thông báo tức thì
+    saveProducts();
+
+    // 3. Đồng bộ lên backend MongoDB trong nền
+    try {
+      apiFetch(`/api/products/${target.id}/availability`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isAvailable: newStatus })
+      }).catch(() => {});
+    } catch {}
+
+    try {
+      syncProductToBackend(target).catch(() => {});
+    } catch {}
+
+    return newStatus;
+  };
 
   const reduceStockForPurchasedItems = (items: Array<{ id?: string; productId?: string; name?: string; quantity?: number; qty?: number }>) => {
     if (!items || !items.length) return;
@@ -1326,6 +1469,9 @@ export function useProductModeration() {
     saveProducts,
     refreshProducts,
     compressImage,
-    fetchRealProductsFromBackend
+    fetchRealProductsFromBackend,
+    toggleProductAvailability,
+    getAvailabilityOverrides,
+    recordAvailabilityOverride
   };
 }

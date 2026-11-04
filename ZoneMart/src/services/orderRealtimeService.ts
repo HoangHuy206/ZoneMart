@@ -189,6 +189,12 @@ class OrderRealtimeService {
       window.dispatchEvent(new CustomEvent("zonemart_chat_event", { detail: data }));
     }
 
+    if (data.type === "store_status_changed" || data.type === "STORE_STATUS_CHANGED") {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("zonemart:store-status-changed", { detail: data }));
+      }
+    }
+
     if (data.type === "ORDERS_CLEARED") {
       this.cachedOrdersMap.clear();
       this.clearActiveOrder();

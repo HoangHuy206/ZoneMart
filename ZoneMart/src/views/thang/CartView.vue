@@ -11,6 +11,7 @@ import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
 import { useAuth } from '../../composables/useAuth';
 import { useToast } from '../../composables/useToast';
+import { useStoreOpenStatus } from '../../composables/useStoreOpenStatus';
 import {
   cartService,
   type SuggestedProductItem,
@@ -20,6 +21,7 @@ const router = useRouter();
 const cart = useCart();
 const toast = useToast();
 const auth = useAuth();
+const { isStoreClosed } = useStoreOpenStatus();
 
 // Danh sách sản phẩm gợi ý mua kèm (Cross-sell) nạp trực tiếp từ Database MongoDB
 const suggestedProducts = ref<SuggestedProductItem[]>([]);
@@ -99,6 +101,11 @@ const handleAddSuggested = (prod: any) => {
 const handleProceedToCheckout = () => {
   if (cart.selectedItemsCount.value === 0) {
     toast.warning('Vui lòng chọn ít nhất 1 sản phẩm để tiến hành thanh toán!', 'Chưa Chọn Món');
+    return;
+  }
+  const closedStore = cart.cartStores.value.find(s => isStoreClosed(s.storeName) && s.items.some(i => i.selected));
+  if (closedStore) {
+    toast.warning(`Gian hàng "${closedStore.storeName}" đang tạm đóng cửa nghỉ nhận đơn. Vui lòng bỏ chọn sản phẩm của gian hàng này trước khi thanh toán!`, 'Gian Hàng Tạm Đóng');
     return;
   }
   if (!auth.isLoggedIn.value) {
@@ -228,6 +235,9 @@ const handleProceedToCheckout = () => {
               <div class="store-info-title">
                 <span class="store-badge-icon"><i class="bi bi-shop"></i></span>
                 <strong class="store-name-txt">{{ store.storeName }}</strong>
+                <span v-if="isStoreClosed(store.storeName)" class="badge bg-danger text-white ms-2 px-2 py-0.5 fw-bold">
+                  <i class="bi bi-moon-stars-fill me-1"></i> Tạm đóng cửa
+                </span>
                 <span class="store-distance-badge">
                   <i class="bi bi-geo-alt-fill"></i> Cách bạn
                   {{ store.distanceKm }} km
@@ -240,6 +250,11 @@ const handleProceedToCheckout = () => {
                 {{ store.deliveryTime }}
               </span>
             </div>
+          </div>
+          <!-- CẢNH BÁO GIAN HÀNG TẠM ĐÓNG -->
+          <div v-if="isStoreClosed(store.storeName)" class="alert alert-danger py-2 px-3 mx-3 mt-2 mb-1 small d-flex align-items-center gap-2 rounded-3 border-danger-subtle">
+            <i class="bi bi-exclamation-triangle-fill text-danger fs-6"></i>
+            <span><strong>Gian hàng đang tạm đóng cửa nghỉ nhận đơn!</strong> Vui lòng bỏ chọn sản phẩm của gian hàng này để tiếp tục thanh toán.</span>
           </div>
 
           <!-- DANH SÁCH MÓN TRONG CỬA HÀNG -->

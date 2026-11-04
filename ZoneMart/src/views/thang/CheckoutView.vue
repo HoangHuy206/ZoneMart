@@ -22,12 +22,19 @@ import { orderRealtimeService } from "../../services/orderRealtimeService";
 import { useProductModeration } from "../../composables/useProductModeration";
 import { getSafeCurrentLocation } from "../../composables/useSafeLocation";
 import { apiFetch, getApiUrl } from "../../utils/apiConfig";
+import { useStoreOpenStatus } from "../../composables/useStoreOpenStatus";
 
 const router = useRouter();
 const cart = useCart();
 const auth = useAuth();
 const toast = useToast();
 const productModeration = useProductModeration();
+const { isStoreClosed } = useStoreOpenStatus();
+
+// Kiểm tra xem có gian hàng nào trong giỏ đang tạm đóng cửa nghỉ nhận đơn không
+const closedStoreInCart = computed(() => {
+  return selectedCartItems.value.find(item => isStoreClosed(item.shop));
+});
 
 // Khóa phân vùng lưu địa chỉ riêng cho từng tài khoản
 const ADDRESS_STORAGE_PREFIX = "zonemart_user_address_";
@@ -739,12 +746,12 @@ const initVietQrSocket = () => {
     const wsUrl = "wss://api.vietqr.org/vqr/socket?clientId=customer-zonemart-user26685";
     vietQrSocket = new WebSocket(wsUrl);
     vietQrSocket.onopen = () => {
-      console.log(">>> [BROWSER VIETQR WS CONNECTED] Đang lắng nghe tiền về tự động...");
+      
     };
     vietQrSocket.onmessage = (event) => {
       try {
         const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-        console.log(">>> [BROWSER VIETQR WS RECEIVED]:", data);
+       
         const rawText = `${data.orderId || ""} ${data.content || ""} ${data.addInfo || ""} ${data.description || ""}`.toUpperCase();
         if (rawText.includes(orderPaymentCode.value.toUpperCase()) || data.orderId === orderPaymentCode.value) {
           onPaymentConfirmed(data.amount ? Number(data.amount) : undefined);
@@ -777,7 +784,7 @@ const initPaymentSSE = () => {
           const targetCode = orderPaymentCode.value.toUpperCase();
           const isCodeMatch = incomingCode === targetCode || incomingCode.startsWith(targetCode) || targetCode.startsWith(incomingCode);
           if (data && data.paid && isCodeMatch) {
-            console.log(">>> [SSE PAYMENT CONFIRMED]:", data);
+           
             onPaymentConfirmed(data.amount ? Number(data.amount) : undefined);
           }
         } catch (err) {}
@@ -945,6 +952,7 @@ const loadAddressForCurrentAccount = () => {
   if (!initialPhone) initialPhone = u?.phone || (u?.phoneEmail && /^0\d+$/.test(u.phoneEmail) ? u.phoneEmail : "0396222614");
   if (!initialAddr) initialAddr = localStorage.getItem('zonemart_user_address') || localStorage.getItem('zonemart_gps_address') || (u && (u as any).address) || "Xuân Phương, Nam Từ Liêm, Hà Nội";
   const userLat = localStorage.getItem('zonemart_lat');
+  
   const userLon = localStorage.getItem('zonemart_lon');
   if (userLat && userLon) {
     initialLat = parseFloat(userLat);
@@ -1224,6 +1232,11 @@ const handleSelectExpress = (val: boolean) => {
 
 // Đặt hàng COD
 const handlePlaceOrder = () => {
+  const closedItem = selectedCartItems.value.find(item => isStoreClosed(item.shop));
+  if (closedItem) {
+    toast.error(`Gian hàng "${closedItem.shop}" đang tạm đóng cửa nghỉ nhận đơn hỏa tốc. Vui lòng quay lại giỏ hàng và bỏ chọn sản phẩm của gian hàng này!`, 'Gian Hàng Tạm Đóng');
+    return;
+  }
   if (!auth.isLoggedIn.value) {
     toast.warning("Vui lòng đăng nhập tài khoản để tiến hành đặt hàng!", "Yêu Cầu Đăng Nhập");
     router.push({
@@ -1642,12 +1655,21 @@ const handlePlaceOrder = () => {
           >
             <i class="bi bi-check2-circle me-2"></i> ĐÃ THANH TOÁN THÀNH CÔNG (XEM ĐƠN)
           </button>
+          <!-- CẢNH BÁO NẾU CÓ SẢN PHẨM CỦA GIAN HÀNG ĐANG TẠM ĐÓNG -->
+          <div v-if="closedStoreInCart" class="alert alert-danger py-2 px-3 mb-3 d-flex align-items-center gap-2 rounded-3 border-danger-subtle">
+            <i class="bi bi-exclamation-triangle-fill text-danger fs-5"></i>
+            <div>
+              <strong class="d-block text-danger">Có sản phẩm từ gian hàng tạm đóng cửa!</strong>
+              <span class="small text-danger-emphasis">Gian hàng "{{ closedStoreInCart.shop }}" đang tạm dừng nhận đơn mới. Vui lòng quay lại giỏ hàng để bỏ chọn.</span>
+            </div>
+          </div>
           <button
             v-else
             class="btn btn-primary btn-block"
+            :disabled="!!closedStoreInCart"
             @click="handlePlaceOrder"
           >
-            <i class="bi bi-bag-check-fill me-2"></i> XÁC NHẬN ĐẶT HÀNG (COD)
+            <i class="bi bi-bag-check-fill me-2"></i> {{ closedStoreInCart ? 'GIAN HÀNG TẠM ĐÓNG CỬA' : 'XÁC NHẬN ĐẶT HÀNG (COD)' }}
           </button>
         </div>
       </div>

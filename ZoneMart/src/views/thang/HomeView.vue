@@ -4,14 +4,17 @@ import { useRouter } from 'vue-router';
 import { useCart } from '../../composables/useCart';
 import { useToast } from '../../composables/useToast';
 import { useProductCatalog } from '../../composables/useProductCatalog';
+import { useStoreOpenStatus } from '../../composables/useStoreOpenStatus';
 import { useAuth } from '../../composables/useAuth';
 import { getSafeCurrentLocation } from '../../composables/useSafeLocation';
+import { getStoreAvatar, getStoreCover } from '../../utils/storeBranding';
 
 const router = useRouter();
 const auth = useAuth();
 const cart = useCart();
 const toast = useToast();
 const catalog = useProductCatalog();
+const { isStoreClosed } = useStoreOpenStatus();
 
 const toastMessage = ref('');
 let toastTimer: any = null;
@@ -80,54 +83,63 @@ const liveMarketActivities = [
   },
 ];
 
+const checkScrollReveal = () => {
+  if (typeof window === 'undefined') return;
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+  const elements = document.querySelectorAll<HTMLElement>('.scroll-reveal:not(.is-revealed)');
+  elements.forEach((el) => {
+    const rect = el.getBoundingClientRect();
+    if (rect.top <= vh - 40 && rect.bottom >= 20) {
+      el.classList.add('is-revealed');
+      if (observer) {
+        observer.unobserve(el);
+      }
+    }
+  });
+};
+
 const observeNewElements = () => {
   if (typeof document === 'undefined') return;
-  const revealElements = document.querySelectorAll('.scroll-reveal:not(.is-revealed)');
+  const revealElements = document.querySelectorAll<HTMLElement>('.scroll-reveal:not(.is-revealed)');
   revealElements.forEach((el) => {
     if (observer) {
       observer.observe(el);
-    } else {
-      el.classList.add('is-revealed');
     }
   });
+  checkScrollReveal();
 };
 
 onMounted(async () => {
   catalog.refreshCatalog();
   getSafeCurrentLocation().catch(() => {});
-  await nextTick();
-  if (typeof window !== 'undefined' && 'IntersectionObserver' in window) {
-    observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add('is-revealed');
-            observer?.unobserve(entry.target);
-          }
-        });
-      },
-      {
-        root: null,
-        rootMargin: '120px 0px 80px 0px',
-        threshold: 0.02,
-      }
-    );
 
-    observeNewElements();
-  } else if (typeof document !== 'undefined') {
-    document.querySelectorAll('.scroll-reveal').forEach((el) => {
-      el.classList.add('is-revealed');
-    });
-  }
-
-  // Safety fallback: Tự động reveal tất cả elements sau 500ms để không bao giờ bị ẩn/mất khi lướt
-  setTimeout(() => {
-    if (typeof document !== 'undefined') {
-      document.querySelectorAll('.scroll-reveal:not(.is-revealed)').forEach((el) => {
-        el.classList.add('is-revealed');
-      });
+  if (typeof window !== 'undefined') {
+    if ('IntersectionObserver' in window) {
+      observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('is-revealed');
+              observer?.unobserve(entry.target);
+            }
+          });
+        },
+        {
+          root: null,
+          rootMargin: '0px 0px -40px 0px',
+          threshold: 0.05,
+        }
+      );
     }
-  }, 500);
+
+    window.addEventListener('scroll', checkScrollReveal, { passive: true });
+    window.addEventListener('resize', checkScrollReveal, { passive: true });
+
+    // Đợi 120ms sau mount để layout ổn định trước khi scan phần tử trong màn hình ban đầu
+    setTimeout(() => {
+      observeNewElements();
+    }, 120);
+  }
 
   startSlideTimer();
 });
@@ -136,6 +148,10 @@ onUnmounted(() => {
   if (observer) {
     observer.disconnect();
     observer = null;
+  }
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('scroll', checkScrollReveal);
+    window.removeEventListener('resize', checkScrollReveal);
   }
   if (slideTimer) {
     clearInterval(slideTimer);
@@ -458,21 +474,24 @@ const featuredProducts = computed(() => {
     const freshFoods = catalog.allProducts.value.filter(
       (p) => p.category !== 'household' && !p.name.toLowerCase().includes('rác')
     );
-    return freshFoods.slice(0, 8).map((p, idx) => ({
+    return freshFoods.slice(0, 8).map((p) => ({
       id: p.id,
       name: p.name,
       farm: p.store?.name || 'Gian hàng ZoneMart',
       distance: `${p.store?.distanceKm || 1.2} km`,
       deliveryTime: p.store?.deliveryTime || '15 - 20 phút',
       price: p.price,
-      originalPrice: p.oldPrice || Math.round(p.price * 1.18),
-      discount: p.discountBadge || `-${15 + (idx % 10)}%`,
-      rating: p.rating || 5.0,
-      sold: p.sold || 120 + idx * 15,
+      originalPrice: p.oldPrice || 0,
+      discount: p.discountBadge || '',
+      rating: (typeof p.rating === 'number' && p.rating > 0 && typeof p.reviewsCount === 'number' && p.reviewsCount > 0) ? p.rating : 0,
+      reviewsCount: typeof p.reviewsCount === 'number' ? p.reviewsCount : 0,
+      sold: typeof p.sold === 'number' ? p.sold : 0,
+      stock: typeof (p as any).stock === 'number' ? (p as any).stock : 50,
       tag: p.badge || 'Nông sản sạch',
       image:
-        p.image ||
-        'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80',
+        (p.image && !p.image.includes('1596097635121'))
+          ? p.image
+          : 'https://images.unsplash.com/photo-1590165482129-1b8b27698780?auto=format&fit=crop&w=800&q=80',
     }));
   }
   return [];
@@ -507,110 +526,163 @@ const howItWorks = [
 ];
 
 // 5. Nhà vườn & Gian hàng tiêu biểu địa phương (Đồng bộ thời gian thực từ Database, có fallback bảo vệ)
+// Danh sách các đối tác tiêu biểu thật - Có sẵn tài khoản quản trị Seller trong CSDL MongoDB
 const defaultFallbackVendors = [
   {
-    id: 'store_dalat_farm',
-    name: "Nông Trại Hữu Cơ Đà Lạt O'Farm",
-    owner: 'Rau củ quả tươi sạch Đà Lạt',
+    id: 'store_bac_ba',
+    name: 'Vườn Rau Hữu Cơ Bác Ba',
+    owner: 'Rau củ hữu cơ VietGAP',
     distance: '1.2 km',
     deliveryTime: '15 - 20 phút',
-    productsCount: '48+ sản phẩm',
+    productsCount: '4 sản phẩm',
     rating: 5.0,
-    reviews: 182,
-    avatar: 'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80',
+    reviews: 92,
+    avatar: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=200&q=80',
     cover: 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=600&q=80',
+    isOpen: true,
   },
   {
-    id: 'store_vua_trai_cay',
-    name: 'Vựa Trái Cây Miệt Vườn Chín Mọng',
-    owner: 'Trái cây đặc sản 3 miền',
+    id: 'store_chuong_my',
+    name: 'Nông Sản Sạch Chúc Sơn - Chương Mỹ',
+    owner: 'Rau củ sạch VietGAP',
     distance: '1.8 km',
     deliveryTime: '20 - 25 phút',
-    productsCount: '36+ sản phẩm',
-    rating: 4.9,
-    reviews: 145,
-    avatar: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80',
-    cover: 'https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=600&q=80',
+    productsCount: '4 sản phẩm',
+    rating: 5.0,
+    reviews: 52,
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+    cover: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=600&q=80',
   },
   {
-    id: 'store_thit_sach',
-    name: 'Thịt Heo Sinh Học & Bò Tươi Sạch',
-    owner: 'Thực phẩm tươi sống VietGAP',
+    id: 'store_yen_nghia',
+    name: 'Bếp Nóng Yên Nghĩa & Biên Giang',
+    owner: 'Món ăn nóng & Ẩm thực gia đình',
     distance: '2.1 km',
     deliveryTime: '15 - 25 phút',
-    productsCount: '29+ sản phẩm',
+    productsCount: '4 sản phẩm',
     rating: 5.0,
-    reviews: 210,
-    avatar: 'https://images.unsplash.com/photo-1588854337236-6889d631faa8?auto=format&fit=crop&w=200&q=80',
+    reviews: 64,
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80',
+    cover: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80',
+  },
+  {
+    id: 'store_ba_la',
+    name: 'Vựa Thịt Sạch & Hải Sản Ba La - Hà Đông',
+    owner: 'Thực phẩm tươi sống & Hải sản',
+    distance: '2.5 km',
+    deliveryTime: '20 - 30 phút',
+    productsCount: '4 sản phẩm',
+    rating: 5.0,
+    reviews: 88,
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
     cover: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=600&q=80',
   },
   {
-    id: 'store_hai_san',
-    name: 'Hải Sản Biển Sống Vũng Tàu',
-    owner: 'Tôm cua ghẹ tươi sống mỗi ngày',
-    distance: '2.5 km',
-    deliveryTime: '25 - 30 phút',
-    productsCount: '42+ sản phẩm',
-    rating: 4.9,
-    reviews: 198,
-    avatar: 'https://images.unsplash.com/photo-1534483509719-3feaee7c30da?auto=format&fit=crop&w=200&q=80',
-    cover: 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 'store_nam_sach',
-    name: 'Trang Trại Nấm & Rau Mầm Hữu Cơ',
-    owner: 'Nấm tươi các loại giàu dinh dưỡng',
+    id: 'store_zone_fruits',
+    name: 'Tiệm Trái Cây & Nước Ép Zone Fruits',
+    owner: 'Đồ uống & Trái cây tươi 4 mùa',
     distance: '1.5 km',
     deliveryTime: '15 - 20 phút',
-    productsCount: '25+ sản phẩm',
+    productsCount: '4 sản phẩm',
     rating: 5.0,
-    reviews: 120,
-    avatar: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=200&q=80',
-    cover: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80',
+    reviews: 76,
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+    cover: 'https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=600&q=80',
   },
   {
-    id: 'store_ga_ta',
-    name: 'Gà Ta Thả Vườn & Trứng Gà Sạch',
-    owner: 'Trại chăn thả sinh học tự nhiên',
-    distance: '3.0 km',
-    deliveryTime: '20 - 30 phút',
-    productsCount: '18+ sản phẩm',
-    rating: 4.8,
-    reviews: 95,
-    avatar: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=200&q=80',
-    cover: 'https://images.unsplash.com/photo-1516467508483-a7212febe31a?auto=format&fit=crop&w=600&q=80',
+    id: 'store_test_gian_hang',
+    name: 'test Gian Hàng',
+    owner: 'Thực phẩm & Nhu yếu phẩm',
+    distance: '1.1 km',
+    deliveryTime: '15 - 20 phút',
+    productsCount: '3 sản phẩm',
+    rating: 5.0,
+    reviews: 38,
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+    cover: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80',
   },
 ];
 
 const featuredVendors = computed(() => {
   if (catalog.allStores.value && catalog.allStores.value.length > 0) {
-    return catalog.allStores.value.slice(0, 6).map((s, idx) => ({
-      id: s.id || idx + 1,
-      name: s.name,
-      owner:
-        s.categoryName ||
-        (s.address ? s.address.split(',')[0].trim() : 'Đối tác địa phương uy tín'),
-      distance: `${s.distanceKm || 1.2} km`,
-      deliveryTime: s.deliveryTime || '15 - 20 phút',
-      productsCount: `${s.totalProducts || s.products?.length || 1}+ sản phẩm`,
-      rating: s.rating || 5.0,
-      reviews: s.reviewsCount || 100,
-      avatar:
-        s.avatar ||
-        'https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80',
-      cover:
-        s.coverImage ||
-        'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=600&q=80',
-    }));
+    // 1. Lọc bỏ các gian hàng demo không có sản phẩm
+    const realStoresWithProducts = catalog.allStores.value.filter(
+      (s) => (s.totalProducts || 0) > 0 && !['green farm', 'fresh fruits shop', 'nông sản sạch ba vì zonemart'].includes(s.name.trim().toLowerCase())
+    );
+
+    // 2. Danh sách ưu tiên 6 gian hàng đối tác thật có sẵn tài khoản quản trị
+    const priorityNames = [
+      'vườn rau hữu cơ bác ba',
+      'nông sản sạch chúc sơn - chương mỹ',
+      'bếp nóng yên nghĩa & biên giang',
+      'vựa thịt sạch & hải sản ba la - hà đông',
+      'tiệm trái cây & nước ép zone fruits',
+      'test gian hàng'
+    ];
+
+    const sortedStores = [...realStoresWithProducts].sort((a, b) => {
+      const idxA = priorityNames.findIndex(p => a.name.toLowerCase().includes(p) || p.includes(a.name.toLowerCase()));
+      const idxB = priorityNames.findIndex(p => b.name.toLowerCase().includes(p) || p.includes(b.name.toLowerCase()));
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return (b.totalProducts || 0) - (a.totalProducts || 0);
+    });
+
+    const displayStores = sortedStores.length >= 3 ? sortedStores.slice(0, 6) : catalog.allStores.value.slice(0, 6);
+
+    const defaultCovers: Record<string, string> = {
+      'vườn rau hữu cơ bác ba': 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=600&q=80',
+      'nông sản sạch chúc sơn - chương mỹ': 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=600&q=80',
+      'bếp nóng yên nghĩa & biên giang': 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80',
+      'vựa thịt sạch & hải sản ba la - hà đông': 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?auto=format&fit=crop&w=600&q=80',
+      'tiệm trái cây & nước ép zone fruits': 'https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=600&q=80',
+      'test gian hàng': 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80',
+    };
+
+
+
+    return displayStores.map((s, idx) => {
+      const sKey = (s.name || '').trim().toLowerCase();
+      const matchedCoverKey = Object.keys(defaultCovers).find(k => sKey.includes(k) || k.includes(sKey));
+      
+      let coverImg = s.coverImage && !s.coverImage.includes('500937386664') && !s.coverImage.includes('1592417817098')
+        ? s.coverImage
+        : (matchedCoverKey ? defaultCovers[matchedCoverKey] : (s.coverImage || 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=600&q=80'));
+      if (coverImg.includes('1592417817098')) {
+        coverImg = 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=600&q=80';
+      }
+
+      const avatarImg = getStoreAvatar(s.name, s.avatar);
+      const coverImgResolved = getStoreCover(s.name, coverImg);
+
+      return {
+        id: s.id || idx + 1,
+        name: s.name,
+        owner:
+          s.categoryName ||
+          (s.address ? s.address.split(',')[0].trim() : 'Đối tác địa phương uy tín'),
+        distance: `${s.distanceKm || 1.2} km`,
+        deliveryTime: s.deliveryTime || '15 - 20 phút',
+        productsCount: `${s.totalProducts || s.products?.length || 0} sản phẩm`,
+        rating: (typeof s.rating === 'number' && s.rating > 0 && typeof s.reviewsCount === 'number' && s.reviewsCount > 0) ? s.rating : 5.0,
+        reviews: typeof s.reviewsCount === 'number' && s.reviewsCount > 0 ? s.reviewsCount : 48,
+        avatar: avatarImg,
+        cover: coverImgResolved,
+        isOpen: !isStoreClosed(s.name),
+      };
+    });
   }
   return defaultFallbackVendors;
 });
 
 watch(
-  () => featuredVendors.value,
+  [() => featuredVendors.value, () => featuredProducts.value],
   async () => {
     await nextTick();
-    observeNewElements();
+    setTimeout(() => {
+      observeNewElements();
+    }, 80);
   },
   { deep: true }
 );
@@ -665,6 +737,18 @@ const highlights = [
   },
 ];
 
+const handleImageError = (e: Event, fallbackType: 'product' | 'cover' | 'avatar' = 'product') => {
+  const target = e.target as HTMLImageElement;
+  if (!target) return;
+  if (fallbackType === 'product') {
+    target.src = 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80';
+  } else if (fallbackType === 'cover') {
+    target.src = 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=600&q=80';
+  } else {
+    target.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80';
+  }
+};
+
 const formatPrice = (value: number) => {
   return value.toLocaleString('vi-VN') + ' đ';
 };
@@ -692,10 +776,18 @@ const goToPortal = (btnRoute: string, _openNewTab?: boolean) => {
   if (btnRoute) {
     if (auth.isLoggedIn.value) {
       if (btnRoute === '/register-seller' || btnRoute === '/seller-landing' || btnRoute === '/seller-form') {
+        if (auth.currentRole.value === 'seller' || (auth.user.value as any)?.isSeller) {
+          router.push('/seller');
+          return;
+        }
         router.push({ path: '/profile', query: { tab: 'seller-reg' } });
         return;
       }
       if (btnRoute === '/register-shipper' || btnRoute === '/shipper-landing' || btnRoute === '/shipper-form') {
+        if (auth.currentRole.value === 'shipper' || (auth.user.value as any)?.isShipper) {
+          router.push('/shipper');
+          return;
+        }
         router.push({ path: '/profile', query: { tab: 'shipper-reg' } });
         return;
       }
@@ -705,6 +797,14 @@ const goToPortal = (btnRoute: string, _openNewTab?: boolean) => {
 };
 
 const handleAddToCartHome = (item: any) => {
+  if (isStoreClosed(item.farm)) {
+    toast.warning(`Gian hàng "${item.farm}" hiện đang tạm đóng cửa nghỉ nhận đơn. Vui lòng quay lại sau!`, 'Gian Hàng Tạm Đóng');
+    return;
+  }
+  if (typeof item.stock === 'number' && item.stock <= 0) {
+    toast.warning(`Sản phẩm "${item.name}" hiện đã hết hàng trong kho!`, 'Tạm Hết Hàng');
+    return;
+  }
   cart.addItem(
     {
       storeId: 'store_' + (item.farm || 'default').toLowerCase().replace(/\s+/g, '_'),
@@ -958,6 +1058,7 @@ const handleAddToCartHome = (item: any) => {
                 :alt="cat.name"
                 class="category-img"
                 loading="lazy"
+                @error="(e) => handleImageError(e, 'product')"
               />
               <div class="category-img-gradient"></div>
               <span class="category-tag pop-3d-badge">{{ cat.tag }}</span>
@@ -1015,9 +1116,13 @@ const handleAddToCartHome = (item: any) => {
                 :alt="item.name"
                 class="product-img"
                 loading="lazy"
+                @error="(e) => handleImageError(e, 'product')"
               />
               <span class="product-discount-tag pop-3d-badge">{{ item.discount }}</span>
-              <span class="product-status-tag">
+              <span v-if="(item as any).stock !== undefined && (item as any).stock <= 0" class="product-status-tag badge-out-stock">
+                <i class="bi bi-x-circle-fill me-1"></i>Hết hàng
+              </span>
+              <span v-else class="product-status-tag">
                 <i class="bi bi-patch-check-fill text-success me-1"></i>{{ item.tag }}
               </span>
             </div>
@@ -1038,10 +1143,13 @@ const handleAddToCartHome = (item: any) => {
               </p>
 
               <div class="product-rating-row">
-                <span class="stars">
-                  <i class="bi bi-star-fill text-warning"></i> {{ item.rating }}
+                <span v-if="item.reviewsCount > 0 && item.rating > 0" class="stars">
+                  <i class="bi bi-star-fill text-warning"></i> {{ item.rating.toFixed(1) }}
                 </span>
-                <span class="sold-count">Đã bán {{ item.sold }}</span>
+                <span v-else class="text-muted small">
+                  <i class="bi bi-star"></i> Chưa có đánh giá
+                </span>
+                <span class="sold-count">Đã bán {{ item.sold || 0 }}</span>
               </div>
 
               <div class="product-price-row">
@@ -1053,11 +1161,14 @@ const handleAddToCartHome = (item: any) => {
                 </div>
                 <button
                   class="btn-add-cart"
-                  title="Thêm vào giỏ hàng"
-                  aria-label="Chọn mua sản phẩm"
+                  :class="{ 'btn-cart-out-of-stock': isStoreClosed(item.farm) || ((item as any).stock !== undefined && (item as any).stock <= 0) }"
+                  :disabled="isStoreClosed(item.farm) || ((item as any).stock !== undefined && (item as any).stock <= 0)"
+                  :title="isStoreClosed(item.farm) ? 'Gian hàng tạm đóng cửa nghỉ nhận đơn' : (((item as any).stock !== undefined && (item as any).stock <= 0) ? 'Sản phẩm tạm hết hàng' : 'Thêm vào giỏ hàng')"
+                  :aria-label="isStoreClosed(item.farm) ? 'Gian hàng tạm đóng' : (((item as any).stock !== undefined && (item as any).stock <= 0) ? 'Tạm hết hàng' : 'Chọn mua sản phẩm')"
                   @click.stop="handleAddToCartHome(item)"
                 >
-                  <i class="bi bi-bag-plus-fill"></i> Chọn Mua
+                  <i :class="isStoreClosed(item.farm) ? 'bi bi-moon-stars-fill' : (((item as any).stock !== undefined && (item as any).stock <= 0) ? 'bi bi-x-circle-fill' : 'bi bi-bag-plus-fill')"></i>
+                  {{ isStoreClosed(item.farm) ? 'Tạm đóng' : (((item as any).stock !== undefined && (item as any).stock <= 0) ? 'Hết hàng' : 'Chọn Mua') }}
                 </button>
               </div>
             </div>
@@ -1132,8 +1243,8 @@ const handleAddToCartHome = (item: any) => {
         <div
           v-for="(v, idx) in featuredVendors"
           :key="v.id"
-          class="vendor-card-wrap is-revealed"
-          :style="{ '--reveal-delay': `${(idx % 3) * 0.08}s` }"
+          class="vendor-card-wrap scroll-reveal"
+          :style="{ '--reveal-delay': `${(idx % 3) * 0.09}s` }"
           @click="goToStore(v.name)"
         >
           <div class="vendor-card card-3d-inner">
@@ -1143,13 +1254,20 @@ const handleAddToCartHome = (item: any) => {
                 :alt="v.name"
                 class="vendor-cover"
                 loading="lazy"
+                @error="(e) => handleImageError(e, 'cover')"
               />
               <div class="vendor-cover-overlay"></div>
-              <span class="vendor-live-tag">
-                <span class="dot-online"></span> Đang mở cửa
+              <span class="vendor-live-tag" :class="{ 'is-closed': (v as any).isOpen === false }">
+                <span :class="(v as any).isOpen !== false ? 'dot-online' : 'dot-offline'"></span>
+                {{ (v as any).isOpen !== false ? 'Đang mở cửa' : 'Tạm đóng cửa' }}
               </span>
               <div class="vendor-avatar-wrap pop-3d-layer">
-                <img :src="v.avatar" :alt="v.owner" class="vendor-avatar" />
+                <img
+                  :src="v.avatar"
+                  :alt="v.owner"
+                  class="vendor-avatar"
+                  @error="(e) => handleImageError(e, 'avatar')"
+                />
               </div>
             </div>
             <div class="vendor-body">
@@ -1159,8 +1277,11 @@ const handleAddToCartHome = (item: any) => {
                 <span>
                   <i class="bi bi-geo-alt-fill text-danger"></i> Cách bạn {{ v.distance }}
                 </span>
-                <span>
-                  <i class="bi bi-star-fill text-warning"></i> {{ v.rating }}
+                <span v-if="v.reviews > 0 && v.rating > 0">
+                  <i class="bi bi-star-fill text-warning"></i> {{ v.rating.toFixed(1) }}
+                </span>
+                <span v-else class="text-muted small">
+                  <i class="bi bi-star"></i> Chưa có đánh giá
                 </span>
               </div>
               <p class="vendor-stock">
@@ -1180,7 +1301,7 @@ const handleAddToCartHome = (item: any) => {
          6. ĐÁNH GIÁ THỰC TẾ TỪ CỘNG ĐỒNG (TESTIMONIALS)
          ========================================================== -->
     <section class="section-container testimonials-section">
-      <div class="testimonials-header">
+      <div class="testimonials-header scroll-reveal">
         <span class="how-badge">TIẾNG NÓI BÀ CON CHỢ DÂN SINH</span>
         <h2 class="section-title">Cộng Đồng Nói Gì Về ZoneMart?</h2>
         <p class="section-subtitle">
@@ -1207,7 +1328,12 @@ const handleAddToCartHome = (item: any) => {
             </div>
             <p class="testimonial-quote">“{{ t.comment }}”</p>
             <div class="testimonial-author">
-              <img :src="t.avatar" :alt="t.name" class="author-avatar" />
+              <img
+                :src="t.avatar"
+                :alt="t.name"
+                class="author-avatar"
+                @error="(e) => handleImageError(e, 'avatar')"
+              />
               <div>
                 <h5 class="author-name">{{ t.name }}</h5>
                 <span class="author-role">{{ t.role }}</span>
@@ -1294,17 +1420,17 @@ const handleAddToCartHome = (item: any) => {
    ========================================================== */
 .scroll-reveal {
   opacity: 0;
-  transform: translate3d(0, 28px, 0);
+  transform: translate3d(0, 48px, 0) scale(0.975);
   transition:
-    opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 0.75s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.75s cubic-bezier(0.16, 1, 0.3, 1);
   transition-delay: var(--reveal-delay, 0s);
   will-change: opacity, transform;
 }
 
 .scroll-reveal.is-revealed {
   opacity: 1;
-  transform: translate3d(0, 0, 0);
+  transform: translate3d(0, 0, 0) scale(1);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1536,6 +1662,17 @@ const handleAddToCartHome = (item: any) => {
   }
 }
 
+@keyframes heroFadeUp {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 24px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 .hero-inner-grid {
   position: relative;
   z-index: 2;
@@ -1549,6 +1686,7 @@ const handleAddToCartHome = (item: any) => {
   text-align: center;
   padding: 24px clamp(16px, 3.5vw, 40px) 14px clamp(16px, 3.5vw, 40px);
   box-sizing: border-box;
+  animation: heroFadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .hero-content {
@@ -1786,9 +1924,31 @@ const handleAddToCartHome = (item: any) => {
   grid-template-columns: repeat(3, 1fr);
   gap: clamp(14px, 2vw, 24px);
 }
+@keyframes portalEntrance {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 36px, 0) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 .portal-card-3d-wrap {
   perspective: 900px;
   cursor: pointer;
+  animation: portalEntrance 0.75s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.portal-card-3d-wrap:nth-child(1) {
+  animation-delay: 0.12s;
+}
+.portal-card-3d-wrap:nth-child(2) {
+  animation-delay: 0.24s;
+}
+.portal-card-3d-wrap:nth-child(3) {
+  animation-delay: 0.36s;
 }
 .portal-card {
   position: relative;
@@ -2512,6 +2672,17 @@ const handleAddToCartHome = (item: any) => {
   height: 6px;
   border-radius: 50%;
   background: #4ade80;
+}
+.dot-offline {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+.vendor-live-tag.is-closed {
+  background: rgba(185, 28, 28, 0.85);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fee2e2;
 }
 .vendor-avatar-wrap {
   position: absolute;
@@ -3463,4 +3634,18 @@ const handleAddToCartHome = (item: any) => {
   opacity: 0;
   transform: translateY(12px) scale(0.96);
 }
+
+.badge-out-stock {
+  background: rgba(239, 68, 68, 0.95) !important;
+  color: #ffffff !important;
+  border-color: rgba(220, 38, 38, 0.5) !important;
+}
+.btn-cart-out-of-stock {
+  background: #94a3b8 !important;
+  border-color: #94a3b8 !important;
+  cursor: not-allowed !important;
+  opacity: 0.85 !important;
+  box-shadow: none !important;
+}
+
 </style>

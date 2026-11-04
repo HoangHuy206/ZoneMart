@@ -528,7 +528,6 @@ const handleConfirmRejectProduct = async () => {
 };
 
 const handleDirectDeleteProduct = async (prod: any) => {
-  if (!confirm(`Bạn có chắc muốn xóa vĩnh viễn sản phẩm "${prod.name}" khỏi sàn và hồ sơ gian hàng?`)) return;
   await deleteProductPermanently(prod.id, prod.name);
   showToast(`Đã xóa vĩnh viễn sản phẩm "${prod.name}" khỏi sàn!`, "success");
   fetchStats();
@@ -3297,6 +3296,15 @@ onUnmounted(() => {
                         >
                           <Check :size="13" />
                           <span>Duyệt Bán</span>
+                        </button>
+                        <button
+                          v-if="prod.status === 'pending_review'"
+                          class="btn-row-action btn-row-reject"
+                          @click="openRejectProductModal(prod)"
+                          title="Từ chối duyệt và yêu cầu người bán sửa lại thông tin"
+                        >
+                          <X :size="13" />
+                          <span>Từ Chối</span>
                         </button>
                         <button
                           v-if="prod.status === 'active'"

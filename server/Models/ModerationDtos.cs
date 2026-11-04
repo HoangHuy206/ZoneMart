@@ -11,7 +11,9 @@ namespace ZoneMart.Server.Models;
 public record VisionInspectorResult(
     [property: JsonPropertyName("isImageSafe")] bool IsImageSafe,
     [property: JsonPropertyName("detectedItem")] string DetectedItem,
-    [property: JsonPropertyName("imageWarning")] string ImageWarning
+    [property: JsonPropertyName("imageWarning")] string ImageWarning,
+    [property: JsonPropertyName("isCrossMatch")] bool? IsCrossMatch = null,
+    [property: JsonPropertyName("matchPercentage")] int? MatchPercentage = null
 )
 {
     [JsonPropertyName("isSafe")]
@@ -64,7 +66,9 @@ public record ProductModerationResponse(
     VisionInspectorResult VisionResult,
     bool IsCrossMatch,
     int MatchPercentage,
-    string? CrossMatchWarning
+    string? CrossMatchWarning,
+    bool RequiresManualReview = false,
+    string ModerationAction = "approved"
 )
 {
     [JsonPropertyName("isMatch")]

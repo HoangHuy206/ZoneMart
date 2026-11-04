@@ -15,6 +15,8 @@
  */
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRouter } from "vue-router";
+import { getStoreAvatar } from "../../utils/storeBranding";
+import { exportOrdersToExcel } from "../../utils/exportOrderExcel";
 import { useToast } from "../../composables/useToast";
 import { orderRealtimeService } from "../../services/orderRealtimeService";
 import {
@@ -34,6 +36,7 @@ import { useAuth } from "../../composables/useAuth";
 import SellerChatDashboardTab from "../../components/chat/SellerChatDashboardTab.vue";
 import { sellerChatService } from "../../services/sellerChatService";
 import { inferSubCategoryAndPrep } from "../../composables/useProductCatalog";
+import { useStoreOpenStatus } from "../../composables/useStoreOpenStatus";
 
 const router = useRouter();
 const toast = useToast();
@@ -134,7 +137,7 @@ onMounted(async () => {
     }
     if (parsed.fullName) currentUser.name = parsed.fullName;
     if (parsed.phoneEmail) currentUser.email = parsed.phoneEmail;
-    if (parsed.avatarUrl) currentUser.avatar = parsed.avatarUrl;
+    currentUser.avatar = getStoreAvatar(parsed.storeName || parsed.fullName || currentUser.name, parsed.avatarUrl);
 
     // Kiểm tra trạng thái thăng cấp nhanh từ Admin
     if (parsed.isPromotedByAdmin) {
@@ -406,8 +409,23 @@ const greetingName = computed(() => {
   return clean || currentUser.name;
 });
 
+const storeOpenStatus = useStoreOpenStatus();
+
 // Trạng thái mở cửa / nhận đơn hỏa tốc
-const isStoreOpen = ref(true);
+const getInitialStoreOpen = (): boolean => {
+  try {
+    if (typeof localStorage === 'undefined') return true;
+    const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+    const currentName = (currentUser.name || "").toLowerCase().trim();
+    if (storeOpenStatus.isStoreClosed(cleanEmail) || storeOpenStatus.isStoreClosed(currentName)) {
+      return false;
+    }
+    const saved = localStorage.getItem(`zonemart_store_open_${cleanEmail}`) || localStorage.getItem("zonemart_current_store_open");
+    if (saved !== null) return saved === 'true';
+  } catch {}
+  return true;
+};
+const isStoreOpen = ref(getInitialStoreOpen());
 const toastMessage = ref("");
 const showToast = ref(false);
 const isUserMenuOpen = ref(false);
@@ -423,6 +441,20 @@ const triggerToast = (msg: string) => {
 
 const toggleStoreOpen = () => {
   isStoreOpen.value = !isStoreOpen.value;
+  try {
+    const cleanEmail = (currentUser.email || "").toLowerCase().trim();
+    const sName = (storeInfo.name || (currentUser as any)?.name || (currentUser as any)?.fullName || "").trim();
+    const cleanUser = ((currentUser as any)?.name || (currentUser as any)?.fullName || "").trim();
+    
+    // Đồng bộ trạng thái mở/đóng với composable tập trung
+    storeOpenStatus.setStoreOpenStatus(sName, isStoreOpen.value, {
+      email: cleanEmail,
+      id: storeInfo.id
+    });
+    if (cleanUser && cleanUser.toLowerCase() !== sName.toLowerCase()) {
+      storeOpenStatus.setStoreOpenStatus(cleanUser, isStoreOpen.value, { email: cleanEmail, id: storeInfo.id });
+    }
+  } catch {}
   triggerToast(
     isStoreOpen.value
       ? "Đã mở cửa gian hàng! Sẵn sàng nhận đơn hỏa tốc 10km."
@@ -1292,9 +1324,6 @@ const handleDisableFace = async () => {
   const userId = getSellerUserIdentifier();
   if (!userId) return;
   const bioLabel = biometricDevice.value?.label || 'Sinh trắc học';
-  if (!confirm(`Bạn có chắc chắn muốn tắt tính năng đăng nhập bằng ${bioLabel} cho tài khoản người bán này?`)) {
-    return;
-  }
   isDisablingFace.value = true;
   try {
     const res = await disableDeviceBiometrics(userId);
@@ -1920,12 +1949,13 @@ const handleSaveProduct = async () => {
         const detected = (data.visionResult?.detectedItem || "").toLowerCase();
         const reason = data.warnings?.[0] || data.visionResult?.violationReason || data.visionResult?.imageWarning || data.policyResult?.textWarning || "";
 
-        // A. LỚP 1: VI PHẠM NỘI DUNG CẤM (Vũ khí, súng đạn, 18+, gợi cảm, gợi dục, từ ngữ thô tục) -> XÓA BÀI NGAY LẬP TỨC
-        const isViolation = !isTextSafe || !isImageSafe ||
+        // A. LỚP 1: VI PHẠM NỘI DUNG CẤM (Vũ khí, súng đạn, 18+, ma túy) -> XÓA BÀI NGAY LẬP TỨC
+        const isViolation = data.moderationAction === "violation_rejected" ||
+          (!data.requiresManualReview && (!isTextSafe || !isImageSafe ||
           detected.includes("súng") || detected.includes("vũ khí") || detected.includes("gun") || detected.includes("pistol") ||
           detected.includes("bom") || detected.includes("đạn") || detected.includes("khoả thân") || detected.includes("khiêu dâm") ||
-          reason.toLowerCase().includes("súng") || reason.toLowerCase().includes("vũ khí") || reason.toLowerCase().includes("hàng cấm") ||
-          reason.toLowerCase().includes("nhạy cảm") || reason.toLowerCase().includes("cấm") || reason.toLowerCase().includes("18+");
+          reason.toLowerCase().includes("súng") || reason.toLowerCase().includes("vũ khí") || reason.toLowerCase().includes("ma túy") ||
+          reason.toLowerCase().includes("chất cấm") || reason.toLowerCase().includes("18+")));
 
         if (isViolation) {
           productModeration.allProducts.value.splice(pIdx, 1);
@@ -1944,21 +1974,22 @@ const handleSaveProduct = async () => {
           return;
         }
 
-        // B. LỚP 2: TÊN RÁC/SPAM HOẶC LỆCH ẢNH VÀ TÊN -> CHUYỂN SANG CHỜ DUYỆT (PENDING REVIEW)
-        if (!isApproved || !isCrossMatch || !isMeaningful || data.hasWarnings) {
+        // B. LỚP 2: HUMAN HANDOVER -> CHUYỂN SANG BAN QUẢN TRỊ DUYỆT TAY (PENDING REVIEW)
+        if (data.moderationAction === "human_handover" || data.requiresManualReview || !isApproved || !isCrossMatch || !isMeaningful || data.hasWarnings) {
           target.status = "pending_review";
           target.isAvailable = false;
-          const warningMsg = reason || data.warnings?.join("; ") || "Ảnh và tên chưa trùng khớp hoặc tên sản phẩm không hợp lệ.";
+          const warningMsg = reason || data.warnings?.join("; ") || "Ảnh và tên chưa trùng khớp hoặc tên sản phẩm cần kiểm duyệt.";
           const matchPercent = typeof data.matchPercentage === "number" ? data.matchPercentage : 20;
+          const flagNote = warningMsg.startsWith("[Human Handover]") ? warningMsg : `[Human Handover] ${warningMsg}`;
           target.aiScore = {
             safetyScore: isImageSafe && isTextSafe ? 85 : 20,
             matchScore: matchPercent,
-            flag: warningMsg
+            flag: flagNote
           };
           productModeration.allProducts.value = [...productModeration.allProducts.value];
           productModeration.saveProducts();
           productModeration.syncProductToBackend(target);
-          triggerToast(`⚠️ Cảnh báo AI: ${warningMsg}. Bài chuyển sang Chờ duyệt!`);
+          triggerToast(`ℹ️ Human Handover: ${warningMsg}. Bài đăng đã chuyển sang Ban Quản Trị duyệt tay!`);
           return;
         }
 
@@ -1989,9 +2020,8 @@ const handleResetViolationsDemo = () => {
 
 // Bật/tắt trạng thái bán
 const handleToggleAvailable = (prod: ModeratedProduct) => {
-  prod.isAvailable = !prod.isAvailable;
-  productModeration.saveProducts();
-  triggerToast(prod.isAvailable ? `Đã mở bán sản phẩm "${prod.name}"` : `Đã tạm ngưng bán "${prod.name}"`);
+  const newStatus = productModeration.toggleProductAvailability(prod);
+  triggerToast(newStatus ? `Đã mở bán sản phẩm "${prod.name}"` : `Đã tạm ngưng bán "${prod.name}"`);
 };
 
 // ==================== XÓA SẢN PHẨM ====================
@@ -2040,9 +2070,6 @@ const handleCancelOrder = (order: SellerOrder) => {
 // Người bán xóa sạch toàn bộ danh sách đơn hàng (reset hệ thống sạch sẽ)
 const isClearingOrders = ref(false);
 const handleClearAllSellerOrders = async () => {
-  if (!confirm("Bạn có chắc chắn muốn xóa sạch toàn bộ danh sách đơn hàng? Thao tác này sẽ làm mới danh sách.")) {
-    return;
-  }
   isClearingOrders.value = true;
   try {
     orders.value = [];
@@ -2066,6 +2093,25 @@ const handleActionOrder = (order: SellerOrder) => {
     handleConfirmOrder(order);
   } else {
     triggerToast(`Đang xem chi tiết đơn hàng ${order.orderCode} (${order.status})`);
+  }
+};
+
+const handleExportOrdersToExcel = () => {
+  try {
+    const result = exportOrdersToExcel(
+      orders.value,
+      storeInfo.name || currentUser.name || "Test Gian Hàng",
+      currentUser.name || "Chủ Gian Hàng",
+      currentUser.email || "baconbao206@gmail.com"
+    );
+    if (result.isTemplate) {
+      triggerToast("Gian hàng chưa có đơn! Đã tải file mẫu bảng tính Microsoft Excel (.xls)!");
+    } else {
+      triggerToast(`Đã xuất thành công ${result.count} đơn hàng ra file Microsoft Excel (.xls)!`);
+    }
+  } catch (err: any) {
+    console.error("Lỗi xuất file Excel:", err);
+    triggerToast("Lỗi khi xuất file: " + (err?.message || ""));
   }
 };
 
@@ -2755,7 +2801,7 @@ const getItemImage = (it: OrderItem) => {
                 <button type="button" class="table-tool-btn" @click="triggerToast('Bộ lọc đơn hàng')">
                   <i class="bi bi-funnel me-1"></i> Bộ lọc
                 </button>
-                <button type="button" class="table-tool-btn" @click="triggerToast('Đã xuất danh sách đơn hàng ra file Excel!')">
+                <button type="button" class="table-tool-btn" @click="handleExportOrdersToExcel" title="Xuất toàn bộ đơn hàng ra file Microsoft Excel (.xls)">
                   <i class="bi bi-download me-1"></i> Xuất file
                 </button>
               </div>
@@ -2961,8 +3007,12 @@ const getItemImage = (it: OrderItem) => {
                     <td>{{ prod.stock }}</td>
                     <td>
                       <!-- Trạng thái 1: Đang bán -->
-                      <span v-if="prod.status === 'active'" class="badge-status-pill available">
+                      <span v-if="prod.status === 'active' && prod.isAvailable !== false" class="badge-status-pill available">
                         <i class="bi bi-check-circle-fill me-1"></i> Đang bán
+                      </span>
+                      <!-- Trạng thái 1b: Tạm ngưng bán -->
+                      <span v-else-if="prod.status === 'active' && prod.isAvailable === false" class="badge-status-pill paused-pill" style="background: #fff7ed; color: #c2410c; border: 1px solid #ffedd5; font-weight: 600;">
+                        <i class="bi bi-pause-circle-fill me-1"></i> Tạm ngưng
                       </span>
                       <!-- Trạng thái 2: Chờ Manager duyệt (Nghi ngờ) -->
                       <!-- Trạng thái 2: AI đang quét hoặc Chờ Manager duyệt -->
@@ -2998,9 +3048,10 @@ const getItemImage = (it: OrderItem) => {
                           v-else-if="prod.status === 'active'"
                           type="button"
                           class="btn-action-pill"
+                          :class="{ 'btn-action-paused': prod.isAvailable === false }"
                           @click="handleToggleAvailable(prod)"
                         >
-                          {{ prod.isAvailable ? 'Tạm ngưng' : 'Bật bán' }}
+                          {{ prod.isAvailable === false ? 'Bật bán' : 'Tạm ngưng' }}
                         </button>
                         <!-- Nếu sản phẩm đang chờ duyệt: Hiển thị trạng thái chờ -->
                         <span v-else-if="prod.status === 'pending_review'" class="pending-admin-label">
@@ -3071,6 +3122,15 @@ const getItemImage = (it: OrderItem) => {
               <p class="tab-subheading">Xác nhận đóng gói và điều phối tài xế giao hỏa tốc 10km (Chỉ hiển thị đơn của {{ storeInfo.name }})</p>
             </div>
             <div class="d-flex align-items-center gap-2">
+              <button 
+                type="button" 
+                class="btn btn-sm btn-outline-success fw-semibold d-inline-flex align-items-center gap-1.5 px-3 py-1.5 rounded-pill shadow-xs"
+                @click="handleExportOrdersToExcel"
+                title="Xuất danh sách đơn hàng ra file Microsoft Excel (.xls)"
+              >
+                <i class="bi bi-file-earmark-spreadsheet-fill text-success"></i>
+                <span>Xuất file Excel</span>
+              </button>
               <button 
                 type="button" 
                 class="btn-clear-orders"
@@ -5288,6 +5348,17 @@ h1, h2, h3, h4, h5, h6 {
 .btn-action-pill:hover {
   background: #F1F5F9;
   color: #0F172A !important;
+}
+
+.btn-action-pill.btn-action-paused {
+  background: #ECFDF5;
+  border-color: #A7F3D0;
+  color: #065F46 !important;
+}
+
+.btn-action-pill.btn-action-paused:hover {
+  background: #D1FAE5;
+  color: #047857 !important;
 }
 
 /* SETTINGS FORM - HIGH CONTRAST */

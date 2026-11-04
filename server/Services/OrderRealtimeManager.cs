@@ -24,6 +24,8 @@ namespace ZoneMart.Server.Services
         private readonly string _realtimeOrdersFilePath;
         private readonly string _registeredOrdersFilePath;
         private readonly string _paidOrdersFilePath;
+        private readonly string _storeStatusesFilePath;
+        private readonly ConcurrentDictionary<string, bool> _storeStatuses = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _fileLock = new();
 
         private readonly string _sepayApiKey;
@@ -39,6 +41,7 @@ namespace ZoneMart.Server.Services
             _realtimeOrdersFilePath = Path.Combine(projectRoot, ".pending_realtime_orders.json");
             _registeredOrdersFilePath = Path.Combine(projectRoot, ".pending_orders.json");
             _paidOrdersFilePath = Path.Combine(projectRoot, ".paid_orders.json");
+            _storeStatusesFilePath = Path.Combine(projectRoot, ".store_statuses.json");
 
             _sepayApiKey = configuration?["SepaySettings:ApiKey"]
                 ?? Environment.GetEnvironmentVariable("SEPAY_API_KEY")
@@ -96,6 +99,20 @@ namespace ZoneMart.Server.Services
                     if (dict != null)
                     {
                         foreach (var kvp in dict) _registeredOrders[kvp.Key] = kvp.Value.Clone();
+                    }
+                }
+            }
+            catch {}
+
+            try
+            {
+                if (File.Exists(_storeStatusesFilePath))
+                {
+                    var json = File.ReadAllText(_storeStatusesFilePath);
+                    var dict = JsonSerializer.Deserialize<Dictionary<string, bool>>(json);
+                    if (dict != null)
+                    {
+                        foreach (var kvp in dict) _storeStatuses[kvp.Key] = kvp.Value;
                     }
                 }
             }
@@ -456,6 +473,48 @@ namespace ZoneMart.Server.Services
             {
                 _ = kvp.Value(message);
             }
+        }
+
+        public Dictionary<string, bool> GetAllStoreStatuses()
+        {
+            return new Dictionary<string, bool>(_storeStatuses, StringComparer.OrdinalIgnoreCase);
+        }
+
+        public void SetStoreStatus(string storeName, bool isOpen, string? email = null, string? id = null)
+        {
+            if (!string.IsNullOrWhiteSpace(storeName))
+            {
+                _storeStatuses[storeName.Trim().ToLower()] = isOpen;
+            }
+            if (!string.IsNullOrWhiteSpace(email))
+            {
+                _storeStatuses[email.Trim().ToLower()] = isOpen;
+            }
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                _storeStatuses[id.Trim().ToLower()] = isOpen;
+            }
+
+            try
+            {
+                lock (_fileLock)
+                {
+                    File.WriteAllText(_storeStatusesFilePath, JsonSerializer.Serialize(_storeStatuses));
+                }
+            }
+            catch {}
+
+            var payload = JsonSerializer.Serialize(new
+            {
+                type = "store_status_changed",
+                storeName,
+                isOpen,
+                email,
+                id,
+                timestamp = DateTime.UtcNow
+            });
+
+            BroadcastRealtimeMessage(payload);
         }
 
         public void RegisterPaymentSseClient(string clientId, string orderCode, Func<string, Task> callback)

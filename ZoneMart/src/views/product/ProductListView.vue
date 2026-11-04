@@ -3,8 +3,10 @@
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useProductCatalog, inferSubCategoryAndPrep, type CatalogStore } from "../../composables/useProductCatalog";
+import { useStoreOpenStatus } from "../../composables/useStoreOpenStatus";
 import { useCart } from "../../composables/useCart";
 import { useToast } from "../../composables/useToast";
+import { getStoreAvatar, getStoreCover } from "../../utils/storeBranding";
 
 const router = useRouter();
 const route = useRoute();
@@ -205,6 +207,8 @@ interface ProductItem {
   unit: string;
   image: string;
   description?: string;
+  isAvailable?: boolean;
+  stock?: number;
 }
 
 const allProductItems = computed<ProductItem[]>(() => {
@@ -237,6 +241,8 @@ const allProductItems = computed<ProductItem[]>(() => {
       unit: p.unit,
       image: img,
       description: p.description || "",
+      isAvailable: (p as any).isAvailable !== false,
+      stock: typeof (p as any).stock === "number" ? (p as any).stock : 50,
     };
   });
 });
@@ -508,12 +514,33 @@ const isStoreUpcoming = (store: any) => {
   return hasNoAddress || hasNoProducts;
 };
 
+const storeOpenStatus = useStoreOpenStatus();
+const isStoreClosed = storeOpenStatus.isStoreClosed;
+
 // Thông tin gian hàng đang được chọn (nếu có lọc theo gian hàng)
 const activeStoreInfo = computed(() => {
   if (!selectedStoreFilter.value) return null;
-  return catalog.allStores.value.find(
-    (s) => s.name.toLowerCase() === selectedStoreFilter.value.toLowerCase()
+  const target = selectedStoreFilter.value.toLowerCase().trim();
+  const found = catalog.allStores.value.find(
+    (s) => (s.name || '').toLowerCase().trim() === target
+  ) || catalog.allStores.value.find(
+    (s) => (s.name || '').toLowerCase().includes(target) || target.includes((s.name || '').toLowerCase().trim())
   );
+  if (found) {
+    return {
+      ...found,
+      avatar: getStoreAvatar(found.name, found.avatar),
+      coverImage: getStoreCover(found.name, found.coverImage)
+    };
+  }
+  return null;
+});
+
+// Trạng thái gian hàng đang chọn có đang tạm đóng cửa nghỉ nhận đơn hay không
+const isCurrentStoreClosed = computed(() => {
+  if (selectedStoreFilter.value && isStoreClosed(selectedStoreFilter.value)) return true;
+  if (activeStoreInfo.value && isStoreClosed(activeStoreInfo.value.name)) return true;
+  return false;
 });
 
 // Chuyển tab tìm kiếm: 'product' hoặc 'store'
@@ -557,6 +584,21 @@ const goToDetail = (id: string) => {
 
 // Thêm vào giỏ hàng thực tế với Toast tương tác mượt mà
 const onAddToCart = (p: ProductItem) => {
+  // 1. Kiểm tra trạng thái đóng/mở cửa của gian hàng
+  if (isStoreClosed(p.storeName) || isCurrentStoreClosed.value) {
+    toast.warning(`Gian hàng "${p.storeName || selectedStoreFilter.value}" hiện đang tạm đóng cửa nghỉ nhận đơn hỏa tốc!`, 'Gian Hàng Tạm Đóng');
+    return;
+  }
+  // 1b. Kiểm tra trạng thái tạm ngưng bán của sản phẩm
+  if (p.isAvailable === false) {
+    toast.warning(`Sản phẩm "${p.name}" hiện đang tạm ngưng mở bán!`, 'Tạm Ngưng Bán');
+    return;
+  }
+  // 2. Kiểm tra tồn kho sản phẩm
+  if (typeof (p as any).stock === 'number' && (p as any).stock <= 0) {
+    toast.warning(`Sản phẩm "${p.name}" hiện đã hết hàng trong kho của gian hàng!`, 'Tạm Hết Hàng');
+    return;
+  }
   // Kiểm tra nếu gian hàng chưa có địa chỉ (ở trạng thái Sắp Mở Bán)
   const store = catalog.allStores.value.find(s => s.name.toLowerCase() === (p.storeName || '').toLowerCase());
   const addr = store?.address?.trim().toLowerCase();
@@ -712,8 +754,15 @@ const resetFilters = () => {
               <div class="store-spotlight-badge-row">
                 <span class="spotlight-tag"><i class="bi bi-shop"></i> GIAN HÀNG ĐANG CHỌN</span>
                 <span v-if="activeStoreInfo.isVerified" class="spotlight-verified"><i class="bi bi-patch-check-fill"></i> Đã xác thực ATTP</span>
-                <span v-if="isStoreUpcoming(activeStoreInfo)" class="badge bg-warning text-dark fw-bold px-2 py-1">
+                <!-- BADGE TRẠNG THÁI MỞ / TẠM ĐÓNG CỬA -->
+                <span v-if="isCurrentStoreClosed" class="badge bg-danger text-white fw-bold px-2.5 py-1">
+                  <i class="bi bi-moon-stars-fill me-1"></i> GIAN HÀNG TẠM ĐÓNG CỬA
+                </span>
+                <span v-else-if="isStoreUpcoming(activeStoreInfo)" class="badge bg-warning text-dark fw-bold px-2 py-1">
                   <i class="bi bi-clock-history me-1"></i> SẮP MỞ BÁN
+                </span>
+                <span v-else class="badge bg-success-subtle text-success fw-bold px-2 py-1 border border-success-subtle">
+                  <i class="bi bi-door-open-fill me-1"></i> Đang mở cửa
                 </span>
               </div>
               <h2 class="store-spotlight-title">{{ activeStoreInfo.name }}</h2>
@@ -722,7 +771,20 @@ const resetFilters = () => {
                 <span class="dot-sep">•</span>
                 <span><i class="bi bi-lightning-charge-fill text-orange"></i> Giao {{ activeStoreInfo.deliveryTime }}</span>
                 <span class="dot-sep">•</span>
-                <span>⭐ {{ activeStoreInfo.rating.toFixed(1) }} ({{ activeStoreInfo.reviewsCount || 48 }} đánh giá)</span>
+                <span v-if="activeStoreInfo.reviewsCount && activeStoreInfo.reviewsCount > 0 && activeStoreInfo.rating && activeStoreInfo.rating > 0">
+                  ⭐ {{ activeStoreInfo.rating.toFixed(1) }} ({{ activeStoreInfo.reviewsCount }} đánh giá)
+                </span>
+                <span v-else>
+                  <i class="bi bi-star text-muted"></i> Chưa có đánh giá
+                </span>
+              </div>
+              <!-- BANNER CẢNH BÁO NỔI BẬT NẾU GIAN HÀNG TẠM ĐÓNG CỬA -->
+              <div v-if="isCurrentStoreClosed" class="store-closed-banner alert alert-danger py-2 px-3 mt-2 mb-0 d-flex align-items-center gap-2 rounded-3 border-danger-subtle">
+                <i class="bi bi-exclamation-triangle-fill text-danger fs-5"></i>
+                <div>
+                  <strong class="d-block text-danger">Gian hàng hiện đang tạm đóng cửa nghỉ nhận đơn hỏa tốc!</strong>
+                  <span class="small text-danger-emphasis">Chủ sạp đang tạm dừng nhận đơn mới. Quý khách tạm thời chưa thể đặt mua sản phẩm của gian hàng này.</span>
+                </div>
               </div>
             </div>
           </div>
@@ -856,8 +918,11 @@ const resetFilters = () => {
             <div class="product-media-wrap">
               <img :src="p.image" :alt="p.name" class="product-thumb-photo" loading="lazy" />
 
-              <!-- Live Distance Chip -->
-              <div class="badge-distance-live">
+              <!-- Live Distance Chip hoặc Tạm Ngưng Bán -->
+              <div v-if="p.isAvailable === false" class="badge-paused-product-chip">
+                <i class="bi bi-pause-circle-fill me-1"></i> Tạm ngưng bán
+              </div>
+              <div v-else class="badge-distance-live">
                 <span class="pulse-dot"></span>
                 <span>{{ p.deliveryTime }}</span>
               </div>
@@ -894,11 +959,14 @@ const resetFilters = () => {
               </h3>
 
               <div class="product-rating-meta">
-                <span class="star-rating">
+                <span v-if="p.reviews && p.reviews > 0 && p.rating && p.rating > 0" class="star-rating">
                   <i class="bi bi-star-fill star-icon" aria-hidden="true"></i>
                   {{ p.rating.toFixed(1) }}
                 </span>
-                <span class="sold-stat">Đã bán {{ p.sold }}</span>
+                <span v-else class="unrated-stat" title="Sản phẩm mới chưa có đánh giá">
+                  <i class="bi bi-star text-muted" aria-hidden="true"></i> Chưa có đánh giá
+                </span>
+                <span class="sold-stat">Đã bán {{ p.sold || 0 }}</span>
                 <span class="unit-stat">• {{ p.unit }}</span>
               </div>
 
@@ -912,12 +980,14 @@ const resetFilters = () => {
 
                 <button
                   class="btn-add-tactile"
-                  title="Thêm vào giỏ hàng"
-                  aria-label="Thêm vào giỏ hàng"
+                  :class="{ 'btn-add-disabled': isStoreClosed(p.storeName) || isCurrentStoreClosed || p.isAvailable === false || ((p as any).stock !== undefined && (p as any).stock <= 0) }"
+                  :disabled="isStoreClosed(p.storeName) || isCurrentStoreClosed || p.isAvailable === false || ((p as any).stock !== undefined && (p as any).stock <= 0)"
+                  :title="isStoreClosed(p.storeName) || isCurrentStoreClosed ? 'Gian hàng tạm đóng cửa nghỉ nhận đơn' : (p.isAvailable === false ? 'Sản phẩm tạm ngưng bán' : (((p as any).stock !== undefined && (p as any).stock <= 0) ? 'Sản phẩm tạm hết hàng' : 'Thêm vào giỏ hàng'))"
+                  :aria-label="isStoreClosed(p.storeName) || isCurrentStoreClosed ? 'Gian hàng tạm đóng' : (p.isAvailable === false ? 'Tạm ngưng bán' : (((p as any).stock !== undefined && (p as any).stock <= 0) ? 'Tạm hết hàng' : 'Thêm vào giỏ hàng'))"
                   @click.stop="onAddToCart(p)"
                 >
-                  <i class="bi bi-bag-plus-fill" aria-hidden="true"></i>
-                  <span>Thêm</span>
+                  <i :class="isStoreClosed(p.storeName) || isCurrentStoreClosed ? 'bi bi-moon-stars-fill' : (p.isAvailable === false ? 'bi bi-pause-circle-fill' : (((p as any).stock !== undefined && (p as any).stock <= 0) ? 'bi bi-x-circle-fill' : 'bi bi-bag-plus-fill'))" aria-hidden="true"></i>
+                  <span>{{ isStoreClosed(p.storeName) || isCurrentStoreClosed ? 'Tạm đóng' : (p.isAvailable === false ? 'Tạm ngưng' : (((p as any).stock !== undefined && (p as any).stock <= 0) ? 'Hết' : 'Thêm')) }}</span>
                 </button>
               </div>
             </div>
@@ -1018,16 +1088,24 @@ const resetFilters = () => {
                   <h3 class="store-name-heading" :title="store.name">
                     {{ store.name }}
                     <i v-if="store.isVerified" class="bi bi-patch-check-fill verified-icon" title="Gian hàng chính thức ZoneMart"></i>
-                    <span v-if="isStoreUpcoming(store)" class="badge bg-warning text-dark fw-bold ms-2 px-2 py-1 upcoming-store-pill">
+                    <span v-if="isStoreClosed(store.name)" class="badge bg-danger text-white fw-bold ms-2 px-2 py-0.5">
+                      <i class="bi bi-moon-stars-fill me-1"></i> Tạm đóng
+                    </span>
+                    <span v-else-if="isStoreUpcoming(store)" class="badge bg-warning text-dark fw-bold ms-2 px-2 py-1 upcoming-store-pill">
                       <i class="bi bi-clock-history me-1"></i> Sắp mở bán
                     </span>
                   </h3>
                   <div class="store-rating-row">
-                    <span class="store-star-rating">
-                      <i class="bi bi-star-fill"></i>
-                      <strong>{{ store.rating.toFixed(1) }}</strong>
+                    <template v-if="store.reviewsCount && store.reviewsCount > 0 && store.rating && store.rating > 0">
+                      <span class="store-star-rating">
+                        <i class="bi bi-star-fill"></i>
+                        <strong>{{ store.rating.toFixed(1) }}</strong>
+                      </span>
+                      <span class="store-reviews-text">({{ store.reviewsCount }} đánh giá)</span>
+                    </template>
+                    <span v-else class="unrated-store-text text-muted small">
+                      <i class="bi bi-star"></i> Chưa có đánh giá
                     </span>
-                    <span class="store-reviews-text">({{ store.reviewsCount || 48 }} đánh giá)</span>
                     <span class="store-open-time"><i class="bi bi-clock"></i> {{ store.openHours }}</span>
                   </div>
                 </div>
@@ -2009,6 +2087,14 @@ const resetFilters = () => {
   margin-bottom: 14px;
 }
 
+.unrated-stat {
+  color: #94a3b8;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
 .star-rating {
   font-weight: 700;
   color: #eab308;
@@ -2717,6 +2803,31 @@ const resetFilters = () => {
     transform: translateY(0);
   }
 }
+
+.btn-add-disabled {
+  background: #cbd5e1 !important;
+  color: #64748b !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+
+.badge-paused-product-chip {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(194, 65, 12, 0.92);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  backdrop-filter: blur(4px);
+  z-index: 3;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
 </style>
 
 
@@ -2743,4 +2854,12 @@ const resetFilters = () => {
   background: #fde68a !important;
   color: #92400e !important;
 }
+
+.btn-add-disabled {
+  background: #cbd5e1 !important;
+  color: #64748b !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+
 </style>

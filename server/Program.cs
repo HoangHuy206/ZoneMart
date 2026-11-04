@@ -26,6 +26,11 @@ if (!string.IsNullOrWhiteSpace(envTelegramBot))
 {
     builder.Configuration["TelegramSettings:BotToken"] = envTelegramBot;
 }
+var envGeminiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY");
+if (!string.IsNullOrWhiteSpace(envGeminiKey))
+{
+    builder.Configuration["GeminiSettings:ApiKey"] = envGeminiKey;
+}
 
 // 1. Cấu hình MongoDB Atlas
 builder.Services.Configure<MongoDBSettings>(

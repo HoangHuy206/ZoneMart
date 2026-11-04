@@ -129,6 +129,8 @@ public class ProductsController : ControllerBase
         public string? SellerEmail { get; set; }
         public string? StoreName { get; set; }
         public string? Status { get; set; }
+        public string? AiCheckNote { get; set; }
+        public bool? IsAvailable { get; set; }
     }
 
     /// <summary>
@@ -195,6 +197,8 @@ public class ProductsController : ControllerBase
                 existing.StockQuantity = dto.Stock > 0 ? dto.Stock : existing.StockQuantity;
                 if (!string.IsNullOrWhiteSpace(dto.Image)) existing.ImageUrl = dto.Image;
                 existing.AiStatus = dto.Status == "active" ? "approved" : (dto.Status == "rejected_need_edit" ? "rejected" : (dto.Status ?? "pending"));
+                if (!string.IsNullOrWhiteSpace(dto.AiCheckNote)) existing.AiCheckNote = dto.AiCheckNote;
+                if (dto.IsAvailable.HasValue) existing.IsAvailable = dto.IsAvailable.Value;
                 existing.StoreName = resolvedStoreName;
                 existing.SellerEmail = resolvedSellerEmail;
                 await _mongoService.Products.ReplaceOneAsync(p => p.Id == existing.Id, existing);
@@ -221,11 +225,41 @@ public class ProductsController : ControllerBase
                 StockStatus = dto.Stock > 0 ? "in_stock" : "out_of_stock",
                 ImageUrl = !string.IsNullOrWhiteSpace(dto.Image) ? dto.Image : "https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80",
                 AiStatus = dto.Status == "active" ? "approved" : "pending",
+                IsAvailable = dto.IsAvailable ?? true,
                 CreatedAt = DateTime.UtcNow
             };
 
             await _mongoService.Products.InsertOneAsync(newProd);
             return Ok(new { success = true, message = "Đã đồng bộ sản phẩm vào MongoDB thành công", product = newProd });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = ex.Message });
+        }
+    }
+
+    public class ToggleAvailabilityDto
+    {
+        public bool IsAvailable { get; set; }
+    }
+
+    /// <summary>
+    /// API Bật/Tắt trạng thái tạm ngưng bán của sản phẩm trong MongoDB
+    /// </summary>
+    [HttpPatch("{id}/availability")]
+    public async Task<IActionResult> ToggleProductAvailability(string id, [FromBody] ToggleAvailabilityDto dto)
+    {
+        try
+        {
+            var filter = Builders<Product>.Filter.Eq(p => p.Id, id);
+            var update = Builders<Product>.Update.Set(p => p.IsAvailable, dto.IsAvailable);
+            var result = await _mongoService.Products.UpdateOneAsync(filter, update);
+            if (result.MatchedCount == 0)
+            {
+                var nameFilter = Builders<Product>.Filter.Eq(p => p.ProductName, id);
+                await _mongoService.Products.UpdateOneAsync(nameFilter, update);
+            }
+            return Ok(new { success = true, isAvailable = dto.IsAvailable });
         }
         catch (Exception ex)
         {

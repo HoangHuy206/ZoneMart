@@ -2,6 +2,7 @@ import { ref, computed } from "vue";
 import { useProductModeration, fetchRealProductsFromBackend } from "./useProductModeration";
 import { apiFetch } from "../utils/apiConfig";
 import { getCleanAvatar } from "../utils/avatarHelper";
+import { getStoreAvatar, getStoreCover } from "../utils/storeBranding";
 import { currentUserCoords } from "./useSafeLocation";
 
 // Bảng tọa độ GPS thực tế của các cơ sở & gian hàng đối tác ZoneMart tại Hà Nội
@@ -342,6 +343,7 @@ export interface CatalogProduct {
   reviewsCount: number;
   sold: number;
   stock: number;
+  isAvailable?: boolean;
   description: string;
   highlights: string[];
   specs: {
@@ -847,7 +849,7 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
     image: "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=800&q=80",
     gallery: [
       "https://images.unsplash.com/photo-1464965911861-746a04b4bca6?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1518635017480-d471b404ab6e?auto=format&fit=crop&w=800&q=80"
+      "https://images.unsplash.com/photo-1543528176-61b239494933?auto=format&fit=crop&w=800&q=80"
     ],
     badge: "Đặc sản Lạc Dương",
     certification: {
@@ -958,8 +960,8 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
     oldPrice: 55000,
     discountBadge: "-18%",
     unit: "Túi 1kg",
-    image: "https://images.unsplash.com/photo-1596097635121-14b63b7a0c19?auto=format&fit=crop&w=800&q=80",
-    gallery: ["https://images.unsplash.com/photo-1596097635121-14b63b7a0c19?auto=format&fit=crop&w=800&q=80"],
+    image: "https://images.unsplash.com/photo-1590165482129-1b8b27698780?auto=format&fit=crop&w=800&q=80",
+    gallery: ["https://images.unsplash.com/photo-1590165482129-1b8b27698780?auto=format&fit=crop&w=800&q=80"],
     badge: "Chảy mật ngọt lịm",
     store: {
       id: "store_nong_trai_lac_duong",
@@ -2220,8 +2222,7 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
     unit: "Bộ 3 nồi",
     image: "https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&w=800&q=80",
     gallery: [
-      "https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&w=800&q=80",
-      "https://images.unsplash.com/photo-1585670270608-b404fb8802a6?auto=format&fit=crop&w=800&q=80"
+      "https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?auto=format&fit=crop&w=800&q=80"
     ],
     badge: "Bảo hành 5 năm",
     store: {
@@ -2422,6 +2423,39 @@ export const CATALOG_PRODUCTS: CatalogProduct[] = [
   }
 ];
 
+const calculateDynamicProductSold = (prod: any): number => {
+  if (typeof prod.sold === 'number') return prod.sold;
+  if (typeof prod.soldCount === 'number') return prod.soldCount;
+  if (typeof prod.salesCount === 'number') return prod.salesCount;
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      let totalSold = 0;
+      const rawOrders = localStorage.getItem('zonemart_orders');
+      if (rawOrders) {
+        const orders = JSON.parse(rawOrders);
+        if (Array.isArray(orders)) {
+          const pId = String(prod.id || '').trim().toLowerCase();
+          const pName = String(prod.name || '').trim().toLowerCase();
+          orders.forEach((ord: any) => {
+            if (Array.isArray(ord.items)) {
+              ord.items.forEach((it: any) => {
+                const itId = String(it.id || it.productId || '').trim().toLowerCase();
+                const itName = String(it.name || '').trim().toLowerCase();
+                if ((pId && itId && pId === itId) || (pName && itName && (pName === itName || pName.includes(itName) || itName.includes(pName)))) {
+                  totalSold += (it.quantity || it.qty || 1);
+                }
+              });
+            }
+          });
+        }
+      }
+      return totalSold;
+    } catch {}
+  }
+  return 0;
+};
+
 export function useProductCatalog() {
   const moderation = useProductModeration();
 
@@ -2429,7 +2463,7 @@ export function useProductCatalog() {
   const allProducts = computed<CatalogProduct[]>(() => {
     // Đảm bảo phụ thuộc phản ứng vào catalogVersion để cập nhật tức thì
     void catalogVersion.value;
-    const dynamicActive = moderation.activeProducts.value.map((p) => {
+    const dynamicActive = moderation.allProducts.value.filter(p => p.status === "active").map((p) => {
       let cat: "food" | "veggie" | "fastfood" | "beverage" | "household" = "food";
       const rawCat = (p.category || "").toLowerCase();
       if (rawCat.includes("rau") || rawCat.includes("củ") || rawCat.includes("quả") || rawCat.includes("nông sản") || rawCat.includes("hữu cơ") || rawCat.includes("vietgap")) {
@@ -2447,8 +2481,7 @@ export function useProductCatalog() {
       let cleanEmail = (p.sellerEmail || "").toLowerCase().trim();
       let storeAddr = "36 Hồ Tùng Mậu, Mai Dịch, Cầu Giấy, Hà Nội";
       let storeHours = "06:00 - 20:30";
-      let storeAvatar = "https://images.unsplash.com/photo-1595273670150-bd0c3c392e46?auto=format&fit=crop&w=200&q=80";
-      let storeLat = 21.0345;
+            let storeLat = 21.0345;
       let storeLng = 105.7960;
 
       if (cleanEmail && typeof localStorage !== "undefined") {
@@ -2505,6 +2538,7 @@ export function useProductCatalog() {
         prepType: (p as any).prepType || inferred.prepType,
         price: p.price,
         unit: p.unit || "Phần",
+        isAvailable: p.isAvailable !== false,
         image: resolvedImage,
         gallery: [resolvedImage],
         badge: "Đã Kiểm Duyệt",
@@ -2516,18 +2550,21 @@ export function useProductCatalog() {
           lng: storeLng,
           distanceKm: 0.8,
           deliveryTime: "12 - 18 phút",
-          rating: 5.0,
-          reviewsCount: 384,
+          rating: (dbStore && typeof (dbStore as any).rating === 'number' && (dbStore as any).rating > 0) ? (dbStore as any).rating : 0,
+          reviewsCount: (dbStore && typeof (dbStore as any).reviewsCount === 'number' && (dbStore as any).reviewsCount > 0) ? (dbStore as any).reviewsCount : 0,
           openHours: storeHours,
-          totalProducts: 42,
+          totalProducts: moderation.activeProducts.value.filter(ap => 
+            (ap.storeName && ap.storeName.trim().toLowerCase() === resolvedStoreName.toLowerCase()) ||
+            ((ap as any).storeId && (p as any).storeId && (ap as any).storeId === (p as any).storeId)
+          ).length || 1,
           isVerified: true,
           categoryName: p.category || "Rau củ hữu cơ VietGAP",
-          avatar: storeAvatar,
-          coverImage: p.image || "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800&q=80"
+          avatar: getStoreAvatar(resolvedStoreName, (dbStore as any)?.avatar || (dbStore as any)?.avatar_url || (dbStore as any)?.avatarUrl || (p as any).storeAvatar),
+          coverImage: getStoreCover(resolvedStoreName, (dbStore as any)?.coverImage || (dbStore as any)?.cover_image || p.image)
         },
-        rating: 5.0,
-        reviewsCount: 0,
-        sold: 42,
+        rating: (typeof (p as any).rating === 'number' && (p as any).rating > 0) ? (p as any).rating : 0,
+        reviewsCount: (typeof (p as any).reviewsCount === 'number') ? (p as any).reviewsCount : 0,
+        sold: calculateDynamicProductSold(p),
         stock: typeof p.stock === 'number' ? p.stock : 50,
         description: p.description || `Sản phẩm ${p.name} tươi sạch thu hoạch trực tiếp từ ${resolvedStoreName}. Đã trải qua quy trình kiểm định an toàn chất lượng của sàn thương mại điện tử ZoneMart.`,
         highlights: [
@@ -2574,13 +2611,11 @@ export function useProductCatalog() {
     const cleanNumId = pKey.startsWith("p") ? pKey.slice(1) : pKey;
 
     const pStat = summary.products?.[pKey] || summary.products?.[nameKey] || summary.products?.[cleanNumId];
-    let finalRating = p.rating || 5.0;
+    let finalRating = (p.reviews && p.reviews.length > 0 && typeof p.rating === 'number') ? p.rating : 0;
     let finalCount = (p.reviews && p.reviews.length > 0) ? p.reviews.length : 0;
     let finalReviews = [...(p.reviews || [])];
 
     if (pStat && pStat.count > 0) {
-      // Khi sản phẩm có đánh giá thực tế từ người mua:
-      // finalCount và finalReviews phản ánh chính xác 100% số lượt đánh giá thực tế, không cộng thêm 14
       if (pStat.comments && pStat.comments.length > 0) {
         const mappedComments: ProductReview[] = pStat.comments.map((c: any, idx: number) => ({
           id: `dyn_rev_${p.id}_${idx}`,
@@ -2597,27 +2632,32 @@ export function useProductCatalog() {
       } else {
         finalCount = pStat.count;
       }
-      finalRating = pStat.averageRating || (pStat.count > 0 ? Math.round((pStat.total / pStat.count) * 10) / 10 : 5.0);
+      finalRating = pStat.averageRating || (pStat.count > 0 ? Math.round((pStat.total / pStat.count) * 10) / 10 : 0);
+    } else if (p.reviews && p.reviews.length > 0) {
+      finalCount = p.reviews.length;
+      finalRating = typeof p.rating === 'number' ? p.rating : 5.0;
     } else {
-      finalCount = p.reviews ? p.reviews.length : 0;
-      finalRating = p.rating || 5.0;
+      finalCount = 0;
+      finalRating = (typeof (p as any).rating === 'number' && (p as any).rating > 0) ? (p as any).rating : 0;
     }
 
-    // Cập nhật điểm gian hàng trong sản phẩm
+    // Cập nhật điểm gian hàng trong sản phẩm từ đánh giá thực tế 100%
     let storeObj = p.store;
     if (storeObj) {
       const sKey = (storeObj.id || "").toLowerCase();
       const sNameKey = (storeObj.name || "").toLowerCase().trim();
       const sStat = summary.stores?.[sKey] || summary.stores?.[sNameKey];
       if (sStat && sStat.count > 0) {
-        const baseCount = storeObj.reviewsCount || 40;
-        const baseRating = storeObj.rating || 5.0;
-        const totalStars = (baseRating * baseCount) + sStat.total;
-        const totalCount = baseCount + sStat.count;
         storeObj = {
           ...storeObj,
-          rating: Math.round((totalStars / totalCount) * 10) / 10,
-          reviewsCount: totalCount
+          rating: sStat.averageRating || Math.round((sStat.total / sStat.count) * 10) / 10,
+          reviewsCount: sStat.count
+        };
+      } else {
+        storeObj = {
+          ...storeObj,
+          rating: (typeof storeObj.rating === 'number' && storeObj.rating > 0 && typeof storeObj.reviewsCount === 'number' && storeObj.reviewsCount > 0 && storeObj.reviewsCount !== 384 && storeObj.reviewsCount !== 48) ? storeObj.rating : 0,
+          reviewsCount: (typeof storeObj.reviewsCount === 'number' && storeObj.reviewsCount > 0 && storeObj.reviewsCount !== 384 && storeObj.reviewsCount !== 48) ? storeObj.reviewsCount : 0
         };
       }
     }
@@ -2700,13 +2740,13 @@ export function useProductCatalog() {
         address: s.address || "Chưa cập nhật",
         distanceKm: 1.2,
         deliveryTime: "15 - 20 phút",
-        rating: 5.0,
-        reviewsCount: 168,
+        rating: (typeof s.rating === 'number' && s.rating > 0 && typeof s.reviewsCount === 'number' && s.reviewsCount > 0) ? s.rating : 0,
+        reviewsCount: (typeof s.reviewsCount === 'number' && s.reviewsCount > 0) ? s.reviewsCount : 0,
         totalProducts: 0,
         isVerified: true,
         categoryName: s.category || "Thực phẩm & Nhu yếu phẩm",
-        avatar: "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80",
-        coverImage: "https://images.unsplash.com/photo-1500937386664-56d1dfef3854?auto=format&fit=crop&w=800&q=80",
+        avatar: getStoreAvatar(s.storeName, (s as any).avatar || (s as any).avatar_url || (s as any).avatarUrl),
+        coverImage: getStoreCover(s.storeName, (s as any).coverImage || (s as any).cover_image || (s as any).coverImageUrl),
         openHours: s.openHours || "06:30 - 22:00",
         products: [],
       });
@@ -2724,13 +2764,13 @@ export function useProductCatalog() {
           address: p.store.address || "Hà Nội",
           distanceKm: p.store.distanceKm || 1.5,
           deliveryTime: p.store.deliveryTime || "15 - 20 phút",
-          rating: p.store.rating || 5.0,
-          reviewsCount: p.store.reviewsCount || p.reviewsCount || 48,
+          rating: (p.store && typeof p.store.rating === 'number' && p.store.rating > 0 && typeof p.store.reviewsCount === 'number' && p.store.reviewsCount > 0) ? p.store.rating : 0,
+          reviewsCount: (p.store && typeof p.store.reviewsCount === 'number' && p.store.reviewsCount > 0) ? p.store.reviewsCount : 0,
           totalProducts: 1,
           isVerified: p.store.isVerified !== false,
           categoryName: p.store.categoryName || p.categoryName || "Thực phẩm tươi",
-          avatar: p.store.avatar || "https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=200&q=80",
-          coverImage: p.store.coverImage || p.image,
+          avatar: getStoreAvatar(p.store.name, p.store.avatar),
+          coverImage: getStoreCover(p.store.name, p.store.coverImage || p.image),
           openHours: p.store.openHours || "07:00 - 22:00",
           products: [p],
         });
@@ -2743,19 +2783,21 @@ export function useProductCatalog() {
       }
     }
 
-    return Array.from(storeMap.values()).map(s => {
+    const resStores = Array.from(storeMap.values()).map(s => {
       const sKey = (s.id || "").toLowerCase();
       const sNameKey = (s.name || "").toLowerCase().trim();
       const sStat = ratingsSummary.value?.stores?.[sKey] || ratingsSummary.value?.stores?.[sNameKey];
-      let sRating = s.rating || 5.0;
-      let sReviewsCount = s.reviewsCount || 48;
+      let sRating = 0;
+      let sReviewsCount = 0;
       if (sStat && sStat.count > 0) {
-        const baseCount = s.reviewsCount || 48;
-        const baseRating = s.rating || 5.0;
-        const totalStars = (baseRating * baseCount) + sStat.total;
-        const totalCount = baseCount + sStat.count;
-        sRating = Math.round((totalStars / totalCount) * 10) / 10;
-        sReviewsCount = totalCount;
+        sRating = sStat.averageRating || Math.round((sStat.total / sStat.count) * 10) / 10;
+        sReviewsCount = sStat.count;
+      } else if (typeof s.rating === 'number' && s.rating > 0 && typeof s.reviewsCount === 'number' && s.reviewsCount > 0 && s.reviewsCount !== 48 && s.reviewsCount !== 168 && s.reviewsCount !== 384) {
+        sRating = s.rating;
+        sReviewsCount = s.reviewsCount;
+      } else {
+        sRating = 0;
+        sReviewsCount = 0;
       }
 
       // Khoảng cách thực tế từ GPS người dùng đến gian hàng
@@ -2771,6 +2813,8 @@ export function useProductCatalog() {
 
       return {
         ...s,
+        avatar: getStoreAvatar(s.name, s.avatar),
+        coverImage: getStoreCover(s.name, s.coverImage),
         lat: sCoords.lat,
         lng: sCoords.lng,
         distanceKm: realDist,
@@ -2778,6 +2822,30 @@ export function useProductCatalog() {
         rating: sRating,
         reviewsCount: sReviewsCount
       };
+    });
+
+    // Ưu tiên hiển thị các gian hàng có tài khoản thật và có sản phẩm hoạt động lên trước
+    const priorityNames = [
+      'vườn rau hữu cơ bác ba',
+      'nông sản sạch chúc sơn - chương mỹ',
+      'bếp nóng yên nghĩa & biên giang',
+      'vựa thịt sạch & hải sản ba la - hà đông',
+      'tiệm trái cây & nước ép zone fruits',
+      'test gian hàng'
+    ];
+
+    return resStores.sort((a, b) => {
+      const aName = (a.name || '').toLowerCase().trim();
+      const bName = (b.name || '').toLowerCase().trim();
+      const idxA = priorityNames.findIndex(p => aName.includes(p) || p.includes(aName));
+      const idxB = priorityNames.findIndex(p => bName.includes(p) || p.includes(bName));
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      const aProd = (a.totalProducts || 0) > 0 ? 1 : 0;
+      const bProd = (b.totalProducts || 0) > 0 ? 1 : 0;
+      if (aProd !== bProd) return bProd - aProd;
+      return (b.totalProducts || 0) - (a.totalProducts || 0);
     });
   });
 

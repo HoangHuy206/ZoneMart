@@ -107,7 +107,7 @@ export function useSellerChat() {
       name: store.name || 'Gian Hàng ZoneMart',
       avatar: getCleanAvatar(store.avatar, store.name || 'Gian Hàng', 'seller'),
       address: store.address || 'Hà Nội',
-      rating: store.rating || 4.9,
+      rating: (typeof store.rating === 'number' && store.rating > 0) ? store.rating : 0,
       deliveryTime: store.deliveryTime || '20-30 phút',
       distanceKm: store.distanceKm || 1.2
     };

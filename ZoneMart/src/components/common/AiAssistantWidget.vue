@@ -5468,7 +5468,7 @@ function isActionActive(msg: ChatMessage, index: number): boolean {
 
                     <div class="card-footer-row">
 
-                      <span class="rating-badge">⭐ {{ (s as any).rating || '4.9' }} Best Seller</span>
+                      <span class="rating-badge">⭐ {{ (s as any).rating && (s as any).rating > 0 ? `${(s as any).rating.toFixed(1)} ★` : 'Gian hàng mới' }}</span>
 
                     </div>
 

@@ -779,9 +779,6 @@ const handleDisableFace = async () => {
   const userId = getShipperUserIdentifier();
   if (!userId) return;
   const bioLabel = biometricDevice.value?.label || 'Sinh trắc học';
-  if (!confirm(`Bạn có chắc chắn muốn tắt tính năng đăng nhập bằng ${bioLabel} cho tài xế này?`)) {
-    return;
-  }
   isDisablingFace.value = true;
   try {
     const res = await disableDeviceBiometrics(userId);
@@ -1478,12 +1475,9 @@ const handleConfirmDelivered = () => {
 };
 
 const handleReportIssue = () => {
-  const reason = prompt("Nhập lý do báo cáo sự cố (Khách không nhận / Shop đóng cửa):");
-  if (reason) {
-    toast.info(`Đã ghi nhận báo cáo: "${reason}". Tổng đài CSKH 1900 6868 sẽ hỗ trợ bạn ngay.`, "Báo Cáo Sự Cố");
-    currentStep.value = "idle";
-    renderOrderOnMap();
-  }
+  toast.info("Đã ghi nhận báo cáo sự cố đơn hàng. Tổng đài CSKH ZoneMart 1900 6868 đang điều phối và hỗ trợ bạn ngay!", "Báo Cáo Sự Cố");
+  currentStep.value = "idle";
+  renderOrderOnMap();
 };
 
 watch(isOnline, () => {

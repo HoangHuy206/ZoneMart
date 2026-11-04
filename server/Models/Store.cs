@@ -117,4 +117,16 @@ public class Store
 
     [BsonElement("created_at")]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    [BsonElement("avatar")]
+    public string? Avatar { get; set; }
+
+    [BsonElement("cover_image")]
+    public string? CoverImage { get; set; }
+
+    [BsonElement("rating")]
+    public double? Rating { get; set; }
+
+    [BsonElement("reviews_count")]
+    public int? ReviewsCount { get; set; }
 }

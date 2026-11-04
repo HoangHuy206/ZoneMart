@@ -53,6 +53,9 @@ public class Product
     [BsonElement("stock_status")]
     public string StockStatus { get; set; } = "in_stock"; // in_stock, out_of_stock
 
+    [BsonElement("is_available")]
+    public bool IsAvailable { get; set; } = true;
+
     [BsonElement("batch_number")]
     public string BatchNumber { get; set; } = "LOT-HN-" + DateTime.UtcNow.ToString("yyyyMM") + "-01"; // Mã số Lô hàng
 

@@ -787,17 +787,11 @@ const closeTraceabilityModal = () => {
 };
 
 const handleConfirmReceived = async (id: string, order?: any) => {
-  if (confirm(`Bạn đã nhận đủ và hài lòng với đơn hàng #${id}? Bấm OK để xác nhận hoàn tất và đánh giá!`)) {
-    if (order) {
-      order.status = "completed";
-      openReviewModal(order);
-    } else {
-      const found = orders.value.find(o => (o.orderId || o.id) === id);
-      if (found) {
-        found.status = "completed";
-        openReviewModal(found);
-      }
-    }
+  const target = order || orders.value.find(o => (o.orderId || o.id) === id);
+  if (target) {
+    target.status = "completed";
+    openReviewModal(target);
+    toast.success(`Đã xác nhận nhận hàng thành công đơn #${id}!`, "Hoàn Tất Đơn Hàng");
   }
 };
 

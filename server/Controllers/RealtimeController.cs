@@ -150,6 +150,34 @@ namespace ZoneMart.Server.Controllers
             _realtimeManager.ClearOrders();
             return Ok(new { success = true });
         }
+
+        // ========================================================
+        // API REALTIME STORE STATUSES: GET /api/realtime/store-statuses
+        // ========================================================
+        [HttpGet("/api/realtime/store-statuses")]
+        public IActionResult GetStoreStatuses()
+        {
+            var statuses = _realtimeManager.GetAllStoreStatuses();
+            return Ok(new { success = true, statuses });
+        }
+
+        // ========================================================
+        // API REALTIME STORE STATUS: POST /api/realtime/store-status
+        // ========================================================
+        [HttpPost("/api/realtime/store-status")]
+        public IActionResult UpdateStoreStatus([FromBody] StoreStatusUpdateDto dto)
+        {
+            _realtimeManager.SetStoreStatus(dto.StoreName, dto.IsOpen, dto.Email, dto.Id);
+            return Ok(new { success = true });
+        }
+    }
+
+    public class StoreStatusUpdateDto
+    {
+        public string StoreName { get; set; } = string.Empty;
+        public bool IsOpen { get; set; } = true;
+        public string? Email { get; set; }
+        public string? Id { get; set; }
     }
 }
 
