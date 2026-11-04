@@ -154,6 +154,16 @@ function setDiscoveredServer(url: string) {
  * Tự động dò tìm địa chỉ IP máy chủ Backend trong mạng Wi-Fi LAN
  */
 export async function autoDiscoverServer(force = false): Promise<string | null> {
+  // Khi chạy trên Production Web (HTTPS hoặc Domain), dùng ngay relative URL '' để qua Nginx
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname || '';
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+    const isLanIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+    if (window.location.protocol === 'https:' || (!isLocalhost && !isLanIp && !isNativeMobile())) {
+      return '';
+    }
+  }
+
   // Ưu tiên 0: Biến môi trường Vite (.env) chỉ định trực tiếp Domain máy chủ Backend khi Deploy Internet
   try {
     const envApi = ((import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE_URL || '') as string;
@@ -304,14 +314,21 @@ export function getBaseApiUrl(): string {
     return `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`;
   }
 
-  // TRƯỜNG HỢP 2: Trình duyệt mở từ thiết bị di động qua IP LAN (ví dụ http://192.168.1.16:5173)
+  // TRƯỜNG HỢP 2: Chạy trên Web Domain chính thức (zonemart.id.vn) hoặc qua giao thức HTTPS
+  // Toàn bộ API đi qua Nginx Reverse Proxy (relative URL '') giúp bảo mật và tránh lỗi Mixed Content
   const hostname = window.location.hostname || '';
   const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-  if (hostname && !isLocalhost && !hostname.includes('capacitor')) {
+  const isLanIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+  if (window.location.protocol === 'https:' || (hostname && !isLocalhost && !isLanIp && !hostname.includes('capacitor'))) {
+    return '';
+  }
+
+  // TRƯỜNG HỢP 3: Trình duyệt mở từ thiết bị di động qua IP LAN cục bộ (ví dụ http://192.168.1.16:5173)
+  if (hostname && !isLocalhost && isLanIp && !hostname.includes('capacitor')) {
     return `http://${hostname}:${KNOWN_PORT}`;
   }
 
-  // TRƯỜNG HỢP 3: Mở trên Web Desktop Dev qua localhost (http://localhost:5173)
+  // TRƯỜNG HỢP 4: Mở trên Web Desktop Dev qua localhost (http://localhost:5173)
   // Dùng relative URL '' để qua Vite Proxy chuyển tiếp tới 127.0.0.1:5000, tránh lỗi CORS
   return '';
 }
