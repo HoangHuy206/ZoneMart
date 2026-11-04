@@ -776,7 +776,7 @@ const goToPortal = (btnRoute: string, _openNewTab?: boolean) => {
   if (btnRoute) {
     if (auth.isLoggedIn.value) {
       if (btnRoute === '/register-seller' || btnRoute === '/seller-landing' || btnRoute === '/seller-form') {
-        if (auth.currentRole.value === 'seller' || (auth.user.value as any)?.isSeller) {
+        if (auth.currentRole.value === 'seller' || (auth.currentUser.value as any)?.isSeller) {
           router.push('/seller');
           return;
         }
@@ -784,7 +784,7 @@ const goToPortal = (btnRoute: string, _openNewTab?: boolean) => {
         return;
       }
       if (btnRoute === '/register-shipper' || btnRoute === '/shipper-landing' || btnRoute === '/shipper-form') {
-        if (auth.currentRole.value === 'shipper' || (auth.user.value as any)?.isShipper) {
+        if (auth.currentRole.value === 'shipper' || (auth.currentUser.value as any)?.isShipper) {
           router.push('/shipper');
           return;
         }
