@@ -1523,7 +1523,7 @@ const handleLogout = () => {
               © 2026 <strong>ZoneMart E-Commerce</strong>. Sáng lập & Sở hữu: <strong>Đoàn Hoàng Huy</strong> (zonemart.id.vn).
             </p>
             <p class="copyright-sub">
-              Hỗ trợ thanh toán khi nhận hàng (COD) kiểm tra tận tay, an toàn 100% cho người mua. Giao hàng hỏa tốc trong bán kính 10km.
+              Hỗ trợ thanh toán khi nhận hàng (COD) kiểm tra tận tay, an toàn 100% cho người mua. Giao hàng hỏa tốc siêu nhanh.
             </p>
           </div>
           <div class="footer-safe-tags">

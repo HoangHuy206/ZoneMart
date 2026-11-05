@@ -1,5 +1,5 @@
-# ZoneMart – E-Commerce Platform with 10km Express Delivery
-> ZoneMart (zonemart.id.vn) là sàn thương mại điện tử đa kênh thế hệ mới kết nối Người mua (Buyer), Người bán (Seller) và Tài xế giao hàng (Shipper) với cam kết giao hàng hỏa tốc trong bán kính 10km.
+# ZoneMart – E-Commerce Platform with Express Delivery
+> ZoneMart (zonemart.id.vn) là sàn thương mại điện tử đa kênh thế hệ mới kết nối Người mua (Buyer), Người bán (Seller) và Tài xế giao hàng (Shipper) với cam kết giao hàng hỏa tốc siêu nhanh.
 
 ## 1. Thông tin sở hữu & Pháp lý minh bạch (Trust & Ownership)
 - Đơn vị sáng lập & Chủ sở hữu website: Đoàn Hoàng Huy (Chủ thể đăng ký tên miền hợp pháp tại VNNIC Việt Nam).
@@ -12,17 +12,17 @@
 - Phương thức thanh toán ưu tiên: Thanh toán khi nhận hàng (COD - Cash On Delivery). Khách hàng được quyền đồng kiểm tra hàng hóa tận tay trước khi trả tiền cho Shipper, hoàn toàn KHÔNG bắt buộc phải chuyển khoản hay nạp tiền trước.
 - Không yêu cầu dữ liệu nhạy cảm: Nền tảng tuyệt đối không yêu cầu người mua cung cấp số thẻ tín dụng hay thông tin CCCD để mua hàng.
 - Chính sách đổi trả & Hoàn tiền: Cam kết 1 đổi 1 hoặc hoàn tiền 100% trong vòng 24h nếu sản phẩm bị hư hỏng, không đúng chất lượng hoặc sai quy cách giao hàng.
-- Mô hình vận hành giao hàng: Hệ thống tài xế giao hàng công nghệ ZoneMart Shipper trực tiếp nhận đơn qua định vị GPS bán kính 10km, đảm bảo giao hỏa tốc trong 30-45 phút.
+- Mô hình vận hành giao hàng: Hệ thống tài xế giao hàng công nghệ ZoneMart Shipper trực tiếp nhận đơn qua định vị GPS, đảm bảo giao hỏa tốc chỉ trong 30-45 phút.
 
 ## 3. Mô hình hoạt động & Vai trò người dùng
-1. Khách mua hàng (Buyer): Mua sắm tiện lợi, gợi ý sản phẩm theo khoảng cách gần nhất, theo dõi vị trí shipper trên bản đồ thời gian thực (Live Leaflet GPS Tracker), nhận hàng hỏa tốc 10km.
+1. Khách mua hàng (Buyer): Mua sắm tiện lợi, gợi ý sản phẩm theo khoảng cách gần nhất, theo dõi vị trí shipper trên bản đồ thời gian thực (Live Leaflet GPS Tracker), nhận hàng hỏa tốc siêu nhanh.
 2. Đối tác bán hàng (Seller): Quản lý gian hàng số, đăng tải sản phẩm, quản lý tồn kho, theo dõi doanh thu và phân luồng đơn hàng tự động.
-3. Tài xế giao hàng (Shipper): Nhận đơn hàng theo thuật toán khoảng cách tối ưu, hỗ trợ định vị dẫn đường thông minh.
+3. Tài xế giao hàng (Shipper): Nhận đơn hàng theo thuật toán tối ưu, hỗ trợ định vị dẫn đường thông minh.
 4. Quản trị hệ thống (Manager / Admin): Kiểm duyệt sản phẩm, quản lý gian hàng và điều phối chất lượng dịch vụ.
 
 ## 4. Công nghệ & Bảo mật cốt lõi
 - Xác thực sinh trắc học phần cứng chính chủ: Hỗ trợ Apple Face ID / Touch ID (iOS Safari) và Cảm biến vân tay Android / Windows Hello thông qua giao thức W3C WebAuthn / Passkeys backed by Apple Secure Enclave.
-- Hệ thống định vị bán kính: Sử dụng bản đồ OpenStreetMap & Leaflet tính toán khoảng cách thực tế giữa người mua và kho hàng.
+- Hệ thống định vị: Sử dụng bản đồ OpenStreetMap & Leaflet tính toán khoảng cách thực tế giữa người mua và kho hàng gần nhất.
 - Nền tảng: Frontend Vue 3 + TypeScript, Backend C# .NET 9 Kestrel hiệu năng cao, CSDL MongoDB và Nginx Reverse Proxy với chứng chỉ SSL LetsEncrypt.
 
 ## 5. Danh mục sản phẩm & Dịch vụ chính
