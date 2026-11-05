@@ -48,4 +48,23 @@ Allow: /
 User-agent: Bingbot
 Allow: /
 
+# DeepSeek Search & LLMs Crawlers
+User-agent: DeepSeek-Search
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: YandexBot
+Allow: /
+
+# LLM Direct Knowledge Context
+# https://zonemart.id.vn/llms.txt
+
 Sitemap: https://zonemart.id.vn/sitemap.xml
