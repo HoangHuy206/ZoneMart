@@ -1370,6 +1370,10 @@ const handleLogout = () => {
           </p>
           <ul class="footer-contact-list">
             <li>
+              <i class="bi bi-person-badge-fill footer-info-icon"></i>
+              <span><strong>Chủ thể sáng lập & Quản trị:</strong> Đoàn Hoàng Huy</span>
+            </li>
+            <li>
               <i class="bi bi-geo-alt-fill footer-info-icon"></i>
               <span><strong>Trụ sở:</strong> Tòa nhà ZoneMart, Khu Công Nghệ Cao, TP. Hà Nội</span>
             </li>
@@ -1516,10 +1520,10 @@ const handleLogout = () => {
         <div class="footer-bottom-container">
           <div class="copyright-section">
             <p class="copyright">
-              © 2026 <strong>ZoneMart E-Commerce</strong>. Nền tảng kết nối trực tiếp Nhà Vườn - Tiểu Thương - Khách Hàng.
+              © 2026 <strong>ZoneMart E-Commerce</strong>. Sáng lập & Sở hữu: <strong>Đoàn Hoàng Huy</strong> (zonemart.id.vn).
             </p>
             <p class="copyright-sub">
-              Bảo lưu mọi quyền. Tuân thủ tiêu chuẩn an toàn thực phẩm VietGAP & Giao hàng hỏa tốc trong bán kính 5km.
+              Hỗ trợ thanh toán khi nhận hàng (COD) kiểm tra tận tay, an toàn 100% cho người mua. Giao hàng hỏa tốc trong bán kính 10km.
             </p>
           </div>
           <div class="footer-safe-tags">
