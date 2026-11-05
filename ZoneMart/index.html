@@ -49,27 +49,67 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,700;0,6..96,800;0,6..96,900;1,6..96,700;1,6..96,800&family=DM+Serif+Display:ital@0;1&family=Great+Vibes&family=Playfair+Display:ital,wght@0,700;0,800;0,900;1,700;1,800;1,900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,600&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600;1,700&display=swap" rel="stylesheet" />
+    <style>
+      .zm-crawler-fallback {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: normal;
+        border: 0;
+      }
+      .zm-initial-preloader {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background-color: #faf7f2;
+        z-index: 99999;
+      }
+      .zm-spinner {
+        width: 38px;
+        height: 38px;
+        border: 3px solid rgba(22, 101, 52, 0.15);
+        border-top-color: #166534;
+        border-radius: 50%;
+        animation: zm-spin 0.75s linear infinite;
+      }
+      @keyframes zm-spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
     <!-- Fallback văn bản tĩnh để robot tìm kiếm và AI (ChatGPT, Claude, Bing) đọc được ngay cả khi không chạy JavaScript -->
     <div id="app">
-      <header>
-        <h1>ZoneMart – Sàn Thương Mại Điện Tử Giao Hàng Hỏa Tốc</h1>
-        <p>Kết nối trực tiếp Nhà Vườn, Tiểu Thương với Khách Hàng. Nông sản tươi sống, thực phẩm sạch và tiêu dùng giao siêu tốc.</p>
-      </header>
-      <main>
-        <section>
-          <h2>Thông Tin Minh Bạch & Đơn Vị Sở Hữu</h2>
-          <p><strong>Chủ sở hữu & Sáng lập viên:</strong> Đoàn Hoàng Huy (Chủ thể đăng ký tên miền zonemart.id.vn hợp pháp tại VNNIC Việt Nam).</p>
-          <p><strong>Trụ sở chính:</strong> Tòa nhà ZoneMart, Khu Công Nghệ Cao, TP. Hà Nội, Việt Nam.</p>
-          <p><strong>Tổng đài hỗ trợ:</strong> 1900 6868 (08:00 - 21:00 hàng ngày) | <strong>Email:</strong> support@zonemart.id.vn</p>
-        </section>
-        <section>
-          <h2>Chính Sách Thanh Toán & Bảo Vệ Người Mua An Toàn 100%</h2>
-          <p>ZoneMart áp dụng phương thức <strong>Thanh toán khi nhận hàng (COD - Cash On Delivery)</strong>. Khách hàng được quyền kiểm tra hàng hóa tận tay trước khi thanh toán. Nền tảng tuyệt đối không yêu cầu người mua nạp tiền trước hoặc cung cấp thẻ ngân hàng, CCCD.</p>
-          <p>Chính sách đổi trả: Cam kết 1 đổi 1 hoặc hoàn tiền 100% trong vòng 24 giờ đối với sản phẩm lỗi hoặc không đúng cam kết.</p>
-        </section>
-      </main>
+      <!-- Màn hình chờ êm ái khi tải JavaScript ban đầu (Không chớp giật chữ thô) -->
+      <div class="zm-initial-preloader">
+        <div class="zm-spinner"></div>
+      </div>
+
+      <!-- Dữ liệu ngữ nghĩa cho bot AI và SEO Crawler -->
+      <div class="zm-crawler-fallback">
+        <header>
+          <h1>ZoneMart – Sàn Thương Mại Điện Tử Giao Hàng Hỏa Tốc</h1>
+          <p>Kết nối trực tiếp Nhà Vườn, Tiểu Thương với Khách Hàng. Nông sản tươi sống, thực phẩm sạch và tiêu dùng giao siêu tốc.</p>
+        </header>
+        <main>
+          <section>
+            <h2>Thông Tin Minh Bạch & Đơn Vị Sở Hữu</h2>
+            <p><strong>Chủ sở hữu & Sáng lập viên:</strong> Đoàn Hoàng Huy (Chủ thể đăng ký tên miền zonemart.id.vn hợp pháp tại VNNIC Việt Nam).</p>
+            <p><strong>Trụ sở chính:</strong> Tòa nhà ZoneMart, Khu Công Nghệ Cao, TP. Hà Nội, Việt Nam.</p>
+            <p><strong>Tổng đài hỗ trợ:</strong> 1900 6868 (08:00 - 21:00 hàng ngày) | <strong>Email:</strong> support@zonemart.id.vn</p>
+          </section>
+          <section>
+            <h2>Chính Sách Thanh Toán & Bảo Vệ Người Mua An Toàn 100%</h2>
+            <p>ZoneMart áp dụng phương thức <strong>Thanh toán khi nhận hàng (COD - Cash On Delivery)</strong>. Khách hàng được quyền kiểm tra hàng hóa tận tay trước khi thanh toán. Nền tảng tuyệt đối không yêu cầu người mua nạp tiền trước hoặc cung cấp thẻ ngân hàng, CCCD.</p>
+            <p>Chính sách đổi trả: Cam kết 1 đổi 1 hoặc hoàn tiền 100% trong vòng 24 giờ đối với sản phẩm lỗi hoặc không đúng cam kết.</p>
+          </section>
+        </main>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"> </script>
   </body>
