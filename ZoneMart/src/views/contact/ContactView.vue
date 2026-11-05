@@ -69,8 +69,8 @@ const toggleFaq = (index: number) => {
 
 const faqs = [
   {
-    q: "ZoneMart cam kết giao hàng trong bao lâu tại khu vực 10km?",
-    a: "Với các đơn hàng thực phẩm, rau củ và đồ ăn nóng trong bán kính 10km, ZoneMart kết nối trực tiếp tài xế gần bạn nhất để giao hỏa tốc từ 20 đến 35 phút. Bạn có thể theo dõi vị trí tài xế theo thời gian thực trên bản đồ."
+    q: "ZoneMart cam kết giao hàng trong bao lâu khi đặt trên sàn?",
+    a: "Với các đơn hàng thực phẩm, rau củ và đồ ăn nóng  ZoneMart kết nối trực tiếp tài xế gần bạn nhất để giao hỏa tốc từ 20 đến 35 phút. Bạn có thể theo dõi vị trí tài xế theo thời gian thực trên bản đồ."
   },
   {
     q: "Quy trình đổi trả và hoàn tiền nếu thực phẩm không đảm bảo chất lượng?",
@@ -309,7 +309,7 @@ const resetForm = () => {
           <span class="highlight-text">hỗ trợ bạn</span> mọi lúc
         </h1>
         <p class="hero-subtitle">
-          Giải quyết nhanh chóng các vấn đề về đơn giao hỏa tốc 10km, khiếu nại chất lượng sản phẩm và hỗ trợ đối tác bán hàng.
+          Giải quyết nhanh chóng các vấn đề về đơn giao hỏa tốc, khiếu nại chất lượng sản phẩm và hỗ trợ đối tác bán hàng.
         </p>
       </section>
 
@@ -614,7 +614,7 @@ const resetForm = () => {
                   <i class="bi bi-pin-map-fill"></i>
                 </div>
                 <div>
-                  <strong>Mạng lưới 10km đồng bộ</strong>
+                  <strong>Mạng lưới hỏa tốc đồng bộ</strong>
                   <p>Kết nối trực tiếp điểm bán và tài xế nhanh nhất quanh bạn.</p>
                 </div>
               </li>

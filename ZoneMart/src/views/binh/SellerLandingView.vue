@@ -1131,7 +1131,7 @@ const sellerFaqs = [
   },
   {
     q: "ZoneMart hỗ trợ giao hàng hỏa tốc cho gian hàng của tôi bằng cách nào?",
-    a: "Đội ngũ ZoneMart Driver hùng hậu bao quanh bán kính 10km sẽ trực tiếp đến tận gian hàng của bạn nhận hàng và giao đến tay người mua chỉ trong vòng 30 phút."
+    a: "Đội ngũ ZoneMart Driver hùng hậu hùng hậu quanh khu vực sẽ trực tiếp đến tận gian hàng của bạn nhận hàng và giao đến tay người mua chỉ trong vòng 30 phút."
   }
 ];
 
@@ -1276,7 +1276,7 @@ const submitSellerSupportTicket = async () => {
             <div class="stat-divider"></div>
             <div class="stat-box">
               <span class="stat-val">50k+</span>
-              <span class="stat-lbl">Khách mua trong 10km</span>
+              <span class="stat-lbl">Khách mua khu vực lân cận</span>
             </div>
             <div class="stat-divider"></div>
             <div class="stat-box">
@@ -1375,7 +1375,7 @@ const submitSellerSupportTicket = async () => {
             </svg>
           </div>
           <h3>Tiếp Cận 50k+ Khách Hàng</h3>
-          <p>Thuật toán định vị thông minh kết nối gian hàng với hàng ngàn khách mua thực phẩm sạch trong bán kính 10km.</p>
+          <p>Thuật toán định vị thông minh kết nối gian hàng với hàng ngàn khách mua thực phẩm sạch khu vực gần bạn.</p>
         </div>
 
         <!-- Card 3 -->
@@ -2154,7 +2154,7 @@ const submitSellerSupportTicket = async () => {
       </div>
 
       <div class="footer-bottom-bar">
-        <p>© 2026 ZoneMart E-Commerce Platform. Cổng thông tin & Đăng ký Gian hàng ZoneMart Seller chính thức. Nông sản & Đồ sạch hỏa tốc 10km.</p>
+        <p>© 2026 ZoneMart E-Commerce Platform. Cổng thông tin & Đăng ký Gian hàng ZoneMart Seller chính thức. Nông sản & Đồ sạch hỏa tốc siêu nhanh.</p>
       </div>
     </footer>
 

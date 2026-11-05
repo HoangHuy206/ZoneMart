@@ -657,7 +657,7 @@ const resetFilters = () => {
           <div class="bento-text-side">
             <div class="live-gps-pill">
               <span class="gps-dot"></span>
-              <span class="gps-label">GIAO HỎA TỐC BÁN KÍNH 10KM</span>
+              <span class="gps-label">GIAO HỎA TỐC SIÊU NHANH</span>
             </div>
             <h1 class="spotlight-title">
               Nông Sản Sạch &<br />

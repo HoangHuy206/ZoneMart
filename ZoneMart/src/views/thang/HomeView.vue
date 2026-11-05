@@ -199,7 +199,7 @@ const heroSlides: HeroSlide[] = [
     badge: 'NÔNG SẢN & ĐẶC SẢN ĐỊA PHƯƠNG',
     title: 'Chợ Địa Phương – Nông Dân Thân Thiện',
     description:
-      'Cầu nối trực tiếp giữa nhà vườn địa phương và gia đình bạn. Tươi ngon mỗi ngày, hỗ trợ cộng đồng nông sản với dịch vụ giao hàng nhanh trong bán kính 10km.',
+      'Cầu nối trực tiếp giữa nhà vườn địa phương và gia đình bạn. Tươi ngon mỗi ngày, hỗ trợ cộng đồng nông sản với dịch vụ giao hàng hỏa tốc siêu nhanh.',
     primaryBtnText: 'KHÁM PHÁ CHỢ',
     primaryBtnRoute: '/products',
     primaryBtnNewTab: false,
@@ -220,7 +220,7 @@ const heroSlides: HeroSlide[] = [
     topBadgeRight: {
       icon: 'bi-geo-alt-fill',
       bgClass: 'bg-terracotta',
-      title: 'Chợ Dân Sinh 10km',
+      title: 'Chợ Dân Sinh Hỏa Tốc',
       desc: 'Giao siêu tốc tận bếp',
     },
     bottomChipText: 'Kết nối trực tiếp: Nhà Vườn ➔ Tài Xế ➔ Bếp Nhà Bạn',
@@ -254,14 +254,14 @@ const heroSlides: HeroSlide[] = [
       title: 'Đơn nổ liên tục!',
       desc: 'Tiếp cận 10.000+ cư dân',
     },
-    bottomChipText: 'Bán kính 10km • Chủ động nguồn hàng tươi ngon',
+    bottomChipText: 'Giao hỏa tốc • Chủ động nguồn hàng tươi ngon',
   },
   {
     id: 'shipper',
     badge: 'ĐỐI TÁC GIAO HÀNG ZONE SHIPPER',
     title: 'Giao Hàng Siêu Tốc – Chủ Động Thu Nhập',
     description:
-      'Giao hàng siêu tốc trong bán kính 10km, nhận đơn tiện lợi gần nhà, không lo đi xa. Thu nhập minh bạch, trả thưởng nhanh chóng và linh hoạt thời gian chạy đơn.',
+      'Giao hàng hỏa tốc siêu nhanh, nhận đơn tiện lợi gần nhà, không lo đi xa. Thu nhập minh bạch, trả thưởng nhanh chóng và linh hoạt thời gian chạy đơn.',
     primaryBtnText: 'CỔNG TÀI XẾ',
     primaryBtnRoute: '/register-shipper',
     primaryBtnNewTab: false,
@@ -389,7 +389,7 @@ const portalCards = [
     title: 'KHÁM PHÁ SẢN PHẨM',
     tagline: 'Nông sản sạch & tươi ngon',
     description:
-      'Mua thực phẩm tươi, rau củ chuẩn VietGAP từ nhà vườn lân cận. Giao nhanh 10km.',
+      'Mua thực phẩm tươi, rau củ chuẩn VietGAP từ nhà vườn lân cận. Giao nhanh hỏa tốc.',
     btnText: 'KHÁM PHÁ CHỢ',
     btnRoute: '/products',
     avatar: '/images/anhxoanen_clean.png',
@@ -468,7 +468,7 @@ const featuredCategories = [
   },
 ];
 
-// 3. Sản phẩm tươi mới nổi bật trong bán kính 10km (Hot Products)
+// 3. Sản phẩm tươi mới nổi bật trong hỏa tốc siêu nhanh (Hot Products)
 const featuredProducts = computed(() => {
   if (catalog.allProducts.value && catalog.allProducts.value.length > 0) {
     const freshFoods = catalog.allProducts.value.filter(
@@ -716,7 +716,7 @@ const testimonials = [
     avatar:
       'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80',
     comment:
-      'Chạy đơn trong bán kính 10km quanh phường rất quen đường, đơn nổ liên tục từ các tiệm gần nhà, giao nhanh nên được khách đánh giá 5 sao suốt.',
+      'Chạy đơn hỏa tốc quanh phường rất quen đường, đơn nổ liên tục từ các tiệm gần nhà, giao nhanh nên được khách đánh giá 5 sao suốt.',
     rating: 5,
   },
 ];
@@ -724,7 +724,7 @@ const testimonials = [
 // 7. Cam kết đặc trưng của ZoneMart
 const highlights = [
   {
-    title: 'Giao nhanh trong 10km',
+    title: 'Giao nhanh hỏa tốc',
     desc: 'Định vị thông minh, thực phẩm đến tay bạn trong 30-45 phút.',
   },
   {
@@ -1081,13 +1081,13 @@ const handleAddToCartHome = (item: any) => {
     </section>
 
     <!-- ==========================================================
-         3. SẢN PHẨM BÁN CHẠY TRONG BÁN KÍNH 10KM (HOT PRODUCTS 3D)
+         3. SẢN PHẨM BÁN CHẠY TRONG HỎA TỐC SIÊU NHANH (HOT PRODUCTS 3D)
          ========================================================== -->
     <section class="section-container">
       <div class="section-header scroll-reveal">
         <div class="header-left">
           <div class="badge-tag-hot">
-            <i class="bi bi-fire me-1" aria-hidden="true"></i> GIAO HỎA TỐC 5KM - 10KM
+            <i class="bi bi-fire me-1" aria-hidden="true"></i> GIAO HỎA TỐC SIÊU NHANH
           </div>
           <h2 class="section-title">Nông Sản Tươi Mới Hôm Nay</h2>
           <p class="section-subtitle">
@@ -1187,7 +1187,7 @@ const handleAddToCartHome = (item: any) => {
           ZoneMart Kết Nối Chợ Dân Sinh Thế Nào?
         </h2>
         <p class="section-subtitle text-center">
-          Giao hàng siêu tốc trong bán kính 5km - 10km nhờ công nghệ kết nối tự động
+          Giao hàng siêu tốc trong siêu tốc hỏa tốc nhờ công nghệ kết nối tự động
           giữa Người Mua, Nhà Vườn và Tài Xế
         </p>
       </div>
@@ -1357,7 +1357,7 @@ const handleAddToCartHome = (item: any) => {
           </h2>
           <p class="cta-desc">
             ZoneMart miễn phí 100% phí mở gian hàng cho tiểu thương và cung cấp
-            luồng đơn hàng liên tục trong bán kính 5km - 10km cho tài xế.
+            luồng đơn hàng liên tục trong siêu tốc hỏa tốc cho tài xế.
           </p>
           <div class="cta-btn-group">
             <button
@@ -1389,7 +1389,7 @@ const handleAddToCartHome = (item: any) => {
     </section>
 
     <!-- ==========================================================
-         8. ĐIỂM NHẤN CAM KẾT 10KM
+         8. ĐIỂM NHẤN CAM KẾT HỎA TỐC
          ========================================================== -->
     <section class="section-container">
       <div class="highlights-card scroll-reveal">
@@ -2986,7 +2986,7 @@ const handleAddToCartHome = (item: any) => {
 }
 
 /* ==========================================================
-   8. HIGHLIGHTS CAM KẾT 10KM
+   8. HIGHLIGHTS CAM KẾT HỎA TỐC
    ========================================================== */
 .highlights-card {
   background: #fffaf7;

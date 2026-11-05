@@ -232,7 +232,7 @@ const loadBuyerOrders = () => {
         date: "07/09/2026 18:30",
         total: 395000,
         paymentMethod: "Chuyển khoản QR",
-        shippingMethod: "Hỏa Tốc Siêu Tốc (10km)",
+        shippingMethod: "Hỏa Tốc Siêu Tốc (Hỏa Tốc)",
         deliveryType: "express",
         status: "delivering",
         statusText: "Shipper đang giao hàng tới bạn",
@@ -742,7 +742,7 @@ const openTraceabilityModal = async (order: any) => {
       traceabilityResult.value = {
         orderId: rawId,
         orderDate: order.date || new Date().toLocaleDateString("vi-VN"),
-        deliveryType: order.deliveryType || "Giao ngay địa phương (Bán kính 10km)",
+        deliveryType: order.deliveryType || "Giao ngay địa phương (Hỏa Tốc)",
         orderStatus: order.status || "completed",
         items: (order.items || []).map((it: any) => ({
           productName: it.name || it.title || "Thực phẩm / Nông sản địa phương",
@@ -1181,7 +1181,7 @@ const handleReportIssue = (order: any) => {
             </span>
             <span class="delivery-badge" :class="order.deliveryType || (order.shippingMethod?.includes('Hỏa Tốc') ? 'express' : 'standard')">
               <i class="bi bi-lightning-charge-fill me-1"></i>
-              {{ order.shippingMethod || (order.deliveryType === 'standard' ? 'Giao Tiêu Chuẩn' : 'Hỏa Tốc 10km') }}
+              {{ order.shippingMethod || (order.deliveryType === 'standard' ? 'Giao Tiêu Chuẩn' : 'Hỏa Tốc Siêu Nhanh') }}
             </span>
           </div>
         </div>
@@ -1370,7 +1370,7 @@ const handleReportIssue = (order: any) => {
         Chưa có đơn hàng nào được đặt. Hãy khám phá các gian hàng nông sản và thực phẩm tươi sống quanh bạn để đặt những bữa ăn ngon lành nhé!
       </p>
       <router-link to="/products" class="btn-shop-now">
-        <i class="bi bi-bag-plus-fill me-1"></i> Khám Phá Nông Sản Quanh Bạn (10km)
+        <i class="bi bi-bag-plus-fill me-1"></i> Khám Phá Nông Sản Quanh Bạn (Hỏa Tốc)
       </router-link>
     </div>
 
@@ -1396,7 +1396,7 @@ const handleReportIssue = (order: any) => {
               <div class="section-icon shipper-icon"><i class="bi bi-bicycle"></i></div>
               <div class="section-info">
                 <h4>1. Đánh Giá Tài Xế Giao Vận</h4>
-                <p>{{ selectedOrderForReview.shipperName || selectedOrderForReview.shipper?.name || 'Tài xế ZoneMart Hỏa Tốc' }} (Bán kính 10km)</p>
+                <p>{{ selectedOrderForReview.shipperName || selectedOrderForReview.shipper?.name || 'Tài xế ZoneMart Hỏa Tốc' }} (Hỏa Tốc)</p>
               </div>
             </div>
 

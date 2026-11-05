@@ -90,7 +90,7 @@ const getRoleMeta = (role: UserRole, isNew: boolean = false) => {
   if (isNew) {
     return {
       tag: 'Thành Viên Mới (New Member)',
-      sublineBadge: '🛒 Mua sắm nông sản & thực phẩm sạch bán kính 10km',
+      sublineBadge: '🛒 Mua sắm nông sản & thực phẩm sạch hỏa tốc',
       progressLabel: 'Tiến trình tích điểm thăng hạng',
       progressVal: 0,
       progressText: '0% (Bắt đầu mua sắm để tích điểm)',
@@ -124,7 +124,7 @@ const getRoleMeta = (role: UserRole, isNew: boolean = false) => {
     case 'shipper':
       return {
         tag: 'Đối Tác Giao Hàng Hỏa Tốc (ZoneMart Express)',
-        sublineBadge: '🛵 Đội ngũ tài xế giao nhận hỏa tốc 10km',
+        sublineBadge: '🛵 Đội ngũ tài xế giao nhận hỏa tốc siêu nhanh',
         progressLabel: 'Tỷ lệ giao hàng đúng hẹn 20 - 30 phút',
         progressVal: 99,
         progressText: '99.2% (Hạng Kim Cương)',
@@ -134,7 +134,7 @@ const getRoleMeta = (role: UserRole, isNew: boolean = false) => {
     default:
       return {
         tag: 'Khách Hàng Thân Thiết (Gold Member)',
-        sublineBadge: '🛒 Mua sắm nông sản & thực phẩm sạch bán kính 10km',
+        sublineBadge: '🛒 Mua sắm nông sản & thực phẩm sạch hỏa tốc',
         progressLabel: 'Tiến trình thăng hạng VIP Platinum',
         progressVal: 75,
         progressText: '75% (Còn 500k chi tiêu)',
@@ -560,7 +560,7 @@ const loadOrders = () => {
     orders.value = [
       {
         id: 'ZM-9982',
-        store: 'Cơm Tấm Sài Gòn 10km',
+        store: 'Cơm Tấm Sài Gòn',
         date: 'Hôm nay, 11:30',
         status: 'delivering',
         statusText: 'Tài xế đang giao (Khoảng 12 phút nữa)',
@@ -601,7 +601,7 @@ const loadOrders = () => {
         status: 'completed',
         statusText: 'Đã nhận trang thiết bị',
         items:
-          '1x Áo khoác phản quang ZoneMart, 1x Thùng giữ nhiệt thực phẩm 10km',
+          '1x Áo khoác phản quang ZoneMart, 1x Thùng giữ nhiệt thực phẩm hỏa tốc',
         total: 320000,
         storeDistance: '0.8 km',
       },
@@ -1993,7 +1993,7 @@ onMounted(() => {
           @click="currentTab = 'addresses'"
         >
           <i class="bi bi-geo-alt-fill"></i>
-          <span>Sổ Địa Chỉ (Bán Kính 10km)</span>
+          <span>Sổ Địa Chỉ (Hỏa Tốc)</span>
         </button>
 
 
@@ -2474,7 +2474,7 @@ onMounted(() => {
             </div>
             <h3 class="empty-feed-title">Bạn Chưa Có Đơn Mua Nào</h3>
             <p class="empty-feed-subtitle">
-              Lịch sử đặt đồ ăn và thực phẩm tươi giao hỏa tốc 10km sẽ được hiển
+              Lịch sử đặt đồ ăn và thực phẩm tươi giao hỏa tốc sẽ được hiển
               thị và cập nhật trực tiếp tại đây.
             </p>
             <button class="btn-explore-shop" @click="router.push('/products')">
@@ -2576,7 +2576,7 @@ onMounted(() => {
                 <i class="bi bi-shop text-orange me-2"></i>Đăng Ký Làm Người Bán (Gian Hàng)
               </h2>
               <p class="pane-subtitle">
-                Đưa nông sản & đặc sản địa phương lên sàn ZoneMart, tiếp cận hàng nghìn khách hàng lân cận bán kính 10km.
+                Đưa nông sản & đặc sản địa phương lên sàn ZoneMart, tiếp cận hàng nghìn khách hàng lân cận hỏa tốc.
               </p>
             </div>
           </div>
@@ -3078,7 +3078,7 @@ onMounted(() => {
                 <i class="bi bi-bicycle text-blue me-2"></i>Đăng Ký Làm Shipper (Tài Xế)
               </h2>
               <p class="pane-subtitle">
-                Giao hàng hỏa tốc trong bán kính 10km, nhận đơn tiện lợi gần nhà, thu nhập minh bạch nhận liền tay.
+                Giao hàng hỏa tốc trong hỏa tốc, nhận đơn tiện lợi gần nhà, thu nhập minh bạch nhận liền tay.
               </p>
             </div>
           </div>
@@ -3157,7 +3157,7 @@ onMounted(() => {
                 </span>
                 <h3 class="status-main-title">Chúc mừng! Bạn đã là Tài Xế ZoneMart Express</h3>
                 <p class="status-desc">
-                  Tài khoản tài xế của bạn (Biển số: <strong>{{ partnerData.shipper?.licensePlate }}</strong>) đã sẵn sàng nhận đơn hàng giao nhanh 10km.
+                  Tài khoản tài xế của bạn (Biển số: <strong>{{ partnerData.shipper?.licensePlate }}</strong>) đã sẵn sàng nhận đơn hàng giao nhanh hỏa tốc.
                 </p>
               </div>
             </div>
@@ -3638,8 +3638,7 @@ onMounted(() => {
               <label class="checkbox-label">
                 <input type="checkbox" v-model="addressForm.isDefault" />
                 <span
-                  >Đặt địa chỉ này làm mặc định cho các đơn giao hỏa tốc
-                  10km</span
+                  >Đặt địa chỉ này làm mặc định cho các đơn giao hỏa tốc siêu nhanh</span
                 >
               </label>
             </div>

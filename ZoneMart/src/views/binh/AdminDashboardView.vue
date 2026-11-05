@@ -4076,7 +4076,7 @@ onUnmounted(() => {
                   </div>
                   <div class="info-field-item col-span-2">
                     <span class="info-lbl">Địa bàn / Bán kính hoạt động:</span>
-                    <span class="info-val"><MapPin :size="13" class="me-1 text-green" />{{ selectedKycItem.operatingArea || 'Hà Nội (Bán kính 10km)' }}</span>
+                    <span class="info-val"><MapPin :size="13" class="me-1 text-green" />{{ selectedKycItem.operatingArea || 'Hà Nội (Hỏa tốc)' }}</span>
                   </div>
                 </div>
               </div>

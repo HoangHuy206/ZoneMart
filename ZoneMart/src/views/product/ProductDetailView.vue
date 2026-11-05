@@ -4,7 +4,7 @@
  * CHI TIẾT SẢN PHẨM CON (PRODUCT DETAIL VIEW) - ZONE MART
  * Thiết kế áp dụng Taste-Skill: Warm Terracotta (#ea580c), Bento Asymmetry,
  * Interactive Photo Gallery, Hyper-local Store Card, 4-Tab Deep Specs,
- * Real Buyer Reviews, Cross-sell 10km, and Tactile Micro-interactions.
+ * Real Buyer Reviews, Cross-sell Hyper-local, and Tactile Micro-interactions.
  * ============================================================================
  */
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
@@ -300,7 +300,7 @@ const handleAddRelated = (item: CatalogProduct) => {
   showToastMessage(`Đã thêm nhanh "${item.name}" vào giỏ!`);
 };
 
-// Danh sách sản phẩm cùng khu vực 10km
+// Danh sách sản phẩm cùng khu vực
 const relatedProducts = computed(() => {
   return catalog.getRelatedProducts(product.value.id, 4);
 });
@@ -960,7 +960,7 @@ const relatedProducts = computed(() => {
         <div class="cross-sell-header">
           <div>
             <span class="section-tag-pill">GỢI Ý KHU VỰC</span>
-            <h3 class="section-title">Sản Phẩm Tương Tự Trong Bán Kính 10km</h3>
+            <h3 class="section-title">Sản Phẩm Tương Tự Gần Bạn</h3>
           </div>
           <button class="btn-view-all-link" @click="router.push('/products')">
             <span>Xem tất cả</span>
@@ -2336,7 +2336,7 @@ const relatedProducts = computed(() => {
   color: #0f172a;
 }
 
-/* 4. CROSS-SELL 10KM SECTION */
+/* 4. CROSS-SELL HYPER-LOCAL SECTION */
 .cross-sell-section {
   margin-top: 40px;
 }

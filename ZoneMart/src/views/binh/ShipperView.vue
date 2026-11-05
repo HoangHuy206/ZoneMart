@@ -1276,7 +1276,7 @@ const triggerIncomingOrderCheck = (order: RealtimeOrder) => {
 
   incomingDistance.value = dist;
 
-  // Tự động nổ đơn hỏa tốc (Hỗ trợ bán kính 10km-15km toàn thành phố và đơn test)
+  // Tự động nổ đơn hỏa tốc (Hỗ trợ bán kính hỏa tốc toàn thành phố và đơn test)
   console.log(`[ShipperView] Đơn #${order.id} (Cách quán ${dist} km) -> NỔ ĐƠN HỎA TỐC!`);
   incomingOrder.value = order;
   showIncomingModal.value = true;

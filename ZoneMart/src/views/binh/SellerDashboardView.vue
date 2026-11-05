@@ -10,7 +10,7 @@
  * - 3 KPI Cards (AVG Order Value dark card, Total Orders, Lifetime Value)
  * - Sales Overtime Dual-line SVG Chart
  * - Top Selling Product List
- * - Latest Orders Data Table & Order Workflow (Hỏa tốc 10km)
+ * - Latest Orders Data Table & Order Workflow (Hỏa tốc)
  * ================================================================
  */
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
@@ -457,7 +457,7 @@ const toggleStoreOpen = () => {
   } catch {}
   triggerToast(
     isStoreOpen.value
-      ? "Đã mở cửa gian hàng! Sẵn sàng nhận đơn hỏa tốc 10km."
+      ? "Đã mở cửa gian hàng! Sẵn sàng nhận đơn hỏa tốc siêu nhanh."
       : "Đã tạm đóng cửa gian hàng. Khách hàng sẽ không thể đặt đơn mới lúc này."
   );
 };
@@ -3081,7 +3081,7 @@ const getItemImage = (it: OrderItem) => {
           <div class="tab-header-flex">
             <div>
               <h2 class="tab-heading">Khách Hàng Thân Thiết</h2>
-              <p class="tab-subheading">Danh sách khách hàng quen trong bán kính 10km của gian hàng</p>
+              <p class="tab-subheading">Danh sách khách hàng quen quanh khu vực gian hàng</p>
             </div>
           </div>
 
@@ -3119,7 +3119,7 @@ const getItemImage = (it: OrderItem) => {
           <div class="tab-header-flex">
             <div>
               <h2 class="tab-heading">Quy Trình Xử Lý Đơn Hàng</h2>
-              <p class="tab-subheading">Xác nhận đóng gói và điều phối tài xế giao hỏa tốc 10km (Chỉ hiển thị đơn của {{ storeInfo.name }})</p>
+              <p class="tab-subheading">Xác nhận đóng gói và điều phối tài xế giao hỏa tốc (Chỉ hiển thị đơn của {{ storeInfo.name }})</p>
             </div>
             <div class="d-flex align-items-center gap-2">
               <button 
@@ -3265,7 +3265,7 @@ const getItemImage = (it: OrderItem) => {
         <section v-else-if="activeNav === 'shipment'" class="tab-page-container">
           <div class="tab-header-flex">
             <div>
-              <h2 class="tab-heading">Vận Chuyển Hỏa Tốc ZoneMart 10km</h2>
+              <h2 class="tab-heading">Vận Chuyển Hỏa Tốc ZoneMart</h2>
               <p class="tab-subheading">Mạng lưới tài xế đối tác giao hàng siêu tốc trong 30-45 phút</p>
             </div>
           </div>
@@ -3276,7 +3276,7 @@ const getItemImage = (it: OrderItem) => {
                 <i class="bi bi-geo-alt-fill text-danger stat-icon"></i>
                 <div>
                   <h4>Bán kính giao hàng</h4>
-                  <p>10 km quanh vị trí tiệm ({{ storeDistrictName }})</p>
+                  <p>Quanh vị trí tiệm ({{ storeDistrictName }})</p>
                 </div>
               </div>
               <div class="shipment-stat-item">
