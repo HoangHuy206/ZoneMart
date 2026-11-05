@@ -32,8 +32,16 @@ Allow: /
 User-agent: Applebot-Extended
 Allow: /
 
-# Google Gemini / AI
+# Google Search, Gemini & Google AI
+User-agent: Googlebot
+Allow: /
+Disallow: /admin
+Disallow: /manager
+
 User-agent: Google-Extended
+Allow: /
+
+User-agent: GoogleOther
 Allow: /
 
 # Microsoft Bing & Copilot
