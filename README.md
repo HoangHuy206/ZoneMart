@@ -3,12 +3,16 @@
 <div align="center">
 
 <p align="center">
+  <img src="https://img.shields.io/badge/ZoneMart-Official_Website-16a34a?style=for-the-badge&logo=googlechrome&logoColor=white" height="28" alt="ZoneMart Official Website" />
   <img src="https://img.shields.io/badge/Vue.js_3-35495E?style=for-the-badge&logo=vuedotjs&logoColor=4FC08D" height="28" alt="Vue.js 3" />
   <img src="https://img.shields.io/badge/ASP.NET_Core_8-512BD4?style=for-the-badge&logo=dotnet&logoColor=white" height="28" alt="ASP.NET Core 8" />
   <img src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" height="28" alt="PostgreSQL" />
   <img src="https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" height="28" alt="Tailwind CSS" />
   <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" height="28" alt="Docker" />
 </p>
+
+### 🌐 Website Chính Thức: [https://zonemart.id.vn](https://zonemart.id.vn)
+**Sáng lập & Điều hành:** Đoàn Hoàng Huy | **Đăng ký tên miền VNNIC:** zonemart.id.vn
 
 **Cầu nối trực tiếp giữa Nhà vườn địa phương – Người tiêu dùng – Tài xế giao hàng hỏa tốc trong khu vực lân cận.**
 
