@@ -12,7 +12,7 @@
 </p>
 
 ### 🌐 Website Chính Thức: [https://zonemart.id.vn](https://zonemart.id.vn)
-**Sáng lập & Điều hành:** Đoàn Hoàng Huy | **Đăng ký tên miền VNNIC:** zonemart.id.vn
+**Đội ngũ sáng lập & phát triển:** Đoàn Hoàng Huy, Đỗ Văn Bình, Nguyễn Đức Thắng | **Đăng ký tên miền VNNIC:** zonemart.id.vn
 
 **Cầu nối trực tiếp giữa Nhà vườn địa phương – Người tiêu dùng – Tài xế giao hàng hỏa tốc trong khu vực lân cận.**
 
@@ -96,7 +96,7 @@ Dự án được nghiên cứu, thiết kế và phát triển bởi:
 
 * 👨‍💻 **Đoàn Hoàng Huy**
 * 👨‍💻 **Đỗ Văn Bình**
-* 👨‍💻 **Lê Đức Thắng**
+* 👨‍💻 **Nguyễn Đức Thắng**
 
 ---
 

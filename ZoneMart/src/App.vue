@@ -1379,7 +1379,7 @@ const handleLogout = () => {
             </li>
             <li>
               <i class="bi bi-envelope-fill footer-info-icon"></i>
-              <span><strong>Email hỗ trợ:</strong> <a href="mailto:support@zonemart.vn" class="footer-mail-link">support@zonemart.vn</a></span>
+              <span><strong>Email hỗ trợ:</strong> <a href="mailto:hotrozonemart@gmail.com" class="footer-mail-link">hotrozonemart@gmail.com</a></span>
             </li>
             <li>
               <i class="bi bi-clock-fill footer-info-icon"></i>
