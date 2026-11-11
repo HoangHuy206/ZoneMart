@@ -15,7 +15,7 @@ permissions:
 jobs:
   build-ios:
     name: Build iOS IPA (on macOS Cloud)
-    runs-on: macos-14 # macOS 14 Sonoma (Apple Silicon M1) ổn định nhất, runner dồi dào, không bị nghẽn queue như macos-15
+    runs-on: macos-15 # macOS 15 Sequoia (Apple Silicon) - macos-14 đã bị GitHub ngừng hỗ trợ từ tháng 11/2026
     defaults:
       run:
         working-directory: ZoneMart
