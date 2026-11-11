@@ -73,12 +73,13 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk output/ZoneMart.apk
           echo "Build file ZoneMart.apk thanh cong!"
 
-      - name: 10. Tải lên GitHub Artifacts (Lưu trữ 14 ngày)
+      - name: 10. Tải lên GitHub Artifacts (Lưu trữ 3 ngày)
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ZoneMart-Android-APK
           path: ZoneMart/android/output/ZoneMart.apk
-          retention-days: 14
+          retention-days: 3
 
       - name: 11. Phát hành GitHub Release (Link tải trực tiếp)
         uses: softprops/action-gh-release@v2

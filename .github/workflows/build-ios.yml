@@ -9,6 +9,9 @@ on:
       - 'ZoneMart/**'
       - '.github/workflows/build-ios.yml'
 
+permissions:
+  contents: write
+
 jobs:
   build-ios:
     name: Build iOS IPA (on macOS Cloud)
@@ -72,7 +75,26 @@ jobs:
 
       - name: 7. Tải lên file IPA để người dùng tải về
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: ZoneMart-iOS-IPA
           path: ZoneMart/ios/App/ZoneMart.ipa
-          retention-days: 14
+          retention-days: 3
+
+      - name: 8. Phát hành GitHub Release (Link tải trực tiếp)
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+        with:
+          tag_name: 'v-ipa-latest'
+          name: "ZoneMart iOS IPA (v-ipa-latest)"
+          body: |
+            🍎 **ZoneMart iOS IPA Đã Đóng Gói Thành Công!**
+            - Máy chủ API: `https://zonemart.id.vn`
+            - Mã commit: `${{ github.sha }}`
+            
+            📱 Tải file `ZoneMart.ipa` đính kèm bên dưới để ký & cài qua Sideloadly / ESign / AltStore.
+          files: ZoneMart/ios/App/ZoneMart.ipa
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
