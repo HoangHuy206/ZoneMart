@@ -548,3 +548,102 @@ export async function registerPasskeyForCurrentUser(
     message: res.message || (res.success ? 'Kích hoạt sinh trắc học thành công!' : 'Kích hoạt thất bại.'),
   };
 }
+
+export interface NativeBiometricLoginResult {
+  handled: boolean;
+  success: boolean;
+  data?: any;
+  infoMessage?: string;
+  errorMessage?: string;
+}
+
+/**
+ * Thực thi luồng đăng nhập sinh trắc học Native cho Capacitor Mobile App (Android APK & iOS IPA).
+ * Tự động kích hoạt cảm biến phần cứng của máy trước WebAuthn để tránh lỗi RPID trong WebView.
+ */
+export async function handleNativeBiometricLogin(
+  targetAccount: string,
+  targetPassword: string,
+  deviceLabel: string = 'Sinh trắc học'
+): Promise<NativeBiometricLoginResult> {
+  const isNative =
+    typeof window !== 'undefined' &&
+    (Capacitor.isNativePlatform() || Boolean((window as any).webkit?.messageHandlers?.nativeFaceId));
+
+  if (!isNative) {
+    return { handled: false, success: false };
+  }
+
+  const trimmedAcc = targetAccount.trim();
+  const savedBioAccount = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_account') : null;
+  const savedBioPass = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_pass') : null;
+  const actToUse = trimmedAcc || savedBioAccount || '';
+
+  if (!actToUse) {
+    return {
+      handled: true,
+      success: false,
+      infoMessage: `Vui lòng nhập Email / SĐT và Mật khẩu trước một lần, sau đó bấm biểu tượng ${deviceLabel} để kích hoạt trên thiết bị này!`,
+    };
+  }
+
+  const isSameAsSaved = !trimmedAcc || (savedBioAccount && trimmedAcc.toLowerCase() === savedBioAccount.toLowerCase());
+  let pwdToUse = targetPassword.trim();
+  if (!pwdToUse && isSameAsSaved && savedBioPass) {
+    try {
+      pwdToUse = atob(savedBioPass);
+    } catch {}
+  }
+
+  if (!pwdToUse) {
+    return {
+      handled: true,
+      success: false,
+      infoMessage: `Vui lòng nhập Mật khẩu trên form để kích hoạt ${deviceLabel} cho tài khoản!`,
+    };
+  }
+
+  const verifyRes = await verifyDeviceBiometrics(`Xác thực ${deviceLabel} để đăng nhập tài khoản ZoneMart`);
+  if (!verifyRes.success) {
+    return {
+      handled: true,
+      success: false,
+      errorMessage: verifyRes.message || `Xác thực ${deviceLabel} đã bị hủy hoặc không khớp.`,
+    };
+  }
+
+  const loginRes = await apiFetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account: actToUse, password: pwdToUse }),
+  });
+
+  if (!loginRes || !loginRes.ok) {
+    const errData = await loginRes?.json().catch(() => ({}));
+    return {
+      handled: true,
+      success: false,
+      errorMessage: errData?.message || 'Tài khoản hoặc mật khẩu không chính xác.',
+    };
+  }
+
+  const loginData = await loginRes.json();
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('zonemart_biometric_enabled', 'true');
+    localStorage.setItem('zonemart_passkey_saved', 'true');
+    localStorage.setItem('zonemart_biometric_account', actToUse);
+    localStorage.setItem('zonemart_biometric_pass', btoa(pwdToUse));
+  }
+
+  apiFetch('/api/auth/biometric/register-native', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: actToUse, biometricType: deviceLabel }),
+  }).catch(() => {});
+
+  return {
+    handled: true,
+    success: true,
+    data: loginData,
+  };
+}

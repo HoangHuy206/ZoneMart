@@ -5,6 +5,7 @@
  * Hỗ trợ Fallback thông minh để ứng dụng luôn hoạt động 100%
  * ============================================================================
  */
+import { apiFetch } from '../utils/apiConfig';
 
 export interface CheckoutPayload {
   buyerId: string;
@@ -72,7 +73,7 @@ export const orderService = {
     order?: OrderRecord;
   }> {
     try {
-      const response = await fetch(`${API_BASE}/checkout`, {
+      const response = await apiFetch(`${API_BASE}/checkout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -158,7 +159,7 @@ export const orderService = {
    */
   async getBuyerOrders(buyerId: string): Promise<OrderRecord[]> {
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE}/buyer/${encodeURIComponent(buyerId)}`,
       );
       if (response.ok) {
@@ -201,7 +202,7 @@ export const orderService = {
     cancelReason?: string,
   ): Promise<boolean> {
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `${API_BASE}/suborder/${encodeURIComponent(subId)}/status`,
         {
           method: 'PUT',

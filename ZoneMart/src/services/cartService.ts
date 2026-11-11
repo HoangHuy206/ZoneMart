@@ -5,6 +5,7 @@
  * ============================================================================
  */
 import type { CartStoreGroup } from '../composables/useCart';
+import { apiFetch } from '../utils/apiConfig';
 
 const API_BASE = '/api/cart';
 
@@ -30,7 +31,7 @@ export const cartService = {
     voucherCode?: string;
   } | null> {
     try {
-      const res = await fetch(`${API_BASE}/${encodeURIComponent(userId)}`);
+      const res = await apiFetch(`${API_BASE}/${encodeURIComponent(userId)}`);
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.data) {
@@ -74,7 +75,7 @@ export const cartService = {
     voucherCode?: string,
   ): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/${encodeURIComponent(userId)}`, {
+      const res = await apiFetch(`${API_BASE}/${encodeURIComponent(userId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -113,7 +114,7 @@ export const cartService = {
    */
   async fetchSuggestedProducts(): Promise<SuggestedProductItem[]> {
     try {
-      const res = await fetch(`${API_BASE}/suggested`);
+      const res = await apiFetch(`${API_BASE}/suggested`);
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.data) && data.data.length > 0) {

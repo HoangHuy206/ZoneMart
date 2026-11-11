@@ -17,6 +17,7 @@ import {
   authenticateBiometricPasskey,
   registerBiometricPasskey,
   browserSupportsWebAuthn,
+  handleNativeBiometricLogin,
 } from '../../utils/biometricHelper';
 import AntigravityCanvas from '../../components/common/AntigravityCanvas.vue';
 import { useToast } from '../../composables/useToast';
@@ -90,6 +91,24 @@ const openFaceIdLoginModal = async () => {
   const savedBioAccount = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_account') : null;
   const savedBioPass = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_biometric_pass') : null;
   const actToUse = targetAccount || savedBioAccount || '';
+
+  try {
+    const nativeRes = await handleNativeBiometricLogin(targetAccount, targetPassword, 'Face ID / Vân tay');
+    if (nativeRes.handled) {
+      if (nativeRes.success && nativeRes.data?.user) {
+        toast.success('Xác thực Face ID / Vân tay phần cứng thành công!');
+        handleFaceLoginSuccess(nativeRes.data);
+      } else if (nativeRes.infoMessage) {
+        toast.info(nativeRes.infoMessage);
+      } else {
+        toast.error(nativeRes.errorMessage || 'Xác thực sinh trắc học không thành công.');
+      }
+      return;
+    }
+  } catch (err: any) {
+    toast.error('Lỗi xác thực: ' + (err?.message || 'Vui lòng thử lại.'));
+    return;
+  }
 
   if (browserSupportsWebAuthn()) {
     try {

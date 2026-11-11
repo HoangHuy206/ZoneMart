@@ -179,8 +179,8 @@ app.Use(async (context, next) =>
     await next();
 });
 
-// Endpoint Health Check tiêu chuẩn
-app.MapGet("/api/health", () => Results.Ok(new
+// Endpoint Health Check nhanh (tránh trùng lặp với HealthController tại /api/health)
+app.MapGet("/api/health/ping", () => Results.Ok(new
 {
     status = "Healthy",
     service = "ZoneMart API",

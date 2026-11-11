@@ -7,6 +7,7 @@
 
 const KNOWN_PORT = '5000';
 const DEFAULT_LAN_IP = '192.168.1.16';
+const PRODUCTION_API_URL = 'https://zonemart.id.vn';
 
 let cachedDiscoveredUrl: string | null = null;
 let lastDiscoveredAt = 0;
@@ -154,17 +155,19 @@ function setDiscoveredServer(url: string) {
  * Tự động dò tìm địa chỉ IP máy chủ Backend trong mạng Wi-Fi LAN
  */
 export async function autoDiscoverServer(force = false): Promise<string | null> {
-  // Khi chạy trên Production Web (HTTPS hoặc Domain), dùng ngay relative URL '' để qua Nginx
-  if (typeof window !== 'undefined') {
+  const isMobile = isNativeMobile();
+
+  // Khi chạy trên Web Browser thông thường (HTTPS hoặc Domain hoặc Localhost Dev), không cần quét LAN
+  if (typeof window !== 'undefined' && !isMobile) {
     const hostname = window.location.hostname || '';
     const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
     const isLanIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
-    if (window.location.protocol === 'https:' || (!isLocalhost && !isLanIp && !isNativeMobile())) {
+    if (window.location.protocol === 'https:' || isLocalhost || !isLanIp) {
       return '';
     }
   }
 
-  // Ưu tiên 0: Biến môi trường Vite (.env) chỉ định trực tiếp Domain máy chủ Backend khi Deploy Internet
+  // Ưu tiên 0: Biến môi trường Vite (.env / CI Build) chỉ định trực tiếp Domain máy chủ Backend (https://zonemart.id.vn)
   try {
     const envApi = ((import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE_URL || '') as string;
     if (envApi && typeof envApi === 'string' && envApi.trim()) {
@@ -185,13 +188,16 @@ export async function autoDiscoverServer(force = false): Promise<string | null> 
 
   discoveryPromise = (async () => {
     try {
-      // 1. Nhóm ưu tiên hàng đầu: IP đã lưu, IP hiện tại, IP localhost, IP emulator
-      const priorityCandidates: string[] = [];
+      // 1. Nhóm ưu tiên hàng đầu: Server Production HTTPS (zonemart.id.vn), sau đó mới tới cấu hình đã lưu / LAN
+      const priorityCandidates: string[] = [PRODUCTION_API_URL];
 
       try {
         const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('zonemart_api_server_url') : null;
-        if (saved && saved.trim() && !priorityCandidates.includes(saved.trim())) {
-          priorityCandidates.push(saved.trim().replace(/\/+$/, ''));
+        if (saved && saved.trim()) {
+          const cleanSaved = saved.trim().replace(/\/+$/, '');
+          if (!priorityCandidates.includes(cleanSaved)) {
+            priorityCandidates.push(cleanSaved);
+          }
         }
       } catch {}
 
@@ -220,6 +226,15 @@ export async function autoDiscoverServer(force = false): Promise<string | null> 
       for (const cand of standardCandidates) {
         if (!priorityCandidates.includes(cand)) {
           priorityCandidates.push(cand);
+        }
+      }
+
+      // Ưu tiên kiểm tra Production HTTPS Server trước tiên để tránh trễ khi ra ngoài 4G/5G
+      if (isMobile) {
+        const prodAlive = await probeServerEndpoint(PRODUCTION_API_URL, 2500);
+        if (prodAlive) {
+          setDiscoveredServer(PRODUCTION_API_URL);
+          return PRODUCTION_API_URL;
         }
       }
 
@@ -276,42 +291,36 @@ export function isNativeMobile(): boolean {
 export function getBaseApiUrl(): string {
   if (typeof window === 'undefined') return '';
 
-  // Ưu tiên cao nhất: Cấu hình VITE_API_URL hoặc VITE_API_BASE_URL chỉ định trực tiếp địa chỉ máy chủ trên Internet
-  try {
-    const configuredApiUrl = ((import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE_URL || '') as string;
-    if (configuredApiUrl && typeof configuredApiUrl === 'string' && configuredApiUrl.trim()) {
-      return configuredApiUrl.trim().replace(/\/+$/, '');
-    }
-  } catch {}
+  const isMobile = isNativeMobile();
 
   // TRƯỜNG HỢP 1: Môi trường Native Mobile App (Capacitor Android APK / iOS IPA)
-  if (isNativeMobile()) {
-    // 1. URL đã dò tìm thành công gần đây
+  if (isMobile) {
+    // 1. URL đã dò tìm thành công trong phiên hiện tại
     if (cachedDiscoveredUrl) {
       return cachedDiscoveredUrl;
     }
 
-    // 2. Biến môi trường Vite (.env) - cấu hình chuẩn IP Wi-Fi
+    // 2. Biến môi trường Vite (.env / GitHub Actions) trỏ về Server Production (https://zonemart.id.vn)
     try {
-      const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
+      const envUrl = ((import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE_URL || '') as string;
       if (envUrl && typeof envUrl === 'string' && envUrl.trim() && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
         return envUrl.trim().replace(/\/+$/, '');
       }
     } catch {}
 
-    // 3. Cấu hình đã lưu trong localStorage từ lần trước
+    // 3. Cấu hình HTTPS đã lưu trong localStorage từ lần trước (bỏ qua IP LAN cũ nếu chưa kiểm chứng)
     try {
       const saved = localStorage.getItem('zonemart_api_server_url');
       if (saved && saved.trim()) {
         const cleanSaved = saved.trim().replace(/\/+$/, '');
-        if (cleanSaved.startsWith('http://') || cleanSaved.startsWith('https://') || cleanSaved.includes('192.168.') || cleanSaved.includes('172.') || cleanSaved.includes('10.') || cleanSaved.includes('10.0.2.2') || cleanSaved.includes(DEFAULT_LAN_IP)) {
+        if (cleanSaved.startsWith('https://')) {
           return cleanSaved;
         }
       }
     } catch {}
 
-    // 4. Mặc định trỏ thẳng tới IP Wi-Fi của máy chủ Dev
-    return `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`;
+    // 4. Mặc định trỏ thẳng về Server Production HTTPS trên CloudFly VPS (zonemart.id.vn)
+    return PRODUCTION_API_URL;
   }
 
   // TRƯỜNG HỢP 2: Chạy trên Web Domain chính thức (zonemart.id.vn) hoặc qua giao thức HTTPS
@@ -329,7 +338,13 @@ export function getBaseApiUrl(): string {
   }
 
   // TRƯỜNG HỢP 4: Mở trên Web Desktop Dev qua localhost (http://localhost:5173)
-  // Dùng relative URL '' để qua Vite Proxy chuyển tiếp tới 127.0.0.1:5000, tránh lỗi CORS
+  // Dùng relative URL '' để qua Vite Proxy chuyển tiếp tới 127.0.0.1:5000, trừ khi ép kết nối remote
+  try {
+    if ((import.meta as any).env?.VITE_FORCE_REMOTE_API === 'true') {
+      const forced = ((import.meta as any).env?.VITE_API_URL || (import.meta as any).env?.VITE_API_BASE_URL || '') as string;
+      if (forced && forced.trim()) return forced.trim().replace(/\/+$/, '');
+    }
+  } catch {}
   return '';
 }
 
@@ -390,13 +405,15 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
   const currentUrl = getApiUrl(path);
 
   try {
-    const firstTimeout = isNativeMobile() ? 3.5 : 15;
+    const isRemoteHttps = currentUrl.startsWith('https://');
+    const firstTimeout = isRemoteHttps ? 15 : isNativeMobile() ? 6 : 15;
     const res = await execute(currentUrl, firstTimeout);
 
-    // Xử lý fallback cho Vite proxy nếu trả về 404, 502, 504
+    // Xử lý fallback cho Vite proxy nếu trả về 404, 502, 504 trên Desktop localhost
     if (
       (res.status === 404 || res.status === 502 || res.status === 504) &&
       typeof window !== 'undefined' &&
+      !isNativeMobile() &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
       !currentUrl.startsWith('http')
     ) {
@@ -407,8 +424,8 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
 
     return res;
   } catch (err: any) {
-    // Nếu đang ở localhost mà fetch relative URL gặp sự cố, thử ngay http://127.0.0.1:5000 trực tiếp (không đợi auto-discover)
-    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    // Nếu đang ở Desktop localhost mà fetch relative URL gặp sự cố, thử ngay http://127.0.0.1:5000 trực tiếp
+    if (typeof window !== 'undefined' && !isNativeMobile() && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
       try {
         const cleanPath = path.startsWith('/') ? path : '/' + path;
         const apiPath = cleanPath.startsWith('/api') ? cleanPath : '/api' + cleanPath;
@@ -416,9 +433,9 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
       } catch (directErr) {}
     }
 
-    // Tự động kích hoạt cơ chế Auto-Discovery quét tìm IP mới của máy chủ
+    // Tự động kích hoạt cơ chế Auto-Discovery thử kết nối lại với Server Production hoặc máy chủ khả dụng
     try {
-      console.warn('[ZoneMart] Đang tự động dò tìm máy chủ backend...');
+      console.warn('[ZoneMart] Đang kiểm tra kết nối máy chủ backend...');
       const discovered = await autoDiscoverServer(true);
       if (discovered) {
         const cleanPath = path.startsWith('/') ? path : '/' + path;
@@ -431,14 +448,15 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
 
     // Fallback nếu URL relative gặp sự cố
     if (typeof window !== 'undefined' && !targetUrl.startsWith('http')) {
-      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const isLocalhost = !isNativeMobile() && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
       if (isLocalhost) {
         try {
           return await fetch('http://127.0.0.1:5000' + targetUrl, init);
         } catch (fallbackErr) {}
       } else {
+        const fallbackBase = isNativeMobile() ? PRODUCTION_API_URL : `http://${DEFAULT_LAN_IP}:5000`;
         try {
-          return await fetch(`http://${DEFAULT_LAN_IP}:5000` + targetUrl, init);
+          return await fetch(fallbackBase + targetUrl, init);
         } catch (fallbackErr) {}
       }
     }
@@ -446,22 +464,22 @@ export async function apiFetch(path: string, init?: RequestInit): Promise<Respon
     // Thông báo lỗi thân thiện, bảo mật, không để lộ mã nguồn hay cơ sở dữ liệu
     const isTimeout = err?.name === 'AbortError';
     const friendlyMsg = isTimeout
-      ? 'Hệ thống phản hồi chậm hoặc mạng gián đoạn. Vui lòng kiểm tra lại kết nối Wi-Fi!'
-      : 'Không thể kết nối đến máy chủ ZoneMart. Vui lòng đảm bảo máy tính chạy server và điện thoại chung mạng Wi-Fi!';
+      ? 'Hệ thống phản hồi chậm hoặc mạng gián đoạn. Vui lòng kiểm tra lại kết nối Internet (Wi-Fi / 4G / 5G)!'
+      : 'Không thể kết nối đến máy chủ ZoneMart. Vui lòng kiểm tra kết nối mạng (Wi-Fi / 4G / 5G) và thử lại!';
 
     throw new Error(friendlyMsg);
   }
 }
 
 /**
- * Đặt URL máy chủ thủ công (dành cho người dùng Mobile App đổi Wi-Fi)
+ * Đặt URL máy chủ thủ công
  */
 export function setCustomServerUrl(url: string): string {
   let clean = url.trim().replace(/\/+$/, '');
   if (!clean.startsWith('http://') && !clean.startsWith('https://')) {
     clean = `http://${clean}`;
   }
-  if (!clean.match(/:\d+$/)) {
+  if (!clean.startsWith('https://') && !clean.match(/:\d+$/)) {
     clean = `${clean}:${KNOWN_PORT}`;
   }
   setDiscoveredServer(clean);
@@ -472,7 +490,7 @@ export function setCustomServerUrl(url: string): string {
  * Lấy URL máy chủ hiện hành đang áp dụng
  */
 export function getCurrentServerUrl(): string {
-  return getBaseApiUrl() || `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`;
+  return getBaseApiUrl() || (isNativeMobile() ? PRODUCTION_API_URL : `http://${DEFAULT_LAN_IP}:${KNOWN_PORT}`);
 }
 
 // Tự động kích hoạt dò tìm máy chủ trong nền khi ứng dụng khởi động

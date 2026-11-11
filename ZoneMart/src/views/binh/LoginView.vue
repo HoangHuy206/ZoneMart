@@ -13,6 +13,7 @@ import {
   authenticateBiometricPasskey,
   registerBiometricPasskey,
   browserSupportsWebAuthn,
+  handleNativeBiometricLogin,
   type BiometricDeviceInfo,
 } from '../../utils/biometricHelper';
 import { Capacitor } from '@capacitor/core';
@@ -114,6 +115,20 @@ const handleQuickBiometricLogin = async () => {
   try {
     isBiometricChecking.value = true;
     errorMessage.value = '';
+
+    // 0. Ưu tiên Native Mobile App (Android APK / iOS IPA) dùng cảm biến sinh trắc học gốc
+    const nativeRes = await handleNativeBiometricLogin(targetAccount, targetPassword, deviceLabel);
+    if (nativeRes.handled) {
+      if (nativeRes.success && nativeRes.data?.user) {
+        toast.success(`Xác thực phần cứng ${deviceLabel} thành công!`, `${deviceLabel} Hợp Lệ`);
+        handleFaceLoginSuccess(nativeRes.data);
+      } else if (nativeRes.infoMessage) {
+        toast.info(nativeRes.infoMessage, `Kích Hoạt ${deviceLabel}`);
+      } else {
+        toast.error(nativeRes.errorMessage || `Xác thực ${deviceLabel} không thành công.`);
+      }
+      return;
+    }
 
     // 1. WebAuthn: Gọi trực tiếp phần cứng thiết bị (Apple Face ID / Touch ID trên Safari iOS, Fingerprint Android, Windows Hello)
     if (browserSupportsWebAuthn()) {
